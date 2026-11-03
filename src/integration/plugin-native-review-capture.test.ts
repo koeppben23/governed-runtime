@@ -1,10 +1,13 @@
 /** Product composition + real workflow/outbox persistence, mocked host execution.
  * These tests do not establish native-host provenance or restart recovery. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readState } from '../adapters/persistence.js';
+import { readState, PersistenceError } from '../adapters/persistence.js';
+import { execFileSync } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
-import { createTestWorkspace } from './test-helpers.js';
+import { createTestWorkspace, repositoryDiscoveryContext } from './test-helpers.js';
 import { seedStrictPlanSession } from './plugin-host-task-diagnostics-test-helpers.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { createV2Host, v2ToolEvent, createReviewClient } from './opencode-v2-test-helpers.js';
@@ -13,8 +16,11 @@ import { OpenCodeGovernance, type NativeBefore } from './opencode-governance.js'
 import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { registerPendingReviewForAttempt } from './review/enforcement/enforcement.js';
 import { resolveReviewContinuation } from '../state/review-continuation.js';
-import { plan } from './tools/index.js';
+import { plan, observe_repository } from './tools/index.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
+import { mintObservationCapability } from './review/obligations/attempt-lifecycle.js';
+import { deriveRepositoryRevisionProvenance } from '../state/evidence-review-authority.js';
+import * as observationReplay from './review/observations/observation-replay.js';
 
 const model = { providerID: 'component', id: 'review', variant: 'selected' };
 const idle = { type: 'idle', outcome: 'succeeded' };
@@ -33,11 +39,64 @@ afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 
-async function fixture() {
+async function fixture(observation = false) {
   const ws = await createTestWorkspace();
   cleanup.push(() => ws.cleanup());
+  if (observation) {
+    await writeFile(join(ws.tmpDir, 'context.txt'), 'Frozen repository context\n');
+    execFileSync('git', ['add', 'context.txt'], { cwd: ws.tmpDir });
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.name=FlowGuard Test',
+        '-c',
+        'user.email=test@example.invalid',
+        'commit',
+        '--quiet',
+        '-m',
+        'observation fixture',
+      ],
+      { cwd: ws.tmpDir },
+    );
+  }
   const seeded = await seedStrictPlanSession(ws.tmpDir, 'root');
-  const state = (await readState(seeded.sessDir))!;
+  let state = (await readState(seeded.sessDir))!;
+  if (observation) {
+    const repositoryAuthority = {
+      kind: 'context' as const,
+      context: {
+        kind: 'commit' as const,
+        objectSha: execFileSync('git', ['rev-parse', 'HEAD'], {
+          cwd: ws.tmpDir,
+          encoding: 'utf8',
+        }).trim(),
+        repositoryIdentity: {
+          host: 'github.com',
+          owner: 'flowguard-tests',
+          name: 'reviewer-fixture',
+        },
+      },
+    };
+    state = {
+      ...state,
+      reviewAssurance: {
+        ...state.reviewAssurance!,
+        obligations: state.reviewAssurance!.obligations.map((item) => ({
+          ...item,
+          repositoryAuthority,
+          repositoryRevisionProvenance: deriveRepositoryRevisionProvenance({ repositoryAuthority }),
+          repositoryEvidenceFreeze: { kind: 'available' as const },
+        })),
+        attempts: state.reviewAssurance!.attempts.map((item) => ({
+          ...item,
+          observationCapability: mintObservationCapability(),
+          repositoryDiscovery: repositoryDiscoveryContext(),
+        })),
+      },
+    };
+    await writeStateWithArtifacts(seeded.sessDir, state);
+  }
   const host = createV2Host(ws.tmpDir);
   await host.seedActive('root', state.policySnapshot.hash);
   host.sessionGet.mockImplementation(async ({ sessionID }) => ({
@@ -195,6 +254,82 @@ async function fixture() {
 }
 
 describe('native capture composition with durable evidence', () => {
+  it.each(['replay', 'persistence'] as const)(
+    'blocks a required repository citation when observation %s fails',
+    async (phase) => {
+      const h = await fixture(true);
+      const before = (await readState(h.seeded.sessDir))!;
+      const attempt = before.reviewAssurance!.attempts[0]!;
+      const observation = await observe_repository.execute(
+        {
+          capability: attempt.observationCapability!,
+          revision: 'head',
+          path: 'context.txt',
+        },
+        {
+          sessionID: 'child',
+          messageID: 'msg_observe',
+          agent: 'flowguard-reviewer',
+          directory: h.ws.tmpDir,
+          worktree: h.ws.tmpDir,
+          abort: new AbortController().signal,
+          metadata: () => {},
+        },
+      );
+      expect(observation).toContain('Frozen repository context');
+      // The capture is valid and would yield authority absent the injected fault.
+      const replay = await observationReplay.replayObservationCaptures({
+        state: before,
+        worktree: h.ws.tmpDir,
+        attemptId: attempt.attemptId,
+        childSessionId: 'child',
+        now: new Date().toISOString(),
+      });
+      expect(replay.observations).toHaveLength(1);
+      expect(attempt.observations).toEqual([]);
+      h.controls.payload = JSON.stringify({
+        ...JSON.parse(h.controls.payload),
+        majorRisks: [
+          {
+            severity: 'minor',
+            category: 'quality',
+            message: 'Frozen context supports this plan section.',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'artifact_section',
+                  artifactKind: 'plan',
+                  artifactDigest: 'test-subject-digest',
+                  sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
+                },
+              ],
+              evidenceLocations: [{ path: 'context.txt', revision: 'head', line: 1 }],
+            },
+          },
+        ],
+      });
+      const fault = new PersistenceError(
+        phase === 'replay' ? 'READ_FAILED' : 'WRITE_FAILED',
+        `injected observation ${phase} failure`,
+      );
+      if (phase === 'replay')
+        vi.spyOn(observationReplay, 'replayObservationCaptures').mockRejectedValueOnce(fault);
+      else
+        vi.spyOn(h.runtime.orchestratorDeps, 'updateReviewAssurance').mockRejectedValueOnce(fault);
+      await h.reviewer.capture(h.root, h.event);
+      expect(h.runtime.logError).toHaveBeenCalledWith(`observation ${phase} failed`, fault);
+      const after = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+      expect(after.obligations[0]).toMatchObject({
+        status: 'blocked',
+        blockedCode: 'REVIEW_EVIDENCE_NOT_OBSERVED',
+      });
+      expect(after.invocations).toEqual([]);
+      expect(after.attempts[0]!.observations).toEqual([]);
+      expect(h.host.prompt).toHaveBeenCalledTimes(1);
+      expect(h.event.result.content).toContain('REVIEW_EVIDENCE_NOT_OBSERVED');
+    },
+  );
+
   it('keeps the lease through the durable commit then projects the exact invocation', async () => {
     const h = await fixture();
     await h.reviewer.capture(h.root, h.event);

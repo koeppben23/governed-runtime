@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Required observation fault regressions (#1190).** Two composition tests
+  inject an observation-replay read failure and an observation-persistence write
+  failure with a valid child capture and a required repository citation. Both
+  retain the logged cause, reject findings with `REVIEW_EVIDENCE_NOT_OBSERVED`
+  and persist no invocation or authoritative observation. No production error
+  handling or optional/advisory observation semantics change.
+
 - **V2 reviewer repository-observation replay (#1190).** An enrolled native
   reviewer can call the existing sanctioned observation tool during initial
   investigation, without gaining parent workflow/approval tools. Execution keeps

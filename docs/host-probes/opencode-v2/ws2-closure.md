@@ -110,6 +110,18 @@ the V2 call chain, not activation provenance or final consumed-representation R4
 assurance. Bounded retry/exhaustion and the other terminal closure paths remain
 open work in the table above.
 
+Two additional fault-injection cases in
+`plugin-native-review-capture.test.ts` exercise replay and persistence failure
+through real workflow/outbox storage and the canonical V6 binder (mocked host
+execution). Each first establishes that the child capture would replay to one
+valid observation, then injects a read or write failure. The findings actually
+cite that repository location, so the observation is required: both cases log
+the original failure, block with `REVIEW_EVIDENCE_NOT_OBSERVED`, and persist
+neither an invocation nor an authoritative observation. The errors need not
+escape directly from replay for the subsequent binding boundary to fail closed.
+These are component fault proofs, not additional native crash tests. No general
+error mechanism or change to unrequired/advisory observations is introduced.
+
 ```sh
 npm run build
 OPENCODE_LIVE=1 npx vitest run --project smoke \
