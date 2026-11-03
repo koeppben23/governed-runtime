@@ -174,15 +174,21 @@ describe.skipIf(!LIVE)('native reviewer observation parity', () => {
   }, 120_000);
 
   it.each(['foreign', 'parent', 'revision', 'content', 'response'] as const)(
-    'refuses a repository citation after a %s capture substitution',
+    're-arms a repository citation after a %s capture substitution',
     async (mode) => {
       const h = await runObservation(mode);
-      expect(h.state.reviewAssurance!.invocations).toEqual([]);
-      expect(h.state.reviewAssurance!.obligations[0]?.status).toBe('blocked');
-      expect(h.state.reviewAssurance!.obligations[0]?.blockedCode).toBe(
-        'REVIEW_EVIDENCE_NOT_OBSERVED',
-      );
-      expect(h.state.reviewAssurance!.attempts[0]?.observations).toEqual([]);
+      const assurance = h.state.reviewAssurance!;
+      expect(assurance.invocations).toEqual([]);
+      expect(assurance.obligations[0]?.status).toBe('pending');
+      expect(assurance.obligations[0]?.blockedCode).toBeNull();
+      expect(assurance.attempts[0]?.status).toBe('stale');
+      expect(assurance.attempts[0]?.observations).toEqual([]);
+      expect(assurance.attempts).toHaveLength(2);
+      expect(assurance.attempts[1]).toMatchObject({
+        status: 'created',
+        origin: { kind: 'dispatch_rearm', predecessorAttemptId: assurance.attempts[0]?.attemptId },
+      });
+      expect(assurance.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
     },
     120_000,
   );
