@@ -41,6 +41,21 @@ replacement after context. These remain documented R4 limits.
 
 ## Follow-up: reachable plugin residuals (2026-11-03)
 
+**Operator decision after `ed7b698d`: retain the existing security contract.**
+Co-installed plugins remain untrusted for reviewer evidence. R4 requires a
+demonstrated host-side integrity boundary; there is no authorization to weaken
+the verifier, exclude these paths as trusted, or create a second reviewer runtime.
+The 2.2.4 public `ModelHooks` API offers registration/disposal and provider scope,
+not an exclusive final observer. In the pinned source, `PluginHooks.trigger`
+returns the same mutable event after registration-ordered callbacks, and
+`model-request.ts:340–363` constructs the actual private `sent` HTTP request only
+after request hooks return. A response-hook `readonly request` TypeScript field
+is not an immutable host-origin receipt. WebSocket send/receive callbacks also
+return mutable frames. No supported all-provider final-consumption proof is
+established by those interfaces. Another tail/early digest is not a closure.
+This blocks R4 acceptance, not safe implementation of the independent parity
+backlog; the native counterexamples are retained.
+
 Two additional native diagnostics now reproduce residual replacements through
 ordinary plugin hook APIs, without changing the product, host source, reviewer
 tool or evidence recorder:

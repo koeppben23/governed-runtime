@@ -132,7 +132,12 @@ async function fixture() {
     challenges: [],
     attestation: { toolObligationId: seeded.obligationId },
   };
-  const controls = { payload: JSON.stringify(findings), tool: false, wrongModel: false };
+  const controls = {
+    payload: JSON.stringify(findings),
+    tool: false,
+    toolName: 'read',
+    wrongModel: false,
+  };
   host.prompt.mockImplementation(async (raw) => {
     const input = raw as { id: string; text: string; sessionID: string };
     await reviewer.prompt(child.scope, {
@@ -150,7 +155,7 @@ async function fixture() {
     if (controls.tool)
       await reviewer.beforeTool(child.scope, {
         agent: 'flowguard-reviewer',
-        tool: 'read',
+        tool: controls.toolName,
         sessionID: child.scope.sessionId,
         input: {},
       });
@@ -257,6 +262,17 @@ describe('native capture composition with durable evidence', () => {
       expect(h.event.result.content).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
     },
   );
+
+  it('does not extend the initial observation permission into serialization', async () => {
+    const h = await fixture();
+    h.controls.tool = true;
+    h.controls.toolName = 'flowguard_observe_repository';
+    await h.reviewer.capture(h.root, h.event);
+    const assurance = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(assurance.invocations).toEqual([]);
+    expect(assurance.obligations[0]?.blockedCode).toBe('REVIEWER_CAPTURE_PROVENANCE_INVALID');
+    expect(assurance.attempts[0]?.observations).toEqual([]);
+  });
 
   it('R2 retains committed evidence on a projection error without repeating serialization', async () => {
     const h = await fixture();

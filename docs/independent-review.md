@@ -163,6 +163,21 @@ installed acceptance remain open in the
 [subcontract matrix](./host-probes/opencode-v2/phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03).
 No optional-review workaround or proof-generation reinterpretation is authorized.
 
+### Frozen repository observations on V2
+
+An enrolled V2 reviewer child can use `flowguard_observe_repository` during its
+initial investigation. This grants no parent workflow/approval authority. The
+tool records the actual executing child session and delivers bytes from the
+obligation's frozen repository revision, not the mutable working tree. Native
+capture runs the existing parent-side observation replay before evidence binding
+and rereads state so citations are validated against those bound observations.
+Foreign/parent captures, unavailable revisions and mismatched content/response
+digests cannot authorize a citation. Serialization remains tool-free, including
+the observation tool. See the [native parity contracts](./host-probes/opencode-v2/ws2-closure.md#observation-parity-follow-up-2026-11-03).
+
+This restores a missing V2 call path; it does not close the documented R4
+installed-plugin/transport integrity gaps or the remaining retry/closure backlog.
+
 ### Terminal reviewer capacity failures
 
 A reviewer step-budget or output-limit failure is a terminal capacity failure,

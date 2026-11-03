@@ -42,6 +42,8 @@ export async function createReviewerCaptureHostProbe(
     readonly reviewArguments?: Record<string, unknown>;
     readonly onReview?: (childSessionID: string) => Promise<void>;
     readonly initialRead?: boolean;
+    readonly initialObservation?: () => Record<string, unknown>;
+    readonly serializedFindings?: () => unknown;
     /** Test-only failure when the product projects its already-committed evidence. */
     readonly failResultProjection?: boolean;
     readonly interruptBarrier?: boolean;
@@ -107,6 +109,10 @@ export default Plugin.define({ id: 'reviewer-observer', async setup(ctx) {
         return parentStage++ === 0
           ? { tool: { name: 'flowguard_plan', arguments: { reviewVerdict: 'accept' } } }
           : { text: 'Committed review verdict submitted.' };
+      if (nativeReview && !serialization && options.initialObservation && initialReads++ === 0)
+        return {
+          tool: { name: 'flowguard_observe_repository', arguments: options.initialObservation() },
+        };
       if (nativeReview && !serialization && options.initialRead && initialReads++ === 0)
         return {
           tool: { name: 'read', arguments: { path: join(project, 'capture-sentinel.txt') } },
@@ -116,7 +122,11 @@ export default Plugin.define({ id: 'reviewer-observer', async setup(ctx) {
         if (scenario === 'interrupted') return { hold: true };
         return scenario === 'tool'
           ? { tool: { name: 'read', arguments: { path: join(project, 'capture-sentinel.txt') } } }
-          : { text: JSON.stringify(findings()) };
+          : {
+              text: JSON.stringify(
+                options.serializedFindings ? options.serializedFindings() : findings(),
+              ),
+            };
       }
       if (!nativeReview && parentStage++ === 0)
         return {

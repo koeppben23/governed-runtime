@@ -19,14 +19,16 @@ import { encodeHostCallId } from '../state/host-identity.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
-import { READ_ONLY_HOST_TOOLS, NATIVE_SUBAGENT_TOOL } from './phase-tool-gate.js';
-import { FLOWGUARD_TOOL_NAMES, TOOL_FLOWGUARD_HELP } from './tool-names.js';
+import { NATIVE_SUBAGENT_TOOL } from './phase-tool-gate.js';
+import { FLOWGUARD_TOOL_NAMES, TOOL_FLOWGUARD_HELP, isFlowGuardToolName } from './tool-names.js';
+import { isInitialReviewerTool } from './review/dispatch/native-review-initial.js';
 import { help } from './tools/index.js';
 import {
   createNativeToolCatalogue,
   executeCanonicalNativeTool,
   handleNativeCompletion,
   applicationTool,
+  isDelegatedWorkflowDecision,
   type NativeCanonicalExecutor,
 } from './plugin-native-tools.js';
 import { OpenCodeGovernance, type ActiveGovernanceScope } from './opencode-governance.js';
@@ -204,12 +206,7 @@ function createRuntimeActions(input: RuntimeActionInput) {
         if (!entry) return { content: help.description, metadata: {} };
         if (name === TOOL_FLOWGUARD_HELP && entry.scope.sessionId !== entry.scope.root.sessionId)
           return { content: help.description, metadata: {} };
-        if (entry.scope.sessionId !== entry.scope.root.sessionId && name !== TOOL_FLOWGUARD_HELP)
-          throw buildEnforcementError(
-            'GOVERNANCE_AUTHORITY_BLOCKED',
-            'Delegated host execution does not authorize parent workflow decisions.',
-          );
-        return executeCanonicalNativeTool(name, definition, args, context, entry.runtime);
+        return executeCanonicalNativeTool(name, definition, args, context, entry);
       })(),
     );
   return { invoke, execute, observe: createReadOnlyObserver(input) };
@@ -494,10 +491,7 @@ async function createFlowGuardPluginHooks(
               'PLUGIN_ENFORCEMENT_UNAVAILABLE',
               'The governed tool input is not an object.',
             );
-          if (
-            scope.sessionId !== scope.root.sessionId &&
-            FLOWGUARD_TOOL_NAMES.some((name) => name === event.tool && name !== TOOL_FLOWGUARD_HELP)
-          )
+          if (isFlowGuardToolName(event.tool) && isDelegatedWorkflowDecision(scope, event))
             throw buildEnforcementError(
               'GOVERNANCE_AUTHORITY_BLOCKED',
               'A native delegation cannot submit parent workflow decisions.',
@@ -522,7 +516,7 @@ async function createFlowGuardPluginHooks(
   );
   registrations.push(
     await ctx.tool.hook('execute.after', (event) => {
-      if (READ_ONLY_HOST_TOOLS.has(event.tool)) return observeReviewerRead(actions, event);
+      if (isInitialReviewerTool(event.tool)) return observeReviewerRead(actions, event);
       if (
         event.tool === NATIVE_SUBAGENT_TOOL &&
         record(event.input) &&
@@ -573,7 +567,8 @@ async function registerNativeSessionHooks(
   registrations.push(
     await ctx.session.hook('context', (event) =>
       invoke(event.sessionID, async (entry) => {
-        if (entry.scope.sessionId !== entry.scope.root.sessionId) catalogue.hideProductive(event);
+        if (entry.scope.sessionId !== entry.scope.root.sessionId)
+          catalogue.hideProductive(event, event.agent === REVIEWER_SUBAGENT_TYPE);
         else if (!catalogue.published) {
           await catalogue.ensurePublished();
           throw buildEnforcementError(

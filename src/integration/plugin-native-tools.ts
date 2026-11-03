@@ -5,7 +5,14 @@ import type { ToolContext as NativeToolContext } from '@opencode/plugin/promise/
 import type { SessionContext } from '@opencode/plugin/promise/session';
 import { z } from 'zod';
 import { listActiveGovernanceRoots } from '../adapters/governance-activation.js';
-import { FLOWGUARD_TOOL_NAMES, FLOWGUARD_TOOL_PREFIX, TOOL_FLOWGUARD_HELP } from './tool-names.js';
+import {
+  FLOWGUARD_TOOL_NAMES,
+  FLOWGUARD_TOOL_PREFIX,
+  TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
+} from './tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import type { ActiveGovernanceScope } from './opencode-governance.js';
 import * as tools from './tools/index.js';
 import type { ToolDefinition } from './tools/helpers.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
@@ -21,6 +28,18 @@ export type NativeCanonicalExecutor = (
   args: unknown,
   context: NativeToolContext,
 ) => Promise<{ content: string; metadata: Record<string, unknown> }>;
+
+/** The only productive FlowGuard tool permitted to a delegated reviewer. */
+export function isDelegatedWorkflowDecision(
+  scope: ActiveGovernanceScope,
+  event: { readonly tool: string; readonly agent: string },
+): boolean {
+  return (
+    scope.sessionId !== scope.root.sessionId &&
+    event.tool !== TOOL_FLOWGUARD_HELP &&
+    !(event.tool === TOOL_FLOWGUARD_OBSERVE_REPOSITORY && event.agent === REVIEWER_SUBAGENT_TYPE)
+  );
+}
 
 export async function createNativeToolCatalogue(
   ctx: Plugin.Context,
@@ -81,9 +100,13 @@ export async function createNativeToolCatalogue(
       return published;
     },
     ensurePublished,
-    hideProductive(view: Pick<SessionContext, 'tools'>) {
+    hideProductive(view: Pick<SessionContext, 'tools'>, observation = false) {
       for (const name of FLOWGUARD_TOOL_NAMES)
-        if (name !== TOOL_FLOWGUARD_HELP) delete view.tools[name];
+        if (
+          name !== TOOL_FLOWGUARD_HELP &&
+          !(observation && name === TOOL_FLOWGUARD_OBSERVE_REPOSITORY)
+        )
+          delete view.tools[name];
     },
   };
 }
@@ -93,9 +116,15 @@ export async function executeCanonicalNativeTool(
   definition: ToolDefinition,
   args: unknown,
   context: NativeToolContext,
-  runtime: FlowGuardPluginRuntime,
+  entry: { readonly runtime: FlowGuardPluginRuntime; readonly scope: ActiveGovernanceScope },
 ) {
-  const authority = await runtime.ws.resolveSessionAuthority(context.sessionID);
+  const { runtime, scope } = entry;
+  if (isDelegatedWorkflowDecision(scope, { tool: name, agent: context.agent }))
+    throw buildEnforcementError(
+      'GOVERNANCE_AUTHORITY_BLOCKED',
+      'Delegated host execution does not authorize parent workflow decisions.',
+    );
+  const authority = await runtime.ws.resolveSessionAuthority(scope.root.sessionId);
   if (authority.status === 'unavailable')
     throw buildEnforcementError(authority.code, authority.reason);
   if (authority.status !== 'resolved')

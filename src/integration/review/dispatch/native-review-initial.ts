@@ -7,6 +7,12 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js
 import { ReviewerModelSelection } from '../../../state/review-message-capture.js';
 import { buildEnforcementError } from '../../blocked-result.js';
 import { READ_ONLY_HOST_TOOLS } from '../../phase-tool-gate.js';
+import { TOOL_FLOWGUARD_OBSERVE_REPOSITORY } from '../../tool-names.js';
+
+/** Initial investigation only; serialization rejects every tool, including observations. */
+export function isInitialReviewerTool(tool: string): boolean {
+  return READ_ONLY_HOST_TOOLS.has(tool) || tool === TOOL_FLOWGUARD_OBSERVE_REPOSITORY;
+}
 
 type Row = Record<string, unknown>;
 function row(value: unknown): Row {
@@ -124,7 +130,7 @@ export class NativeReviewInitialController {
       !step ||
       run.contextDigest !== undefined ||
       event.agent !== REVIEWER_SUBAGENT_TYPE ||
-      !READ_ONLY_HOST_TOOLS.has(event.tool) ||
+      !isInitialReviewerTool(event.tool) ||
       !event.messageID.startsWith('msg') ||
       !event.id ||
       step.tools.has(event.id)

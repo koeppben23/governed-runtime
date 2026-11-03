@@ -72,16 +72,53 @@ These mechanisms remain owners with tests; their V2 integration is partial or ab
 They are parity work inside PR #1190, not additional WS2 host-neutralization.
 Each item needs a positive product contract and a fail-closed negative.
 
-| Mechanism                                         | Current owner                                                                                                        | Missing V2 call path                                                                                                                                                       | Required implementation/tests                                                                                                                                                                                                                           |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Retry classification and bounded diagnostics      | `src/integration/review/dispatch/capture-retry.ts`                                                                   | `native-review-capture` currently closes every non-provenance failure terminally                                                                                           | Route retryable capture failures through the existing classifier and durable re-arm; test one bounded re-arm on the same frozen obligation, no second child after terminal closure, and exhaustion.                                                     |
-| Durable re-arm                                    | `src/integration/review/dispatch/durable-dispatch.ts` (`buildInterruptedDispatchRearm`, `abandonAndRearmByHostCall`) | Partial: proven unknown-outcome settlement now reopens, and the typed tool retry uses `buildInterruptedDispatchRearm`; automatic classified capture retry is still unwired | Native fresh-attempt recovery passes; local crash/old-child probes supplement it. Preserve quarantine and exact lineage; complete bounded retry/exhaustion and native concurrent/late-completion coverage, not an automatic unlock.                     |
-| Incoherent / pre-bind / expired-dispatch closures | `src/integration/review/dispatch/native-review-execution.ts`                                                         | No V2 product caller                                                                                                                                                       | Connect the canonical closure owners to capture settlement; test each closure leaves no invocation and one audit intent, and that a late answer cannot bind.                                                                                            |
-| Reviewer observation replay                       | `src/integration/review/observations/observation-replay*.ts` + `flowguard_observe_repository`                        | V2 reviewer tool path cannot record the observation ledger and the parent never replays it after the child is known                                                        | Expose the sanctioned observation tool to the reviewer execution step, then replay/bind after the actual child identity; test positive observation evidence and rejection of foreign-session, wrong-revision, digest-mismatch and parent-side captures. |
+| Mechanism                                         | Current owner                                                                                                        | Missing V2 call path                                                                                                                                                       | Required implementation/tests                                                                                                                                                                                                                                                              |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Retry classification and bounded diagnostics      | `src/integration/review/dispatch/capture-retry.ts`                                                                   | `native-review-capture` currently closes every non-provenance failure terminally                                                                                           | Route retryable capture failures through the existing classifier and durable re-arm; test one bounded re-arm on the same frozen obligation, no second child after terminal closure, and exhaustion.                                                                                        |
+| Durable re-arm                                    | `src/integration/review/dispatch/durable-dispatch.ts` (`buildInterruptedDispatchRearm`, `abandonAndRearmByHostCall`) | Partial: proven unknown-outcome settlement now reopens, and the typed tool retry uses `buildInterruptedDispatchRearm`; automatic classified capture retry is still unwired | Native fresh-attempt recovery passes; local crash/old-child probes supplement it. Preserve quarantine and exact lineage; complete bounded retry/exhaustion and native concurrent/late-completion coverage, not an automatic unlock.                                                        |
+| Incoherent / pre-bind / expired-dispatch closures | `src/integration/review/dispatch/native-review-execution.ts`                                                         | No V2 product caller                                                                                                                                                       | Connect the canonical closure owners to capture settlement; test each closure leaves no invocation and one audit intent, and that a late answer cannot bind.                                                                                                                               |
+| Reviewer observation replay                       | `src/integration/review/observations/observation-replay*.ts` + `flowguard_observe_repository`                        | Connected: the enrolled child can execute the sanctioned tool, and native capture replays before binding findings                                                          | Native positive binds a frozen-commit citation; foreign/parent session, revision and content/response-digest substitutions reject. Serialized persistence rechecks lineage and deduplicates. Installed/independent acceptance and R4 remain separate; see the observation follow-up below. |
 
 These rows are the authoritative V2 parity backlog. They must not be marked
 done from component tests alone; completion requires the actual product flow on
 the pinned host, with the existing Finding 6 recovery proof.
+
+### Observation parity follow-up (2026-11-03)
+
+`plugin.ts` exposes only the existing observation tool (besides inert help) to
+the enrolled reviewer child; other delegated agents and parent workflow tools
+remain denied. `plugin-native-tools.ts` resolves the parent's workspace but
+passes the **actual child** execution identity to the canonical tool. The initial
+review receipt controller and result-integrity tails cover this tool too; the
+serialization lease still rejects every tool.
+
+`plugin-native-review.ts` resolves exact dispatch/attempt/child lineage, calls
+`replayAndPersistObservations`, and rereads authority before capture validation.
+The existing replay authority reacquires frozen bytes and verifies capture
+session/revision/content/response digests. The serialized persistence mutation
+rechecks the created attempt, pending obligation and exact child and deduplicates
+against fresh observations, so parallel replay cannot mint duplicate authority.
+Pre-bind rejection retains the canonical code/details; it is not silently mapped
+to `REVIEW_ATTEMPT_UNAVAILABLE`.
+
+`opencode-reviewer-observation-live.smoke.test.ts` runs the real built product on
+OpenCode 2.2.4 with explicitly component-seeded activation and Discovery context.
+Its positive cites an observed frozen commit even after the working file changes.
+Five negatives substitute foreign/parent session, revision, content or response
+digest and require `REVIEW_EVIDENCE_NOT_OBSERVED` with no invocation. These prove
+the V2 call chain, not activation provenance or final consumed-representation R4
+assurance. Bounded retry/exhaustion and the other terminal closure paths remain
+open work in the table above.
+
+```sh
+npm run build
+OPENCODE_LIVE=1 npx vitest run --project smoke \
+  src/cli/opencode-reviewer-observation-live.smoke.test.ts
+npx vitest run --project integration \
+  src/integration/plugin-native-tools.test.ts \
+  src/integration/review/observations/observation-replay.test.ts \
+  src/integration/tools/observe-repository.test.ts
+```
 
 ## Boundaries
 

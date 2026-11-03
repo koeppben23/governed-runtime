@@ -565,6 +565,8 @@ async function bindNativeSubagentFindings(
       phase: input.state.phase,
     }),
   });
+  if (typeof result !== 'string')
+    return { kind: 'blocked', code: result.code, reason: JSON.stringify(result.details) };
   if (result !== 'fulfilled')
     return {
       kind: 'blocked',

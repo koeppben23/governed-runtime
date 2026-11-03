@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **V2 reviewer repository-observation replay (#1190).** An enrolled native
+  reviewer can call the existing sanctioned observation tool during initial
+  investigation, without gaining parent workflow/approval tools. Execution keeps
+  the real child session identity while resolving workspace authority through
+  its governed parent. Parent capture replays immutable repository bytes through
+  the canonical observation owner before findings bind; persistence rechecks
+  current child/attempt/obligation lineage and deduplicates concurrent replays.
+  Native tests bind a cited frozen-commit finding and reject foreign/parent
+  session, wrong revision and changed content/response digests. Pre-bind failures
+  retain their actual reason code instead of being reported as a missing attempt.
+  R4 and the remaining retry/closure parity requirements are not closed by this.
+
 - **Reviewer acceptance evidence (#1190).** Split P0-05/P0-08 into the passing
   native recovery/E2E subcontracts at `b9a41e5b` and the still-open restart,
   settlement-race, R4 and reviewer-parity requirements. Earlier red results and

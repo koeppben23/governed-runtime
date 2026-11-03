@@ -15,7 +15,49 @@ import type { SessionState } from '../../../state/schema.js';
 import type { SessionAuthorityResolution } from '../../../adapters/session-authority.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
-import { replayObservationCaptures, type ObservationReplayResult } from './observation-replay.js';
+import {
+  replayObservationCaptures,
+  observationReplayKey,
+  type ObservationReplayResult,
+} from './observation-replay.js';
+import { buildEnforcementError } from '../../blocked-result.js';
+import type { RepositoryObservation } from '../../../state/evidence.js';
+
+function applyReplayedObservations(
+  s: SessionState,
+  input: { readonly attemptId: string; readonly childSessionId: string },
+  observations: readonly RepositoryObservation[],
+) {
+  const assurance = ensureReviewAssurance(s.reviewAssurance);
+  const attempt = assurance.attempts.find((item) => item.attemptId === input.attemptId);
+  const obligation = assurance.obligations.find(
+    (item) => item.obligationId === attempt?.obligationId,
+  );
+  if (
+    !attempt ||
+    attempt.status !== 'created' ||
+    attempt.childSessionId !== input.childSessionId ||
+    obligation?.status !== 'pending' ||
+    assurance.capacityLock
+  )
+    throw buildEnforcementError(
+      'REVIEW_ATTEMPT_UNAVAILABLE',
+      'Observation replay lost its exact current child/attempt/obligation lineage.',
+    );
+  const existing = new Set((attempt.observations ?? []).map(observationReplayKey));
+  const added = observations.filter(
+    (observation) => !existing.has(observationReplayKey(observation)),
+  );
+  const attempts = assurance.attempts.map((a) =>
+    a.attemptId !== input.attemptId
+      ? a
+      : {
+          ...a,
+          observations: [...(a.observations ?? []), ...added],
+        },
+  );
+  return { state: { ...s, reviewAssurance: { ...assurance, attempts } }, count: added.length };
+}
 
 export interface ReplayPersistDeps {
   resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
@@ -86,23 +128,17 @@ export async function replayAndPersistObservations(
     );
   }
   if (replay.observations.length === 0) return;
+  let persistedCount = 0;
   try {
     await deps.updateReviewAssurance(sessDir, (s: SessionState) => {
-      const assurance = ensureReviewAssurance(s.reviewAssurance);
-      const attempts = assurance.attempts.map((a) =>
-        a.attemptId !== input.attemptId
-          ? a
-          : {
-              ...a,
-              observations: [...(a.observations ?? []), ...replay.observations],
-            },
-      );
-      return { ...s, reviewAssurance: { ...assurance, attempts } };
+      const applied = applyReplayedObservations(s, input, replay.observations);
+      persistedCount = applied.count;
+      return applied.state;
     });
     deps.log.info('review', 'observation replay minted authoritative observations', {
       sessionId: input.sessionId,
       attemptId: input.attemptId,
-      count: replay.observations.length,
+      count: persistedCount,
     });
   } catch (err) {
     deps.logError('observation persistence failed', err);

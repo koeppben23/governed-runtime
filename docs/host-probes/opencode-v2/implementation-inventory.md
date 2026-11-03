@@ -810,13 +810,15 @@ seed lost their only callers and are removed.
 (parity work, NOT_VERIFIED):** the retry/terminal classification and bounded
 retry diagnostics (`capture-retry.ts`), the durable re-arm transition
 (`durable-dispatch.ts` `abandonAndRearmByHostCall`) and the incoherent-verdict,
-pre-bind and expired-dispatch closures in `native-review-execution.ts`, and the
-reviewer observation replay (`review/observations/observation-replay*.ts`), which
-V1 ran after the Task to persist `flowguard_observe_repository` observations.
+pre-bind and expired-dispatch closures in `native-review-execution.ts`.
+Observation replay (`review/observations/observation-replay*.ts`), which V1 ran
+after the Task, is now connected to V2 native capture before evidence binding.
 The concrete V2 call-site and test obligations are tracked in
 [WS2 closure and V2 reviewer-parity backlog](./ws2-closure.md);
-each keeps its owner tests but has no V2 production caller. The V2 reviewer
-currently cannot call `flowguard_observe_repository` at all. The V1 glue that only connected them to the Task
+Remaining unwired owners keep their tests. The enrolled V2 reviewer can now call
+`flowguard_observe_repository` with its real child identity; the native positive
+and five capture-substitution negatives exercise the canonical replay/binder.
+This is not R4 or complete reviewer-parity acceptance. The V1 glue that only connected them to the Task
 after-hook (`capture-failure-routing.ts`, binding-failure routing and the
 unable-to-review output projection) is removed because the unused-export gate
 admits no unwired production code; V2 must route through these owners anew. The

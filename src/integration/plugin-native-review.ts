@@ -9,7 +9,6 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { GovernanceDelegationDispatch } from '../state/governance-activation.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { buildEnforcementError } from './blocked-result.js';
-import { READ_ONLY_HOST_TOOLS } from './phase-tool-gate.js';
 import { encodeHostCallId } from '../state/host-identity.js';
 import { abandonAndBlockByHostCall } from './review/dispatch/durable-dispatch.js';
 import { projectFulfilledReview } from './review/dispatch/native-review-execution.js';
@@ -27,7 +26,9 @@ import {
   type InitialToolBoundary,
   type InitialToolCompletion,
   toolResultMismatch,
+  isInitialReviewerTool,
 } from './review/dispatch/native-review-initial.js';
+import { replayAndPersistObservations } from './review/observations/observation-replay-persist.js';
 import type { ActiveGovernanceScope, NativeBefore } from './opencode-governance.js';
 import {
   assertLaterUserTurn,
@@ -163,6 +164,33 @@ async function resolveNativeCaptureTarget(
   }
 }
 
+async function resolveObservedCaptureTarget(
+  runtimeFor: RuntimeFor,
+  scope: ActiveGovernanceScope,
+  event: NativeReviewCompletion,
+) {
+  const target = await resolveNativeCaptureTarget(runtimeFor, scope, event);
+  if (target.lineage.attempt.observationCapability) {
+    await replayAndPersistObservations(
+      {
+        resolveSessionAuthority: (id) => target.resolved.runtime.ws.resolveSessionAuthority(id),
+        updateReviewAssurance: target.resolved.runtime.orchestratorDeps.updateReviewAssurance,
+        log: target.resolved.runtime.log,
+        logError: target.resolved.runtime.logError,
+      },
+      {
+        sessionId: scope.root.sessionId,
+        childSessionId: target.childSessionId,
+        attemptId: target.lineage.attempt.attemptId,
+        now: new Date().toISOString(),
+      },
+    );
+  }
+  // Re-read authority after canonical observation persistence; findings validation
+  // must use the bound observations, not the pre-replay state snapshot.
+  return resolveNativeCaptureTarget(runtimeFor, scope, event);
+}
+
 async function runNativeReviewerCapture(input: {
   readonly ctx: Plugin.Context;
   readonly runtimeFor: RuntimeFor;
@@ -173,7 +201,7 @@ async function runNativeReviewerCapture(input: {
 }): Promise<void> {
   const { ctx, runtimeFor, fence, scope, event } = input;
   const { resolved, metadata, childSessionId, nativeCallId, lineage } =
-    await resolveNativeCaptureTarget(runtimeFor, scope, event);
+    await resolveObservedCaptureTarget(runtimeFor, scope, event);
   const blocked = (code: string, reason: string): void => {
     event.result = {
       ...(event.result ?? {}),
@@ -292,7 +320,7 @@ function createResultIntegrityTails(
           if (
             event.sessionID === child &&
             event.agent === REVIEWER_SUBAGENT_TYPE &&
-            READ_ONLY_HOST_TOOLS.has(event.tool)
+            isInitialReviewerTool(event.tool)
           )
             initial.afterToolTail(event);
         }),
@@ -382,7 +410,7 @@ function guardReviewerTool(
 ): void {
   if (event.agent !== REVIEWER_SUBAGENT_TYPE) return;
   fence.beforeTool(scope.sessionId);
-  if (!READ_ONLY_HOST_TOOLS.has(event.tool))
+  if (!isInitialReviewerTool(event.tool))
     throw buildEnforcementError(
       'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
       'Reviewer dispatch does not authorize mutations, child delegation or workflow decisions.',
