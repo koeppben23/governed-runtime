@@ -65,6 +65,23 @@ export const GovernanceActivationHead = z
   .readonly();
 export type GovernanceActivationHead = z.infer<typeof GovernanceActivationHead>;
 
+/**
+ * Durable admission fact: written only after the activation's
+ * `governance:activated` audit event is committed. It is a confirmation marker,
+ * not a second audit journal; the audit event remains the evidence.
+ */
+export const GovernanceActivationAuditConfirmation = z
+  .object({
+    schemaVersion: z.literal(1),
+    sessionId: z.string().min(1),
+    activationId: z.string().uuid(),
+  })
+  .strict()
+  .readonly();
+export type GovernanceActivationAuditConfirmation = z.infer<
+  typeof GovernanceActivationAuditConfirmation
+>;
+
 /** Never removed by EndGovernance. Independent of the revision namespace so
  * loss of an entire session journal cannot masquerade as initial absence. */
 export const GovernanceEnrollment = z

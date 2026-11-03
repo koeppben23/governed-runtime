@@ -3,6 +3,7 @@
  * absent head with any journal content is lost/incomplete authority, not INACTIVE. */
 import { randomUUID } from 'node:crypto';
 import {
+  GovernanceActivationAuditConfirmation,
   GovernanceActivationHead,
   GovernanceActivationRevision,
   GovernanceEnrollment,
@@ -26,6 +27,7 @@ export interface GovernanceActivationStore {
     value:
       | GovernanceActivationHead
       | GovernanceActivationRevision
+      | GovernanceActivationAuditConfirmation
       | GovernanceDelegationDispatch
       | GovernanceEnrollment,
   ): Promise<void>;
@@ -47,13 +49,42 @@ export function governanceActivationKeys(sessionId: string): {
   head: string;
   revisions: string;
   enrollment: string;
+  audit: string;
 } {
   const prefix = `${AUTHORITY_PREFIX}${hashText(sessionId)}/`;
   return {
     head: `${prefix}head`,
     revisions: `${prefix}revisions/`,
     enrollment: `governance/enrollments/v1/${hashText(sessionId)}`,
+    audit: `${prefix}audit-confirmation`,
   };
+}
+
+/** Record that the activation's audit event is durably confirmed. */
+export async function confirmGovernanceActivationAudit(
+  store: GovernanceActivationStore,
+  activation: Pick<GovernanceActivationRevision, 'sessionId' | 'activationId'>,
+): Promise<void> {
+  await store.set(governanceActivationKeys(activation.sessionId).audit, {
+    schemaVersion: 1,
+    sessionId: activation.sessionId,
+    activationId: activation.activationId,
+  });
+}
+
+/** True only when the confirmation names this exact activation generation. */
+export async function isGovernanceActivationAuditConfirmed(
+  store: GovernanceActivationStore,
+  activation: Pick<GovernanceActivationRevision, 'sessionId' | 'activationId'>,
+): Promise<boolean> {
+  const value = GovernanceActivationAuditConfirmation.safeParse(
+    await store.get(governanceActivationKeys(activation.sessionId).audit),
+  );
+  return (
+    value.success &&
+    value.data.sessionId === activation.sessionId &&
+    value.data.activationId === activation.activationId
+  );
 }
 
 /** Registry restoration only: blocked scopes are surfaced, never normalized or

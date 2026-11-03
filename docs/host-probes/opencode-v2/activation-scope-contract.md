@@ -66,6 +66,18 @@ preparation audit unconfirmed. Repeating Start repairs/confirms that audit
 without hydration or another decision. The gap between the activation-head and
 audit commits is recoverable, not claimed atomic.
 
+Governed runtime admission is gated on a durable confirmation written only after
+that audit event: before handing out the ACTIVE runtime, the composition checks a
+marker bound to the exact activation ID and session. While it is missing,
+security-relevant workflow operations are refused with
+`GOVERNANCE_AUTHORITY_BLOCKED`; a later `/start` rewrites the missing marker and
+re-admits the runtime. The marker is not a second audit journal; the audit event
+remains the evidence. A stale confirmation write can only replace the marker with
+another activation ID; the exact-ID check then blocks and `/start` rewrites the
+current marker. It cannot admit a different generation. The only bypass is the
+Start command's own hydration/preparation audit, which must run before the
+activation audit exists.
+
 Only after audit confirmation does presentation run. Catalogue publication and
 non-resuming synthetic reporting each emit an explicit warning on failure; they
 do not turn an already committed/audited activation into a failed Start. A later

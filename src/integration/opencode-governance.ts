@@ -6,7 +6,9 @@ import type { Plugin } from '@opencode/plugin';
 import type { OpenCodeEvent } from '@opencode/client';
 import {
   commitGovernanceActivation,
+  confirmGovernanceActivationAudit,
   governanceDelegationKey,
+  isGovernanceActivationAuditConfirmed,
   resolveGovernanceActivation,
   startRootGovernance,
   type GovernanceActivationStore,
@@ -113,6 +115,36 @@ export class OpenCodeGovernance {
         'A delegated child session cannot start governance; start its root session.',
       );
     return { directory: session.directory };
+  }
+
+  /** Reject a runtime admission when authority changed while the runtime loaded. */
+  async assertScopeCurrent(sessionId: string, scope: ActiveGovernanceScope): Promise<void> {
+    const fresh = await this.resolve(sessionId);
+    if (
+      fresh.kind !== 'active' ||
+      fresh.scope.record.revision !== scope.record.revision ||
+      fresh.scope.root.revision !== scope.root.revision
+    )
+      throw this.error('Activation changed while loading the governed runtime.');
+  }
+
+  /** Refuse runtime admission until the activation's audit is durably confirmed. */
+  async assertActivationAuditConfirmed(activation: GovernanceActivationRevision): Promise<void> {
+    let confirmed = false;
+    try {
+      confirmed = await isGovernanceActivationAuditConfirmed(this.store, activation);
+    } catch {
+      // An unreadable confirmation is not proof; the same blocked result follows.
+    }
+    if (!confirmed)
+      throw this.error(
+        'The activation audit is unconfirmed; retry /start before using governed workflow operations.',
+      );
+  }
+
+  /** Written only after the audit event; retry-safe and bound to one activation. */
+  async confirmActivationAudit(activation: GovernanceActivationRevision): Promise<void> {
+    await confirmGovernanceActivationAudit(this.store, activation);
   }
 
   /**

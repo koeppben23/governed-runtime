@@ -18,8 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `governance:activated` in the existing audit trail, bound to
   actor/channel/session/generation/policy and activation identity.
   Audit-write/acknowledgement recovery does not mint another decision,
-  and a failed hydration audit does not suppress the activation audit.
-  Catalogue/report failures after that commit emit an explicit ACTIVE warning
+  and a failed hydration audit does not suppress the activation audit. A durable
+  confirmation marker is written only after the activation audit; while it is
+  missing, governed runtime admission is blocked with
+  `GOVERNANCE_AUTHORITY_BLOCKED`, and a later `/start` confirms it and re-admits
+  the runtime. Catalogue/report failures after that commit emit an explicit ACTIVE warning
   instead of reporting a failed activation; `/start` can retry presentation.
   Hydration and repeated Start share the canonical auto-approve notice renderer.
 

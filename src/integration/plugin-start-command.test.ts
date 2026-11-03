@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { FlowGuardAuditPlugin } from './plugin.js';
-import { createV2Host } from './opencode-v2-test-helpers.js';
+import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import { createTestWorkspace, type TestWorkspace } from './test-helpers.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import {
@@ -53,6 +53,15 @@ function revisions(): GovernanceActivationRevision[] {
 
 async function workflow(sessionId: string) {
   return resolveSessionAuthority({ root: ws.tmpDir, sessionId });
+}
+
+function toolContext(sessionId: string) {
+  return {
+    sessionID: sessionId,
+    messageID: '',
+    agent: '',
+    signal: new AbortController().signal,
+  };
 }
 
 describe('native /start command', () => {
@@ -130,6 +139,10 @@ describe('native /start command', () => {
       },
     });
     expect(verifyChain(events).valid).toBe(true);
+    const preparation = trail.filter((event) => event.event !== 'governance:activated').at(-1)!;
+    expect(Date.parse(activated[0]!.occurredAt)).toBeGreaterThanOrEqual(
+      Date.parse(preparation.occurredAt),
+    );
   });
 
   it('applies an explicit policy mode argument through hydrate', async () => {
@@ -406,6 +419,10 @@ describe('native /start command', () => {
         (event) => event.event === 'governance:activated',
       ),
     ).toEqual([]);
+    const help = host.definitions.get('flowguard_help')!;
+    await expect(help.execute({ view: 'context' }, toolContext(sessionId))).rejects.toThrow(
+      'activation audit is unconfirmed',
+    );
     const hydrate = vi.spyOn(tools.hydrate, 'execute');
     await host.command('start', sessionId);
     await host.command('start', sessionId);
@@ -416,6 +433,95 @@ describe('native /start command', () => {
         (event) => event.event === 'governance:activated',
       ),
     ).toHaveLength(1);
+    await expect(help.execute({ view: 'context' }, toolContext(sessionId))).resolves.toMatchObject({
+      content: expect.any(String),
+    });
+  });
+
+  it('blocks governed runtime admission until the activation-audit confirmation is repaired', async () => {
+    await open();
+    const sessionId = randomUUID();
+    await host.command('start', sessionId);
+    const authority = await workflow(sessionId);
+    if (authority.status !== 'resolved') throw new Error('Expected workflow');
+    const activationEvents = (await audit.readAuditTrail(authority.sessDir)).filter(
+      (event) => event.event === 'governance:activated',
+    );
+    expect(activationEvents).toHaveLength(1);
+    expect(host.activation.values.has(governanceActivationKeys(sessionId).audit)).toBe(true);
+    host.activation.values.delete(governanceActivationKeys(sessionId).audit);
+    await expect(host.before(v2ToolEvent({ sessionID: sessionId }))).rejects.toThrow(
+      'activation audit is unconfirmed',
+    );
+    const ticket = host.definitions.get('flowguard_ticket')!;
+    await expect(
+      ticket.execute({ text: 'audit gate probe' }, toolContext(sessionId)),
+    ).rejects.toThrow('activation audit is unconfirmed');
+    const blocked = await workflow(sessionId);
+    if (blocked.status !== 'resolved') throw new Error('Expected workflow');
+    expect(blocked.state.phase).toBe('READY');
+
+    await host.command('start', sessionId);
+    await expect(host.before(v2ToolEvent({ sessionID: sessionId }))).resolves.toBeUndefined();
+    const recovered = (await ticket.execute(
+      { text: 'audit gate probe' },
+      toolContext(sessionId),
+    )) as { content: string };
+    expect(JSON.parse(recovered.content)).toMatchObject({ status: 'ok', phase: 'TICKET' });
+    const trail = await audit.readAuditTrail(authority.sessDir);
+    expect(trail.filter((event) => event.event === 'governance:activated')).toHaveLength(1);
+    expect(verifyChain(trail).valid).toBe(true);
+  });
+
+  it.each([
+    [
+      'activation',
+      (marker: Record<string, unknown>) => ({ ...marker, activationId: randomUUID() }),
+    ],
+    ['session', (marker: Record<string, unknown>) => ({ ...marker, sessionId: randomUUID() })],
+  ] as const)(
+    'blocks governed runtime admission for a stale %s confirmation',
+    async (_name, mutate) => {
+      await open();
+      const sessionId = randomUUID();
+      await host.command('start', sessionId);
+      const key = governanceActivationKeys(sessionId).audit;
+      const marker = host.activation.values.get(key) as Record<string, unknown>;
+      host.activation.values.set(key, mutate(marker));
+      const ticket = host.definitions.get('flowguard_ticket')!;
+      await expect(
+        ticket.execute({ text: 'stale confirmation probe' }, toolContext(sessionId)),
+      ).rejects.toThrow('activation audit is unconfirmed');
+      await host.command('start', sessionId);
+      const recovered = (await ticket.execute(
+        { text: 'stale confirmation probe' },
+        toolContext(sessionId),
+      )) as { content: string };
+      expect(JSON.parse(recovered.content)).toMatchObject({ status: 'ok', phase: 'TICKET' });
+    },
+  );
+
+  it('blocks governed runtime admission when the confirmation store is unreadable', async () => {
+    await open();
+    const sessionId = randomUUID();
+    await host.command('start', sessionId);
+    const key = governanceActivationKeys(sessionId).audit;
+    const get = host.activation.store.get.bind(host.activation.store);
+    const failure = vi.spyOn(host.activation.store, 'get').mockImplementation(async (requested) => {
+      if (requested === key) throw new Error('confirmation store unreadable');
+      return get(requested);
+    });
+    const ticket = host.definitions.get('flowguard_ticket')!;
+    await expect(
+      ticket.execute({ text: 'unreadable confirmation probe' }, toolContext(sessionId)),
+    ).rejects.toThrow('activation audit is unconfirmed');
+    failure.mockRestore();
+    await host.command('start', sessionId);
+    const recovered = (await ticket.execute(
+      { text: 'unreadable confirmation probe' },
+      toolContext(sessionId),
+    )) as { content: string };
+    expect(JSON.parse(recovered.content)).toMatchObject({ status: 'ok', phase: 'TICKET' });
   });
 
   it('confirms the activation audit even when the hydrate preparation audit fails', async () => {
@@ -525,5 +631,10 @@ describe('/start arguments', () => {
   });
   it.each(['SOLO', 'solo team', 'activate', '--force'])('rejects %j', (text) => {
     expect(() => parseStartArguments(text)).toThrow(/START_ARGUMENTS_INVALID/);
+  });
+  it('bounds the rejected argument echo', () => {
+    const text = 'x'.repeat(200);
+    expect(() => parseStartArguments(text)).toThrow(/START_ARGUMENTS_INVALID/);
+    expect(() => parseStartArguments(text)).not.toThrow(/x{81}/);
   });
 });

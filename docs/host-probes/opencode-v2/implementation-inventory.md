@@ -688,8 +688,10 @@ cutover, not a permanently supported V1/V2 dual path.
 describes fresh preparation only, now serialized with journal preflight under
 the existing activation lock. ACTIVE/ACTIVATING reuse the bound workflow without
 hydration. Successful activation has one idempotent `governance:activated` event
-in the existing audit trail; audit-unconfirmed recovery and post-commit
-presentation warnings are distinct. See the
+in the existing audit trail; its durable confirmation marker gates runtime
+admission, so a missing audit/confirmation blocks governed operations until
+`/start` repairs them. Audit-unconfirmed recovery and post-commit presentation
+warnings are distinct. See the
 [Start coordination contract](./activation-scope-contract.md#native-start-coordination-and-audit-2026-11-03).
 
 Apply revised ADR-010: trusted host/OS infrastructure, untrusted model/caller

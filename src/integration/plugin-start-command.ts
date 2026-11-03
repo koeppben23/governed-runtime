@@ -50,7 +50,7 @@ type StartWorkflow = {
 };
 
 export interface StartCommandDeps {
-  readonly governance: Pick<OpenCodeGovernance, 'startRoot'>;
+  readonly governance: Pick<OpenCodeGovernance, 'startRoot' | 'confirmActivationAudit'>;
   /** Publishes the productive catalogue for the now ACTIVE location. */
   readonly publish: () => Promise<void>;
   /** Lifecycle admission and operation tracking owned by the plugin composition. */
@@ -60,6 +60,7 @@ export interface StartCommandDeps {
     sessionId: string,
     action: (entry: { readonly runtime: FlowGuardPluginRuntime }) => Promise<T>,
     required?: boolean,
+    options?: { readonly allowPendingActivationAudit?: boolean },
   ) => Promise<T | undefined>;
   readonly signal: AbortSignal;
 }
@@ -197,7 +198,7 @@ async function confirmCommittedStartAudits(
   } catch (error) {
     preparationFailure = error;
   }
-  await recordActivationAudit(workflow, record);
+  await recordActivationAudit(deps, workflow, record);
   if (preparationFailure !== undefined)
     throw buildEnforcementError(
       'GOVERNANCE_AUTHORITY_BLOCKED',
@@ -211,6 +212,7 @@ async function confirmCommittedStartAudits(
 /** The activation ID is the commit identity; the existing audit writer enforces
  * exactly-once delivery and rejects different content under that identity. */
 async function recordActivationAudit(
+  deps: StartCommandDeps,
   workflow: StartWorkflow,
   record: GovernanceActivationRevision,
 ): Promise<void> {
@@ -265,6 +267,7 @@ async function recordActivationAudit(
         },
       });
     });
+    await deps.governance.confirmActivationAudit(record);
   } catch (error) {
     throw buildEnforcementError(
       'GOVERNANCE_AUTHORITY_BLOCKED',
@@ -318,6 +321,7 @@ async function auditWorkflowPreparation(
         if (outcome?.block) throw buildEnforcementError(outcome.code, outcome.reason);
       }),
     true,
+    { allowPendingActivationAudit: true },
   );
 }
 

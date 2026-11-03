@@ -9,7 +9,7 @@ import { sessionDir } from '../adapters/workspace/index.js';
 export const COMPONENT_ACTIVATION_SETUP = `
 const { Rpc } = await import('@opencode/plugin/rpc');
 const { randomUUID } = await import('node:crypto');
-const { commitGovernanceActivation } = await import(${JSON.stringify(new URL('../../dist/adapters/governance-activation.js', import.meta.url).href)});
+const { commitGovernanceActivation, confirmGovernanceActivationAudit } = await import(${JSON.stringify(new URL('../../dist/adapters/governance-activation.js', import.meta.url).href)});
 const Fixture = Rpc.define({ id: 'flowguard-component-activation', methods: { seed: {
   input: { type: 'object', properties: { sessionID: { type: 'string' }, policyDigest: { type: 'string' }, worktreeRoot: { type: 'string' } }, required: ['sessionID','policyDigest','worktreeRoot'], additionalProperties: false },
   output: { type: 'boolean' }, errors: {}
@@ -21,10 +21,13 @@ const registration = await ctx.rpc.register(Fixture, { seed: async ({ sessionID,
     policyDigest, parentDispatch: null };
   const writer = { store: ctx.storage, withLock: async (_id, run) => run(), authorize: async () => ({ kind: 'authorized', decisionId, source: 'host_command',
     actor: { actorId: 'component-fixture', actorEmail: null, actorDisplayName: null, actorSource: 'env', actorAssurance: 'best_effort' } }) };
+  let activationId;
   for (const input of [request, { ...request, action: 'activate', expectedRevision: 1 }]) {
     const result = await commitGovernanceActivation(writer, input);
     if (result.kind !== 'committed') throw new Error(result.reason);
+    activationId = result.record.activationId;
   }
+  await confirmGovernanceActivationAudit(ctx.storage, { sessionId: sessionID, activationId });
   return true;
 } });
 return () => registration.dispose();

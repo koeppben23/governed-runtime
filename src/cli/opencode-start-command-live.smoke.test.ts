@@ -3,6 +3,7 @@
  * operator UI input; the decision is therefore `host_command`, never human proof. */
 import { afterEach, describe, expect, it } from 'vitest';
 import { realpath } from 'node:fs/promises';
+import type { SessionMessageAssistantTool } from '@opencode/client';
 import { createNativeHostProbe, type NativeHostProbe } from './opencode-native-test-helpers.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { withTestEnv } from '../integration/test-helpers.js';
@@ -21,6 +22,19 @@ afterEach(async () => {
     restore = undefined;
   }
 });
+
+const FAIL_FIRST_ACTIVATION_AUDIT_CONFIRMATION = `
+const originalSet = ctx.storage.set.bind(ctx.storage);
+let failed = false;
+ctx.storage.set = async (key, value) => {
+  if (!failed && key.endsWith('/audit-confirmation')) {
+    failed = true;
+    throw new Error('activation audit confirmation write failed');
+  }
+  return originalSet(key, value);
+};
+return undefined;
+`;
 
 function productiveTools(request: { body: Record<string, unknown> }): string[] {
   const tools = (request.body.tools ?? []) as Array<{ function?: { name: string } }>;
@@ -137,6 +151,118 @@ describe.skipIf(!LIVE)('native /start command on the pinned host', () => {
     const sibling = await probe.session();
     await probe.prompt(sibling.id, 'Ordinary sibling.');
     expect(productiveTools(probe.requests.at(-1)!)).toEqual([]);
+    expect(probe.errors).toEqual([]);
+  }, 300_000);
+
+  it('blocks a governed workflow tool until a missing activation-audit confirmation is repaired', async () => {
+    let governedID = '';
+    let promptReady = false;
+    let stage = 0;
+    probe = await createNativeHostProbe({
+      product: true,
+      productTestSetup: FAIL_FIRST_ACTIVATION_AUDIT_CONFIRMATION,
+      script(_body, sessionID) {
+        if (sessionID !== governedID || !promptReady) return { text: 'Done.' };
+        const replies = [
+          {
+            tool: {
+              name: 'flowguard_ticket',
+              arguments: { text: 'audit gate probe after repair' },
+            },
+          },
+          { text: 'Recovered probe observed.' },
+        ] as const;
+        const reply = replies[stage] ?? { text: 'Done.' };
+        stage++;
+        return reply;
+      },
+    });
+    restore = withTestEnv({ OPENCODE_CONFIG_DIR: probe.env.OPENCODE_CONFIG_DIR! });
+    const commands = await probe.client.command.list({ location: probe.location });
+    expect(commands.data.map((command) => command.name)).toContain('start');
+    const governed = await probe.session();
+    governedID = governed.id;
+    await probe.prompt(governed.id, 'Before start.');
+    promptReady = true;
+
+    let startFailure: unknown;
+    try {
+      await probe.client.session.command({ sessionID: governed.id, name: 'start', text: '' });
+    } catch (error) {
+      startFailure = error;
+    }
+    await probe.client.session
+      .wait({ sessionID: governed.id }, { signal: AbortSignal.timeout(120_000) })
+      .catch(() => {});
+    expect(startFailure, probe.output()).toBeDefined();
+    const authority = await resolveSessionAuthority({
+      root: await realpath(probe.project),
+      sessionId: governed.id,
+    });
+    if (authority.status !== 'resolved')
+      throw new Error(
+        `Expected native Start workflow: ${JSON.stringify(authority)} ${probe.output()}`,
+      );
+    const activationEvents = (await readAuditTrail(authority.sessDir)).filter(
+      (event) => event.event === 'governance:activated',
+    );
+    expect(activationEvents).toHaveLength(1);
+
+    // The activation audit event exists, but its durable confirmation write was
+    // injected to fail. No model turn or workflow tool may execute until /start
+    // retries the confirmation.
+    let blockedPrompt: unknown;
+    try {
+      await probe.prompt(governed.id, 'Attempt a governed workflow tool before repair.');
+    } catch (error) {
+      blockedPrompt = error;
+    }
+    // The host surfaces the refused runtime admission as an HTTP 500 at the
+    // prompt boundary; no model turn or workflow tool executed.
+    expect(blockedPrompt, probe.output()).toBeDefined();
+    const blockedHistory = await probe.client.session.context({ sessionID: governed.id });
+    const blockedTools = blockedHistory
+      .flatMap((message) => (message.type === 'assistant' ? message.content : []))
+      .filter(
+        (part): part is SessionMessageAssistantTool =>
+          part.type === 'tool' && part.name === 'flowguard_ticket',
+      );
+    expect(blockedTools, JSON.stringify(blockedHistory)).toEqual([]);
+    const blockedAuthority = await resolveSessionAuthority({
+      root: authority.worktreeRoot,
+      sessionId: governed.id,
+    });
+    if (blockedAuthority.status !== 'resolved') throw new Error('Expected workflow');
+    expect(blockedAuthority.state.phase).toBe('READY');
+
+    await probe.client.session.command({ sessionID: governed.id, name: 'start', text: '' });
+    await probe.client.session.wait(
+      { sessionID: governed.id },
+      { signal: AbortSignal.timeout(120_000) },
+    );
+    const repaired = (await readAuditTrail(authority.sessDir)).filter(
+      (event) => event.event === 'governance:activated',
+    );
+    expect(repaired).toHaveLength(1);
+    expect(repaired[0]!.id).toBe(activationEvents[0]!.id);
+
+    await probe.prompt(governed.id, 'Attempt a governed workflow tool after repair.');
+    const recoveredHistory = await probe.client.session.context({ sessionID: governed.id });
+    const recoveredTools = recoveredHistory
+      .flatMap((message) => (message.type === 'assistant' ? message.content : []))
+      .filter(
+        (part): part is SessionMessageAssistantTool =>
+          part.type === 'tool' && part.name === 'flowguard_ticket',
+      );
+    expect(recoveredTools, JSON.stringify(recoveredHistory)).toHaveLength(1);
+    expect(recoveredTools[0]!.state.status, JSON.stringify(recoveredTools[0])).toBe('completed');
+    const recoveredAuthority = await resolveSessionAuthority({
+      root: authority.worktreeRoot,
+      sessionId: governed.id,
+    });
+    if (recoveredAuthority.status !== 'resolved') throw new Error('Expected workflow');
+    expect(recoveredAuthority.state.phase).toBe('TICKET');
+    expect(verifyChain(await readAuditTrail(authority.sessDir)).valid).toBe(true);
     expect(probe.errors).toEqual([]);
   }, 300_000);
 });

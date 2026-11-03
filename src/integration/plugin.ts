@@ -74,7 +74,7 @@ export const FlowGuardAuditPlugin = Plugin.define({
     const sessionRoots = new Map<string, string>();
     const reviewer = createNativeReviewerAuthority(ctx, async (scope) => {
       assertAvailable(scope);
-      const entry = await loadRuntime(runtimes, sessionRoots, adapter, scope);
+      const entry = await loadRuntime(runtimes, sessionRoots, adapter, scope, { governance });
       assertAvailable(scope);
       return entry.runtime;
     });
@@ -87,7 +87,6 @@ export const FlowGuardAuditPlugin = Plugin.define({
     let closed = false;
     let eventLoop: Promise<void> | undefined;
     let cleanup: Promise<void> | undefined;
-
     const assertLifecycle = (): void => {
       if (!ready || closed) {
         throw buildEnforcementError(
@@ -138,18 +137,22 @@ export const FlowGuardAuditPlugin = Plugin.define({
       ready = true;
       return dispose;
     } catch (error) {
-      try {
-        await dispose();
-      } catch (cleanupError) {
-        throw new PluginCleanupError(
-          [error, cleanupError],
-          'V2 setup failed and cleanup was incomplete.',
-        );
-      }
-      throw error;
+      throw await settleSetupFailure(error, dispose);
     }
   },
 });
+
+async function settleSetupFailure(error: unknown, dispose: () => Promise<void>): Promise<unknown> {
+  try {
+    await dispose();
+  } catch (cleanupError) {
+    return new PluginCleanupError(
+      [error, cleanupError],
+      'V2 setup failed and cleanup was incomplete.',
+    );
+  }
+  return error;
+}
 
 export default FlowGuardAuditPlugin;
 
@@ -161,6 +164,11 @@ type RuntimeActionInput = {
   operations: Set<Promise<unknown>>;
   assertLifecycle: () => void;
   assertAvailable: (scope: ActiveGovernanceScope) => void;
+};
+
+type RuntimeLoadOptions = {
+  readonly governance: OpenCodeGovernance;
+  readonly allowPendingActivationAudit?: boolean;
 };
 
 function createRuntimeActions(input: RuntimeActionInput) {
@@ -176,6 +184,7 @@ function createRuntimeActions(input: RuntimeActionInput) {
   const resolveEntry = async (
     sessionId: string,
     required: boolean,
+    allowPendingActivationAudit = false,
   ): Promise<ScopedRuntimeEntry | null> => {
     assertLifecycle();
     const authority = await governance.resolve(sessionId);
@@ -190,16 +199,23 @@ function createRuntimeActions(input: RuntimeActionInput) {
     }
     const scope = authority.scope;
     assertAvailable(scope);
-    const entry = await loadRuntime(runtimes, sessionRoots, adapter, scope);
-    await assertFreshScope(governance, sessionId, scope);
+    const entry = await loadRuntime(runtimes, sessionRoots, adapter, scope, {
+      governance,
+      allowPendingActivationAudit,
+    });
+    await governance.assertScopeCurrent(sessionId, scope);
     assertAvailable(scope);
     return { ...entry, scope };
   };
-  const invoke: Invoke = async (sessionId, action, required = false) =>
+  const invoke: Invoke = async (sessionId, action, required = false, options = {}) =>
     trackOperation(
       operations,
       (async () => {
-        const entry = await resolveEntry(sessionId, required);
+        const entry = await resolveEntry(
+          sessionId,
+          required,
+          options.allowPendingActivationAudit === true,
+        );
         return entry ? action(entry) : undefined;
       })(),
     );
@@ -251,23 +267,6 @@ function createReadOnlyObserver(input: RuntimeActionInput) {
   };
 }
 
-async function assertFreshScope(
-  governance: OpenCodeGovernance,
-  sessionId: string,
-  scope: ActiveGovernanceScope,
-): Promise<void> {
-  const fresh = await governance.resolve(sessionId);
-  if (
-    fresh.kind !== 'active' ||
-    fresh.scope.record.revision !== scope.record.revision ||
-    fresh.scope.root.revision !== scope.root.revision
-  )
-    throw buildEnforcementError(
-      'GOVERNANCE_AUTHORITY_BLOCKED',
-      'Activation changed while loading the governed runtime.',
-    );
-}
-
 async function trackOperation<T>(
   operations: Set<Promise<unknown>>,
   operation: Promise<T>,
@@ -285,6 +284,7 @@ async function loadRuntime(
   sessionRoots: Map<string, string>,
   adapter: OpenCodeHostAdapter,
   scope: ActiveGovernanceScope,
+  options: RuntimeLoadOptions,
 ): Promise<RuntimeEntry> {
   const authority = await resolveSessionAuthority({
     root: scope.root.directory,
@@ -307,6 +307,8 @@ async function loadRuntime(
       'GOVERNANCE_AUTHORITY_BLOCKED',
       'The workflow no longer matches its activation worktree or frozen policy.',
     );
+  if (!options.allowPendingActivationAudit)
+    await options.governance.assertActivationAuditConfirmed(scope.root);
   sessionRoots.set(scope.sessionId, root);
   let entry = runtimes.get(root);
   if (!entry) {
@@ -452,10 +454,12 @@ async function createSessionRuntime(
   }
 }
 
+type InvokeOptions = { readonly allowPendingActivationAudit?: boolean };
 type Invoke = <T>(
   sessionId: string,
   action: (entry: ScopedRuntimeEntry) => Promise<T>,
   required?: boolean,
+  options?: InvokeOptions,
 ) => Promise<T | undefined>;
 
 function record(value: unknown): value is Record<string, unknown> {

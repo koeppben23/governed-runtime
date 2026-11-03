@@ -2,9 +2,11 @@
 import { randomUUID } from 'node:crypto';
 import {
   commitGovernanceActivation,
+  confirmGovernanceActivationAudit,
   type GovernanceActivationCommit,
   type GovernanceActivationStore,
 } from '../adapters/governance-activation.js';
+import type { GovernanceActivationRevision } from '../state/governance-activation.js';
 
 export function createActivationStoreFixture() {
   const values = new Map<string, unknown>();
@@ -71,9 +73,17 @@ export async function seedActiveGovernance(
       actor: FIXTURE_ACTIVATION_ACTOR,
     }),
   };
+  let active: GovernanceActivationRevision | undefined;
   for (const next of [request, { ...request, action: 'activate' as const, expectedRevision: 1 }]) {
     const result = await commitGovernanceActivation(writer, next);
     if (result.kind !== 'committed')
       throw new Error(`Cannot seed component activation fixture: ${result.reason}`);
+    active = result.record;
   }
+  if (active === undefined)
+    throw new Error('Cannot seed component activation fixture: no ACTIVE revision.');
+  // Component admission only. This marker authorizes the fixture scope for
+  // runtime tests; it does not fabricate an activation audit event or claim
+  // native/operator provenance.
+  await confirmGovernanceActivationAudit(store, active);
 }

@@ -156,6 +156,25 @@ async function reopenRoot(): Promise<void> {
 }
 
 describe('native governance delegation correlation', () => {
+  it('rejects a stale scope before runtime admission', async () => {
+    const active = await resolveGovernanceActivation(host.activation.store, 'root');
+    if (active.kind !== 'active') throw new Error('Expected active root');
+    const scope = { sessionId: 'root', record: active.record, root: active.record };
+    await expect(governance.assertScopeCurrent('root', scope)).resolves.toBeUndefined();
+    await expect(
+      governance.assertScopeCurrent('root', {
+        ...scope,
+        record: { ...scope.record, revision: 1 },
+      }),
+    ).rejects.toThrow('Activation changed');
+    await expect(
+      governance.assertScopeCurrent('root', {
+        ...scope,
+        root: { ...scope.root, revision: 1 },
+      }),
+    ).rejects.toThrow('Activation changed');
+  });
+
   it.each(['activationId', 'generation', 'agent'])(
     'rejects a changed committed dispatch %s independently',
     async (field) => {
