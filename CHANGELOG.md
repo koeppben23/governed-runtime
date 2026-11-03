@@ -164,8 +164,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   granting parent decision authority or treating delegation as mutation success.
   Settled receipt replays cannot rebind a child to an older call after continuation;
   bounded-wait and independent scope/journal negatives exercise this boundary.
-  Root operator activation/deactivation and reviewer provenance remain separate
-  blocked acceptance paths; this is not ACTIVE V2 support.
+  Root activation is provided by the native `/start` command (below);
+  deactivation and reviewer provenance remain separate acceptance paths.
 
 - **Activation decision channel and actor (#1190).** Activation journal revisions
   (schema version 2) record the decision channel (`host_command`, `autonomous`,
@@ -200,6 +200,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MANAGED_ARTIFACT_CONFLICT` and preserve its bytes; `--force` does not remove
   it, and uninstall is unaffected. The installed template set and its golden hash
   shrink accordingly.
+
+- **ADR-010 native command channel amendment (#1190).** OpenCode cannot
+  distinguish operator UI input from SDK or agent command callers, so the
+  distinguishable host-UI requirement is withdrawn for OpenCode: operator
+  decisions use the native command channel, recorded as `host_command` with the
+  canonically resolved actor and never as a verified human; policy decides
+  whether that channel satisfies a gate. The operator handoff, implementation
+  inventory, Phase-0 gates, trust boundaries and independent-review docs now
+  state that interactive `/start` is connected while autonomous activation and
+  the other operator decisions remain open.
 
 - **Native authority-source mechanism probes (#1190).** Actual V2 host tests
   establish private plugin-storage persistence across reload, graceful restart

@@ -208,8 +208,10 @@ release nothing. Step-budget and output-limit locks still have no V2 release
 The native V2
 entrypoint registers no command-origin approval/recovery hook. Authorized
 autonomous activation does not itself authorize capacity recovery; an SDK/API/CLI
-callback proves neither that permission nor human consent. Actual human decisions
-still need the selected UI-source proof when policy requires them. The old
+callback proves neither that permission nor human consent. Operator decisions use
+the native command channel recorded as `host_command` (ADR-010 amendment
+2026-11-03), never as a verified human; capacity recovery through that channel is
+not yet connected. The old
 V1 command-hook release path is not a V2 human-provenance mechanism. No idle
 event, timeout or owner cleanup releases an unknown-outcome fence by itself.
 

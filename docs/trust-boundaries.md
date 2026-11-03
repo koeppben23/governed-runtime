@@ -164,9 +164,11 @@ autonomous activation. Both require actual source/action/scope/policy/generation
 binding, actor/policy validation, replay/concurrent-use protection and durable
 audit. A caller assertion or SDK callback alone proves neither authorization nor
 a human; autonomous actions must be recorded as autonomous, not human consent.
-Where policy requires an actual human decision, distinguishable host-UI origin
-remains required. Both activation implementations remain **NOT_VERIFIED**; the
-UI-source limitation blocks only its affected human path. Start confers no
+OpenCode cannot distinguish UI from SDK or agent command callers, so operator
+decisions use the native command channel, recorded as `host_command` with the
+canonically resolved actor and never as a verified human (ADR-010 amendment
+2026-11-03); policy decides whether that channel satisfies a gate. Interactive
+`/start` is implemented; autonomous activation remains **NOT_VERIFIED**. Start confers no
 implicit approval, override, capacity recovery or End authority.
 
 Required independent-review provenance, frozen subject, full completion,

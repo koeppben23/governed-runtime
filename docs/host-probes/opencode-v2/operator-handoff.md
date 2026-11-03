@@ -70,21 +70,25 @@ created, verifier weakened or required product positive replaced.
 
 ## Canonical integration points, not alternative authorities
 
-| Operation          | Current owner and missing handoff                                                                                                                                                                                                                                                                                                                                  |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Start              | `adapters/governance-activation.ts` owns journal commit and its non-serialized authorization port; `machine/governance-activation.ts` owns lifecycle transitions. `integration/opencode-governance.ts` currently authorizes child enrollment, not root UI decisions. Native tool execution requires existing activation/workflow authority before calling hydrate. |
-| Hydrate / actor    | `integration/tools/hydrate/hydrate.ts`, `rails/hydrate.ts` and `adapters/actor.ts` own workflow initialization and actor resolution. A source receipt must not bypass these or substitute for policy/actor assurance (`shared/actor-assurance.ts`).                                                                                                                |
-| Approve / override | `integration/tools/decision/decision-tool.ts` resolves actor/policy and persists rail/state/audit outcomes. `integration/user-decision-intent.ts` is an in-memory command/verdict intent, not a durable action/worktree/policy/generation-bound UI proof. The native plugin does not register the old command-before callback as operator authority.               |
-| RecoverCapacity    | `integration/plugin-beforehooks.ts` contains command-derived capacity release; that callback is not registered as a native UI recovery path. It must not be wired to ordinary SDK command execution. The capacity lock and reviewer recovery checks remain authoritative.                                                                                          |
-| End                | The activation writer/machine support ending/inactive journal transitions, but no native UI producer validates safe closure of workflow/reviewer/mutation obligations and submits an authorized root End. `/finish` and `/abort` are not EndGovernance.                                                                                                            |
+| Operation          | Current owner and missing handoff                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start              | `adapters/governance-activation.ts` owns journal commit, `startRootGovernance` and the non-serialized authorization port; `machine/governance-activation.ts` owns lifecycle transitions. `integration/opencode-governance.ts` authorizes child enrollment (`delegation`) and the native `/start` decision (`host_command`, ADR-010 amendment 2026-11-03); `integration/plugin-start-command.ts` hydrates first, then commits the activation. |
+| Hydrate / actor    | `integration/tools/hydrate/hydrate.ts`, `rails/hydrate.ts` and `adapters/actor.ts` own workflow initialization and actor resolution. A source receipt must not bypass these or substitute for policy/actor assurance (`shared/actor-assurance.ts`).                                                                                                                                                                                          |
+| Approve / override | `integration/tools/decision/decision-tool.ts` resolves actor/policy and persists rail/state/audit outcomes. `integration/user-decision-intent.ts` is an in-memory command/verdict intent, not a durable action/worktree/policy/generation-bound UI proof. The native plugin does not register the old command-before callback as operator authority.                                                                                         |
+| RecoverCapacity    | `integration/plugin-beforehooks.ts` contains command-derived capacity release; that callback is not registered as a native UI recovery path. It must not be wired to ordinary SDK command execution. The capacity lock and reviewer recovery checks remain authoritative.                                                                                                                                                                    |
+| End                | The activation writer/machine support ending/inactive journal transitions, but no native UI producer validates safe closure of workflow/reviewer/mutation obligations and submits an authorized root End. `/finish` and `/abort` are not EndGovernance.                                                                                                                                                                                      |
 
-For actual human decisions, the missing capability is a demonstrated handoff of an actual attributable UI
-decision to these canonical owners, distinguishable there from an SDK invocation.
-Ordinary plugin RPC alone is **NOT_SUPPORTED** for that source distinction.
+The mechanism counterexamples above stand: no handoff distinguishes an actual UI
+decision from an SDK invocation, and ordinary plugin RPC is **NOT_SUPPORTED** for
+that source distinction. ADR-010's 2026-11-03 amendment therefore withdraws the
+distinguishable-UI requirement for OpenCode: operator decisions use the native
+command channel, recorded as `host_command` with the canonically resolved actor
+and never as a verified human. `/start` is connected; Approve, OverrideApprove,
+RecoverCapacity and End are not yet connected through that channel.
 An SDK-accessible registration token, echoed nonce, command string or copied key
-event does not repair it. No signing/authentication service, second runtime,
-direct host-database writer or duplicated activation authority is introduced as
-compensation.
+event is not treated as human proof. No signing/authentication service, second
+runtime, direct host-database writer or duplicated activation authority is
+introduced as compensation.
 
 Other host-native handoff possibilities and Desktop behavior remain
 **NOT_VERIFIED**. Recovery requires demonstrating an admissible host mechanism
