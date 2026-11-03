@@ -340,6 +340,90 @@ describe('native capture composition with durable evidence', () => {
     },
   );
 
+  it('uses the canonical pre-bind closure for an already blocked obligation', async () => {
+    const h = await fixture();
+    await h.workspace.updateReviewAssurance(h.seeded.sessDir, (state) => ({
+      ...state,
+      reviewAssurance: {
+        ...state.reviewAssurance!,
+        obligations: state.reviewAssurance!.obligations.map((obligation) => ({
+          ...obligation,
+          status: 'blocked' as const,
+          blockedCode: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+        })),
+      },
+    }));
+    expect((await readState(h.seeded.sessDir))!.reviewAssurance!.obligations[0]!.status).toBe(
+      'blocked',
+    );
+    await h.reviewer.capture(h.root, h.event);
+    expect(h.host.prompt).toHaveBeenCalledTimes(0);
+    expect(h.event.result.content).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    expect((await readState(h.seeded.sessDir))!.reviewAssurance!.invocations).toEqual([]);
+  });
+
+  it('blocks an incoherent accept-with-blocking-issues capture without re-arming', async () => {
+    const h = await fixture();
+    h.controls.payload = JSON.stringify({
+      ...JSON.parse(h.controls.payload),
+      blockingIssues: [
+        {
+          severity: 'major',
+          category: 'correctness',
+          message: 'The plan contradicts its verification evidence.',
+          relation: {
+            subjectAnchors: [
+              {
+                kind: 'artifact_section',
+                artifactKind: 'plan',
+                artifactDigest: 'test-subject-digest',
+                sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
+              },
+            ],
+            evidenceLocations: [],
+          },
+        },
+      ],
+    });
+    await h.reviewer.capture(h.root, h.event);
+    const state = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(state.obligations[0]).toMatchObject({
+      status: 'blocked',
+      blockedCode: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
+    });
+    expect(state.invocations).toEqual([]);
+    expect(state.attempts).toHaveLength(1);
+    expect(h.event.result.content).toContain('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+  });
+
+  it('reconciles an expired authorized dispatch before authorizing another reviewer', async () => {
+    const h = await fixture();
+    const state = (await readState(h.seeded.sessDir))!;
+    await h.workspace.updateReviewAssurance(h.seeded.sessDir, (current) => ({
+      ...current,
+      reviewAssurance: {
+        ...current.reviewAssurance!,
+        dispatches: current.reviewAssurance!.dispatches.map((dispatch) => ({
+          ...dispatch,
+          dispatchAuthorizedAt: '2000-01-01T00:00:00.000Z',
+        })),
+      },
+    }));
+    await expect(
+      h.reviewer.authorize(h.root, {
+        sessionID: 'root',
+        tool: 'subagent',
+        messageID: 'expired-message',
+        id: 'expired-call',
+        input: { agent: 'flowguard-reviewer', description: 'review', prompt: 'untrusted' },
+      } as never),
+    ).rejects.toThrow('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    const after = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(after.obligations[0]!.status).toBe('blocked');
+    expect(after.invocations).toEqual([]);
+    expect(state.reviewAssurance!.attempts).toHaveLength(1);
+  });
+
   it('keeps the lease through the durable commit then projects the exact invocation', async () => {
     const h = await fixture();
     await h.reviewer.capture(h.root, h.event);

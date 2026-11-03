@@ -32,6 +32,7 @@ import {
 } from './native-review-findings.js';
 import { serializationPromptFor } from './serialization-prompt.js';
 import type { NativeReviewInitialController } from './native-review-initial.js';
+import { blockIncoherentCompletedCapture } from './native-review-execution.js';
 
 const MAX_MESSAGES = 10_000;
 
@@ -66,6 +67,7 @@ export interface NativeCaptureRuntime {
   readonly orchestratorDeps: OrchestratorDeps;
   readonly ws: {
     resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
+    getEnforcementState(sessionId: string): import('../types.js').SessionEnforcementState;
   };
   readonly reviewerExecutionTimeoutMs?: number;
   readonly log: {
@@ -428,6 +430,24 @@ export async function executeNativeReviewCapture(
     );
     const prepared = prepareFindings(input, proof.capture.payloadText);
     if (prepared.kind === 'blocked') return prepared;
+    const incoherentOutput = { title: '', output: '', metadata: {} };
+    if (
+      await blockIncoherentCompletedCapture({
+        runtime: input.runtime,
+        sessDir: input.sessDir,
+        sessionId: input.parentSessionId,
+        obligationId: input.obligation.obligationId,
+        prepared: prepared.findings,
+        output: incoherentOutput,
+        phase: input.state.phase,
+      })
+    )
+      return {
+        kind: 'blocked',
+        code: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
+        reason:
+          'A completed reviewer capture reported accept together with blocking issues. This inconsistency is terminal and never re-arms another reviewer.',
+      };
     const dispatch = input.state.reviewAssurance?.dispatches.find(
       (item) => item.hostCallId === input.nativeCallId,
     );

@@ -189,8 +189,10 @@ response carries the canonical `reviewRetry` envelope with bounded, untrusted
 diagnostics; no invocation or authoritative evidence is written by the failed
 attempt. Terminal, provenance, mandate and integrity codes still close
 fail-closed, and a second re-arm beyond the frozen budget closes the obligation.
-Native exhaustion and concurrent/late-completion coverage remain open reviewer
-parity work.
+The canonical pre-bind, incoherent-verdict and expired-dispatch closures are also
+wired into native authorization/capture; they leave no invocation and a late
+child answer cannot bind. Native exhaustion and concurrent/late-completion
+coverage remain open reviewer parity work.
 
 ### Terminal reviewer capacity failures
 

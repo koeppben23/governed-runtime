@@ -10,24 +10,18 @@ import type { GovernanceDelegationDispatch } from '../state/governance-activatio
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { encodeHostCallId } from '../state/host-identity.js';
-import {
-  abandonAndBlockByHostCall,
-  abandonAndRearmByHostCall,
-} from './review/dispatch/durable-dispatch.js';
 import { projectFulfilledReview } from './review/dispatch/native-review-execution.js';
 import {
-  buildCaptureFailureDiagnostics,
-  buildReviewerCaptureRetryOutput,
-  classifyReviewerCaptureFailure,
-} from './review/dispatch/capture-retry.js';
+  guardPreBindReview,
+  reconcileExpiredAuthorizedDispatchesOrThrow,
+} from './review/dispatch/native-review-execution.js';
 import {
   NativeReviewCaptureFence,
   executeNativeReviewCapture,
-  type NativeCaptureOutcome,
 } from './review/dispatch/native-review-capture.js';
 import {
   blockedCaptureOutput,
-  rejectNativeReviewCapture,
+  closeNativeReviewerCapture,
 } from './review/dispatch/native-review-capture-failure.js';
 import {
   NativeReviewInitialController,
@@ -131,6 +125,53 @@ async function contextFor(
   initial.context(scope.sessionId, history);
 }
 
+function setCaptureContent(
+  event: NativeReviewCompletion,
+  content: unknown,
+  metadata: Record<string, unknown>,
+): void {
+  event.result = { ...(event.result ?? {}), content, metadata: { ...metadata } };
+}
+
+async function preBindBlockedCapture(
+  runtimeFor: RuntimeFor,
+  scope: ActiveGovernanceScope,
+  event: NativeReviewCompletion,
+): Promise<string | null> {
+  let nativeCallId: string;
+  try {
+    nativeCallId = encodeHostCallId(event.sessionID, event.messageID, event.id);
+  } catch {
+    return null;
+  }
+  const resolved = await stateFor(runtimeFor, scope);
+  const childSessionId = metadataFor(event).sessionID;
+  const matches = (resolved.state.reviewAssurance?.dispatches ?? []).filter(
+    (dispatch) => dispatch.hostCallId === nativeCallId,
+  );
+  const direct = matches[0];
+  const candidates = direct
+    ? [direct.obligationId]
+    : (resolved.state.reviewAssurance?.attempts ?? [])
+        .filter(
+          (attempt) =>
+            typeof childSessionId === 'string' && attempt.childSessionId === childSessionId,
+        )
+        .map((attempt) => attempt.obligationId);
+  const obligationIds = [...new Set(candidates)];
+  if (obligationIds.length !== 1) return null;
+  const obligationId = obligationIds[0];
+  if (obligationId === undefined) return null;
+  const output = { title: '', output: '', metadata: {} };
+  const blocked = await guardPreBindReview({
+    runtime: resolved.runtime,
+    sessDir: resolved.sessDir,
+    obligationId,
+    output,
+  });
+  return blocked ? output.output : null;
+}
+
 async function resolveNativeCaptureTarget(
   runtimeFor: RuntimeFor,
   scope: ActiveGovernanceScope,
@@ -208,15 +249,15 @@ async function runNativeReviewerCapture(input: {
   readonly event: NativeReviewCompletion;
 }): Promise<void> {
   const { ctx, runtimeFor, fence, scope, event } = input;
+  const preBind = await preBindBlockedCapture(runtimeFor, scope, event);
+  if (preBind !== null) {
+    setCaptureContent(event, preBind, metadataFor(event));
+    return;
+  }
   const { resolved, metadata, childSessionId, nativeCallId, lineage } =
     await resolveObservedCaptureTarget(runtimeFor, scope, event);
-  const blocked = (code: string, reason: string): void => {
-    event.result = {
-      ...(event.result ?? {}),
-      content: blockedCaptureOutput(code, reason),
-      metadata: { ...metadata },
-    };
-  };
+  const blocked = (code: string, reason: string): void =>
+    setCaptureContent(event, blockedCaptureOutput(code, reason), metadata);
   const outcome = await executeNativeReviewCapture({
     initial: input.initial,
     host: {
@@ -255,10 +296,13 @@ async function runNativeReviewerCapture(input: {
     return;
   }
   const closure = await closeNativeReviewerCapture({
-    resolved,
-    lineage,
+    runtime: resolved.runtime,
+    sessDir: resolved.sessDir,
+    authority: resolved.authority,
     nativeCallId,
     childSessionId,
+    obligationId: lineage.obligation.obligationId,
+    attemptId: lineage.attempt.attemptId,
     outcome,
   });
   if (closure.kind === 'retry') {
@@ -270,87 +314,6 @@ async function runNativeReviewerCapture(input: {
     return;
   }
   blocked(closure.code, closure.reason);
-}
-
-type CaptureClosure =
-  | { readonly kind: 'retry'; readonly output: string }
-  | { readonly kind: 'blocked'; readonly code: string; readonly reason: string };
-
-async function closeNativeReviewerCapture(input: {
-  readonly resolved: Awaited<ReturnType<typeof stateFor>>;
-  readonly lineage: ReturnType<typeof nativeReviewDispatchLineage>;
-  readonly nativeCallId: string;
-  readonly childSessionId: string;
-  readonly outcome: Extract<NativeCaptureOutcome, { readonly kind: 'blocked' }>;
-}): Promise<CaptureClosure> {
-  const { resolved, lineage, nativeCallId, childSessionId, outcome } = input;
-  const decision = classifyReviewerCaptureFailure(outcome.code);
-  if (decision.retryable) {
-    const diagnostics = buildCaptureFailureDiagnostics(
-      outcome.code,
-      parseCaptureDetails(outcome.reason),
-    );
-    const rearm = await abandonAndRearmByHostCall(
-      resolved.runtime.orchestratorDeps,
-      resolved.sessDir,
-      nativeCallId,
-      undefined,
-      { code: outcome.code, diagnostics, childSessionId },
-    );
-    if (rearm.kind === 'rearmed')
-      return {
-        kind: 'retry',
-        output: buildReviewerCaptureRetryOutput({
-          code: outcome.code,
-          obligationId: rearm.obligationId,
-          attemptId: rearm.attempt.attemptId,
-          diagnostics,
-        }),
-      };
-    return {
-      kind: 'blocked',
-      code: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-      reason:
-        rearm.kind === 'blocked'
-          ? `Reviewer retry budget exhausted: ${rearm.reason}`
-          : 'The retryable reviewer failure could not be re-armed on its exact lineage.',
-    };
-  }
-  if (outcome.code === 'REVIEWER_CAPTURE_PROVENANCE_INVALID') {
-    await rejectNativeReviewCapture({
-      runtime: resolved.runtime,
-      sessDir: resolved.sessDir,
-      authority: resolved.authority,
-      nativeCallId,
-      childSessionId,
-      code: outcome.code,
-      reason: outcome.reason,
-    });
-    return { kind: 'blocked', code: outcome.code, reason: outcome.reason };
-  }
-  await abandonAndBlockByHostCall(
-    resolved.runtime.orchestratorDeps,
-    resolved.sessDir,
-    nativeCallId,
-    outcome.code,
-    {
-      childSessionId,
-      obligationId: lineage.obligation.obligationId,
-      attemptId: lineage.attempt.attemptId,
-    },
-  );
-  return { kind: 'blocked', code: outcome.code, reason: outcome.reason };
-}
-
-function parseCaptureDetails(reason: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(reason);
-    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
 }
 
 type Registration = { dispose(): Promise<void> };
@@ -569,6 +532,12 @@ export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: R
           'Reviewer release requires a fresh foreground native child without continuation or model overrides.',
         );
       const resolved = await stateFor(runtimeFor, scope);
+      await reconcileExpiredAuthorizedDispatchesOrThrow(
+        resolved.runtime,
+        scope.root.sessionId,
+        resolved.sessDir,
+        resolved.state,
+      );
       const prompt = await authorizeNativeReviewDispatch({
         deps: resolved.runtime.ws,
         sessDir: resolved.sessDir,

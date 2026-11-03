@@ -3,10 +3,9 @@
  * @description Host-neutral reviewer execution closure and output projection.
  *
  * Every function binds or closes only through the canonical durable dispatch
- * and evidence owners. The fulfilled projection is wired into the V2 capture;
- * the incoherent-verdict, pre-bind and expired-dispatch closures are retained
- * review policy whose V2 wiring is tracked in the implementation inventory
- * (parity work), not a second transport.
+ * and evidence owners. Fulfilled projection, incoherent verdict, pre-bind and
+ * expired-dispatch closures are wired into the V2 capture/authorization path;
+ * this is not a second transport.
  */
 
 import type { ToolHookAfterOutput } from '../../types.js';
