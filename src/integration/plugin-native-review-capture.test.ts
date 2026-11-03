@@ -11,6 +11,8 @@ import { OpenCodeGovernance, type NativeBefore } from './opencode-governance.js'
 import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { registerPendingReviewForAttempt } from './review/enforcement/enforcement.js';
 import { resolveReviewContinuation } from '../state/review-continuation.js';
+import { plan } from './tools/index.js';
+import { writeStateWithArtifacts } from './tools/helpers.js';
 
 const model = { providerID: 'component', id: 'review', variant: 'selected' };
 const idle = { type: 'idle', outcome: 'succeeded' };
@@ -271,6 +273,45 @@ describe('native capture composition with durable evidence', () => {
     );
     expect(h.host.prompt).toHaveBeenCalledTimes(1);
     expect((await readState(h.seeded.sessDir))!.reviewAssurance).toEqual(state.reviewAssurance);
+  });
+
+  it('R2 completes the review from committed evidence after a restart without another reviewer', async () => {
+    const h = await fixture();
+    // Like the native smoke seed: materialize the derived artifacts of the seeded state.
+    await writeStateWithArtifacts(h.seeded.sessDir, (await readState(h.seeded.sessDir))!);
+    h.runtime.log.info.mockImplementationOnce(() => {
+      throw new Error('injected projection failure');
+    });
+    await expect(h.reviewer.capture(h.root, h.event as never)).rejects.toThrow(
+      'injected projection',
+    );
+    const committed = (await readState(h.seeded.sessDir))!;
+    const invocation = committed.reviewAssurance!.invocations[0]!;
+    expect(invocation).toMatchObject({ transportVersion: 6, consumedByObligationId: null });
+
+    // Restart: no plugin runtime, capture fence, pending review or reviewer
+    // child survives. Only the persisted state and the canonical tool remain.
+    const result = await plan.execute(
+      { reviewVerdict: 'accept' },
+      {
+        sessionID: 'root',
+        messageID: 'msg_after_restart',
+        agent: 'build',
+        directory: h.ws.tmpDir,
+        worktree: h.ws.tmpDir,
+        abort: new AbortController().signal,
+        metadata: () => {},
+      },
+    );
+    expect(String(result)).not.toContain('"error":true');
+    const completed = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(completed.obligations[0]).toMatchObject({ status: 'consumed' });
+    expect(completed.invocations).toHaveLength(1);
+    expect(completed.invocations[0]).toMatchObject({
+      invocationId: invocation.invocationId,
+      consumedByObligationId: committed.reviewAssurance!.obligations[0]!.obligationId,
+    });
+    expect(h.host.prompt).toHaveBeenCalledTimes(1);
   });
 
   it('reopens an unknown outcome only after a later user turn and a settled child', async () => {

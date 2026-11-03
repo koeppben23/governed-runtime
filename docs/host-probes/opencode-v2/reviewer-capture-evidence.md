@@ -13,7 +13,8 @@ idle boundary of the stale child, exact lineage, one audited reopen mutation) an
 the release fence admits only the superseding re-arm attempt. Component tests pass
 locally; the native recovery product contract runs only in the Linux CI smoke job
 (local Windows live smoke is environmentally unavailable). R2 restart
-reconciliation and R4 remain open, so Finding 6 stays BLOCKED.
+R4 remains open and R2 is proven only on the component level, so Finding 6 stays
+BLOCKED.
 
 ## Trust chain
 
@@ -65,7 +66,16 @@ pre-normalization or pre-truncation tool result must not be assumed equivalent
 to the host history or outgoing request. R4 remains open; no production receipt
 or evidence-recorder change is made by that research checkpoint.
 
-### R2 remains a step-4 proof obligation
+### R2 restart reconciliation (component proof, 2026-11-03)
+
+`plugin-native-review-capture.test.ts` now proves the chain on real persistence and
+outbox: committed generation-6 evidence, an injected projection failure, then a
+restart without plugin runtime, capture fence, pending review or reviewer child.
+The canonical `flowguard_plan` verdict consumes the committed invocation from
+persisted state alone and the obligation becomes `consumed` without a second
+reviewer prompt. An actual native process restart is **NOT_VERIFIED**.
+
+Historical note (previous checkpoint):
 
 An injected post-commit projection error leaves canonical evidence fulfilled;
 completion replay does not serialize again, and the continuation remains

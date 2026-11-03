@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timeouts still release nothing; step-budget/output locks keep no V2 release.
   Recovery texts of both reason codes describe the actual path. R2 and R4 remain
   open.
+- **R2 restart reconciliation component proof (#1190, #1169 WS4).** A composition
+  test on real persistence and outbox commits generation-6 evidence, injects a
+  projection failure, then completes the review after a simulated restart (no
+  plugin runtime, fence, pending review or reviewer child): the canonical plan
+  verdict consumes the committed invocation and no second reviewer runs. A real
+  native process restart remains NOT_VERIFIED.
 
 - **Host-neutral core guard (#1190, ADR-010 D1, #1169 WS2).**
   `src/architecture/__tests__/host-neutral-core.test.ts` enforces that the core
