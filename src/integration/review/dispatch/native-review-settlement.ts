@@ -204,7 +204,7 @@ export function reopenAuditIntents(target: UnknownOutcomeTarget) {
 }
 
 /** Terminal closures an explicit native RecoverCapacity operation may release. */
-export const NON_RECOVERABLE_CAPACITY_CODES: ReadonlySet<string> = new Set([UNKNOWN]);
+const NON_RECOVERABLE_CAPACITY_CODES: ReadonlySet<string> = new Set([UNKNOWN]);
 
 export interface RecoverableCapacityTarget {
   readonly lock: NonNullable<Assurance['capacityLock']>;

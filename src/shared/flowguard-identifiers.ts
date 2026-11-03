@@ -20,7 +20,7 @@ export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
  * of the canonical installed-command catalogue.
  */
 export const NATIVE_START_COMMAND = 'start';
-export const NATIVE_DECISION_COMMANDS = [
+const NATIVE_DECISION_COMMANDS = [
   'review-decision',
   'approve',
   'override-approve',
