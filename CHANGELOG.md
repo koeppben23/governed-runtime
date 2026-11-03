@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
 - **Reviewer acceptance evidence (#1190).** Split P0-05/P0-08 into the passing
   native recovery/E2E subcontracts at `b9a41e5b` and the still-open restart,
   settlement-race, R4 and reviewer-parity requirements. Earlier red results and
@@ -18,8 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovery, failed settlement and stale-child rejection. R4 diagnostics reproduce
   the still-open dynamic-context/HTTP plugin replacements; their successful
   reproduction is not security acceptance.
-
-### Added
 
 - **R4 reviewer tool-result integrity (#1190, Finding 6, #1169 WS4).** Co-installed
   plugins are untrusted for review evidence. When a reviewer child is admitted,
@@ -54,8 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   test on real persistence and outbox commits generation-6 evidence, injects a
   projection failure, then completes the review after a simulated restart (no
   plugin runtime, fence, pending review or reviewer child): the canonical plan
-  verdict consumes the committed invocation and no second reviewer runs. A real
-  native process restart remains NOT_VERIFIED.
+  verdict consumes the committed invocation and no second reviewer runs. The
+  native SIGKILL/reload follow-up above adds the actual process-restart proof;
+  complete installed workflow acceptance remains open.
 
 - **Host-neutral core guard (#1190, ADR-010 D1, #1169 WS2).**
   `src/architecture/__tests__/host-neutral-core.test.ts` enforces that the core
@@ -98,8 +99,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attempt/invocation/dispatch/obligation/audit mutation. `transportVersion: 6`
   (`native_subagent_message_json`) is explicit; historical v5 evidence remains
   unchanged. Tool contamination rejects without evidence; interrupted/unknown
-  terminals remain blocked pending step-4 recovery. Three of the four required
-  product capture contracts pass; the recovery contract remains red.
+  terminals remain blocked pending step-4 recovery. At the historical step-3
+  checkpoint, three required product capture contracts passed and recovery was
+  red; all four pass at the reviewed `b9a41e5b` checkpoint.
 - **Native reviewer dispatch authority (#1190, Finding 6 step 2).** The existing
   review ledger now authorizes a fresh foreground V2 `subagent` before native
   release and durably binds its actual progress-receipt child to the exact parent
