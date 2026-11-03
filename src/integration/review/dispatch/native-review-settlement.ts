@@ -203,8 +203,11 @@ export function reopenAuditIntents(target: UnknownOutcomeTarget) {
   ];
 }
 
-/** Terminal closures an explicit native RecoverCapacity operation may release. */
-const NON_RECOVERABLE_CAPACITY_CODES: ReadonlySet<string> = new Set([UNKNOWN]);
+/** Terminal capacity closures an explicit native RecoverCapacity operation may release. */
+const RECOVERABLE_CAPACITY_CODES: ReadonlySet<string> = new Set([
+  'REVIEWER_STEP_BUDGET_EXHAUSTED',
+  'REVIEWER_OUTPUT_TRUNCATED',
+]);
 
 export interface RecoverableCapacityTarget {
   readonly lock: NonNullable<Assurance['capacityLock']>;
@@ -213,30 +216,67 @@ export interface RecoverableCapacityTarget {
 }
 
 /**
- * The exact durable lineage behind a recoverable terminal reviewer lock. Any
- * terminal closure except an unknown execution outcome qualifies; unknown
+ * The exact durable lineage behind a recoverable terminal capacity lock. Only
+ * the step-budget and output-truncation closures qualify; unknown execution
  * outcomes keep their own typed transport-settlement path. A live/authorized
  * dispatch or bound attempt means execution may continue and is never released
  * here.
  */
 export function recoverableCapacityTarget(state: SessionState): RecoverableCapacityTarget | null {
   const assurance = ensureReviewAssurance(state.reviewAssurance);
-  const lock = assurance.capacityLock;
-  if (!lock || NON_RECOVERABLE_CAPACITY_CODES.has(lock.code)) return null;
-  const obligation = assurance.obligations.find((item) => item.obligationId === lock.obligationId);
-  if (obligation?.status !== 'blocked' || obligation.blockedCode !== lock.code) return null;
+  const lock = recoverableCapacityLock(assurance);
+  if (!lock) return null;
+  const obligation = lockedCapacityObligation(assurance, lock);
+  if (!obligation) return null;
   const dispatches = assurance.dispatches.filter(
     (item) => item.obligationId === obligation.obligationId,
   );
-  if (dispatches.some((item) => item.dispatchStatus === 'authorized')) return null;
   const attempts = assurance.attempts.filter(
     (item) => item.obligationId === obligation.obligationId,
   );
-  if (attempts.some((item) => item.status === 'bound')) return null;
+  if (hasLiveReviewerExecution(dispatches, attempts)) return null;
+  const attempt = terminalCapacityAttempt(attempts);
+  if (!attempt) return null;
+  const released = dispatches.filter((item) => item.attemptId === attempt.attemptId);
+  if (released.length !== 1 || released[0]?.dispatchStatus !== 'outcome_unknown') return null;
+  return { lock, obligation, attempt };
+}
+
+function recoverableCapacityLock(
+  assurance: Assurance,
+): NonNullable<Assurance['capacityLock']> | null {
+  const lock = assurance.capacityLock;
+  return lock && RECOVERABLE_CAPACITY_CODES.has(lock.code) ? lock : null;
+}
+
+function lockedCapacityObligation(
+  assurance: Assurance,
+  lock: NonNullable<Assurance['capacityLock']>,
+): ReviewObligation | null {
+  const obligation = assurance.obligations.find((item) => item.obligationId === lock.obligationId);
+  return obligation?.status === 'blocked' && obligation.blockedCode === lock.code
+    ? obligation
+    : null;
+}
+
+function hasLiveReviewerExecution(
+  dispatches: readonly ReviewDispatchRecord[],
+  attempts: readonly ReviewAttempt[],
+): boolean {
+  return (
+    dispatches.some((item) => item.dispatchStatus === 'authorized') ||
+    attempts.some((item) => item.status === 'bound')
+  );
+}
+
+function terminalCapacityAttempt(
+  attempts: readonly ReviewAttempt[],
+): (ReviewAttempt & { readonly childSessionId: string }) | null {
   const stale = attempts.filter((item) => item.status === 'stale');
   const attempt = stale[0];
-  if (stale.length !== 1 || attempt?.childSessionId === undefined) return null;
-  return { lock, obligation, attempt: { ...attempt, childSessionId: attempt.childSessionId } };
+  return stale.length === 1 && attempt?.childSessionId !== undefined
+    ? { ...attempt, childSessionId: attempt.childSessionId }
+    : null;
 }
 
 /** Clear exactly one proven capacity lock. The obligation stays blocked for a

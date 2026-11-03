@@ -77,6 +77,7 @@ describe('native /start command', () => {
       'reject',
       'recover-capacity',
       'end-governance',
+      'check',
     ]);
     const sessionId = randomUUID();
     expect(await resolveGovernanceActivation(host.activation.store, sessionId)).toEqual({

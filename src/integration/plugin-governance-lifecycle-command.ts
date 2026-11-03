@@ -243,7 +243,7 @@ async function assertSafeEnd(sessionId: string, directory: string): Promise<void
   if (blocker !== null) throw buildEnforcementError(blocker.code, blocker.reason);
 }
 
-async function recordEndAudit(
+export async function recordEndAudit(
   sessionId: string,
   record: GovernanceActivationRevision,
 ): Promise<void> {

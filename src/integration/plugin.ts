@@ -37,7 +37,6 @@ import { createNativeReviewerAuthority } from './plugin-native-review.js';
 import { createEventFence, consumeEvents } from './plugin-native-events.js';
 import { registerStartCommands } from './plugin-start-command.js';
 import { injectActiveMandates } from './plugin-mandates.js';
-import { updateRootPromptScope } from './plugin-command-scope.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -575,8 +574,7 @@ async function registerNativeSessionHooks(
 ): Promise<void> {
   registrations.push(
     await ctx.session.hook('prompt', (event) =>
-      invoke(event.sessionID, async ({ runtime, scope }) => {
-        updateRootPromptScope(runtime, scope, event.prompt?.text);
+      invoke(event.sessionID, async ({ scope }) => {
         // Admission is not execution authority. Direct reviewer roots retain
         // budget-first context denial; only enrolled reviewer children may execute.
         if (

@@ -278,6 +278,7 @@ describe('single-owner native hook composition', () => {
       'reject',
       'recover-capacity',
       'end-governance',
+      'check',
     ]);
   });
 });

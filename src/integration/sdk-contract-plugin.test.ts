@@ -53,6 +53,7 @@ describe('native V2 plugin definition resilience', () => {
         'reject',
         'recover-capacity',
         'end-governance',
+        'check',
       ]);
       await disposers.at(-1)!();
       expect(host.registrations.every((r) => r.dispose.mock.calls.length === 1)).toBe(true);

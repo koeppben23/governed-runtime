@@ -105,6 +105,7 @@ export function createV2Host(directory: string) {
   const wait = vi.fn(async (_input: unknown) => {});
   const interrupt = vi.fn(async (_input: unknown) => ({ interrupted: true }));
   const synthetic = vi.fn(async (_input: unknown) => ({ id: 'synthetic', type: 'synthetic' }));
+  const switchAgent = vi.fn(async (_input: unknown) => {});
   const context = {
     app: { name: 'opencode', version: '2.2.4', channel: 'stable' },
     location: { directory, project: { id: 'project', directory, canonical: directory } },
@@ -129,6 +130,7 @@ export function createV2Host(directory: string) {
       wait,
       interrupt,
       synthetic,
+      switchAgent,
       hook: vi.fn(async (name: string, callback: Callback) => {
         const registration = register();
         sessionHooks.set(name, callback);
@@ -176,6 +178,7 @@ export function createV2Host(directory: string) {
     commands,
     rpcMethods,
     synthetic,
+    switchAgent,
     sessionGet,
     sessionContext,
     prompt,

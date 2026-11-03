@@ -25,7 +25,7 @@ import {
   type DispatchLedgerWriteDeps,
 } from './review/dispatch/durable-dispatch.js';
 import { governanceEndBlocker } from './governance-end-preconditions.js';
-import { updateCommandScope } from './plugin-command-scope.js';
+import { executeCheckCommand } from './plugin-check-command.js';
 
 const NOW = '2026-11-03T12:00:00.000Z';
 let ws: TestWorkspace;
@@ -139,6 +139,34 @@ describe('native governance lifecycle commands', () => {
     expect(lifecycleEvents(await readAuditTrail(before.sessDir))).toHaveLength(1);
   });
 
+  it('reconciles a pending End audit before reactivation and preserves audit order', async () => {
+    await seedState(makeState('READY'));
+    const before = await workflow();
+    const append = audit.appendAuditEventAlreadyLocked;
+    const fault = vi
+      .spyOn(audit, 'appendAuditEventAlreadyLocked')
+      .mockImplementation(async (directory, event) => {
+        if (event.event === 'governance:ended') throw new Error('end audit append failure');
+        return append(directory, event);
+      });
+    await expect(host.command('end-governance', sessionID)).rejects.toThrow(
+      'GOVERNANCE_AUTHORITY_BLOCKED',
+    );
+    fault.mockRestore();
+    await host.command('start', sessionID);
+    expect(await resolveGovernanceActivation(host.activation.store, sessionID)).toMatchObject({
+      kind: 'active',
+      record: { generation: 2 },
+    });
+    const events = await readAuditTrail(before.sessDir);
+    const ended = events.findIndex((event) => event.event === 'governance:ended');
+    const reactivated = events.findIndex(
+      (event, index) => index > ended && event.event === 'governance:activated',
+    );
+    expect(ended).toBeGreaterThanOrEqual(0);
+    expect(reactivated).toBeGreaterThan(ended);
+  });
+
   it('refuses to end non-terminal or otherwise unsafe workflow state', async () => {
     await seedState(makeState('TICKET'));
     await expect(host.command('end-governance', sessionID)).rejects.toThrow(
@@ -212,24 +240,43 @@ describe('native governance lifecycle commands', () => {
       'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
     );
   });
-  it('installs the explicit check scope from the installed prompt marker only', () => {
+  it('binds the explicit check scope to the native command and restores the agent', async () => {
     const sessionId = 'check-session';
     const scopes = new Map<string, 'check'>();
     const rework = new Map([[sessionId, { marker: true }]]);
-    const runtime = {
-      activeCommandScopes: scopes,
-      checkReworkContinuations: rework,
+    const runtime = { activeCommandScopes: scopes, checkReworkContinuations: rework };
+    const switchAgent = vi.fn(async () => {});
+    const synthetic = vi.fn(async () => {
+      expect(scopes.get(sessionId)).toBe('check');
+      return { id: 'synthetic', type: 'synthetic' };
+    });
+    const wait = vi.fn(async () => {});
+    const ctx = {
+      session: {
+        get: vi.fn(async () => ({ agent: 'plan' })),
+        switchAgent,
+        synthetic,
+        wait,
+      },
     } as never;
-    updateCommandScope(runtime, sessionId, 'ordinary prompt');
-    expect(scopes.has(sessionId)).toBe(false);
-    updateCommandScope(
-      runtime,
-      sessionId,
-      'Run automated verification checks for the current implementation.',
+    const deps = {
+      guard: <T>(run: () => Promise<T>) => run(),
+      invoke: async (
+        _id: string,
+        action: (entry: { runtime: unknown; scope: unknown }) => Promise<unknown>,
+      ) => action({ runtime, scope: { sessionId, root: { sessionId } } }),
+    } as never;
+    await executeCheckCommand(ctx, deps, sessionId);
+    expect(synthetic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionID: sessionId,
+        resume: true,
+        text: expect.stringContaining('flowguard_run_check'),
+      }),
     );
-    expect(scopes.get(sessionId)).toBe('check');
-    expect(rework.has(sessionId)).toBe(false);
-    updateCommandScope(runtime, sessionId, 'next explicit command');
+    expect(switchAgent).toHaveBeenNthCalledWith(1, { sessionID: sessionId, agent: 'build' });
+    expect(switchAgent).toHaveBeenNthCalledWith(2, { sessionID: sessionId, agent: 'plan' });
     expect(scopes.has(sessionId)).toBe(false);
+    expect(rework.has(sessionId)).toBe(false);
   });
 });

@@ -151,9 +151,7 @@ describe('unknown reviewer outcome settlement', () => {
     const unknown = await blockedByCode();
     expect(recoverableCapacityTarget(unknown.state)).toBeNull();
     const mandate = await blockedByCode('SUBAGENT_MANDATE_MISMATCH');
-    expect(recoverableCapacityTarget(mandate.state)).toMatchObject({
-      lock: { code: 'SUBAGENT_MANDATE_MISMATCH' },
-    });
+    expect(recoverableCapacityTarget(mandate.state)).toBeNull();
 
     const budget = await blockedByCode('REVIEWER_STEP_BUDGET_EXHAUSTED');
     const target = recoverableCapacityTarget(budget.state)!;
@@ -180,6 +178,24 @@ describe('unknown reviewer outcome settlement', () => {
       },
     };
     expect(recoverableCapacityTarget(authorized)).toBeNull();
+
+    const missingDispatch = {
+      ...budget.state,
+      reviewAssurance: { ...budget.state.reviewAssurance!, dispatches: [] },
+    };
+    expect(recoverableCapacityTarget(missingDispatch)).toBeNull();
+
+    const completedDispatch = {
+      ...budget.state,
+      reviewAssurance: {
+        ...budget.state.reviewAssurance!,
+        dispatches: budget.state.reviewAssurance!.dispatches.map((dispatch) => ({
+          ...dispatch,
+          dispatchStatus: 'completed' as const,
+        })),
+      },
+    };
+    expect(recoverableCapacityTarget(completedDispatch)).toBeNull();
 
     const bound = {
       ...budget.state,

@@ -111,13 +111,13 @@ context. The injected system part is marked `source: flowguard-mandates`; a
 request that already carries that source is not duplicated. Injection reads the
 current root workflow state and fails closed if that state disappears.
 
-The installed `/check` prompt is recognized by its stable native-hook marker. The
-prompt hook installs the explicit `check` runtime scope and clears any rework
-continuation latch; every later root prompt clears the scope. The same model/tool
-loop then uses the canonical `flowguard_status`, `flowguard_run_check` and
-implementation-review tools; the scope prevents unrelated workflow/host mutations
-between the check result and the next explicit command. The installed template
-keeps its `agent: build` pin. `/validate` remains unchanged.
+`/check` is a native command. Its explicit callback installs the `check` scope,
+clears any rework continuation latch, switches to the `build` agent for the
+synthetic check turn (restoring the prior agent afterwards), and clears the scope
+when that turn reaches idle. The same model/tool loop then uses the canonical
+`flowguard_status`, `flowguard_run_check` and implementation-review tools; the
+scope prevents unrelated workflow/host mutations between the check result and the
+next explicit command. `/validate` remains unchanged.
 
 ## Config File Location
 

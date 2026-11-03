@@ -1,8 +1,7 @@
 import { renderCommandGovernanceRules } from '../mandates.js';
 
 /** Stable marker used to recognize the installed /check prompt in the native hook. */
-export const CHECK_COMMAND_MARKER =
-  'Run automated verification checks for the current implementation.';
+const CHECK_COMMAND_MARKER = 'Run automated verification checks for the current implementation.';
 
 export const CHECK_COMMAND = `---
 description: FlowGuard — Run verification checks on the current implementation evidence.
