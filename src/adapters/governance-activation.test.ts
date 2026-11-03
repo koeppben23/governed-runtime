@@ -5,7 +5,9 @@ import {
   governanceActivationKeys,
   resolveGovernanceActivation,
   listActiveGovernanceRoots,
+  startRootGovernance,
   type GovernanceActivationCommit,
+  type GovernanceActivationWriter,
 } from './governance-activation.js';
 import {
   createActivationStoreFixture,
@@ -553,5 +555,213 @@ describe('durable governance activation authority', () => {
     ]);
     expect(results.map((result) => result.kind).sort()).toEqual(['blocked', 'committed']);
     expect(fixture.values.size).toBe(3);
+  });
+});
+
+describe('root Start under one session lock', () => {
+  const scope = { sessionId, directory: '/project', worktreeRoot: '/project', policyDigest };
+  type Port = GovernanceActivationWriter['authorize'];
+  /** The native command port: Start mints a decision; completion re-presents the pending one. */
+  const commandPort =
+    (actor: GovernanceDecisionActor = FIXTURE_ACTIVATION_ACTOR): Port =>
+    async (input, current) =>
+      authorized(
+        input.action === 'activate' && current !== null ? current.decisionId : randomUUID(),
+        'host_command',
+        actor,
+      );
+  const writerFor = (
+    fixture: ReturnType<typeof createActivationStoreFixture>,
+    authorize: Port = commandPort(),
+  ) => ({ ...fixture, authorize });
+  const statuses = async (fixture: ReturnType<typeof createActivationStoreFixture>) =>
+    [...fixture.values.entries()]
+      .filter(([key]) => key.includes('/revisions/'))
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([, value]) => (value as GovernanceActivationRevision).status);
+  async function interrupted(fixture: ReturnType<typeof createActivationStoreFixture>) {
+    const result = await commitGovernanceActivation(writerFor(fixture), start());
+    if (result.kind !== 'committed') throw new Error('Cannot seed an interrupted Start');
+    return result.record;
+  }
+
+  it('commits ACTIVATING then ACTIVE under one Start decision', async () => {
+    const fixture = createActivationStoreFixture();
+    const result = await startRootGovernance(writerFor(fixture), scope);
+    expect(result).toMatchObject({
+      kind: 'activated',
+      resumed: false,
+      record: { status: 'active', revision: 2, generation: 1, decisionSource: 'host_command' },
+    });
+    expect(await statuses(fixture)).toEqual(['activating', 'active']);
+    expect(await resolveGovernanceActivation(fixture.store, sessionId)).toMatchObject({
+      kind: 'active',
+      record: { decisionActor: FIXTURE_ACTIVATION_ACTOR },
+    });
+  });
+
+  it('is idempotent for an ACTIVE root and consumes no decision', async () => {
+    const fixture = createActivationStoreFixture();
+    await startRootGovernance(writerFor(fixture), scope);
+    const authorize = vi.fn(commandPort());
+    expect(await startRootGovernance(writerFor(fixture, authorize), scope)).toMatchObject({
+      kind: 'already_active',
+    });
+    expect(authorize).not.toHaveBeenCalled();
+    expect(await statuses(fixture)).toEqual(['activating', 'active']);
+  });
+
+  it('completes an interrupted ACTIVATING revision of the same decision', async () => {
+    const fixture = createActivationStoreFixture();
+    const pending = await interrupted(fixture);
+    expect(await resolveGovernanceActivation(fixture.store, sessionId)).toMatchObject({
+      kind: 'blocked',
+    });
+    const result = await startRootGovernance(writerFor(fixture), scope);
+    expect(result).toMatchObject({
+      kind: 'activated',
+      resumed: true,
+      record: { decisionId: pending.decisionId, activationId: pending.activationId },
+    });
+    expect(await statuses(fixture)).toEqual(['activating', 'active']);
+  });
+
+  it('refuses to complete an interrupted Start for another actor or a minted decision', async () => {
+    const fixture = createActivationStoreFixture();
+    await interrupted(fixture);
+    const other = { ...FIXTURE_ACTIVATION_ACTOR, actorId: 'someone-else' };
+    expect(await startRootGovernance(writerFor(fixture, commandPort(other)), scope)).toMatchObject({
+      kind: 'blocked',
+    });
+    const minted: Port = async () => authorized(randomUUID());
+    expect(await startRootGovernance(writerFor(fixture, minted), scope)).toMatchObject({
+      kind: 'blocked',
+    });
+    expect(await statuses(fixture)).toEqual(['activating']);
+  });
+
+  it('refuses to complete an interrupted Start against another frozen policy', async () => {
+    const fixture = createActivationStoreFixture();
+    await interrupted(fixture);
+    expect(
+      await startRootGovernance(writerFor(fixture), { ...scope, policyDigest: 'b'.repeat(64) }),
+    ).toMatchObject({ kind: 'blocked' });
+    expect(await statuses(fixture)).toEqual(['activating']);
+  });
+
+  it('does not start while End is in progress and starts a new generation after End', async () => {
+    const fixture = createActivationStoreFixture();
+    const first = await startRootGovernance(writerFor(fixture), scope);
+    if (first.kind !== 'activated') throw new Error('Expected activation');
+    const {
+      revision: _revision,
+      status: _status,
+      previousDigest: _previousDigest,
+      schemaVersion: _schemaVersion,
+      decisionId: _decisionId,
+      decisionSource: _decisionSource,
+      decisionActor: _decisionActor,
+      ...activation
+    } = first.record;
+    const endDecision = randomUUID();
+    const ender = writerFor(fixture, async () => authorized(endDecision));
+    await commitGovernanceActivation(ender, {
+      ...activation,
+      action: 'begin_end',
+      expectedRevision: 2,
+    });
+    expect(await startRootGovernance(writerFor(fixture), scope)).toMatchObject({
+      kind: 'blocked',
+    });
+    await commitGovernanceActivation(ender, { ...activation, action: 'end', expectedRevision: 3 });
+    const second = await startRootGovernance(writerFor(fixture), scope);
+    expect(second).toMatchObject({ kind: 'activated', record: { generation: 2, revision: 6 } });
+    if (second.kind !== 'activated') throw new Error('Expected reactivation');
+    expect(second.record.activationId).not.toBe(first.record.activationId);
+  });
+
+  it('rejects a replayed Start decision after End', async () => {
+    const fixture = createActivationStoreFixture();
+    const first = await startRootGovernance(writerFor(fixture), scope);
+    if (first.kind !== 'activated') throw new Error('Expected activation');
+    const { decisionId: replayed } = first.record;
+    const {
+      revision: _revision,
+      status: _status,
+      previousDigest: _previousDigest,
+      schemaVersion: _schemaVersion,
+      decisionId: _decisionId,
+      decisionSource: _decisionSource,
+      decisionActor: _decisionActor,
+      ...activation
+    } = first.record;
+    const ender = writerFor(fixture, async () => authorized('end'));
+    await commitGovernanceActivation(ender, {
+      ...activation,
+      action: 'begin_end',
+      expectedRevision: 2,
+    });
+    await commitGovernanceActivation(ender, { ...activation, action: 'end', expectedRevision: 3 });
+    expect(
+      await startRootGovernance(
+        writerFor(fixture, async () => authorized(replayed)),
+        scope,
+      ),
+    ).toMatchObject({ kind: 'blocked' });
+    expect(await resolveGovernanceActivation(fixture.store, sessionId)).toMatchObject({
+      kind: 'inactive',
+    });
+  });
+
+  it('serializes concurrent Starts into one activation', async () => {
+    const fixture = createActivationStoreFixture();
+    const authorize = vi.fn(commandPort());
+    const results = await Promise.all([
+      startRootGovernance(writerFor(fixture, authorize), scope),
+      startRootGovernance(writerFor(fixture, authorize), scope),
+    ]);
+    expect(results.map((result) => result.kind).sort()).toEqual(['activated', 'already_active']);
+    expect(authorize).toHaveBeenCalledTimes(2);
+    expect(await statuses(fixture)).toEqual(['activating', 'active']);
+  });
+
+  it('never starts a delegated child or over corrupt authority', async () => {
+    const fixture = createActivationStoreFixture();
+    await seedActiveGovernance(fixture.store, {
+      sessionId: 'parent',
+      directory: '/project',
+      policyDigest,
+    });
+    const root = await resolveGovernanceActivation(fixture.store, 'parent');
+    if (root.kind !== 'active') throw new Error('Expected root');
+    const {
+      revision: _revision,
+      status: _status,
+      previousDigest: _previousDigest,
+      schemaVersion: _schemaVersion,
+      decisionId: _decisionId,
+      decisionSource: _decisionSource,
+      decisionActor: _decisionActor,
+      ...rootScope
+    } = root.record;
+    await commitGovernanceActivation(
+      writerFor(fixture, async () =>
+        authorized(root.record.decisionId, 'delegation', root.record.decisionActor),
+      ),
+      {
+        ...rootScope,
+        action: 'enroll',
+        expectedRevision: 0,
+        sessionId: 'child',
+        parentDispatch: { sessionId: 'parent', messageId: 'message', callId: 'call' },
+      },
+    );
+    expect(
+      await startRootGovernance(writerFor(fixture), { ...scope, sessionId: 'child' }),
+    ).toMatchObject({ kind: 'blocked' });
+    const corrupt = createActivationStoreFixture();
+    await interrupted(corrupt);
+    corrupt.values.set(governanceActivationKeys(sessionId).head, { invalid: true });
+    expect(await startRootGovernance(writerFor(corrupt), scope)).toMatchObject({ kind: 'blocked' });
   });
 });

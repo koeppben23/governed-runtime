@@ -42,7 +42,9 @@ describe('native V2 plugin definition resilience', () => {
         'model.request',
       ]);
       expect(host.sessionGet).not.toHaveBeenCalled();
-      expect(host.context.command.transform).not.toHaveBeenCalled();
+      // The only native command is /start; it never records workflow decision intent.
+      expect(host.context.command.transform).toHaveBeenCalledOnce();
+      expect([...host.commands.keys()]).toEqual(['start']);
       await disposers.at(-1)!();
       expect(host.registrations.every((r) => r.dispose.mock.calls.length === 1)).toBe(true);
     },

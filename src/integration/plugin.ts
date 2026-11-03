@@ -35,6 +35,7 @@ import { OpenCodeGovernance, type ActiveGovernanceScope } from './opencode-gover
 import { resolveGovernanceActivation } from '../adapters/governance-activation.js';
 import { createNativeReviewerAuthority } from './plugin-native-review.js';
 import { createEventFence, consumeEvents } from './plugin-native-events.js';
+import { registerStartCommand } from './plugin-start-command.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -120,7 +121,11 @@ export const FlowGuardAuditPlugin = Plugin.define({
 
     try {
       await adapter.initialize();
-      await createFlowGuardPluginHooks(ctx, { ...actions, governance, reviewer }, registrations);
+      await createFlowGuardPluginHooks(
+        ctx,
+        { ...actions, governance, reviewer, signal: controller.signal },
+        registrations,
+      );
       eventLoop = consumeEvents(
         ctx,
         controller.signal,
@@ -209,7 +214,9 @@ function createRuntimeActions(input: RuntimeActionInput) {
         return executeCanonicalNativeTool(name, definition, args, context, entry);
       })(),
     );
-  return { invoke, execute, observe: createReadOnlyObserver(input) };
+  const guard = <T>(run: () => Promise<T>): Promise<T> =>
+    trackOperation(operations, Promise.resolve().then(assertLifecycle).then(run));
+  return { invoke, execute, guard, observe: createReadOnlyObserver(input) };
 }
 
 function createReadOnlyObserver(input: RuntimeActionInput) {
@@ -475,11 +482,16 @@ async function createFlowGuardPluginHooks(
     readonly governance: OpenCodeGovernance;
     readonly reviewer: ReturnType<typeof createNativeReviewerAuthority>;
     readonly observe: (event: NativeToolCompletion) => Promise<void>;
+    readonly guard: <T>(run: () => Promise<T>) => Promise<T>;
+    readonly signal: AbortSignal;
   },
   registrations: Registration[],
 ): Promise<void> {
   const { invoke, governance } = actions;
   const catalogue = await createNativeToolCatalogue(ctx, registrations, actions.execute);
+  registrations.push(
+    await registerStartCommand(ctx, { ...actions, publish: catalogue.ensurePublished }),
+  );
   registrations.push(
     await ctx.tool.hook('execute.before', (event) =>
       invoke(

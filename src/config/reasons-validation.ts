@@ -27,7 +27,15 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       'This FlowGuard operation requires explicit trusted operator activation: {message}',
     recoverySteps: [
       'Continue ordinary native host work without invoking governance tools',
-      'Use the supported operator UI to start governance; prompts, SDK commands and hydrate cannot activate it',
+      'Run /start in the root session to start governance; prompts, tools and hydrate cannot activate it',
+    ],
+  },
+  {
+    code: 'START_ARGUMENTS_INVALID',
+    category: 'input',
+    messageTemplate: 'Invalid /start arguments: {message}',
+    recoverySteps: [
+      'Run /start without arguments, or with exactly one policy mode: solo, team, team-ci or regulated',
     ],
   },
   {

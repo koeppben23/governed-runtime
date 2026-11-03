@@ -37,6 +37,10 @@ export function createV2Host(directory: string) {
       execute(input: unknown, context: unknown): Promise<unknown>;
     }
   >();
+  const commands = new Map<
+    string,
+    { name: string; description?: string; execute(input: unknown): Promise<void> }
+  >();
   const registrations: Array<{ dispose: Mock<() => Promise<void>> }> = [];
   let failRegistration = 0;
   let registrationCount = 0;
@@ -99,6 +103,7 @@ export function createV2Host(directory: string) {
   const prompt = vi.fn(async (_input: unknown) => ({ id: 'inbox', type: 'user' }));
   const wait = vi.fn(async (_input: unknown) => {});
   const interrupt = vi.fn(async (_input: unknown) => ({ interrupted: true }));
+  const synthetic = vi.fn(async (_input: unknown) => ({ id: 'synthetic', type: 'synthetic' }));
   const context = {
     app: { name: 'opencode', version: '2.2.4', channel: 'stable' },
     location: { directory, project: { id: 'project', directory, canonical: directory } },
@@ -110,6 +115,7 @@ export function createV2Host(directory: string) {
       prompt,
       wait,
       interrupt,
+      synthetic,
       hook: vi.fn(async (name: string, callback: Callback) => {
         const registration = register();
         sessionHooks.set(name, callback);
@@ -134,7 +140,18 @@ export function createV2Host(directory: string) {
       }),
     },
     event: { subscribe },
-    command: { transform: vi.fn(async (_input: unknown) => {}) },
+    command: {
+      transform: vi.fn(async (transform: (editor: { add(command: unknown): void }) => void) => {
+        const registration = register();
+        transform({
+          add(command) {
+            const definition = command as typeof commands extends Map<string, infer T> ? T : never;
+            commands.set(definition.name, definition);
+          },
+        });
+        return registration;
+      }),
+    },
   };
   return {
     ctx: context as unknown as Plugin.Context,
@@ -143,6 +160,8 @@ export function createV2Host(directory: string) {
     toolHooks,
     sessionHooks,
     definitions,
+    commands,
+    synthetic,
     sessionGet,
     sessionContext,
     prompt,
@@ -169,6 +188,10 @@ export function createV2Host(directory: string) {
     },
     compact: async (event: unknown) => {
       await sessionHooks.get('compaction')!(event);
+    },
+    /** Native command callback; the host channel, never an operator-UI proof. */
+    command: async (name: string, sessionID: string, text = '') => {
+      await commands.get(name)!.execute({ sessionID, prompt: { text }, delivery: 'queue' });
     },
   };
 }

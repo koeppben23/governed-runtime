@@ -1,5 +1,6 @@
 /** Native opt-in/scope boundary. Successful private-store absence is not a
  * workflow-state heuristic. Parent metadata alone never enrolls a descendant. */
+import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 import type { Plugin } from '@opencode/plugin';
 import type { OpenCodeEvent } from '@opencode/client';
@@ -7,8 +8,11 @@ import {
   commitGovernanceActivation,
   governanceDelegationKey,
   resolveGovernanceActivation,
+  startRootGovernance,
   type GovernanceActivationStore,
   type GovernanceActivationResolution,
+  type GovernanceRootStart,
+  type GovernanceRootStartResult,
 } from '../adapters/governance-activation.js';
 import { acquireNamedWriteLock } from '../adapters/persistence-lock.js';
 import { workspacesHome, validateSessionId } from '../adapters/workspace/index.js';
@@ -16,6 +20,7 @@ import { blocked } from '../config/reasons.js';
 import {
   GovernanceDelegationDispatch,
   type GovernanceActivationRevision,
+  type GovernanceDecisionActor,
 } from '../state/governance-activation.js';
 import { hashText } from '../shared/hashing.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
@@ -97,6 +102,51 @@ export class OpenCodeGovernance {
       nextAncestors,
       waitForEnrollment,
     );
+  }
+
+  /** The host-observed root session an operator Start may bind; delegated children never start. */
+  async startableRoot(sessionId: string): Promise<{ readonly directory: string }> {
+    validateSessionId(sessionId);
+    const session = await this.host.getSession(sessionId);
+    if (session.parentSessionId !== undefined)
+      throw this.error(
+        'A delegated child session cannot start governance; start its root session.',
+      );
+    return { directory: session.directory };
+  }
+
+  /**
+   * Native command Start: the `host_command` channel with the canonically resolved
+   * actor. The channel is not a verified-human claim. Start mints one decision;
+   * completing an interrupted ACTIVATING revision re-presents exactly that decision.
+   */
+  async startRoot(
+    request: GovernanceRootStart,
+    actor: GovernanceDecisionActor,
+  ): Promise<Exclude<GovernanceRootStartResult, { kind: 'blocked' }>> {
+    const result = await startRootGovernance(
+      {
+        store: this.store,
+        withLock: (id, run) => this.withLock(id, run),
+        authorize: async (input, current) => {
+          if (this.signal.aborted || input.sessionId !== request.sessionId)
+            return this.block('The governance adapter stopped or the Start scope changed.');
+          if (input.action === 'start')
+            return { kind: 'authorized', decisionId: randomUUID(), source: 'host_command', actor };
+          if (input.action === 'activate' && current?.status === 'activating')
+            return {
+              kind: 'authorized',
+              decisionId: current.decisionId,
+              source: 'host_command',
+              actor,
+            };
+          return this.block('The Start command authorizes only Start and its completion.');
+        },
+      },
+      request,
+    );
+    if (result.kind === 'blocked') throw this.error(result.reason);
+    return result;
   }
 
   private async resolveUnenrolledChild(

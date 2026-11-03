@@ -121,7 +121,9 @@ describe('native V2 plugin definition and lifecycle', () => {
     'never infers an operator decision from a command-like caller claim %j',
     async (command) => {
       const h = await fixture();
-      expect(h.host.context.command.transform).not.toHaveBeenCalled();
+      // The only native command is /start; it never records workflow decision intent.
+      expect(h.host.context.command.transform).toHaveBeenCalledOnce();
+      expect([...h.host.commands.keys()]).toEqual(['start']);
       await h.host.before(
         v2ToolEvent({
           sessionID: h.sessionID,

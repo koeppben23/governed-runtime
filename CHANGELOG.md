@@ -176,6 +176,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is not a verified-human claim. Earlier record versions fail closed as corrupt
   authority.
 
+- **Native `/start` command (#1190).** The V2 plugin registers a native `start`
+  command. In a root session it hydrates the workflow (optional single argument:
+  a policy mode), resolves the actor under the frozen policy's identity-provider
+  rules and commits Start and its completion under one activation lock, bound to
+  the hydrated policy digest and worktree. The decision is recorded as
+  `host_command`, which is not a verified-human claim. A repeated `/start` is
+  idempotent; one interrupted by a storage failure or restart is completed under
+  the same decision and actor, never a newly minted one. Delegated child
+  sessions, unsupported arguments, ENDING scopes, replayed decisions and a stopped
+  plugin are rejected before any authority write. The productive catalogue is
+  published and a non-resuming synthetic message reports the result. New reason
+  code `START_ARGUMENTS_INVALID`; the `GOVERNANCE_NOT_ACTIVE` recovery now names
+  `/start`. ADR-004 records the new composition file.
+
 - **Native authority-source mechanism probes (#1190).** Actual V2 host tests
   establish private plugin-storage persistence across reload, graceful restart
   and forced process termination, while exposing its host-wide plugin-ID scope.

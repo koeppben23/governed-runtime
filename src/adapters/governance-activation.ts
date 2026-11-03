@@ -1,6 +1,7 @@
 /** The durable opt-in authority. Workflow files are deliberately not consulted.
  * Revisions are append-only; an atomic head selects a committed revision. An
  * absent head with any journal content is lost/incomplete authority, not INACTIVE. */
+import { randomUUID } from 'node:crypto';
 import {
   GovernanceActivationHead,
   GovernanceActivationRevision,
@@ -291,48 +292,163 @@ export interface GovernanceActivationWriter {
   ) => Promise<GovernanceActivationDecision | AuthorityBlocked>;
 }
 
+type Committed = { readonly kind: 'committed'; readonly record: GovernanceActivationRevision };
+
 export async function commitGovernanceActivation(
   writer: GovernanceActivationWriter,
   input: GovernanceActivationCommit,
-): Promise<
-  { readonly kind: 'committed'; readonly record: GovernanceActivationRevision } | AuthorityBlocked
-> {
-  return writer.withLock(input.sessionId, async () => {
-    try {
-      const journal = await readJournal(writer.store, input.sessionId);
-      if ('kind' in journal) return journal;
-      if ((journal.head?.revision ?? 0) !== input.expectedRevision)
-        return unavailable('Stale or concurrent activation revision.');
-      const current = journal.history.at(-1) ?? null;
-      const authorization = await writer.authorize(input, current);
-      if (authorization.kind === 'blocked') return authorization;
-      const record = prepareRevision(input, journal, authorization);
-      if ('kind' in record) return record;
-      const key = revisionKey(input.sessionId, record.revision);
-      if ((await writer.store.get(key)) !== undefined)
-        return unavailable(
-          'Activation revision already exists; append-only history cannot be replaced.',
-        );
-      if (input.expectedRevision === 0)
-        await writer.store.set(governanceActivationKeys(input.sessionId).enrollment, {
-          schemaVersion: 1,
-          sessionId: input.sessionId,
-          firstActivationId: record.activationId,
-        });
-      await writer.store.set(key, record);
-      await writer.store.set(governanceActivationKeys(input.sessionId).head, {
+): Promise<Committed | AuthorityBlocked> {
+  return writer.withLock(input.sessionId, () => commitLocked(writer, input));
+}
+
+/** Caller holds the session lock. Every step re-reads and re-verifies the journal. */
+async function commitLocked(
+  writer: GovernanceActivationWriter,
+  input: GovernanceActivationCommit,
+): Promise<Committed | AuthorityBlocked> {
+  try {
+    const journal = await readJournal(writer.store, input.sessionId);
+    if ('kind' in journal) return journal;
+    if ((journal.head?.revision ?? 0) !== input.expectedRevision)
+      return unavailable('Stale or concurrent activation revision.');
+    const current = journal.history.at(-1) ?? null;
+    const authorization = await writer.authorize(input, current);
+    if (authorization.kind === 'blocked') return authorization;
+    const record = prepareRevision(input, journal, authorization);
+    if ('kind' in record) return record;
+    const key = revisionKey(input.sessionId, record.revision);
+    if ((await writer.store.get(key)) !== undefined)
+      return unavailable(
+        'Activation revision already exists; append-only history cannot be replaced.',
+      );
+    if (input.expectedRevision === 0)
+      await writer.store.set(governanceActivationKeys(input.sessionId).enrollment, {
         schemaVersion: 1,
         sessionId: input.sessionId,
-        revision: record.revision,
-        digest: digest(record),
+        firstActivationId: record.activationId,
       });
-      return { kind: 'committed', record };
-    } catch (error) {
-      return unavailable(
-        `Activation commit failed; preserve the journal: ${error instanceof Error ? error.message : String(error)}`,
-      );
+    await writer.store.set(key, record);
+    await writer.store.set(governanceActivationKeys(input.sessionId).head, {
+      schemaVersion: 1,
+      sessionId: input.sessionId,
+      revision: record.revision,
+      digest: digest(record),
+    });
+    return { kind: 'committed', record };
+  } catch (error) {
+    return unavailable(
+      `Activation commit failed; preserve the journal: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+/** The workflow scope a root Start decision binds. */
+export interface GovernanceRootStart {
+  readonly sessionId: string;
+  readonly directory: string;
+  readonly worktreeRoot: string;
+  readonly policyDigest: string;
+}
+
+export type GovernanceRootStartResult =
+  | {
+      readonly kind: 'activated';
+      readonly record: GovernanceActivationRevision;
+      /** True when an interrupted ACTIVATING revision of the same decision was completed. */
+      readonly resumed: boolean;
     }
+  | { readonly kind: 'already_active'; readonly record: GovernanceActivationRevision }
+  | AuthorityBlocked;
+
+/**
+ * Start a root scope under one session lock: INACTIVE (or no journal) commits
+ * ACTIVATING then ACTIVE; an interrupted ACTIVATING revision is completed; the
+ * authorization port must then return the pending decision, and the lifecycle
+ * rejects a different channel or actor. ENDING and delegated children never start.
+ */
+export async function startRootGovernance(
+  writer: GovernanceActivationWriter,
+  request: GovernanceRootStart,
+): Promise<GovernanceRootStartResult> {
+  return writer.withLock(request.sessionId, async () => {
+    const journal = await readJournalForStart(writer.store, request.sessionId);
+    if ('kind' in journal) return journal;
+    const current = journal.history.at(-1) ?? null;
+    const revision = journal.head?.revision ?? 0;
+    const settled = settledStart(current);
+    if (settled !== null) return settled;
+    if (current?.status === 'activating') return completeStart(writer, current, request, revision);
+    const started = await commitLocked(writer, {
+      ...request,
+      action: 'start',
+      expectedRevision: revision,
+      rootSessionId: request.sessionId,
+      activationId: randomUUID(),
+      generation: (current?.generation ?? 0) + 1,
+      parentDispatch: null,
+    });
+    if (started.kind === 'blocked') return started;
+    return completeStart(writer, started.record, request, started.record.revision, false);
   });
+}
+
+async function readJournalForStart(
+  store: GovernanceActivationStore,
+  sessionId: string,
+): Promise<Journal | AuthorityBlocked> {
+  try {
+    return await readJournal(store, sessionId);
+  } catch (error) {
+    return unavailable(
+      `Activation storage read failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+/** Start outcomes that need no write; null means Start may (re)commit or complete. */
+function settledStart(
+  current: GovernanceActivationRevision | null,
+): GovernanceRootStartResult | null {
+  if (current !== null && current.parentDispatch !== null)
+    return unavailable('A delegated child session cannot start governance.');
+  if (current?.status === 'active') return { kind: 'already_active', record: current };
+  if (current?.status === 'ending')
+    return unavailable('Governance is ending for this session; End must complete first.');
+  return null;
+}
+
+async function completeStart(
+  writer: GovernanceActivationWriter,
+  pending: GovernanceActivationRevision,
+  request: GovernanceRootStart,
+  revision: number,
+  resumed = true,
+): Promise<GovernanceRootStartResult> {
+  if (
+    pending.directory !== request.directory ||
+    pending.worktreeRoot !== request.worktreeRoot ||
+    pending.policyDigest !== request.policyDigest
+  )
+    return unavailable(
+      'The interrupted activation is bound to another directory, worktree or frozen policy.',
+    );
+  const {
+    schemaVersion: _schemaVersion,
+    revision: _revision,
+    status: _status,
+    decisionId: _decisionId,
+    decisionSource: _decisionSource,
+    decisionActor: _decisionActor,
+    previousDigest: _previousDigest,
+    ...scope
+  } = pending;
+  const active = await commitLocked(writer, {
+    ...scope,
+    action: 'activate',
+    expectedRevision: revision,
+  });
+  if (active.kind === 'blocked') return active;
+  return { kind: 'activated', record: active.record, resumed };
 }
 
 function prepareRevision(

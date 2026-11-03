@@ -8,14 +8,14 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-11-02):
+(counts updated 2026-11-03):
 
-- `root-composition`: 27 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 28 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 6 named files (`host-mutation-observation.ts`,
   `installed-commands.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 14 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 47 root production files
+- total: 48 root production files
 
 The activation/scope change in #1190 adds `plugin-native-tools.ts` for native
 catalogue/executor/completion composition and `opencode-governance.ts` for exact
@@ -48,6 +48,12 @@ authority was added.
 removed (2026-11-02): FlowGuard applies no reviewer output cap, model options stay
 host-native, and an unreadable or invalid `flowguard.json` now blocks ACTIVE
 runtime creation in `plugin.ts` instead of only the reviewer context.
+
+WS3 (#1190) adds `plugin-start-command.ts` at the composition boundary: it registers
+the native `/start` command and sequences hydrate, the activation commit and the
+catalogue publication. The Start decision itself (channel, actor, lock, journal)
+remains owned by `opencode-governance.ts` and `adapters/governance-activation.ts`;
+the command module adds no activation, approval or workflow authority.
 
 MUT4 (#1172) adds `plugin-mutation-reconciliation.ts` at the composition boundary
 to connect asynchronous host notifications and the synchronous pre-implement
