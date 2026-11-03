@@ -21,6 +21,9 @@ import { POLICY_MODES, PolicyModeSchema, type PolicyMode } from '../state/policy
 import type { SessionState } from '../state/schema.js';
 import { buildEnforcementError } from './blocked-result.js';
 import type { OpenCodeGovernance } from './opencode-governance.js';
+import { runAudit } from './plugin-audit.js';
+import type { FlowGuardPluginRuntime } from './plugin-shared.js';
+import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { hydrate } from './tools/index.js';
 
 type Registration = { dispose(): Promise<void> };
@@ -35,6 +38,12 @@ export interface StartCommandDeps {
   readonly publish: () => Promise<void>;
   /** Lifecycle admission and operation tracking owned by the plugin composition. */
   readonly guard: <T>(run: () => Promise<T>) => Promise<T>;
+  /** Runs inside the verified ACTIVE runtime of a session (required scope). */
+  readonly invoke: <T>(
+    sessionId: string,
+    action: (entry: { readonly runtime: FlowGuardPluginRuntime }) => Promise<T>,
+    required?: boolean,
+  ) => Promise<T | undefined>;
   readonly signal: AbortSignal;
 }
 
@@ -72,6 +81,7 @@ async function runStart(
     },
     toDecisionActor(actor),
   );
+  await auditHydrate(deps, input.sessionID, workflow);
   await deps.publish();
   const status =
     result.kind === 'already_active'
@@ -102,6 +112,34 @@ export function parseStartArguments(text: string): PolicyMode | undefined {
   return mode.data;
 }
 
+/**
+ * The hydrate call the former template made was audited by the tool after-hook:
+ * tool call, `lifecycle:session_created` and the committed semantic operations.
+ * Start runs the same canonical audit inside the now ACTIVE runtime; a blocking
+ * audit outcome fails the command visibly.
+ */
+async function auditHydrate(
+  deps: StartCommandDeps,
+  sessionId: string,
+  workflow: { readonly args: Record<string, unknown>; readonly output: string },
+): Promise<void> {
+  await deps.invoke(
+    sessionId,
+    ({ runtime }) =>
+      runtime.ws.runSerializedForSession(sessionId, async () => {
+        const outcome = await runAudit(
+          runtime.auditDeps,
+          TOOL_FLOWGUARD_HYDRATE,
+          workflow.args,
+          { title: '', output: workflow.output, metadata: {} },
+          sessionId,
+        );
+        if (outcome?.block) throw buildEnforcementError(outcome.code, outcome.reason);
+      }),
+    true,
+  );
+}
+
 async function hydrateWorkflow(
   sessionId: string,
   directory: string,
@@ -111,23 +149,23 @@ async function hydrateWorkflow(
   readonly worktreeRoot: string;
   readonly state: SessionState;
   readonly report: readonly string[];
+  readonly args: Record<string, unknown>;
+  readonly output: string;
 }> {
   const before = await resolveSessionAuthority({ root: directory, sessionId });
   if (before.status === 'unavailable') throw buildEnforcementError(before.code, before.reason);
   const { worktreeRoot } = before;
   // Hydrate reads only the session and worktree identity; a command has no message.
-  const output = await hydrate.execute(
-    { profileId: 'baseline', ...(policyMode === undefined ? {} : { policyMode }) },
-    {
-      sessionID: sessionId,
-      messageID: '',
-      agent: '',
-      directory: worktreeRoot,
-      worktree: worktreeRoot,
-      abort: signal,
-      metadata: () => {},
-    },
-  );
+  const args = { profileId: 'baseline', ...(policyMode === undefined ? {} : { policyMode }) };
+  const output = await hydrate.execute(args, {
+    sessionID: sessionId,
+    messageID: '',
+    agent: '',
+    directory: worktreeRoot,
+    worktree: worktreeRoot,
+    abort: signal,
+    metadata: () => {},
+  });
   const text = typeof output === 'string' ? output : output.output;
   const after = await resolveSessionAuthority({ root: directory, sessionId });
   if (after.status !== 'resolved' || after.worktreeRoot !== worktreeRoot)
@@ -135,7 +173,13 @@ async function hydrateWorkflow(
       'SESSION_DIR_NOT_FOUND',
       `Start could not establish the workflow state: ${text}`,
     );
-  return { worktreeRoot, state: after.state, report: hydrateReport(text, after.state) };
+  return {
+    worktreeRoot,
+    state: after.state,
+    report: hydrateReport(text, after.state),
+    args,
+    output: text,
+  };
 }
 
 /**

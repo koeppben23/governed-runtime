@@ -6,6 +6,7 @@ import { FlowGuardAuditPlugin } from './plugin.js';
 import { createV2Host } from './opencode-v2-test-helpers.js';
 import { createTestWorkspace, type TestWorkspace } from './test-helpers.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import {
   governanceActivationKeys,
   resolveGovernanceActivation,
@@ -87,6 +88,16 @@ describe('native /start command', () => {
     });
     expect(revisions().map((item) => item.status)).toEqual(['activating', 'active']);
     expect([...host.definitions.keys()]).toContain('flowguard_status');
+    const trail = await readAuditTrail(authority.sessDir);
+    expect(trail.map((event) => event.event)).toEqual(
+      expect.arrayContaining(['tool_call:flowguard_hydrate', 'lifecycle:session_created']),
+    );
+    expect(
+      trail.find((event) => event.event === 'tool_call:flowguard_hydrate')?.detail,
+    ).toMatchObject({
+      tool: 'flowguard_hydrate',
+      success: true,
+    });
     expect(host.synthetic).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionID: sessionId,

@@ -188,7 +188,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugin are rejected before any authority write. The productive catalogue is
   published and a non-resuming synthetic message reports the result together with
   the hydrate presentation; an auto-approve gate notice that cannot be reported
-  fails Start before any activation write. New reason
+  fails Start before any activation write. The hydrate call is audited through the
+  same canonical path the former template used (`tool_call`,
+  `lifecycle:session_created`, committed semantic operations); a blocking audit
+  outcome fails the command visibly. New reason
   code `START_ARGUMENTS_INVALID`; the `GOVERNANCE_NOT_ACTIVE` recovery now names
   `/start`. ADR-004 records the new composition file. A live smoke test drives
   `/start` through the SDK command channel of the pinned host, including restart
