@@ -271,7 +271,14 @@ describe('native V2 phase and integrity gates', () => {
     const h = await fixture('PLAN');
     // The only native command is /start; it never records workflow decision intent.
     expect(h.host.context.command.transform).toHaveBeenCalledOnce();
-    expect([...h.host.commands.keys()]).toEqual(['start']);
+    expect([...h.host.commands.keys()]).toEqual([
+      'start',
+      'review-decision',
+      'approve',
+      'override-approve',
+      'request-changes',
+      'reject',
+    ]);
     await expect(
       h.host.before(
         beforeEvent(h.sessionID, 'shell', {

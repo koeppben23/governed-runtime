@@ -63,7 +63,10 @@ import { createSessionCompletionAuditDeps } from './services/regulated-completio
 import { hydrate } from './tools/hydrate/hydrate.js';
 import { implement } from './tools/implementation/implement.js';
 import { run_check } from './tools/validation/run-check-tool.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 
 const DOC_PATH = 'docs/usage-notes.md';
 const REPORT_PATH = '.flowguard/reports/{attemptId}/jest.json';
@@ -127,7 +130,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   if (pc === undefined) delete process.env.OPENCODE_CONFIG_DIR;
   else process.env.OPENCODE_CONFIG_DIR = pc;
   if (s) {
@@ -516,7 +519,7 @@ describe('team opt-in completion (real git)', () => {
     expect(completeness.summary.waived).toBe(1);
 
     // The human evidence gate remains mandatory: approve → EXPORT_READY.
-    recordUserDecisionIntent({
+    recordComponentDecision({
       sessionId: se.sId,
       command: '/approve',
       expectedVerdict: 'approve',

@@ -21,16 +21,11 @@ import { IMPLEMENT_COMMAND } from './implement.js';
 import { RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND } from './resolve-implementation-challenge.js';
 import { RECONCILE_MUTATION_EPISODE_COMMAND } from './reconcile-mutation-episode.js';
 import { VALIDATE_COMMAND } from './validate.js';
-import { REVIEW_DECISION_COMMAND } from './review-decision.js';
 import { REVIEW_COMMAND } from './review.js';
 import { ARCHITECTURE_COMMAND } from './architecture.js';
 import { ABORT_COMMAND } from './abort.js';
 import { ARCHIVE_COMMAND } from './archive.js';
 import { TASK_COMMAND } from './task.js';
-import { APPROVE_COMMAND } from './approve.js';
-import { OVERRIDE_APPROVE_COMMAND } from './override-approve.js';
-import { REQUEST_CHANGES_COMMAND } from './request-changes.js';
-import { REJECT_COMMAND } from './reject.js';
 import { CHECK_COMMAND } from './check.js';
 import { EXPORT_COMMAND } from './export.js';
 import { WHY_COMMAND } from './why.js';
@@ -48,16 +43,11 @@ const COMMAND_BODIES: Record<string, string> = {
   'resolve-implementation-challenge.md': RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND,
   'reconcile-mutation-episode.md': RECONCILE_MUTATION_EPISODE_COMMAND,
   'validate.md': VALIDATE_COMMAND,
-  'review-decision.md': REVIEW_DECISION_COMMAND,
   'review.md': REVIEW_COMMAND,
   'architecture.md': ARCHITECTURE_COMMAND,
   'abort.md': ABORT_COMMAND,
   'archive.md': ARCHIVE_COMMAND,
   'task.md': TASK_COMMAND,
-  'approve.md': APPROVE_COMMAND,
-  'override-approve.md': OVERRIDE_APPROVE_COMMAND,
-  'request-changes.md': REQUEST_CHANGES_COMMAND,
-  'reject.md': REJECT_COMMAND,
   'check.md': CHECK_COMMAND,
   'export.md': EXPORT_COMMAND,
   'why.md': WHY_COMMAND,

@@ -175,6 +175,25 @@ assurance; it never trusts a caller's provenance field. Installed-host acceptanc
 remains **NOT_VERIFIED**. Start confers no
 implicit approval, override, capacity recovery or End authority.
 
+RPC reachability and actor identity are separate trust facts. `StartGovernance`
+resolves the server's configured actor; even an IdP-verified token does not bind
+that actor to the individual RPC caller. Clients permitted to reach a shared
+OpenCode instance can request activation under that server identity when the
+explicit opt-in and scope/policy checks allow it. Operators must control access
+to the host RPC interface accordingly. Per-caller activation permissions require
+an additional caller-to-actor binding; FlowGuard does not currently provide or
+claim it. Installed acceptance must check this access boundary separately from
+actor-token verification. This limitation grants no authority at later human gates.
+
+Native approval commands bind their operation to the exact current workflow
+state, action/rationale, frozen policy, worktree and activation generation. The
+decision tool validates that binding under its session write lock and resolves
+the deciding actor there. It rejects an `autonomous` operation where the frozen
+snapshot requires a command decision, regardless of how activation occurred.
+The command channel still proves neither an individual RPC caller's identity nor
+verified human origin. The receipt records the actual channel and server actor,
+not invented UI provenance. The prior session-only TTL permission cache is gone.
+
 Required independent-review provenance, frozen subject, full completion,
 uncontaminated same-child capture and canonical atomic evidence binding are not
 relaxed. V1-equivalent independent AI review remains mandatory where required by

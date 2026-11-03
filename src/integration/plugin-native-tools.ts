@@ -4,11 +4,17 @@ import type { Plugin } from '@opencode/plugin';
 import type { ToolContext as NativeToolContext } from '@opencode/plugin/promise/tool';
 import type { SessionContext } from '@opencode/plugin/promise/session';
 import { z } from 'zod';
+import {
+  createDecisionOperation,
+  DecisionArgsSchema,
+  runWithDecisionInvocation,
+} from './workflow-decision-invocation.js';
 import { listActiveGovernanceRoots } from '../adapters/governance-activation.js';
 import {
   FLOWGUARD_TOOL_NAMES,
   FLOWGUARD_TOOL_PREFIX,
   TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_DECISION,
   TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
 } from './tool-names.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
@@ -116,7 +122,11 @@ export async function executeCanonicalNativeTool(
   definition: ToolDefinition,
   args: unknown,
   context: NativeToolContext,
-  entry: { readonly runtime: FlowGuardPluginRuntime; readonly scope: ActiveGovernanceScope },
+  entry: {
+    readonly runtime: FlowGuardPluginRuntime;
+    readonly scope: ActiveGovernanceScope;
+    readonly assertScopeCurrent: () => Promise<void>;
+  },
 ) {
   const { runtime, scope } = entry;
   if (isDelegatedWorkflowDecision(scope, { tool: name, agent: context.agent }))
@@ -133,21 +143,35 @@ export async function executeCanonicalNativeTool(
       'The ACTIVE workflow state is missing; hydrate cannot recreate activation authority.',
     );
   let metadata: Record<string, unknown> = {};
-  const result = await definition.execute(args, {
-    sessionID: context.sessionID,
-    messageID: context.messageID,
-    agent: context.agent,
-    directory: authority.worktreeRoot,
-    worktree: authority.worktreeRoot,
-    abort: context.signal,
-    metadata: (update) => {
-      metadata = {
-        ...metadata,
-        ...update.metadata,
-        ...(update.title === undefined ? {} : { title: update.title }),
-      };
-    },
-  });
+  const run = () =>
+    definition.execute(args, {
+      sessionID: context.sessionID,
+      messageID: context.messageID,
+      agent: context.agent,
+      directory: authority.worktreeRoot,
+      worktree: authority.worktreeRoot,
+      abort: context.signal,
+      metadata: (update) => {
+        metadata = {
+          ...metadata,
+          ...update.metadata,
+          ...(update.title === undefined ? {} : { title: update.title }),
+        };
+      },
+    });
+  const result =
+    name === TOOL_FLOWGUARD_DECISION
+      ? await runWithDecisionInvocation(
+          createDecisionOperation(
+            scope.root,
+            authority.state,
+            DecisionArgsSchema.parse(args),
+            'autonomous',
+          ),
+          entry.assertScopeCurrent,
+          run,
+        )
+      : await run();
   return typeof result === 'string'
     ? { content: result, metadata }
     : { content: result.output, metadata: { ...metadata, ...result.metadata } };

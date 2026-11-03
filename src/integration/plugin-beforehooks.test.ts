@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { commandBefore, toolBefore } from './plugin-beforehooks.js';
+import { toolBefore } from './plugin-beforehooks.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import type { AuditDeps } from './plugin-audit.js';
 import type { PluginWorkspace } from './plugin-workspace.js';
@@ -127,71 +127,6 @@ function enforcementPayload(error: unknown): EnforcementPayload {
   expect(start, `no JSON payload in: ${raw}`).toBeGreaterThanOrEqual(0);
   return JSON.parse(raw.slice(start)) as EnforcementPayload;
 }
-
-describe('commandBefore', () => {
-  it('warns and skips when the command has no sessionID', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(runtime, {}, {});
-    expect(runtime.log.warn).toHaveBeenCalledWith(
-      'decision',
-      'command.execute.before missing sessionID',
-    );
-  });
-
-  it('warns and skips for a null command input', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(runtime, null, null);
-    expect(runtime.log.warn).toHaveBeenCalledWith(
-      'decision',
-      'command.execute.before missing sessionID',
-    );
-  });
-
-  it('records a user decision intent for /approve', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(runtime, { sessionID: SESSION_ID, command: '/approve', arguments: '' }, {});
-    expect(runtime.log.info).toHaveBeenCalledWith(
-      'decision',
-      'recorded user decision command intent',
-      expect.objectContaining({ expectedVerdict: 'approve' }),
-    );
-  });
-
-  it('records a decision intent from /review-decision arguments', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(
-      runtime,
-      { sessionID: SESSION_ID, command: '/review-decision', arguments: 'reject' },
-      {},
-    );
-    expect(runtime.log.info).toHaveBeenCalledWith(
-      'decision',
-      'recorded user decision command intent',
-      expect.objectContaining({ sessionId: SESSION_ID, expectedVerdict: 'reject' }),
-    );
-  });
-
-  it('returns without recording for a non-decision command', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(runtime, { sessionID: SESSION_ID, command: '/plan', arguments: '' }, {});
-    expect(runtime.log.info).not.toHaveBeenCalled();
-  });
-
-  it('returns without recording when command and arguments are missing', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(runtime, { sessionID: SESSION_ID }, {});
-    expect(runtime.log.info).not.toHaveBeenCalled();
-  });
-
-  it('sets the check scope for /check and clears it for other commands', async () => {
-    const runtime = makeRuntime();
-    runtime.activeCommandScopes.set(SESSION_ID, 'check');
-    await commandBefore(runtime, { sessionID: SESSION_ID, command: 'plan', arguments: '' }, {});
-    expect(runtime.activeCommandScopes.has(SESSION_ID)).toBe(false);
-    await commandBefore(runtime, { sessionID: SESSION_ID, command: '/check', arguments: '' }, {});
-    expect(runtime.activeCommandScopes.get(SESSION_ID)).toBe('check');
-  });
-});
 
 describe('toolBefore — host tool fail-closed resolution', () => {
   it('blocks an empty tool identity without a session mapping using the typed authority code', async () => {

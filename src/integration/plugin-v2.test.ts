@@ -107,7 +107,14 @@ describe('native V2 entrypoint', () => {
     expect(host.subscribe).toHaveBeenCalledOnce();
     // The only native command is /start; it never records workflow decision intent.
     expect(host.context.command.transform).toHaveBeenCalledOnce();
-    expect([...host.commands.keys()]).toEqual(['start']);
+    expect([...host.commands.keys()]).toEqual([
+      'start',
+      'review-decision',
+      'approve',
+      'override-approve',
+      'request-changes',
+      'reject',
+    ]);
     expect(h.createLogger).not.toHaveBeenCalled();
     expect(host.definitions.get('flowguard_help')).toMatchObject({
       name: 'flowguard_help',

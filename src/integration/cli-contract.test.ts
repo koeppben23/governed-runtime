@@ -46,7 +46,10 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ToolDefinition, ToolResult } from './tools/helpers.js';
 
 type StatusResult = {
@@ -136,7 +139,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -167,7 +170,7 @@ async function executeDecision(args: {
   verdict: 'approve' | 'changes_requested' | 'reject';
   rationale: string;
 }): Promise<ToolResult> {
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: args.verdict,
@@ -183,7 +186,7 @@ function recordDecisionIntentForTool(
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: context.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,

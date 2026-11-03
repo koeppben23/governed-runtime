@@ -28,7 +28,10 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ToolDefinition } from './tools/helpers.js';
 import type { SessionState } from '../state/schema.js';
 import type { VerificationCandidateKind } from '../state/discovery-schemas.js';
@@ -99,7 +102,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -126,7 +129,7 @@ function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void 
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,

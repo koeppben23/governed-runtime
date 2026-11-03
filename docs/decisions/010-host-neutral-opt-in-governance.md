@@ -110,9 +110,12 @@ requirement is withdrawn for OpenCode instead of being simulated.
 
 **Implementation status (2026-11-03):** interactive `/start` is implemented as the
 native `start` command and covered by component tests; installed-host acceptance
-remains **NOT_VERIFIED**. Autonomous activation and `host_command` Approve,
-OverrideApprove, RecoverCapacity and EndGovernance are not yet connected and stay
-blocked.
+remains **NOT_VERIFIED**. Autonomous activation and native `host_command` Approve,
+OverrideApprove, RequestChanges, Reject and ReviewDecision now share their
+canonical lifecycle/decision and audit paths. RecoverCapacity and EndGovernance
+are not yet connected and stay blocked. Native decision operations bind the
+current subject and source rather than issuing a TTL permission for a later model
+call; activation supplies no gate approval.
 
 ## Decision
 

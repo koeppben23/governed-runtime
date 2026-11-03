@@ -52,7 +52,10 @@ import {
   sessionDir as resolveSessionDir,
   workspaceDir as resolveWorkspaceDir,
 } from '../adapters/workspace/index.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ToolDefinition } from './tools/helpers.js';
 
 vi.mock('./git-control-plane', async (importOriginal) => {
@@ -179,7 +182,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
     id: 'test-operator',
     email: 'test@flowguard.dev',
@@ -216,7 +219,7 @@ function recordDecisionIntentForTool(
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: context.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,

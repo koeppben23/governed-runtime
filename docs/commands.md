@@ -45,17 +45,21 @@ The `/<command>` syntax invokes the corresponding `flowguard_<tool-name>` tool i
 | -------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/start`                                                       | `flowguard_hydrate`       | Native plugin command, not a template: locked activation preflight, fresh hydration, activation/audit commit; ACTIVE repeats do not hydrate |
 | `/task`                                                        | `flowguard_ticket`        | Product naming; the canonical tool keeps the historical `ticket` name                                                                       |
-| `/approve`, `/override-approve`, `/request-changes`, `/reject` | `flowguard_decision`      | One decision tool; the product commands carry the verdict intent                                                                            |
+| `/approve`, `/override-approve`, `/request-changes`, `/reject` | `flowguard_decision`      | Native decision commands: they execute the canonical decision tool and rails directly, without a model turn                                 |
 | `/abort`                                                       | `flowguard_abort_session` | Tool name disambiguates `abort` from `serve`/`run`                                                                                          |
-| `/review-decision` (compatibility)                             | `flowguard_decision`      | Verdict-routing surface, kept for scripts; the product variants above are the recommended interface                                         |
+| `/review-decision` (compatibility)                             | `flowguard_decision`      | Native verdict-routing surface kept for scripts; the product variants above are the recommended interface                                   |
 | `/validate`, `/check` (compatibility)                          | `flowguard_run_check`     | Validation runs automatically; the explicit compatibility surfaces remain for scripts and manual evidence runs                              |
 | `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                                                   |
 | `/help`, `/commands`, `/commands --all`                        | `flowguard_help`          | Contextual help and command-list views supply fixed help arguments                                                                          |
 
-Agents never call `flowguard_decision` on their own: the tool records the USER's
-verdict intent from the commands above. A self-initiated call is refused with
-`HUMAN_DECISION_REQUIRED`, and the refusal's `agentInstruction` names the command
-the user must run — `/override-approve` when the independent review is exhausted.
+The decision commands above execute `flowguard_decision` natively without a model
+turn. A model-initiated `flowguard_decision` call is not the user's command. The
+frozen policy decides admissibility: where it requires a human gate decision, only
+an explicit native `host_command` operation is accepted and a model call is refused
+with `HUMAN_DECISION_REQUIRED`; where it permits automation, a model decision is
+recorded as `autonomous`. The refusal's `agentInstruction` names the command the
+user must run — `/override-approve` when the independent review is exhausted.
+`host_command` records the channel, not verified human origin.
 
 All other commands map directly after replacing command hyphens with underscores
 (`/plan` → `flowguard_plan`, `/architecture` → `flowguard_architecture`).
@@ -299,11 +303,13 @@ registered as `flowguard_decision`.
 - `changes_requested` → return to previous phase for revision
 - `reject` → terminal `REJECTED`; the reviewed evidence and decision remain available for audit
 
-The intent must match the gate type derived from persisted state: a plain
+The verdict must match the gate type derived from persisted state: a plain
 `approve` at an exhausted gate is blocked with `GOVERNANCE_OVERRIDE_REQUIRED`,
 and a governance override at a reviewer-accepted gate is blocked with
 `GOVERNANCE_OVERRIDE_NOT_REQUIRED`. Override bindings are hardened to exact
-reviewed-subject equality.
+reviewed-subject equality. Native `/approve` and `/override-approve` bind the
+exact operation to the current state, policy, worktree and activation generation;
+no decision permission is cached for a later model call.
 
 **Four-eyes (regulated mode):** `approve` requires reviewer identity different
 from session initiator, and both identities must be known. Same-actor approve

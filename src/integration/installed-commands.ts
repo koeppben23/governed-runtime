@@ -193,11 +193,11 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'workflow.review-decision',
-    templateFile: 'review-decision.md',
+    templateFile: null,
     invocation: '/review-decision',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_DECISION, workflowCommand: Command.REVIEW_DECISION },
-    visibility: 'compatibility',
+    visibility: 'visible_alias',
     presentationGroup: 'review',
     description: 'Record the human decision at a review gate.',
   },
@@ -267,7 +267,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'variant.approve',
-    templateFile: 'approve.md',
+    templateFile: null,
     invocation: '/approve',
     kind: 'action_variant',
     target: {
@@ -282,7 +282,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'variant.override-approve',
-    templateFile: 'override-approve.md',
+    templateFile: null,
     invocation: '/override-approve',
     kind: 'action_variant',
     target: {
@@ -297,7 +297,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'variant.request-changes',
-    templateFile: 'request-changes.md',
+    templateFile: null,
     invocation: '/request-changes',
     kind: 'action_variant',
     target: {
@@ -312,7 +312,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'variant.reject',
-    templateFile: 'reject.md',
+    templateFile: null,
     invocation: '/reject',
     kind: 'action_variant',
     target: {

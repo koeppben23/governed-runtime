@@ -41,7 +41,10 @@ import {
 } from '../adapters/workspace/index.js';
 import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
 import { verifyChain } from '../audit/integrity.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import type { ToolDefinition } from './tools/helpers.js';
@@ -120,7 +123,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -156,7 +159,7 @@ function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void 
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,

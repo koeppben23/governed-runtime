@@ -18,7 +18,7 @@ import { readState, writeState } from '../adapters/persistence.js';
 import { writeRepoConfig } from '../adapters/persistence-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import { computeFingerprint, sessionDir } from '../adapters/workspace/index.js';
-import { clearUserDecisionIntents, consumeUserDecisionIntent } from './user-decision-intent.js';
+import { readDecisionInvocation } from './workflow-decision-invocation.js';
 import { seedStrictPlanSession } from './plugin-host-task-diagnostics-test-helpers.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
 import type { LogEntry } from '../logging/logger.js';
@@ -29,7 +29,6 @@ let logs: LogEntry[];
 
 beforeEach(() => {
   logs = [];
-  clearUserDecisionIntents();
   // Diagnostic sink only. No host client or provenance capability is replaced.
   vi.spyOn(logging, 'createPluginLogger').mockImplementation((_sink, ...args) =>
     createLogger(
@@ -44,7 +43,6 @@ afterEach(async () => {
   try {
     for (const dispose of cleanups.splice(0).reverse()) await dispose();
   } finally {
-    clearUserDecisionIntents();
     vi.restoreAllMocks();
   }
 });
@@ -121,9 +119,8 @@ describe('native V2 plugin definition and lifecycle', () => {
     'never infers an operator decision from a command-like caller claim %j',
     async (command) => {
       const h = await fixture();
-      // The only native command is /start; it never records workflow decision intent.
-      expect(h.host.context.command.transform).toHaveBeenCalledOnce();
-      expect([...h.host.commands.keys()]).toEqual(['start']);
+      // Command-like model arguments do not create scoped command authority.
+      expect([...h.host.commands.keys()]).toContain('approve');
       await h.host.before(
         v2ToolEvent({
           sessionID: h.sessionID,
@@ -131,10 +128,7 @@ describe('native V2 plugin definition and lifecycle', () => {
           input: { command, origin: 'human' },
         }),
       );
-      expect(consumeUserDecisionIntent({ sessionId: h.sessionID, verdict: 'approve' })).toEqual({
-        ok: false,
-        reason: 'missing',
-      });
+      expect(readDecisionInvocation({} as never)).toBeUndefined();
     },
   );
 

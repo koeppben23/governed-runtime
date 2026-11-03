@@ -227,7 +227,13 @@ function createRuntimeActions(input: RuntimeActionInput) {
         if (!entry) return { content: help.description, metadata: {} };
         if (name === TOOL_FLOWGUARD_HELP && entry.scope.sessionId !== entry.scope.root.sessionId)
           return { content: help.description, metadata: {} };
-        return executeCanonicalNativeTool(name, definition, args, context, entry);
+        return executeCanonicalNativeTool(name, definition, args, context, {
+          ...entry,
+          assertScopeCurrent: async () => {
+            await governance.assertScopeCurrent(context.sessionID, entry.scope);
+            await governance.assertActivationAuditConfirmed(entry.scope.root);
+          },
+        });
       })(),
     );
   const guard = <T>(run: () => Promise<T>): Promise<T> =>

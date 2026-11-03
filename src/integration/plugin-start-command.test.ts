@@ -68,7 +68,14 @@ describe('native /start command', () => {
   it('registers one native start command and leaves sessions untouched until invoked', async () => {
     await open();
     expect(host.context.command.transform).toHaveBeenCalledOnce();
-    expect([...host.commands.keys()]).toEqual(['start']);
+    expect([...host.commands.keys()]).toEqual([
+      'start',
+      'review-decision',
+      'approve',
+      'override-approve',
+      'request-changes',
+      'reject',
+    ]);
     const sessionId = randomUUID();
     expect(await resolveGovernanceActivation(host.activation.store, sessionId)).toEqual({
       kind: 'inactive',

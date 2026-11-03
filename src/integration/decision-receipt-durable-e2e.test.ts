@@ -37,7 +37,10 @@ import { computeFingerprint } from '../adapters/workspace/index.js';
 import { createSessionCompletionAuditDeps } from './services/regulated-completion.js';
 import { reconcilePendingAuditOperations } from './plugin-audit.js';
 import { TOOL_FLOWGUARD_DECISION } from './tool-names.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -130,7 +133,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -192,7 +195,7 @@ describe('durable decision receipt e2e', () => {
 
     // The session was initiated by Alice; the plan is approved by Bob.
     vi.mocked(actorMock.resolveActor).mockResolvedValue(REVIEWER_ACTOR);
-    recordUserDecisionIntent({
+    recordComponentDecision({
       sessionId: ctx.sessionID,
       command: '/review-decision',
       expectedVerdict: 'approve',

@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { HostCallIdentity, HostCallIdentitySchema } from './host-identity.js';
 import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
+import { ReviewVerdict } from './evidence-primitives.js';
 
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 export const GovernanceActivationStatus = z.enum(['activating', 'active', 'ending', 'inactive']);
@@ -53,6 +54,28 @@ export const GovernanceActivationRevision = z
   .strict()
   .readonly();
 export type GovernanceActivationRevision = z.infer<typeof GovernanceActivationRevision>;
+
+/** Exact decision operation captured by a trusted native entry, not model arguments. */
+export const WorkflowDecisionOperation = GovernanceActivationRevision.unwrap()
+  .pick({
+    sessionId: true,
+    rootSessionId: true,
+    activationId: true,
+    generation: true,
+    directory: true,
+    worktreeRoot: true,
+    policyDigest: true,
+  })
+  .extend({
+    operationId: z.string().uuid(),
+    source: GovernanceDecisionSource.extract(['host_command', 'autonomous']),
+    stateDigest: Digest,
+    verdict: ReviewVerdict,
+    rationaleDigest: Digest,
+  })
+  .strict()
+  .readonly();
+export type WorkflowDecisionOperation = z.infer<typeof WorkflowDecisionOperation>;
 
 export const GovernanceActivationHead = z
   .object({

@@ -34,6 +34,8 @@ import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { hydrate, resolveHydratePolicy } from './tools/index.js';
 import { FlowGuardGovernance, type AutonomousStartRequest } from './opencode-governance-rpc.js';
+import { addDecisionCommands } from './plugin-decision-command.js';
+import type { ActiveGovernanceScope } from './opencode-governance.js';
 import {
   appendAuditEventAlreadyLocked,
   readAuditTrail,
@@ -56,7 +58,10 @@ type StartWorkflow = {
 };
 
 export interface StartCommandDeps {
-  readonly governance: Pick<OpenCodeGovernance, 'startRoot' | 'confirmActivationAudit'>;
+  readonly governance: Pick<
+    OpenCodeGovernance,
+    'startRoot' | 'confirmActivationAudit' | 'assertScopeCurrent' | 'assertActivationAuditConfirmed'
+  >;
   /** Publishes the productive catalogue for the now ACTIVE location. */
   readonly publish: () => Promise<void>;
   /** Lifecycle admission and operation tracking owned by the plugin composition. */
@@ -64,7 +69,10 @@ export interface StartCommandDeps {
   /** Runs inside the verified ACTIVE runtime of a session (required scope). */
   readonly invoke: <T>(
     sessionId: string,
-    action: (entry: { readonly runtime: FlowGuardPluginRuntime }) => Promise<T>,
+    action: (entry: {
+      readonly runtime: FlowGuardPluginRuntime;
+      readonly scope: ActiveGovernanceScope;
+    }) => Promise<T>,
     required?: boolean,
     options?: { readonly allowPendingActivationAudit?: boolean },
   ) => Promise<T | undefined>;
@@ -80,11 +88,8 @@ export async function registerStartCommands(
   registrations.push(await registerAutonomousStart(ctx, deps));
 }
 
-function registerStartCommand(
-  ctx: Pick<Plugin.Context, 'command' | 'session'>,
-  deps: StartCommandDeps,
-): Promise<Registration> {
-  return ctx.command.transform((editor) =>
+function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Promise<Registration> {
+  return ctx.command.transform((editor) => {
     editor.add({
       name: NATIVE_START_COMMAND,
       description: `FlowGuard — start governance for this session (optional policy mode: ${POLICY_MODES.join(', ')}).`,
@@ -92,8 +97,9 @@ function registerStartCommand(
         deps.guard(async () => {
           await runStart(ctx, deps, input);
         }),
-    }),
-  );
+    });
+    addDecisionCommands(ctx, deps, editor);
+  });
 }
 
 /** Dedicated native operation, never installed as a model tool or prompt trigger. */

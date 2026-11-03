@@ -14,12 +14,10 @@ import { isAllowedReworkContinuation } from './plugin-rework-continuation.js';
 import { isMutatingFlowGuardTool } from './tool-classification.js';
 import { enforceBeforeVerdict } from './review/enforcement/enforcement.js';
 import { reviewSignalOwner } from './review/obligations/obligation-tools.js';
-import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput } from './types.js';
-import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
+import type { ToolHookBeforeInput, ToolHookBeforeOutput } from './types.js';
 import {
   getToolTraceId,
   recordToolLatencyStart,
-  type ActiveCommandScope,
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
 import {
@@ -48,84 +46,6 @@ import { getRuntimeInstanceId } from './runtime-instance.js';
 import { acquireRuntimeLease } from './runtime-lease.js';
 import { enforceGitPrerequisiteBeforeMutation } from './plugin-git-gate.js';
 import { reconcileHostMutationEpisodes } from './plugin-mutation-reconciliation.js';
-
-export async function commandBefore(
-  runtime: FlowGuardPluginRuntime,
-  input: unknown,
-  _output: unknown,
-): Promise<void> {
-  return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
-    const hookInput = input as CommandHookBeforeInput;
-    const rawSessionId = hookInput?.sessionID;
-    if (!rawSessionId) {
-      runtime.log.warn('decision', 'command.execute.before missing sessionID');
-      return;
-    }
-
-    // Stryker disable next-line OptionalChaining — equivalent: sessionID-missing inputs return at the guard above before this line is reached.
-    updateCommandScope(runtime, rawSessionId, hookInput?.command ?? '');
-
-    await maybeReleaseCapacityLock(runtime, rawSessionId, hookInput?.command ?? '');
-
-    const intent = recordUserDecisionIntentFromCommand({
-      sessionId: rawSessionId,
-      // Stryker disable next-line OptionalChaining — equivalent: the `?? ''` fallback keeps removed optional chains observationally identical.
-      command: hookInput?.command ?? '',
-      // Stryker disable next-line OptionalChaining — equivalent: decision commands ignore the arguments value when absent; the `?? ''` fallback neutralizes single-`?.` removals.
-      arguments: hookInput?.arguments ?? '',
-    });
-    if (!intent) return;
-
-    runtime.log.info('decision', 'recorded user decision command intent', {
-      sessionId: rawSessionId,
-      command: intent.command,
-      expectedVerdict: intent.expectedVerdict,
-      expiresAt: intent.expiresAt,
-    });
-  });
-}
-
-const REVIEW_CAPACITY_RELEASE_COMMANDS: ReadonlySet<string> = new Set([
-  'plan',
-  'architecture',
-  'review',
-  'implement',
-]);
-
-async function maybeReleaseCapacityLock(
-  runtime: FlowGuardPluginRuntime,
-  sessionId: string,
-  rawCommand: string,
-): Promise<void> {
-  const command = rawCommand.trim().replace(/^\/+/, '');
-  if (!REVIEW_CAPACITY_RELEASE_COMMANDS.has(command)) return;
-  await clearCapacityLock(runtime, sessionId, command);
-}
-
-/** Release the capacity lock only at the start of a new explicit review command. */
-async function clearCapacityLock(
-  runtime: FlowGuardPluginRuntime,
-  sessionId: string,
-  command: string,
-): Promise<void> {
-  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
-  if (resolution.status !== 'resolved') return;
-  const lock = resolution.state.reviewAssurance?.capacityLock;
-  if (!lock) return;
-  await runtime.ws.updateReviewAssurance(resolution.sessDir, (state) => {
-    const assurance = state.reviewAssurance;
-    if (!assurance?.capacityLock) return state;
-    return {
-      ...state,
-      reviewAssurance: { ...assurance, capacityLock: null },
-    };
-  });
-  runtime.log.info('review', 'capacity lock released by explicit command', {
-    sessionId,
-    command,
-    obligationId: lock.obligationId,
-  });
-}
 
 export async function toolBefore(
   runtime: FlowGuardPluginRuntime,
@@ -364,21 +284,6 @@ async function reconcileObservationParent(
   });
   if (!resolution) return;
   await reconcileBeforeMutation(runtime, resolution.sessionId, TOOL_FLOWGUARD_OBSERVE_REPOSITORY);
-}
-
-function updateCommandScope(
-  runtime: FlowGuardPluginRuntime,
-  sessionId: string,
-  command: string,
-): void {
-  runtime.checkReworkContinuations.delete(sessionId);
-  const normalized = command.trim().replace(/^\/+/, '');
-  const scope: ActiveCommandScope | undefined = normalized === 'check' ? 'check' : undefined;
-  if (scope) {
-    runtime.activeCommandScopes.set(sessionId, scope);
-    return;
-  }
-  runtime.activeCommandScopes.delete(sessionId);
 }
 
 async function readScopedState(

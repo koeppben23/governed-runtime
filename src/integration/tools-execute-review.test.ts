@@ -60,11 +60,10 @@ import {
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import {
-  clearUserDecisionIntents,
-  peekUserDecisionIntent,
-  recordUserDecisionIntent,
-  recordUserDecisionIntentFromCommand,
-} from './user-decision-intent.js';
+  clearComponentDecisions,
+  peekComponentDecision,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ReviewVerdict } from '../state/evidence.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
@@ -216,7 +215,7 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   cleanupEnv();
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -257,7 +256,7 @@ function recordUserDecision(verdict: ReviewVerdict): void {
       : verdict === 'changes_requested'
         ? '/request-changes'
         : '/reject';
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command,
     expectedVerdict: verdict,
@@ -543,11 +542,10 @@ describe('decision', () => {
 
     it('routes /override-approve intent to the governance-override gate (not a plain approval)', async () => {
       await reachPlanReview();
-      // Simulate OpenCode command.execute.before recording the override command.
-      recordUserDecisionIntentFromCommand({
+      // Explicit component authority, not native command provenance.
+      recordComponentDecision({
         sessionId: ctx.sessionID,
-        command: '/override-approve',
-        arguments: '',
+        expectedVerdict: 'approve_with_governance_override',
       });
       const result = parseToolResult(
         await decision.execute(
@@ -616,12 +614,10 @@ describe('decision', () => {
 
     it('accepts decision after command.execute.before records a host-command intent', async () => {
       await reachPlanReview();
-      // Simulate OpenCode command.execute.before hook firing for /approve.
-      // This is the only origin the decision tool trusts in human-gated modes.
-      recordUserDecisionIntentFromCommand({
+      // Explicit component authority; native command provenance is tested separately.
+      recordComponentDecision({
         sessionId: ctx.sessionID,
-        command: '/approve',
-        arguments: '',
+        expectedVerdict: 'approve',
       });
       const raw = await decision.execute(
         { verdict: 'approve', rationale: 'User approved via /approve' },
@@ -681,9 +677,9 @@ describe('decision', () => {
 
       // A failed decision must never burn the intent: the intent is only consumed
       // once finalResult.kind === 'ok'. Inspect the store non-destructively.
-      expect(
-        peekUserDecisionIntent({ sessionId: ctx.sessionID, verdict: 'approve' }),
-      ).toMatchObject({ ok: true });
+      expect(peekComponentDecision({ sessionId: ctx.sessionID, verdict: 'approve' })).toMatchObject(
+        { ok: true },
+      );
     });
 
     it('burns intent exactly once on success (no replay after a successful decision)', async () => {

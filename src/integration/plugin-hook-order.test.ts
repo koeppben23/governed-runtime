@@ -269,6 +269,13 @@ describe('single-owner native hook composition', () => {
     expect([...host.toolHooks.keys()]).toEqual(['execute.before', 'execute.after']);
     // The only native command is /start; it never records workflow decision intent.
     expect(host.context.command.transform).toHaveBeenCalledOnce();
-    expect([...host.commands.keys()]).toEqual(['start']);
+    expect([...host.commands.keys()]).toEqual([
+      'start',
+      'review-decision',
+      'approve',
+      'override-approve',
+      'request-changes',
+      'reject',
+    ]);
   });
 });

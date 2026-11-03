@@ -383,6 +383,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/plugin-native-events.ts', owner: 'root-composition' },
   { file: 'integration/plugin-native-review.ts', owner: 'root-composition' },
   { file: 'integration/plugin-start-command.ts', owner: 'root-composition' },
+  { file: 'integration/plugin-decision-command.ts', owner: 'root-composition' },
   { file: 'integration/plugin.ts', owner: 'root-composition' },
   { file: 'integration/proofgraph/approval-projection.ts', owner: 'proofgraph' },
   { file: 'integration/proofgraph/claim-contract-rules.ts', owner: 'proofgraph' },
@@ -641,6 +642,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/tools/validation/run-check-tool.ts', owner: 'tools-validation' },
   { file: 'integration/tools/workflow-policy-context.ts', owner: 'tools-infrastructure' },
   { file: 'integration/types.ts', owner: 'root-authority' },
-  { file: 'integration/user-decision-intent.ts', owner: 'root-authority' },
+  { file: 'integration/workflow-decision-invocation.ts', owner: 'root-authority' },
   { file: 'integration/verification-runtime-resolution.ts', owner: 'root-authority' },
 ];

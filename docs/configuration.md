@@ -37,6 +37,11 @@ The permission is read again for repeat/recovery requests; disabling it prevents
 further autonomous starts/repairs, without implicitly ending an ACTIVE session.
 Interactive `/start` remains available to repair a committed activation audit.
 
+The actor is the server identity, not an authenticated identity of the individual
+RPC caller. On shared instances, separately control which clients may reach this
+operation. Per-caller permissions require an additional identity binding; see
+the [trust boundary](./trust-boundaries.md).
+
 Only a root session in the addressed host location may start. Child sessions,
 wrong worktrees/policies, disabled permission and insufficient assurance return
 `{ kind: "blocked", code, reason }` before hydration. Successful responses contain
@@ -46,6 +51,32 @@ starts do not create another activation. Audit/confirmation failure blocks
 runtime admission until the explicit operation is retried. Installation,
 hydration, ordinary prompts and workflow state alone still never activate
 governance. This operation grants no approval or review exemption.
+
+## Approval decisions (OpenCode V2)
+
+`/approve [rationale]` and `/override-approve <non-empty rationale>` are native
+commands, as are `/request-changes`, `/reject` and `/review-decision <verdict>
+[rationale]`. They run the same canonical decision tool and rails, without a
+model turn or a prompt-derived permission. The operation is scoped to its exact
+session, worktree, frozen policy, activation generation, current state and
+rationale. No pending approval is cached for a later model tool call.
+
+The **frozen policy snapshot**, not activation source or live config, decides
+whether `flowguard_decision` can run autonomously. At a human-gated policy it
+requires an explicit `host_command` operation; autonomous activation does not
+provide one. Where the policy permits automation, an explicit model tool decision
+remains possible and is recorded as `autonomous`. Both paths enforce the existing
+actor assurance, four-eyes, reviewed-subject/evidence and override rules. An
+exhausted review requires the explicit override verdict and a durable rationale;
+an ordinary approval never silently becomes an override.
+
+`host_command` records the channel, not verified human origin. OpenCode exposes
+the same callback to UI/SDK callers; the server actor is not independently bound
+to each caller. Apply the host access-control trust boundary described above.
+The decision and its bound receipt commit together through the existing audit
+outbox. Audit-write failure is surfaced; reconciliation preserves the original
+decision rather than approving the subject again. Status-report failures after
+a confirmed decision do not undo the committed outcome.
 
 ## Config File Location
 

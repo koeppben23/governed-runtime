@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Native `/approve`, `/override-approve`, `/request-changes`, `/reject` and
+  `/review-decision` execute the canonical decision rail without prompting a
+  model. Their scoped operations bind action, rationale, state, policy, worktree
+  and activation generation, and are persisted with the existing atomic decision
+  audit outbox. Frozen policy still rejects autonomous decisions at human gates.
+  The obsolete TTL intent cache, unwired V1 command hook and decision prompt
+  templates are removed; independent-review and override preconditions remain
+  canonical and unchanged.
+
+- Document the distinction between autonomous-activation RPC access and the
+  server-resolved actor identity, including shared-instance access-control and
+  installed-acceptance limits. Actor assurance does not authenticate each caller.
+
 - Explicit native `flowguard-governance.StartGovernance` RPC for autonomous root
   activation. `governance.autonomousActivation.enabled` defaults to `false`, with
   `idp_verified` as the default minimum actor assurance. Requests bind the root

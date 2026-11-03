@@ -62,9 +62,14 @@ function canonicalTargetFor(definition: InstalledCommandDefinition): string {
 }
 
 function installedCoreCommands(): string[] {
-  return INSTALLED_TEMPLATE_FILES.filter((templateFile) => !productAliasTemplates.has(templateFile))
-    .map((templateFile) => slash(templateFile.replace(/\.md$/, '')))
-    .sort();
+  return [
+    ...INSTALLED_TEMPLATE_FILES.filter(
+      (templateFile) => !productAliasTemplates.has(templateFile),
+    ).map((templateFile) => slash(templateFile.replace(/\.md$/, ''))),
+    ...INSTALLED_COMMANDS.filter(
+      (definition) => definition.templateFile === null && !isProductAlias(definition),
+    ).map((definition) => definition.invocation),
+  ].sort();
 }
 
 function extractCommandHeadings(content: string): string[] {

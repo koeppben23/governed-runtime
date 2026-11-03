@@ -103,11 +103,14 @@ describe('documentation/top-level-docs-drift', () => {
     .map((definition) => definition.invocation)
     .sort();
 
-  const coreInstalledCommands = INSTALLED_TEMPLATE_FILES.filter(
-    (templateFile) => !productAliasTemplates.has(templateFile),
-  )
-    .map((templateFile) => slash(templateFile.replace(/\.md$/, '')))
-    .sort();
+  const coreInstalledCommands = [
+    ...INSTALLED_TEMPLATE_FILES.filter(
+      (templateFile) => !productAliasTemplates.has(templateFile),
+    ).map((templateFile) => slash(templateFile.replace(/\.md$/, ''))),
+    ...INSTALLED_COMMANDS.filter(
+      (definition) => definition.templateFile === null && !isProductAlias(definition),
+    ).map((definition) => definition.invocation),
+  ].sort();
 
   const policyModeLabels = [SOLO_POLICY, TEAM_POLICY, TEAM_CI_POLICY, REGULATED_POLICY]
     .map((policy) => policy.mode)

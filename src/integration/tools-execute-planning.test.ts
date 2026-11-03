@@ -65,7 +65,10 @@ import { completedDispatchForInvocation } from '../state/evidence-test-constants
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { convertArgsToInputSchema } from '../mcp-server/schema-converter.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ReviewVerdict } from '../state/evidence.js';
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -200,7 +203,7 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   cleanupEnv();
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -222,17 +225,8 @@ async function hydrateSession(
 }
 
 function recordUserDecision(verdict: ReviewVerdict): void {
-  const command =
-    verdict === 'approve'
-      ? '/approve'
-      : verdict === 'approve_with_governance_override'
-        ? '/override-approve'
-        : verdict === 'changes_requested'
-          ? '/request-changes'
-          : '/reject';
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
-    command,
     expectedVerdict: verdict,
   });
 }

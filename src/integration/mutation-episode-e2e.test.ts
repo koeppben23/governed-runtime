@@ -54,7 +54,7 @@ import {
   hasUnboundMutationEpisodes,
 } from '../state/evidence-mutation-episode.js';
 import { resetRuntimeInstanceIdForTest } from './runtime-instance.js';
-import { recordUserDecisionIntent } from './user-decision-intent.js';
+import { recordComponentDecision } from './component-decision-test-helpers.js';
 import { computeGitControlPlaneMarker } from './git-control-plane.js';
 import { TOOL_FLOWGUARD_IMPLEMENT } from './tool-names.js';
 
@@ -1023,7 +1023,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         ],
       });
       const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
-      recordUserDecisionIntent({
+      recordComponentDecision({
         sessionId: sessionID,
         command: '/approve',
         expectedVerdict: 'approve',

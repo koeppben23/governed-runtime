@@ -41,7 +41,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
   it('retains all installed commands', () => {
     expect(Object.keys(COMMANDS).sort()).toEqual([...INSTALLED_TEMPLATE_FILES].sort());
-    expect(Object.keys(COMMANDS)).toHaveLength(25);
+    expect(Object.keys(COMMANDS)).toHaveLength(20);
   });
   it('every canonical native tool has exactly one application implementation', () => {
     expect(FLOWGUARD_TOOL_NAMES).toHaveLength(new Set(FLOWGUARD_TOOL_NAMES).size);

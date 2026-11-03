@@ -121,7 +121,18 @@ describe('installed command catalogue', () => {
 
   it('keeps /start as the native plugin command, never an installed template', () => {
     const native = INSTALLED_COMMANDS.filter((definition) => definition.templateFile === null);
-    expect(native.map((definition) => definition.invocation)).toEqual([`/${NATIVE_START_COMMAND}`]);
+    expect(native.map((definition) => definition.invocation)).toEqual([
+      '/review-decision',
+      `/${NATIVE_START_COMMAND}`,
+      '/approve',
+      '/override-approve',
+      '/request-changes',
+      '/reject',
+    ]);
+    for (const command of native) {
+      expect(COMMANDS).not.toHaveProperty(`${command.invocation.slice(1)}.md`);
+      expect(INSTALLED_TEMPLATE_FILES).not.toContain(`${command.invocation.slice(1)}.md`);
+    }
     expect(INSTALLED_TEMPLATE_FILES).not.toContain(`${NATIVE_START_COMMAND}.md`);
     expect(COMMANDS).not.toHaveProperty(`${NATIVE_START_COMMAND}.md`);
   });
