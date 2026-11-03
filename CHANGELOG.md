@@ -167,6 +167,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Root operator activation/deactivation and reviewer provenance remain separate
   blocked acceptance paths; this is not ACTIVE V2 support.
 
+- **Activation decision channel and actor (#1190).** Activation journal revisions
+  (schema version 2) record the decision channel (`host_command`, `autonomous`,
+  `delegation`) and the canonically resolved decision actor returned by the
+  authorization port, never by the caller. Delegated children carry exactly the
+  `delegation` channel and the root actor; one decision keeps one channel and one
+  actor across its revisions. `host_command` names the native command channel and
+  is not a verified-human claim. Earlier record versions fail closed as corrupt
+  authority.
+
 - **Native authority-source mechanism probes (#1190).** Actual V2 host tests
   establish private plugin-storage persistence across reload, graceful restart
   and forced process termination, while exposing its host-wide plugin-ID scope.

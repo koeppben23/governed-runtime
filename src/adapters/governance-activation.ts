@@ -6,6 +6,8 @@ import {
   GovernanceActivationRevision,
   GovernanceEnrollment,
   type GovernanceActivationAction,
+  type GovernanceDecisionActor,
+  type GovernanceDecisionSource,
   type GovernanceDelegationDispatch,
 } from '../state/governance-activation.js';
 import {
@@ -268,16 +270,25 @@ export interface GovernanceActivationCommit {
   readonly parentDispatch: GovernanceActivationRevision['parentDispatch'];
 }
 
-/** Internal, non-serialized authorization port. A caller-provided origin field
- * is never an implementation of this port. Native operator actions stay blocked
- * until their actual UI-to-authority producer is connected. */
+/**
+ * Internal, non-serialized authorization port. The port, not the caller,
+ * decides the decision identity, its channel and its canonically resolved actor;
+ * a caller-provided origin field is never an implementation of this port.
+ */
+export interface GovernanceActivationDecision {
+  readonly kind: 'authorized';
+  readonly decisionId: string;
+  readonly source: GovernanceDecisionSource;
+  readonly actor: GovernanceDecisionActor;
+}
+
 export interface GovernanceActivationWriter {
   readonly store: GovernanceActivationStore;
   readonly withLock: <T>(sessionId: string, operation: () => Promise<T>) => Promise<T>;
   readonly authorize: (
     input: GovernanceActivationCommit,
     current: GovernanceActivationRevision | null,
-  ) => Promise<{ readonly kind: 'authorized'; readonly decisionId: string } | AuthorityBlocked>;
+  ) => Promise<GovernanceActivationDecision | AuthorityBlocked>;
 }
 
 export async function commitGovernanceActivation(
@@ -295,7 +306,7 @@ export async function commitGovernanceActivation(
       const current = journal.history.at(-1) ?? null;
       const authorization = await writer.authorize(input, current);
       if (authorization.kind === 'blocked') return authorization;
-      const record = prepareRevision(input, journal, authorization.decisionId);
+      const record = prepareRevision(input, journal, authorization);
       if ('kind' in record) return record;
       const key = revisionKey(input.sessionId, record.revision);
       if ((await writer.store.get(key)) !== undefined)
@@ -327,15 +338,18 @@ export async function commitGovernanceActivation(
 function prepareRevision(
   input: GovernanceActivationCommit,
   journal: Journal,
-  decisionId: string,
+  decision: GovernanceActivationDecision,
 ): GovernanceActivationRevision | AuthorityBlocked {
   const { action, expectedRevision, ...scope } = input;
+  const { decisionId } = decision;
   const parsed = GovernanceActivationRevision.safeParse({
     ...scope,
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: expectedRevision + 1,
     status: governanceActivationTarget(action),
     decisionId,
+    decisionSource: decision.source,
+    decisionActor: decision.actor,
     previousDigest: journal.head?.digest ?? null,
   });
   if (!parsed.success) return unavailable('Invalid activation revision input.');

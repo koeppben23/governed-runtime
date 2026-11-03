@@ -19,7 +19,8 @@ const registration = await ctx.rpc.register(Fixture, { seed: async ({ sessionID,
   const request = { action: 'start', expectedRevision: 0, sessionId: sessionID, rootSessionId: sessionID,
     activationId: randomUUID(), generation: 1, directory: ctx.location.directory, worktreeRoot,
     policyDigest, parentDispatch: null };
-  const writer = { store: ctx.storage, withLock: async (_id, run) => run(), authorize: async () => ({ kind: 'authorized', decisionId }) };
+  const writer = { store: ctx.storage, withLock: async (_id, run) => run(), authorize: async () => ({ kind: 'authorized', decisionId, source: 'host_command',
+    actor: { actorId: 'component-fixture', actorEmail: null, actorDisplayName: null, actorSource: 'env', actorAssurance: 'best_effort' } }) };
   for (const input of [request, { ...request, action: 'activate', expectedRevision: 1 }]) {
     const result = await commitGovernanceActivation(writer, input);
     if (result.kind !== 'committed') throw new Error(result.reason);

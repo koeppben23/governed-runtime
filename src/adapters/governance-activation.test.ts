@@ -9,14 +9,26 @@ import {
 } from './governance-activation.js';
 import {
   createActivationStoreFixture,
+  FIXTURE_ACTIVATION_ACTOR,
   seedActiveGovernance,
 } from '../fixtures/governance-activation.js';
 import { blocked } from '../config/reasons.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
-import type { GovernanceActivationRevision } from '../state/governance-activation.js';
+import type {
+  GovernanceActivationRevision,
+  GovernanceDecisionActor,
+  GovernanceDecisionSource,
+} from '../state/governance-activation.js';
 
 const policyDigest = 'a'.repeat(64);
+function authorized(
+  decisionId: string,
+  source: GovernanceDecisionSource = 'host_command',
+  actor: GovernanceDecisionActor = FIXTURE_ACTIVATION_ACTOR,
+) {
+  return { kind: 'authorized' as const, decisionId, source, actor };
+}
 const sessionId = 'root';
 function start(): GovernanceActivationCommit {
   return {
@@ -102,10 +114,7 @@ describe('durable governance activation authority', () => {
     await seedActiveGovernance(fixture.store, { sessionId, directory: '/project', policyDigest });
     const active = await resolveGovernanceActivation(fixture.store, sessionId);
     if (active.kind !== 'active') throw new Error('Expected active fixture');
-    const authorize = vi.fn(async () => ({
-      kind: 'authorized' as const,
-      decisionId: 'end-decision',
-    }));
+    const authorize = vi.fn(async () => authorized('end-decision'));
     const marker = fixture.values.get(governanceActivationKeys(sessionId).enrollment);
     const {
       revision: _revision,
@@ -236,7 +245,8 @@ describe('durable governance activation authority', () => {
     await commitGovernanceActivation(
       {
         ...fixture,
-        authorize: async () => ({ kind: 'authorized', decisionId: root.record.decisionId }),
+        authorize: async () =>
+          authorized(root.record.decisionId, 'delegation', root.record.decisionActor),
       },
       {
         ...scope,
@@ -303,7 +313,7 @@ describe('durable governance activation authority', () => {
     const fixture = createActivationStoreFixture();
     const writer = {
       ...fixture,
-      authorize: async () => ({ kind: 'authorized' as const, decisionId: 'fixture' }),
+      authorize: async () => authorized('fixture'),
     };
     expect(
       await commitGovernanceActivation(writer, { ...start(), policyDigest: 'invalid' }),
@@ -322,7 +332,7 @@ describe('durable governance activation authority', () => {
       ...fixture,
       authorize: async () => {
         fixture.values.set(key, { preparedByAnotherWriter: true });
-        return { kind: 'authorized' as const, decisionId: 'fixture' };
+        return authorized('fixture');
       },
     };
     expect(await commitGovernanceActivation(writer, request)).toMatchObject({
@@ -453,7 +463,7 @@ describe('durable governance activation authority', () => {
     const result = await commitGovernanceActivation(
       {
         ...fixture,
-        authorize: async () => ({ kind: 'authorized', decisionId: 'start-ui-fixture' }),
+        authorize: async () => authorized('start-ui-fixture'),
       },
       start(),
     );
@@ -468,7 +478,7 @@ describe('durable governance activation authority', () => {
     const request = start();
     const writer = {
       ...fixture,
-      authorize: async () => ({ kind: 'authorized' as const, decisionId: 'start-decision' }),
+      authorize: async () => authorized('start-decision'),
     };
     expect((await commitGovernanceActivation(writer, request)).kind).toBe('committed');
     expect(await resolveGovernanceActivation(fixture.store, sessionId)).toMatchObject({
@@ -515,7 +525,7 @@ describe('durable governance activation authority', () => {
     expect(await commitGovernanceActivation(refuse, request)).toMatchObject({ kind: 'blocked' });
     const writer = {
       ...fixture,
-      authorize: async () => ({ kind: 'authorized' as const, decisionId: 'explicit-end' }),
+      authorize: async () => authorized('explicit-end'),
     };
     expect((await commitGovernanceActivation(writer, request)).kind).toBe('committed');
     expect(await resolveGovernanceActivation(fixture.store, sessionId)).toMatchObject({
@@ -535,7 +545,7 @@ describe('durable governance activation authority', () => {
     const fixture = createActivationStoreFixture();
     const writer = {
       ...fixture,
-      authorize: async () => ({ kind: 'authorized' as const, decisionId: randomUUID() }),
+      authorize: async () => authorized(randomUUID()),
     };
     const results = await Promise.all([
       commitGovernanceActivation(writer, start()),

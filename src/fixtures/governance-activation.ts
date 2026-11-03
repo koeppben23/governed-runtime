@@ -35,6 +35,15 @@ export function createActivationStoreFixture() {
   return { values, store, withLock };
 }
 
+/** Fixture actor: an explicit, unverified component identity. */
+export const FIXTURE_ACTIVATION_ACTOR = {
+  actorId: 'fixture-operator',
+  actorEmail: null,
+  actorDisplayName: null,
+  actorSource: 'env',
+  actorAssurance: 'best_effort',
+} as const;
+
 export async function seedActiveGovernance(
   store: GovernanceActivationStore,
   input: { sessionId: string; directory: string; worktreeRoot?: string; policyDigest: string },
@@ -55,7 +64,12 @@ export async function seedActiveGovernance(
   const writer = {
     store,
     withLock: async <T>(_id: string, run: () => Promise<T>) => run(),
-    authorize: async () => ({ kind: 'authorized' as const, decisionId }),
+    authorize: async () => ({
+      kind: 'authorized' as const,
+      decisionId,
+      source: 'host_command' as const,
+      actor: FIXTURE_ACTIVATION_ACTOR,
+    }),
   };
   for (const next of [request, { ...request, action: 'activate' as const, expectedRevision: 1 }]) {
     const result = await commitGovernanceActivation(writer, next);

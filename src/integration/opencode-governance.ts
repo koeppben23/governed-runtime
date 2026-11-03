@@ -381,7 +381,12 @@ export class OpenCodeGovernance {
         withLock: (id, run) => this.withLock(id, run),
         authorize: async (input) =>
           !this.signal.aborted && input.action === 'enroll' && input.sessionId === childId
-            ? { kind: 'authorized', decisionId: root.decisionId }
+            ? {
+                kind: 'authorized',
+                decisionId: root.decisionId,
+                source: 'delegation',
+                actor: root.decisionActor,
+              }
             : this.block('Only the observed native delegation may enroll this child.'),
       },
       {

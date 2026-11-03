@@ -10,9 +10,20 @@ import {
   type GovernanceActivationAction,
 } from '../state/governance-activation.js';
 
+const actor = {
+  actorId: 'operator',
+  actorEmail: null,
+  actorDisplayName: null,
+  actorSource: 'env',
+  actorAssurance: 'best_effort',
+} as const;
+
 function record(patch: Partial<GovernanceActivationRevision> = {}): GovernanceActivationRevision {
+  const delegated = patch.parentDispatch !== undefined && patch.parentDispatch !== null;
   return GovernanceActivationRevision.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
+    decisionSource: delegated ? 'delegation' : 'host_command',
+    decisionActor: actor,
     sessionId: 'root',
     rootSessionId: 'root',
     activationId: '00000000-0000-4000-8000-000000000001',
@@ -206,4 +217,60 @@ describe('explicit governance activation lifecycle', () => {
       expect(governanceActivationTarget(action)).toBe(status);
     },
   );
+});
+
+describe('activation decision channel and actor', () => {
+  const dispatch = { sessionId: 'root', messageId: 'message', callId: 'call' };
+
+  it('requires the delegation channel exactly for delegated child records', () => {
+    expect(() => record({ decisionSource: 'delegation' })).not.toThrow();
+    expect(isGovernanceActivationTransition(null, record({ decisionSource: 'delegation' }))).toBe(
+      false,
+    );
+    const child = {
+      sessionId: 'child',
+      status: 'active' as const,
+      parentDispatch: dispatch,
+    };
+    expect(isGovernanceActivationTransition(null, record(child))).toBe(true);
+    expect(
+      isGovernanceActivationTransition(null, record({ ...child, decisionSource: 'host_command' })),
+    ).toBe(false);
+  });
+
+  it('keeps one channel and one actor for one decision across its revisions', () => {
+    const activating = record();
+    const active = (patch: Partial<GovernanceActivationRevision>) =>
+      record({ revision: 2, status: 'active', ...patch });
+    expect(isGovernanceActivationTransition(activating, active({}))).toBe(true);
+    expect(
+      isGovernanceActivationTransition(activating, active({ decisionSource: 'autonomous' })),
+    ).toBe(false);
+    expect(
+      isGovernanceActivationTransition(
+        activating,
+        active({ decisionActor: { ...actor, actorAssurance: 'idp_verified' } }),
+      ),
+    ).toBe(false);
+  });
+
+  it('admits a different channel and actor for a new End decision', () => {
+    const active = record({ revision: 2, status: 'active' });
+    expect(
+      isGovernanceActivationTransition(
+        active,
+        record({
+          revision: 3,
+          status: 'ending',
+          decisionId: 'end-decision',
+          decisionSource: 'autonomous',
+          decisionActor: { ...actor, actorId: 'pipeline', actorSource: 'oidc' },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects an earlier record generation', () => {
+    expect(() => record({ schemaVersion: 1 } as never)).toThrow();
+  });
 });

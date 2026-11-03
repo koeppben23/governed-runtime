@@ -9,6 +9,7 @@ import type { GovernanceActivationRevision } from '../state/governance-activatio
 import { OpenCodeGovernance } from './opencode-governance.js';
 import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
+import { FIXTURE_ACTIVATION_ACTOR } from '../fixtures/governance-activation.js';
 import { createTestWorkspace, type TestWorkspace } from './test-helpers.js';
 import {
   governanceActivationKeys,
@@ -140,6 +141,8 @@ async function reopenRoot(): Promise<void> {
         ...host.activation,
         authorize: async (request) => ({
           kind: 'authorized',
+          source: 'host_command',
+          actor: FIXTURE_ACTIVATION_ACTOR,
           decisionId:
             request.action === 'begin_end' || request.action === 'end'
               ? 'component-end'

@@ -8,16 +8,27 @@ export function isGovernanceActivationTransition(
   previous: GovernanceActivationRevision | null,
   next: GovernanceActivationRevision,
 ): boolean {
+  if (!hasCoherentSource(next)) return false;
   if (previous === null) {
     return isInitialEnrollment(next);
   }
+  if (next.decisionId === previous.decisionId && !sameDecision(previous, next)) return false;
   if (previous.parentDispatch !== null) return isDelegationContinuation(previous, next);
   if (!isNextRootRevision(previous, next)) return false;
   if (previous.status === 'inactive') {
     return isReactivation(previous, next);
   }
-  if (!sameActivation(previous, next)) return false;
+  return sameActivation(previous, next) && isRootLifecycleStep(previous, next);
+}
+
+/** Start and End decisions each span two revisions under one decision id. */
+function isRootLifecycleStep(
+  previous: GovernanceActivationRevision,
+  next: GovernanceActivationRevision,
+): boolean {
   switch (previous.status) {
+    case 'inactive':
+      return false;
     case 'activating':
       return next.status === 'active' && next.decisionId === previous.decisionId;
     case 'active':
@@ -25,6 +36,26 @@ export function isGovernanceActivationTransition(
     case 'ending':
       return next.status === 'inactive' && next.decisionId === previous.decisionId;
   }
+}
+
+/** Delegated children carry only the delegation channel; roots never do. */
+function hasCoherentSource(next: GovernanceActivationRevision): boolean {
+  return (next.parentDispatch !== null) === (next.decisionSource === 'delegation');
+}
+
+/** One decision keeps one channel and one actor across its revisions. */
+function sameDecision(
+  previous: GovernanceActivationRevision,
+  next: GovernanceActivationRevision,
+): boolean {
+  return (
+    next.decisionSource === previous.decisionSource &&
+    next.decisionActor.actorId === previous.decisionActor.actorId &&
+    next.decisionActor.actorEmail === previous.decisionActor.actorEmail &&
+    next.decisionActor.actorDisplayName === previous.decisionActor.actorDisplayName &&
+    next.decisionActor.actorSource === previous.decisionActor.actorSource &&
+    next.decisionActor.actorAssurance === previous.decisionActor.actorAssurance
+  );
 }
 
 function isDelegationContinuation(
