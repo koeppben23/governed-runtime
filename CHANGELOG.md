@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **R4 reviewer tool-result integrity (#1190, Finding 6, #1169 WS4).** Co-installed
+  plugins are untrusted for review evidence. When a reviewer child is admitted,
+  FlowGuard registers per-child tail hooks that run after every setup-time hook:
+  an `execute.after` tail rejects a read result that no longer matches the digest
+  FlowGuard recorded at its own position, and a `context` tail rejects any
+  model-input tool result that differs from the host projection of the stored
+  native tool part. Either invalidates the run before the replaced bytes reach the
+  model or bind evidence; tails are released after capture and on plugin
+  shutdown. The three native R4 counterexamples (after replacement, forced
+  truncation replacement, context replacement) are now rejection tests; the
+  observe positive stays. Hooks registered after the tails, hooks ordered before
+  FlowGuard and transport-level replacement remain documented limits.
+
 - **Unknown reviewer outcome recovery (#1190, Finding 6 step 4, #1169 WS4).** An
   obligation blocked with `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` is reopened only by
   a typed `retry_transport` call of the originating review tool that proves a

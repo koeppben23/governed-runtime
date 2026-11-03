@@ -25,6 +25,8 @@ import {
 import {
   NativeReviewInitialController,
   type InitialToolBoundary,
+  type InitialToolCompletion,
+  toolResultMismatch,
 } from './review/dispatch/native-review-initial.js';
 import type { ActiveGovernanceScope, NativeBefore } from './opencode-governance.js';
 import {
@@ -259,11 +261,67 @@ async function closeNativeReviewerCapture(input: {
   );
 }
 
+type Registration = { dispose(): Promise<void> };
+
+/**
+ * Per-child tail hooks for R4. They are registered when the reviewer is admitted,
+ * so they run after every setup-time hook, including later-ordered plugins: a
+ * tool result replaced after FlowGuard observed it, or a model-input tool result
+ * that differs from the stored host history, invalidates the run before the
+ * replaced bytes can bind evidence. Hooks registered later still are a
+ * documented residual.
+ */
+function createResultIntegrityTails(
+  ctx: Plugin.Context,
+  captureFence: NativeReviewCaptureFence,
+  initial: NativeReviewInitialController,
+) {
+  const tails = new Map<string, Registration[]>();
+  const release = async (child: string) => {
+    const registrations = tails.get(child) ?? [];
+    tails.delete(child);
+    await Promise.all(registrations.map((registration) => registration.dispose()));
+  };
+  return {
+    async attach(child: string) {
+      if (tails.has(child)) return;
+      const registrations: Registration[] = [];
+      tails.set(child, registrations);
+      registrations.push(
+        await ctx.tool.hook('execute.after', (event) => {
+          if (
+            event.sessionID === child &&
+            event.agent === REVIEWER_SUBAGENT_TYPE &&
+            READ_ONLY_HOST_TOOLS.has(event.tool)
+          )
+            initial.afterToolTail(event);
+        }),
+      );
+      registrations.push(
+        await ctx.session.hook('context', async (event) => {
+          if (event.sessionID !== child) return;
+          const mismatch = toolResultMismatch(
+            event.messages,
+            await ctx.session.context({ sessionID: child }),
+          );
+          if (mismatch === null) return;
+          if (captureFence.activeLease(child) !== undefined) captureFence.taint(child, mismatch);
+          initial.violate(child, mismatch);
+        }),
+      );
+    },
+    release,
+    async dispose() {
+      await Promise.all([...tails.keys()].map(release));
+    },
+  };
+}
 function createReviewerObservationHooks(
   ctx: Plugin.Context,
   runtimeFor: RuntimeFor,
   captureFence: NativeReviewCaptureFence,
   initial: NativeReviewInitialController,
+  tails: ReturnType<typeof createResultIntegrityTails>,
 ) {
   return {
     async prompt(scope: ActiveGovernanceScope, event: SessionPrompt) {
@@ -281,6 +339,7 @@ function createReviewerObservationHooks(
       if ((await ctx.session.context({ sessionID: scope.sessionId })).length !== 0)
         return deny('The original reviewer prompt cannot be replayed or continued.');
       initial.admit(scope.sessionId, event.messageID, event.prompt.text);
+      await tails.attach(scope.sessionId);
     },
     async context(
       scope: ActiveGovernanceScope,
@@ -381,9 +440,27 @@ async function settleUnknownReviewerOutcome(
     reopenAuditIntents(target),
   );
 }
+async function bindReviewChild(
+  runtimeFor: RuntimeFor,
+  scope: ActiveGovernanceScope,
+  dispatch: GovernanceDelegationDispatch,
+  childSessionId: string,
+): Promise<void> {
+  if (dispatch.sessionId !== scope.root.sessionId || dispatch.requestedChildSessionId !== null)
+    return deny('Reviewer enrollment must originate from a fresh root review dispatch.');
+  const resolved = await stateFor(runtimeFor, scope);
+  await bindNativeReviewChild({
+    deps: resolved.runtime.ws,
+    sessDir: resolved.sessDir,
+    authority: resolved.authority,
+    hostCallId: encodeHostCallId(dispatch.sessionId, dispatch.messageId, dispatch.callId),
+    childSessionId,
+  });
+}
 export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: RuntimeFor) {
   const captureFence = new NativeReviewCaptureFence();
   const initial = new NativeReviewInitialController();
+  const tails = createResultIntegrityTails(ctx, captureFence, initial);
   const authority = {
     async authorize(scope: ActiveGovernanceScope, event: NativeBefore) {
       if (scope.sessionId !== scope.root.sessionId || event.sessionID !== scope.root.sessionId)
@@ -413,34 +490,25 @@ export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: R
       args.description = 'FlowGuard independent review';
       args.background = false;
     },
-    async bind(
-      scope: ActiveGovernanceScope,
-      dispatch: GovernanceDelegationDispatch,
-      childSessionId: string,
-    ) {
-      if (dispatch.sessionId !== scope.root.sessionId || dispatch.requestedChildSessionId !== null)
-        return deny('Reviewer enrollment must originate from a fresh root review dispatch.');
-      const resolved = await stateFor(runtimeFor, scope);
-      await bindNativeReviewChild({
-        deps: resolved.runtime.ws,
-        sessDir: resolved.sessDir,
-        authority: resolved.authority,
-        hostCallId: encodeHostCallId(dispatch.sessionId, dispatch.messageId, dispatch.callId),
-        childSessionId,
-      });
-    },
+    bind: (scope: ActiveGovernanceScope, dispatch: GovernanceDelegationDispatch, child: string) =>
+      bindReviewChild(runtimeFor, scope, dispatch, child),
     async validate(scope: ActiveGovernanceScope) {
       await childLineage(runtimeFor, scope);
     },
     async capture(scope: ActiveGovernanceScope, event: NativeReviewCompletion) {
-      await runNativeReviewerCapture({
-        ctx,
-        runtimeFor,
-        fence: captureFence,
-        initial,
-        scope,
-        event,
-      });
+      try {
+        await runNativeReviewerCapture({
+          ctx,
+          runtimeFor,
+          fence: captureFence,
+          initial,
+          scope,
+          event,
+        });
+      } finally {
+        const child = metadataFor(event).sessionID;
+        if (typeof child === 'string') await tails.release(child);
+      }
     },
     async beforeTool(scope: ActiveGovernanceScope, event: NativeToolBefore) {
       guardReviewerTool(captureFence, scope, event);
@@ -449,12 +517,13 @@ export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: R
     authorizeTool(event: InitialToolBoundary) {
       initial.beforeTool(event);
     },
-    afterTool(event: InitialToolBoundary & { readonly status: 'completed' | 'error' }) {
+    afterTool(event: InitialToolCompletion) {
       initial.afterTool(event);
     },
+    dispose: () => tails.dispose(),
   };
   return {
     ...authority,
-    ...createReviewerObservationHooks(ctx, runtimeFor, captureFence, initial),
+    ...createReviewerObservationHooks(ctx, runtimeFor, captureFence, initial, tails),
   };
 }

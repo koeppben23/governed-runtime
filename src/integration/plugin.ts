@@ -75,6 +75,8 @@ export const FlowGuardAuditPlugin = Plugin.define({
       assertAvailable(scope);
       return entry.runtime;
     });
+    // Per-reviewer R4 tail hooks are registered dynamically; dispose them with the plugin.
+    registrations.push({ dispose: () => reviewer.dispose() });
     const governance = new OpenCodeGovernance(ctx, adapter, controller.signal, reviewer);
     const fence = createEventFence(governance, adapter);
     const operations = new Set<Promise<unknown>>();

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { hashText } from '../../../shared/hashing.js';
 import {
   NativeReviewInitialController,
+  toolResultMismatch,
   type InitialToolBoundary,
 } from './native-review-initial.js';
 
@@ -269,5 +270,66 @@ describe('initial native reviewer sequence and hook provenance', () => {
     context.admit(child, user.id, text);
     context.context(child, [user]);
     expect(() => completed(context, [user, assistant(), idle])).toThrow('released');
+  });
+});
+
+describe('R4 tool-result integrity', () => {
+  const original = { content: [{ type: 'text', text: 'file body' }], metadata: { lines: 1 } };
+
+  it('accepts the unchanged result at the tail and rejects a later replacement', () => {
+    const control = started();
+    const call = boundary();
+    control.beforeTool(call);
+    control.afterTool({ ...call, status: 'completed', result: structuredClone(original) });
+    expect(() =>
+      control.afterToolTail({ ...call, status: 'completed', result: structuredClone(original) }),
+    ).not.toThrow();
+    expect(() =>
+      control.afterToolTail({
+        ...call,
+        status: 'completed',
+        result: { ...original, content: 'REPLACED' },
+      }),
+    ).toThrow('replaced after FlowGuard observed it');
+    // The violation is sticky: the run can neither continue nor seal.
+    expect(() => control.context(child, toolHistory(call))).toThrow('replaced');
+  });
+
+  it('matches model-input tool results exactly against the stored host history', () => {
+    const stored = (content: unknown[]) => [
+      user,
+      assistant({
+        id: 'msg_tools',
+        content: [
+          { type: 'tool', id: 'tool-1', name: 'read', state: { status: 'completed', content } },
+        ],
+      }),
+    ];
+    const message = (result: unknown) => [
+      { role: 'tool', content: [{ type: 'tool-result', id: 'tool-1', name: 'read', result }] },
+    ];
+    const single = [{ type: 'text', text: 'body' }];
+    expect(toolResultMismatch(message({ type: 'text', value: 'body' }), stored(single))).toBeNull();
+    const multi = [single[0], { type: 'text', text: 'more' }];
+    expect(
+      toolResultMismatch(message({ type: 'content', value: multi }), stored(multi)),
+    ).toBeNull();
+    for (const forged of [
+      { type: 'text', value: 'R4_REPLACED' },
+      { type: 'content', value: single },
+      { type: 'text', value: 'body', extra: true },
+    ])
+      expect(toolResultMismatch(message(forged), stored(single))).toContain('differs');
+    expect(
+      toolResultMismatch(
+        [
+          {
+            content: [{ type: 'tool-result', id: 'unknown', result: { type: 'text', value: 'x' } }],
+          },
+        ],
+        stored(single),
+      ),
+    ).toContain('differs');
+    expect(toolResultMismatch([{ content: [{ type: 'text', text: 'no tools' }] }], [])).toBeNull();
   });
 });

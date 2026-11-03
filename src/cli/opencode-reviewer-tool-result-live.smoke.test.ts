@@ -154,7 +154,32 @@ async function run(mode: ResultProbeMode) {
   };
 }
 
-describe.skipIf(!LIVE)('R4 native result-boundary observations (not acceptance)', () => {
+/** Same seeded native review, for a mode whose replacement must be refused. */
+async function runRejected(mode: ResultProbeMode) {
+  probe = await createToolResultProbe(mode);
+  restore = withTestEnv({ OPENCODE_CONFIG_DIR: probe.env.OPENCODE_CONFIG_DIR! });
+  const sessionID = await probe.session();
+  const seeded = await seedStrictPlanSession(probe.project, sessionID);
+  const state = (await readState(seeded.sessDir))!;
+  await writeStateWithArtifacts(seeded.sessDir, state);
+  await probe.client.rpc.call({
+    location: probe.location,
+    rpcID: 'flowguard-component-activation',
+    method: 'seed',
+    input: {
+      sessionID,
+      policyDigest: state.policySnapshot.hash,
+      worktreeRoot: state.binding.worktree,
+    },
+  });
+  await probe.run(sessionID, 'positive');
+  // The probe really reached the replacement point; the refusal is not vacuous.
+  expect(
+    (await probe.resultObservations()).some((entry) => entry.hook === 'r4.after.original'),
+  ).toBe(true);
+  return (await readState(seeded.sessDir))!;
+}
+describe.skipIf(!LIVE)('R4 native result-boundary integrity', () => {
   it('correlates the actual read after-hook, normalized success event, history and provider result', async () => {
     const h = await run('observe');
     expect(Array.isArray(h.after.result!.content)).toBe(true);
@@ -168,42 +193,23 @@ describe.skipIf(!LIVE)('R4 native result-boundary observations (not acceptance)'
     expect(probe!.providerErrors).toEqual([]);
   }, 120_000);
 
-  it('counterexample: a later after-hook replacement is normalized, consumed and not rejected by the earlier receipt', async () => {
-    const h = await run('after-mutation');
-    const original = h.observations.find((entry) => entry.hook === 'r4.after.original');
-    expect(text(original!.result!.content)).not.toContain(RESULT_SENTINEL);
-    expect(h.after.result!.content).toBe(RESULT_SENTINEL);
-    expect(h.content).toEqual([{ type: 'text', text: RESULT_SENTINEL }]);
-    expect(h.wire.content).toBe(RESULT_SENTINEL);
-    expect(modelResult(h.contextReleased.messages, h.tool.id)).toMatchObject({
-      result: { type: 'text', value: RESULT_SENTINEL },
-    });
-    expect(h.result.reviewAssurance!.invocations).toHaveLength(1);
-  }, 120_000);
-
-  it('observes real post-after normalization/truncation rather than hashing pre-truncation content as final', async () => {
-    const h = await run('truncate');
-    expect(text(h.after.result!.content)).toContain(LONG_RESULT_END);
-    expect(text(h.content)).not.toContain(LONG_RESULT_END);
-    expect(text(h.content)).toContain('full output saved to');
-    expect(h.success.data!.metadata).toMatchObject({ truncated: true });
-    expect(h.wire.content).toBe(text(h.content));
-    expect(String(h.wire.content).length).toBeLessThan(text(h.after.result!.content).length);
-  }, 120_000);
-
-  it('counterexample: a privileged later context hook changes consumed bytes without changing stored tool history or preventing fulfillment', async () => {
-    const h = await run('context-mutation');
-    expect(text(h.after.result!.content)).not.toContain(RESULT_SENTINEL);
-    expect(text(h.content)).not.toContain(RESULT_SENTINEL);
-    expect(h.wire.content).toBe(RESULT_SENTINEL);
-    expect(modelResult(h.contextReleased.messages, h.tool.id)).toMatchObject({
-      result: { type: 'text', value: RESULT_SENTINEL },
-    });
-    const http = h.observations
-      .filter((entry) => entry.hook === 'r4.http')
-      .find((entry) => JSON.stringify(entry.data).includes(RESULT_SENTINEL));
-    expect(http).toBeDefined();
-    expect(h.result.reviewAssurance!.invocations).toHaveLength(1);
-    expect(probe!.serializations()).toBe(1);
-  }, 120_000);
+  it.each([
+    ['after-mutation', RESULT_SENTINEL],
+    ['truncate', LONG_RESULT_END],
+    ['context-mutation', RESULT_SENTINEL],
+  ] as const)(
+    'rejects a privileged later %s replacement before it reaches the model or binds evidence',
+    async (mode, marker) => {
+      const result = await runRejected(mode);
+      expect(result.reviewAssurance!.invocations).toEqual([]);
+      expect(result.reviewAssurance!.obligations[0]!.status).not.toBe('fulfilled');
+      const reviewBodies = probe!.calls
+        .filter((call) => call.phase !== 'parent')
+        .map((call) => JSON.stringify(call.body));
+      expect(reviewBodies.length).toBeGreaterThan(0);
+      for (const body of reviewBodies) expect(body).not.toContain(marker);
+      expect(probe!.serializations()).toBe(0);
+    },
+    120_000,
+  );
 });

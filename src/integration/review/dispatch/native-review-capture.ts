@@ -181,6 +181,13 @@ export class NativeReviewCaptureFence {
     this.reject(lease, 'Tool action attempted during reviewer serialization.');
   }
 
+  /** Invalidate an active serialization lease from an out-of-band integrity check. */
+  taint(childSessionId: string, reason: string): never {
+    const lease = this.active.get(childSessionId);
+    if (lease) this.reject(lease, reason);
+    throw new NativeReviewCaptureError(reason);
+  }
+
   verify(
     childSessionId: string,
     leaseId: string,

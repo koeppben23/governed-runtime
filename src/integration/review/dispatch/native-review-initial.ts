@@ -20,6 +20,14 @@ type ToolReceipt = {
   readonly tool: string;
   readonly inputDigest: string;
   status?: 'completed' | 'error';
+  /** Digest of the exact result FlowGuard observed at its own after-hook position. */
+  resultDigest?: string;
+};
+/** Native completion facts a receipt binds; result/error are host-observed values. */
+export type InitialToolCompletion = InitialToolBoundary & {
+  readonly status: 'completed' | 'error';
+  readonly result?: unknown;
+  readonly error?: unknown;
 };
 export type InitialToolBoundary = {
   readonly sessionID: string;
@@ -132,7 +140,7 @@ export class NativeReviewInitialController {
     });
   }
 
-  afterTool(event: InitialToolBoundary & { readonly status: 'completed' | 'error' }): void {
+  afterTool(event: InitialToolCompletion): void {
     const run = this.require(event.sessionID);
     const receipt = run.step?.tools.get(event.id);
     if (
@@ -145,8 +153,25 @@ export class NativeReviewInitialController {
     )
       reject(run, 'Initial reviewer tool completion has no exact admitted call.');
     receipt.status = event.status;
+    receipt.resultDigest = completionDigest(event);
   }
 
+  /**
+   * Tail check registered after every setup-time hook: a result replaced by a
+   * later after-hook no longer matches the receipt and invalidates the run.
+   */
+  afterToolTail(event: InitialToolCompletion): void {
+    const run = this.runs.get(event.sessionID);
+    if (!run || run.sealed) return;
+    const receipt = run.step?.tools.get(event.id);
+    if (!receipt || receipt.resultDigest !== completionDigest(event))
+      reject(run, 'A reviewer tool result was replaced after FlowGuard observed it.');
+  }
+
+  /** Mark the active run invalid from an out-of-band integrity check. */
+  violate(child: string, reason: string): never {
+    return reject(this.runs.get(child), reason);
+  }
   complete(child: string, history: readonly unknown[], promptDigest: string) {
     const run = this.require(child);
     if (!Array.isArray(history)) reject(run, 'Initial reviewer history is missing.');
@@ -257,4 +282,56 @@ function validContent(value: Row): boolean {
     value.synthetic !== true &&
     value.ignored !== true
   );
+}
+
+function completionDigest(event: InitialToolCompletion): string {
+  return event.status === 'completed'
+    ? digest({ status: 'completed', result: row(event.result) })
+    : digest({ status: 'error', error: event.error ?? null });
+}
+
+/** Model-input projection of one stored native tool part (host to-llm-message mapping). */
+function modelToolResult(tool: Row): unknown {
+  const state = row(tool.state);
+  if (state.status === 'error') return { error: state.error, content: state.content ?? [] };
+  if (state.status !== 'completed' || !Array.isArray(state.content)) return undefined;
+  const [single] = state.content;
+  return state.content.length === 1 && row(single).type === 'text'
+    ? { type: 'text', value: row(single).text }
+    : { type: 'content', value: state.content };
+}
+
+/**
+ * Compare every tool result offered to the reviewer model with the stored host
+ * history. Returns the violation, or null when each result is exactly the
+ * host-derived projection of its stored native tool part.
+ */
+export function toolResultMismatch(
+  messages: readonly unknown[],
+  history: readonly unknown[],
+): string | null {
+  const stored = new Map<string, unknown>();
+  for (const part of history.flatMap(contentParts))
+    if (part.type === 'tool' && typeof part.id === 'string')
+      stored.set(part.id, modelToolResult(part));
+  for (const part of messages.flatMap(contentParts)) {
+    if (part.type !== 'tool-result') continue;
+    const expected = typeof part.id === 'string' ? stored.get(part.id) : undefined;
+    if (expected === undefined || !sameValue(part.result, expected))
+      return 'A reviewer model-input tool result differs from the stored host tool history.';
+  }
+  return null;
+}
+
+function contentParts(entry: unknown): Row[] {
+  const content = row(entry).content;
+  return Array.isArray(content) ? content.map(row) : [];
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  try {
+    return canonicalJsonStringify(left) === canonicalJsonStringify(right);
+  } catch {
+    return false;
+  }
 }

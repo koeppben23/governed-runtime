@@ -3,6 +3,40 @@
 2026-11-02, PR #1190. **Research checkpoint, not a security correction or
 step-3 acceptance. R4 is open; Finding 6 remains BLOCKED / ACTIVE V2 NO-GO.**
 
+## R4 correction (2026-11-03, #1169 WS4)
+
+Trust boundary (operator decision): co-installed plugins are untrusted for review
+evidence. FlowGuard now registers two **tail hooks per reviewer child** when the
+reviewer is admitted. Dynamic registration appends them after every setup-time
+hook, including later-ordered plugins and the R4 fixture hooks:
+
+- `execute.after` tail: the reviewer read result must still equal the digest
+  FlowGuard recorded at its own after-hook position (receipt in
+  `native-review-initial.ts`). A replacement invalidates the run; the next
+  context hook refuses the request, so the replaced bytes never reach the model.
+- `context` tail: every model-input tool result must equal the host projection
+  of the stored native tool part (`to-llm-message.ts` mapping: one text part to
+  `{type:'text', value}`, otherwise `{type:'content', value}`, errors to
+  `{error, content}`). A mismatch invalidates the initial run or taints the
+  capture lease before any HTTP request.
+
+No result is frozen: the pinned host's post-hook tool path
+(`tool.ts` `executeTool`, `runtime.ts` `normalizeContent`,
+`tool-output.ts` `truncate`) and context lowering (`model-request.ts`
+`replaceMedia`) were inspected and only copy, but freezing host `Message`
+instances could still conflict with host internals. Legitimate host truncation
+happens after all hooks and is stored in history, so it matches the context check.
+
+The three native counterexamples are now rejection tests in
+`opencode-reviewer-tool-result-live.smoke.test.ts` (no invocation, obligation not
+fulfilled, marker never in a reviewer provider request, no serialization); the
+`observe` positive stays. They run only in the Linux CI smoke job.
+
+**Residual limits (NOT_VERIFIED / not covered):** hooks registered dynamically
+after FlowGuard's tails; hooks ordered before FlowGuard that alter a result
+before FlowGuard observes it; `http.request`/WebSocket/AI-SDK transport
+replacement after context. These remain documented R4 limits.
+
 ## Scope and authority
 
 The real pinned OpenCode 2.2.4 host loads FlowGuard's product hooks and existing
