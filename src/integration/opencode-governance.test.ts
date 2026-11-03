@@ -156,6 +156,27 @@ async function reopenRoot(): Promise<void> {
 }
 
 describe('native governance delegation correlation', () => {
+  it('refuses a root Start whose adapter stops during preparation', async () => {
+    const active = await resolveGovernanceActivation(host.activation.store, 'root');
+    if (active.kind !== 'active') throw new Error('Expected active fixture root');
+    await expect(
+      governance.startRoot(
+        'new-root',
+        async () => {
+          controller.abort();
+          return {
+            workflow: { worktreeRoot: ws.tmpDir, policyDigest: digest },
+            actor: active.record.decisionActor,
+          };
+        },
+        'autonomous',
+      ),
+    ).rejects.toThrow('adapter stopped');
+    expect(await resolveGovernanceActivation(host.activation.store, 'new-root')).toEqual({
+      kind: 'inactive',
+      record: null,
+    });
+  });
   it('rejects a stale scope before runtime admission', async () => {
     const active = await resolveGovernanceActivation(host.activation.store, 'root');
     if (active.kind !== 'active') throw new Error('Expected active root');

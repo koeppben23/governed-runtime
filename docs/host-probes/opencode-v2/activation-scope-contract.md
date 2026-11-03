@@ -14,8 +14,9 @@ root decisions or replace the outstanding product positives.
 The [2026-11-02 parity amendment](../../decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02)
 requires both interactive and authorized autonomous activation, preserving
 policy-permitted V1 automation. The UI counterexample applies to claims of human
-origin, not a blanket prohibition on autonomous starts. Neither root activation
-path is accepted yet. Autonomous source/authorization must be proved and recorded
+origin, not a blanket prohibition on autonomous starts. Interactive Start is
+boundedly accepted at `3acdd585`; installed-host acceptance remains separate.
+Autonomous source/authorization must be proved and recorded
 honestly; it cannot stand in for a policy-required human decision or grant
 implicit approval/recovery/end authority. Journal, lifecycle, scope, actor/policy,
 audit and replay/concurrent-use invariants are unchanged by that specification
@@ -85,7 +86,35 @@ do not turn an already committed/audited activation into a failed Start. A later
 auto-approve warning uses the same pure renderer as hydration, including retries.
 The component tests inject each failure and lost audit acknowledgement; the
 pinned native smoke checks one activation audit across repeat Start and SIGKILL.
-These bounded contracts are not complete installed Desktop/autonomous acceptance.
+These bounded contracts are not complete installed Desktop acceptance.
+
+## Explicit autonomous root activation
+
+`opencode-governance-rpc.ts` defines the native `flowguard-governance` RPC's
+`StartGovernance` operation. Its strict input accepts only session, worktree,
+expected policy digest and optional policy mode, never actor/source claims.
+The host location and host-observed root session are checked before effects.
+Under the same activation lock, the Start composition checks the disabled-by-
+default `governance.autonomousActivation` permission, resolves hydrate's canonical
+policy read-only, checks the expected digest, resolves the policy-aware actor and
+checks the canonical assurance ordering. These checks run before fresh hydration
+and again against the prepared binding before activation commits.
+
+Autonomous decisions persist `autonomous`, interactive decisions `host_command`.
+An interrupted Start retains its original decision/source/actor; an autonomous
+retry must still pass current permission and actor checks. ACTIVE repeats validate
+without hydration or a new decision. Mixed requests serialize through the existing
+lock and audit writer. Audit/confirmation faults keep runtime admission blocked;
+either authorized explicit entry can repair the committed activation. RPC
+failures return a structured blocked result with the actual reason. The RPC is
+not a model tool, prompt recognizer, automatic approval, or second lifecycle.
+
+`plugin-autonomous-start.test.ts` owns component negatives and mixed-start
+coordination; `opencode-autonomous-start-live.smoke.test.ts` exercises the actual
+pinned-host RPC with no activation fixture, signed IdP actor resolution, negative
+authorization, concurrent Start, audit confirmation and SIGKILL/reload boundaries.
+Local native tests are bounded product evidence, not installed Desktop/operator
+acceptance or closure of R4.
 
 ## Inactive, active and blocked
 

@@ -246,6 +246,20 @@ export const FlowGuardConfigSchema = z.object({
     .strict()
     .default({}),
 
+  /** Explicit root activation permission; installation and prompts never start governance. */
+  governance: z
+    .object({
+      autonomousActivation: z
+        .object({
+          enabled: z.boolean().default(false),
+          minimumActorAssurance: ActorAssuranceSchema.default('idp_verified'),
+        })
+        .strict()
+        .default({ enabled: false, minimumActorAssurance: 'idp_verified' }),
+    })
+    .strict()
+    .default({ autonomousActivation: { enabled: false, minimumActorAssurance: 'idp_verified' } }),
+
   /** Profile configuration. */
   profile: z
     .object({

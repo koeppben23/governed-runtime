@@ -35,7 +35,7 @@ import { OpenCodeGovernance, type ActiveGovernanceScope } from './opencode-gover
 import { resolveGovernanceActivation } from '../adapters/governance-activation.js';
 import { createNativeReviewerAuthority } from './plugin-native-review.js';
 import { createEventFence, consumeEvents } from './plugin-native-events.js';
-import { registerStartCommand } from './plugin-start-command.js';
+import { registerStartCommands } from './plugin-start-command.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -493,9 +493,8 @@ async function createFlowGuardPluginHooks(
 ): Promise<void> {
   const { invoke, governance } = actions;
   const catalogue = await createNativeToolCatalogue(ctx, registrations, actions.execute);
-  registrations.push(
-    await registerStartCommand(ctx, { ...actions, publish: catalogue.ensurePublished }),
-  );
+  const startDeps = { ...actions, publish: catalogue.ensurePublished };
+  await registerStartCommands(ctx, startDeps, registrations);
   registrations.push(
     await ctx.tool.hook('execute.before', (event) =>
       invoke(

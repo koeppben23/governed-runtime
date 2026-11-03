@@ -168,7 +168,11 @@ OpenCode cannot distinguish UI from SDK or agent command callers, so operator
 decisions use the native command channel, recorded as `host_command` with the
 canonically resolved actor and never as a verified human (ADR-010 amendment
 2026-11-03); policy decides whether that channel satisfies a gate. Interactive
-`/start` is implemented; autonomous activation remains **NOT_VERIFIED**. Start confers no
+`/start` and the dedicated autonomous `StartGovernance` RPC share the canonical
+lifecycle and audit-confirmation gate. Autonomous authorization requires explicit
+config permission, a bound root/worktree/policy and server-resolved minimum actor
+assurance; it never trusts a caller's provenance field. Installed-host acceptance
+remains **NOT_VERIFIED**. Start confers no
 implicit approval, override, capacity recovery or End authority.
 
 Required independent-review provenance, frozen subject, full completion,

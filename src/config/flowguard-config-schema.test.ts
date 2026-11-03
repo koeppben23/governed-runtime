@@ -20,6 +20,29 @@ import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { HOST_IDS } from '../shared/hosts.js';
 
 describe('FlowGuardConfigSchema', () => {
+  it.each([undefined, {}, { autonomousActivation: {} }])(
+    'defaults autonomous activation to disabled for %j',
+    (governance) => {
+      const config = FlowGuardConfigSchema.parse({ schemaVersion: 'v1', governance });
+      expect(config.governance.autonomousActivation).toEqual({
+        enabled: false,
+        minimumActorAssurance: 'idp_verified',
+      });
+    },
+  );
+  it('uses the canonical assurance vocabulary and rejects misspelled permission fields', () => {
+    for (const autonomousActivation of [
+      { enabled: 'true' },
+      { minimumActorAssurance: 'human' },
+      { enable: true },
+    ])
+      expect(
+        FlowGuardConfigSchema.safeParse({
+          schemaVersion: 'v1',
+          governance: { autonomousActivation },
+        }).success,
+      ).toBe(false);
+  });
   // ── HAPPY ──────────────────────────────────────────────────────────────
 
   it('parses a minimal valid config (schemaVersion only)', () => {

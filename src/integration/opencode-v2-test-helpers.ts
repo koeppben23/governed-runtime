@@ -41,6 +41,7 @@ export function createV2Host(directory: string) {
     string,
     { name: string; description?: string; execute(input: unknown): Promise<void> }
   >();
+  const rpcMethods = new Map<string, (input: unknown) => Promise<unknown>>();
   const registrations: Array<{ dispose: Mock<() => Promise<void>> }> = [];
   let failRegistration = 0;
   let registrationCount = 0;
@@ -109,6 +110,18 @@ export function createV2Host(directory: string) {
     location: { directory, project: { id: 'project', directory, canonical: directory } },
     options: {},
     storage: activation.store,
+    rpc: {
+      register: vi.fn(
+        async (
+          _definition: unknown,
+          methods: Record<string, (input: unknown) => Promise<unknown>>,
+        ) => {
+          const registration = register();
+          for (const [name, handler] of Object.entries(methods)) rpcMethods.set(name, handler);
+          return registration;
+        },
+      ),
+    },
     session: {
       get: sessionGet,
       context: sessionContext,
@@ -161,6 +174,7 @@ export function createV2Host(directory: string) {
     sessionHooks,
     definitions,
     commands,
+    rpcMethods,
     synthetic,
     sessionGet,
     sessionContext,

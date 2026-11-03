@@ -2,6 +2,51 @@
 
 FlowGuard supports per-repository configuration via `flowguard.json`.
 
+## Autonomous governance activation (OpenCode V2)
+
+Autonomous activation is disabled by default. In `.opencode/flowguard.json`:
+
+```json
+{
+  "schemaVersion": "v1",
+  "governance": {
+    "autonomousActivation": {
+      "enabled": false,
+      "minimumActorAssurance": "idp_verified"
+    }
+  }
+}
+```
+
+Enabling this permission does not activate any session. An automation client must
+explicitly call `flowguard-governance.StartGovernance` through OpenCode's plugin
+RPC, with `sessionID`, canonical `worktreeRoot`, and the expected frozen
+`policyDigest` (the canonical policy snapshot hash). `policyMode` is optional;
+its resolution is identical to `/start`, including central-policy constraints.
+The typed contract is exported from `@flowguard/core/integration/governance-rpc`.
+An existing workflow's digest is its `policySnapshot.hash`; fresh workflows use
+the same read-only `resolveHydratePolicy` resolution as hydration and the
+canonical policy-snapshot freezer. A foreign digest is rejected, never replaced
+with the server's choice.
+
+The server resolves the actor using the existing policy-aware actor authority;
+requests cannot supply an actor, assurance or decision source. The canonical
+assurance ordering applies (`best_effort`, `claim_validated`, `idp_verified`).
+Lowering the minimum is an explicit deployment choice, not a default fallback.
+The permission is read again for repeat/recovery requests; disabling it prevents
+further autonomous starts/repairs, without implicitly ending an ACTIVE session.
+Interactive `/start` remains available to repair a committed activation audit.
+
+Only a root session in the addressed host location may start. Child sessions,
+wrong worktrees/policies, disabled permission and insufficient assurance return
+`{ kind: "blocked", code, reason }` before hydration. Successful responses contain
+`kind: "activated" | "already_active"` and `activationId`, after the shared
+activation audit and durable confirmation. Repeat and concurrent interactive
+starts do not create another activation. Audit/confirmation failure blocks
+runtime admission until the explicit operation is retried. Installation,
+hydration, ordinary prompts and workflow state alone still never activate
+governance. This operation grants no approval or review exemption.
+
 ## Config File Location
 
 ### Repository-specific risk surfaces

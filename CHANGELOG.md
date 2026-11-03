@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Explicit native `flowguard-governance.StartGovernance` RPC for autonomous root
+  activation. `governance.autonomousActivation.enabled` defaults to `false`, with
+  `idp_verified` as the default minimum actor assurance. Requests bind the root
+  session, canonical worktree and policy digest; server-resolved actor checks
+  precede hydration. Autonomous and interactive starts share the locked lifecycle,
+  idempotent activation audit and durable audit-confirmation admission gate.
+
 - **Native Start transaction and audit (#1190, WS3).** The activation lock now
   covers journal preflight and workflow preparation, not just the final journal
   writes. ACTIVE and interrupted ACTIVATING starts validate/reuse their frozen

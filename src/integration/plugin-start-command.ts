@@ -10,9 +10,14 @@
  * Successful authority is audited idempotently before best-effort presentation.
  */
 import type { Plugin } from '@opencode/plugin';
+import * as path from 'node:path';
+import { readConfig } from '../adapters/persistence-config.js';
+import { isAssuranceAtLeast } from '../shared/actor-assurance.js';
+import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { resolveActorForPolicy } from '../adapters/actor-context.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
-import { resolvePolicyFromSnapshot } from '../config/policy-snapshot.js';
+import { freezePolicySnapshot, resolvePolicyFromSnapshot } from '../config/policy-snapshot.js';
 import { NATIVE_START_COMMAND } from '../shared/flowguard-identifiers.js';
 import type { ActorInfo } from '../state/evidence-identity.js';
 import type {
@@ -27,7 +32,8 @@ import { runAudit } from './plugin-audit.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
-import { hydrate } from './tools/index.js';
+import { hydrate, resolveHydratePolicy } from './tools/index.js';
+import { FlowGuardGovernance, type AutonomousStartRequest } from './opencode-governance-rpc.js';
 import {
   appendAuditEventAlreadyLocked,
   readAuditTrail,
@@ -65,7 +71,16 @@ export interface StartCommandDeps {
   readonly signal: AbortSignal;
 }
 
-export function registerStartCommand(
+export async function registerStartCommands(
+  ctx: Plugin.Context,
+  deps: StartCommandDeps,
+  registrations: Registration[],
+): Promise<void> {
+  registrations.push(await registerStartCommand(ctx, deps));
+  registrations.push(await registerAutonomousStart(ctx, deps));
+}
+
+function registerStartCommand(
   ctx: Pick<Plugin.Context, 'command' | 'session'>,
   deps: StartCommandDeps,
 ): Promise<Registration> {
@@ -73,40 +88,84 @@ export function registerStartCommand(
     editor.add({
       name: NATIVE_START_COMMAND,
       description: `FlowGuard — start governance for this session (optional policy mode: ${POLICY_MODES.join(', ')}).`,
-      execute: (input) => deps.guard(() => runStart(ctx, deps, input)),
+      execute: (input) =>
+        deps.guard(async () => {
+          await runStart(ctx, deps, input);
+        }),
     }),
   );
+}
+
+/** Dedicated native operation, never installed as a model tool or prompt trigger. */
+function registerAutonomousStart(
+  ctx: Plugin.Context,
+  deps: StartCommandDeps,
+): Promise<Registration> {
+  return ctx.rpc.register(FlowGuardGovernance, {
+    StartGovernance: (request) =>
+      deps.guard(async () => {
+        try {
+          return await runStart(
+            ctx,
+            deps,
+            {
+              sessionID: request.sessionID,
+              prompt: { text: request.policyMode ?? '' },
+            },
+            { ...request, directory: ctx.location.directory },
+          );
+        } catch (error) {
+          return {
+            kind: 'blocked' as const,
+            code:
+              error instanceof Error && 'code' in error && typeof error.code === 'string'
+                ? error.code
+                : 'GOVERNANCE_AUTHORITY_BLOCKED',
+            reason: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }),
+  });
 }
 
 async function runStart(
   ctx: Pick<Plugin.Context, 'session'>,
   deps: StartCommandDeps,
   input: CommandInvocation,
-): Promise<void> {
+  autonomous?: AutonomousStartRequest & { readonly directory: string },
+) {
   const policyMode = parseStartArguments(input.prompt.text);
   let workflow: StartWorkflow | undefined;
-  const result = await deps.governance.startRoot(input.sessionID, async (current, directory) => {
-    workflow =
-      current?.status === 'active' || current?.status === 'activating'
-        ? await readBoundWorkflow(input.sessionID, directory, current, policyMode)
-        : await hydrateWorkflow(input.sessionID, directory, policyMode, deps.signal);
-    const actor =
-      current?.status === 'active' || current?.status === 'activating'
-        ? current.decisionActor
-        : toDecisionActor(
-            await resolveActorForPolicy(
-              workflow.worktreeRoot,
-              resolvePolicyFromSnapshot(workflow.state.policySnapshot),
-            ),
+  const result = await deps.governance.startRoot(
+    input.sessionID,
+    async (current, directory) => {
+      let authorizedActor =
+        autonomous === undefined
+          ? undefined
+          : await authorizeAutonomousStart(autonomous, directory, current);
+      workflow =
+        current?.status === 'active' || current?.status === 'activating'
+          ? await readBoundWorkflow(input.sessionID, directory, current, policyMode)
+          : await hydrateWorkflow(input.sessionID, directory, policyMode, deps.signal);
+      if (autonomous !== undefined) {
+        if (workflow.state.policySnapshot.hash !== autonomous.policyDigest)
+          throw buildEnforcementError(
+            'GOVERNANCE_AUTHORITY_BLOCKED',
+            'Autonomous Start policy changed during preparation.',
           );
-    return {
-      workflow: {
-        worktreeRoot: workflow.worktreeRoot,
-        policyDigest: workflow.state.policySnapshot.hash,
-      },
-      actor,
-    };
-  });
+        authorizedActor = await authorizeAutonomousStart(autonomous, directory, current);
+      }
+      const actor = await resolveStartActor(current, workflow, authorizedActor);
+      return {
+        workflow: {
+          worktreeRoot: workflow.worktreeRoot,
+          policyDigest: workflow.state.policySnapshot.hash,
+        },
+        actor,
+      };
+    },
+    autonomous === undefined ? 'host_command' : 'autonomous',
+  );
   if (!workflow)
     throw buildEnforcementError(
       'GOVERNANCE_AUTHORITY_BLOCKED',
@@ -133,6 +192,75 @@ async function runStart(
       }),
     'status report',
     input.sessionID,
+  );
+  return { kind: result.kind, activationId: result.record.activationId };
+}
+
+/** Runs under the canonical activation lock, before hydrate can have effects. */
+async function authorizeAutonomousStart(
+  request: AutonomousStartRequest & { readonly directory: string },
+  directory: string,
+  current: GovernanceActivationRevision | null,
+): Promise<GovernanceDecisionActor> {
+  const reject = (reason: string): never => {
+    throw buildEnforcementError('GOVERNANCE_AUTHORITY_BLOCKED', reason);
+  };
+  if (path.resolve(request.directory) !== directory)
+    reject('Autonomous Start must target a root in this host location.');
+  const before = await resolveSessionAuthority({ root: directory, sessionId: request.sessionID });
+  if (before.status === 'unavailable') return reject(before.reason);
+  if (before.worktreeRoot !== request.worktreeRoot)
+    reject('Autonomous Start names a foreign worktree.');
+  const config = await readConfig(before.worktreeRoot);
+  const permission = config.governance.autonomousActivation;
+  if (!permission.enabled) reject('Autonomous activation is disabled in flowguard.json.');
+  const resolved = await resolveHydratePolicy(
+    before.status === 'resolved' ? before.state : null,
+    config,
+    request.policyMode === undefined ? {} : { policyMode: request.policyMode },
+  );
+  const snapshot =
+    before.status === 'resolved'
+      ? before.state.policySnapshot
+      : freezePolicySnapshot(resolved.policyResolution, new Date().toISOString(), hashText);
+  if (snapshot.hash !== request.policyDigest)
+    reject('Autonomous Start names a foreign policy digest.');
+  const actor = toDecisionActor(await resolveActorForPolicy(before.worktreeRoot, resolved.policy));
+  if (!isAssuranceAtLeast(actor.actorAssurance, permission.minimumActorAssurance))
+    reject('Autonomous Start actor assurance is below the configured minimum.');
+  assertPendingActor(current, actor);
+  return actor;
+}
+
+function assertPendingActor(
+  current: GovernanceActivationRevision | null,
+  actor: GovernanceDecisionActor,
+): void {
+  if (
+    current?.status === 'activating' &&
+    canonicalJsonStringify(current.decisionActor) !== canonicalJsonStringify(actor)
+  )
+    throw buildEnforcementError(
+      'GOVERNANCE_AUTHORITY_BLOCKED',
+      'Autonomous Start cannot resume another actor’s pending decision.',
+    );
+}
+
+async function resolveStartActor(
+  current: GovernanceActivationRevision | null,
+  workflow: StartWorkflow,
+  authorizedActor: GovernanceDecisionActor | undefined,
+): Promise<GovernanceDecisionActor> {
+  if (current?.status === 'active' || current?.status === 'activating')
+    return current.decisionActor;
+  return (
+    authorizedActor ??
+    toDecisionActor(
+      await resolveActorForPolicy(
+        workflow.worktreeRoot,
+        resolvePolicyFromSnapshot(workflow.state.policySnapshot),
+      ),
+    )
   );
 }
 

@@ -11,11 +11,11 @@ host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
 (counts updated 2026-11-03):
 
 - `root-composition`: 28 files (plugin lifecycle entrypoints and barrels)
-- `root-host-runtime`: exactly 6 named files (`host-mutation-observation.ts`,
-  `installed-commands.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
+- `root-host-runtime`: exactly 7 named files (`host-mutation-observation.ts`,
+  `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 14 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 48 root production files
+- total: 49 root production files
 
 The activation/scope change in #1190 adds `plugin-native-tools.ts` for native
 catalogue/executor/completion composition and `opencode-governance.ts` for exact
@@ -57,6 +57,11 @@ query, and governed runtime admission is gated until its durable audit confirmat
 The Start decision itself (channel, actor, lock, journal)
 remains owned by `opencode-governance.ts` and `adapters/governance-activation.ts`;
 the command module adds no activation, approval or workflow authority.
+
+WS3 autonomous activation adds `opencode-governance-rpc.ts` as the public native
+transport contract. Its dedicated `StartGovernance` operation shares the Start
+composition and existing lifecycle, actor/policy, audit and admission authorities;
+it introduces no alternate workflow or decision machine.
 
 MUT4 (#1172) adds `plugin-mutation-reconciliation.ts` at the composition boundary
 to connect asynchronous host notifications and the synchronous pre-implement

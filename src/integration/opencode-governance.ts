@@ -161,6 +161,7 @@ export class OpenCodeGovernance {
       readonly workflow: Pick<GovernanceRootStart, 'worktreeRoot' | 'policyDigest'>;
       readonly actor: GovernanceDecisionActor;
     }>,
+    source: 'host_command' | 'autonomous' = 'host_command',
   ): Promise<Exclude<GovernanceRootStartResult, { kind: 'blocked' }>> {
     let actor: GovernanceDecisionActor | undefined;
     const result = await startRootGovernance(
@@ -171,12 +172,12 @@ export class OpenCodeGovernance {
           if (this.signal.aborted || input.sessionId !== sessionId || actor === undefined)
             return this.block('The governance adapter stopped or the Start scope changed.');
           if (input.action === 'start')
-            return { kind: 'authorized', decisionId: randomUUID(), source: 'host_command', actor };
+            return { kind: 'authorized', decisionId: randomUUID(), source, actor };
           if (input.action === 'activate' && current?.status === 'activating')
             return {
               kind: 'authorized',
               decisionId: current.decisionId,
-              source: 'host_command',
+              source: current.decisionSource,
               actor,
             };
           return this.block('The Start command authorizes only Start and its completion.');

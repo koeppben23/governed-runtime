@@ -22,6 +22,10 @@
       "import": "./dist/integration/plugin.js",
       "types": "./dist/integration/plugin.d.ts"
     },
+    "./integration/governance-rpc": {
+      "import": "./dist/integration/opencode-governance-rpc.js",
+      "types": "./dist/integration/opencode-governance-rpc.d.ts"
+    },
     "./testing": {
       "import": "./dist/testing.js",
       "types": "./dist/testing.d.ts"

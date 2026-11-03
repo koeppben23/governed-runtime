@@ -63,7 +63,12 @@ autonomous use. Human UI evidence is not a prerequisite for every autonomous
 start. An autonomous request is not self-authorizing: canonical actor/policy
 validation, scoped durable authority, audit and replay/concurrent-use protection
 still apply. Record its actual nonhuman source; do not manufacture human consent.
-The concrete autonomous authorization/adapter mechanism remains **NOT_VERIFIED**.
+The concrete autonomous adapter is now the explicit native plugin RPC
+`flowguard-governance.StartGovernance`, sharing canonical Start preparation,
+actor/policy checks, activation lock, audit and confirmation admission. Its
+disabled-by-default permission and host-bound request contract are documented in
+[configuration](../configuration.md#autonomous-governance-activation-opencode-v2).
+Installed-host acceptance remains **NOT_VERIFIED**.
 
 Human gates remain policy-dependent. The decision channel for operator actions is
 set by the 2026-11-03 amendment below; no channel is relabelled as human proof.
@@ -157,9 +162,9 @@ The source distinction is evaluated with OpenCode and the OS trusted. It does
 not require preventing a compromised OS from synthesizing UI input; do not grow
 this adapter requirement into a universal anti-spoofing platform.
 
-Interactive `/start` is implemented through the native command channel;
-installed-host acceptance and autonomous activation remain **NOT_VERIFIED**. The
-autonomous path requires
+Interactive `/start` is implemented through the native command channel; the
+autonomous operation uses explicit plugin RPC with server-resolved authorization.
+Installed-host acceptance remains **NOT_VERIFIED**. The autonomous path requires
 its own demonstrated authorization; a caller's `origin`, command text or ordinary
 callback cannot supply it. No undocumented source flag or open high-risk
 assumption may enter either path. Continue independent porting work without
