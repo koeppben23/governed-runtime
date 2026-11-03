@@ -279,4 +279,36 @@ describe('native governance lifecycle commands', () => {
     expect(scopes.has(sessionId)).toBe(false);
     expect(rework.has(sessionId)).toBe(false);
   });
+
+  it('keeps the check scope cleanup durable when restoring the previous agent fails', async () => {
+    const sessionId = 'check-restore-session';
+    const scopes = new Map<string, 'check'>();
+    const runtime = { activeCommandScopes: scopes, checkReworkContinuations: new Map() };
+    const switchAgent = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('agent restore failed'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ctx = {
+      session: {
+        get: vi.fn(async () => ({ agent: 'plan' })),
+        switchAgent,
+        synthetic: vi.fn(async () => ({ id: 'synthetic', type: 'synthetic' })),
+        wait: vi.fn(async () => {}),
+      },
+    } as never;
+    const deps = {
+      guard: <T>(run: () => Promise<T>) => run(),
+      invoke: async (
+        _id: string,
+        action: (entry: { runtime: unknown; scope: unknown }) => Promise<unknown>,
+      ) => action({ runtime, scope: { sessionId, root: { sessionId } } }),
+    } as never;
+    await expect(executeCheckCommand(ctx, deps, sessionId)).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('could not restore the previous agent'),
+      expect.any(Error),
+    );
+    expect(scopes.has(sessionId)).toBe(false);
+  });
 });

@@ -237,6 +237,7 @@ export function recoverableCapacityTarget(state: SessionState): RecoverableCapac
   if (hasLiveReviewerExecution(dispatches, attempts)) return null;
   const attempt = terminalCapacityAttempt(attempts);
   if (!attempt) return null;
+  if (hasSuccessorAttempt(attempts, attempt.attemptId)) return null;
   const released = dispatches.filter((item) => item.attemptId === attempt.attemptId);
   if (released.length !== 1 || released[0]?.dispatchStatus !== 'outcome_unknown') return null;
   return { lock, obligation, attempt };
@@ -277,6 +278,16 @@ function terminalCapacityAttempt(
   return stale.length === 1 && attempt?.childSessionId !== undefined
     ? { ...attempt, childSessionId: attempt.childSessionId }
     : null;
+}
+
+/** A successor attempt means the terminal lineage was already re-armed. */
+function hasSuccessorAttempt(attempts: readonly ReviewAttempt[], attemptId: string): boolean {
+  return attempts.some(
+    (item) =>
+      item.status === 'created' ||
+      item.status === 'bound' ||
+      (item.origin.kind === 'dispatch_rearm' && item.origin.predecessorAttemptId === attemptId),
+  );
 }
 
 /** Clear exactly one proven capacity lock. The obligation stays blocked for a

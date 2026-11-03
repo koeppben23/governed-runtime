@@ -154,6 +154,7 @@ describe('unknown reviewer outcome settlement', () => {
     expect(recoverableCapacityTarget(mandate.state)).toBeNull();
 
     const budget = await blockedByCode('REVIEWER_STEP_BUDGET_EXHAUSTED');
+    const { attemptId } = budget;
     const target = recoverableCapacityTarget(budget.state)!;
     const foreign = {
       ...budget.state,
@@ -208,6 +209,29 @@ describe('unknown reviewer outcome settlement', () => {
       },
     };
     expect(recoverableCapacityTarget(bound)).toBeNull();
+
+    const successor = {
+      ...budget.state,
+      reviewAssurance: {
+        ...budget.state.reviewAssurance!,
+        attempts: [
+          ...budget.state.reviewAssurance!.attempts,
+          {
+            ...budget.state.reviewAssurance!.attempts[0]!,
+            attemptId: '77777777-7777-4777-8777-777777777777',
+            ordinal: 1,
+            status: 'created' as const,
+            origin: {
+              kind: 'dispatch_rearm' as const,
+              predecessorAttemptId: attemptId,
+              triggerReason: 'spent' as const,
+            },
+            childSessionId: undefined,
+          },
+        ],
+      },
+    };
+    expect(recoverableCapacityTarget(successor)).toBeNull();
     expect(target).not.toBeNull();
   });
 
