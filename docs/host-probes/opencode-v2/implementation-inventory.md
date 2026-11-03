@@ -30,12 +30,17 @@ of the unobserved error stub and failed MUT4 runs below remain historical result
 **Finding 6 mechanism checkpoint (2026-11-02):** the
 [native reviewer transport prerequisite](./reviewer-transport-mechanism.md) records
 five real-host mechanism positives and corrects component activation/native call
-identity in the four required product fixtures. Those four contracts still fail.
+identity in the four required product fixtures. Those four contracts failed at
+that historical mechanism checkpoint.
 The subsequent [step-2 dispatch port](./reviewer-dispatch-authority.md) connects
 the canonical ledger to native release and observed Child binding, and the
 [step-3 capture port](./reviewer-capture-evidence.md) adds the V6 same-child
-terminal/evidence generation. Three of the four required product contracts pass;
-recovery remains blocked. Controlled foreground/same-child
+terminal/evidence generation. At `2acef049`, three of the four required product
+contracts passed and recovery failed. The independent review verified all four
+contracts plus independent-review-e2e in CI at `b9a41e5b`. The local follow-up
+adds native SIGKILL/reload and settlement crash positives; complete native race,
+R4 and reviewer-parity acceptance remain open (see the current
+[subcontract matrix](./phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03)). Controlled foreground/same-child
 execution is not evidence binding or safe unknown-outcome recovery. No historical
 test result, policy exception or proof generation is reclassified.
 

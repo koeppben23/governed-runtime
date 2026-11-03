@@ -1,20 +1,21 @@
 # Finding 6 step 3: same-child capture and evidence binding
 
-2026-11-02, PR #1190. **Implementation checkpoint, not step-3 acceptance.**
-R1/R3 corrections are published for review; the bounded mutation gate passes,
-but this is not an independent assurance acceptance. R2 reconciliation and unknown-outcome recovery remain step-4 proof
-obligations. The three capture/evidence product contracts pass; the fourth
-recovery contract remains red. Finding 6 stays BLOCKED; Draft / ACTIVE V2 NO-GO
-is unchanged.
+2026-11-02 checkpoint, updated 2026-11-03, PR #1190. **Implementation and
+bounded proof, not complete Finding 6 acceptance.** At historical checkpoint
+`2acef049`, three capture/evidence product contracts passed and the fourth
+recovery contract failed. The bounded mutation result predates the subsequent
+settlement/R4 changes; it is not current-tree assurance.
 
 **Step-4 update (2026-11-03, #1169 WS4):** unknown-outcome recovery is implemented in
 `review/dispatch/native-review-settlement.ts` (later user turn, interrupt + stable
 idle boundary of the stale child, exact lineage, one audited reopen mutation) and
-the release fence admits only the superseding re-arm attempt. Component tests pass
-locally; the native recovery product contract runs only in the Linux CI smoke job
-(local Windows live smoke is environmentally unavailable). R2 restart
-R4 remains open and R2 is proven only on the component level, so Finding 6 stays
-BLOCKED.
+the release fence admits only the superseding re-arm attempt. The independent
+review verified all four required native contracts and `independent-review-e2e`
+in CI at `b9a41e5b`. The local follow-up below additionally proves R2 native
+SIGKILL/reload continuation and a settlement crash boundary. Complete settlement
+race acceptance, R4 residuals
+and full reviewer parity remain open, so Finding 6 stays **BLOCKED** / ACTIVE V2
+**NO-GO**. See the [current subcontract matrix](./phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03).
 
 ## Trust chain
 
@@ -66,14 +67,59 @@ pre-normalization or pre-truncation tool result must not be assumed equivalent
 to the host history or outgoing request. R4 remains open; no production receipt
 or evidence-recorder change is made by that research checkpoint.
 
-### R2 restart reconciliation (component proof, 2026-11-03)
+### R2 restart reconciliation (2026-11-03)
 
 `plugin-native-review-capture.test.ts` now proves the chain on real persistence and
 outbox: committed generation-6 evidence, an injected projection failure, then a
 restart without plugin runtime, capture fence, pending review or reviewer child.
 The canonical `flowguard_plan` verdict consumes the committed invocation from
 persisted state alone and the obligation becomes `consumed` without a second
-reviewer prompt. An actual native process restart is **NOT_VERIFIED**.
+reviewer prompt. This is component proof, not process death.
+
+The follow-up native test in `opencode-reviewer-capture-live.smoke.test.ts`
+also passes locally on macOS with the actual OpenCode 2.2.4 server and built
+FlowGuard product hooks. A test-only observer fails the outward result assignment
+after V6 evidence is durably committed. The test then kills the server with
+`SIGKILL`, reloads the same stores without re-seeding activation/state, and
+submits the canonical verdict through the native parent tool path. The original
+obligation becomes `consumed`, the invocation identity/attempt/dispatch remain
+unchanged, no new child or reviewer/serialization request appears, and the audit
+prefix is preserved with a valid chain. This proves review continuation, not
+the full Java/ProofGraph/ISO workflow or installed Desktop acceptance.
+
+### Adversarial settlement follow-up (2026-11-03)
+
+- Component composition: interrupt/wait/history failures and changing history
+  leave the lock and audit unchanged. Two concurrent recovery calls reach the
+  real session write lock: only one reopens with one durable semantic audit
+  intent; the other rejects. Reconstructed authority rejects stale completion
+  and old-child prompt/validation without changing evidence.
+- Native crash boundary: a test-only barrier pauses immediately after the
+  **real** host `interrupt(resume: false)` returns, before settlement can reopen.
+  `SIGKILL` and reload retain the blocked obligation/dispatch/attempt and audit;
+  only a later native retry completes through a fresh attempt. This is one
+  controlled crash point, not an exhaustive crash matrix.
+- Native old-child redispatch: after fresh-attempt recovery, a direct prompt to
+  the interrupted historical child is refused without another provider request
+  or evidence change. It is not proof that the host cannot perform arbitrary
+  later activity after plugin unload.
+
+Reproduce against a completed build, serially (do not rebuild `dist` while the
+native host is running):
+
+```sh
+npm run build
+OPENCODE_LIVE=1 npx vitest run --project smoke \
+  src/cli/opencode-reviewer-capture-live.smoke.test.ts
+npx vitest run --project integration \
+  src/integration/plugin-native-review-capture.test.ts \
+  src/integration/review/dispatch/native-review-settlement.test.ts
+```
+
+The four required product titles/outcomes, verifier, mutation selection/thresholds
+and coverage timeout are unchanged. **NOT_VERIFIED:** native concurrent recovery
+and forced late-completion scheduling across every settlement/re-arm crash point;
+current-tree mutation and independent/installed acceptance of these additions.
 
 Historical note (previous checkpoint):
 
@@ -150,7 +196,7 @@ rewriting the call ID. Historical bytes are not normalized.
 - The after-hook never trusts native result text, metadata completion, or a
   caller claim as evidence.
 
-## R1/R3 review checkpoint verification
+## Historical R1/R3 review checkpoint verification (`b54d9caa`)
 
 - Full ordinary suite: **707 files / 12,997 passed / 2 existing skips**.
 - Full pinned native smoke: **130 passed / 1 failed / 0 skipped**. The only

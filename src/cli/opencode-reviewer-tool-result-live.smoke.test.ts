@@ -51,24 +51,8 @@ function text(content: unknown): string {
     .join('\n');
 }
 async function run(mode: ResultProbeMode) {
-  probe = await createToolResultProbe(mode);
-  restore = withTestEnv({ OPENCODE_CONFIG_DIR: probe.env.OPENCODE_CONFIG_DIR! });
-  const sessionID = await probe.session();
-  const seeded = await seedStrictPlanSession(probe.project, sessionID);
-  const state = (await readState(seeded.sessDir))!;
-  await writeStateWithArtifacts(seeded.sessDir, state);
-  await probe.client.rpc.call({
-    location: probe.location,
-    rpcID: 'flowguard-component-activation',
-    method: 'seed',
-    input: {
-      sessionID,
-      policyDigest: state.policySnapshot.hash,
-      worktreeRoot: state.binding.worktree,
-    },
-  });
-  await probe.run(sessionID, 'positive');
-  const result = (await readState(seeded.sessDir))!;
+  const result = await runSeededReview(mode);
+  if (!probe) throw new Error('Native result probe was not initialized');
   const invocation = result.reviewAssurance!.invocations[0];
   expect(invocation, JSON.stringify(result.reviewAssurance)).toBeDefined();
   if (!invocation) throw new Error('The boundary counterprobe did not reach evidence binding');
@@ -154,8 +138,8 @@ async function run(mode: ResultProbeMode) {
   };
 }
 
-/** Same seeded native review, for a mode whose replacement must be refused. */
-async function runRejected(mode: ResultProbeMode) {
+/** Same real product flow for positives, rejection tests and explicit residual probes. */
+async function runSeededReview(mode: ResultProbeMode) {
   probe = await createToolResultProbe(mode);
   restore = withTestEnv({ OPENCODE_CONFIG_DIR: probe.env.OPENCODE_CONFIG_DIR! });
   const sessionID = await probe.session();
@@ -200,7 +184,7 @@ describe.skipIf(!LIVE)('R4 native result-boundary integrity', () => {
   ] as const)(
     'rejects a privileged later %s replacement before it reaches the model or binds evidence',
     async (mode, marker) => {
-      const result = await runRejected(mode);
+      const result = await runSeededReview(mode);
       expect(result.reviewAssurance!.invocations).toEqual([]);
       expect(result.reviewAssurance!.obligations[0]!.status).not.toBe('fulfilled');
       const reviewBodies = probe!.calls
@@ -209,6 +193,30 @@ describe.skipIf(!LIVE)('R4 native result-boundary integrity', () => {
       expect(reviewBodies.length).toBeGreaterThan(0);
       for (const body of reviewBodies) expect(body).not.toContain(marker);
       expect(probe!.serializations()).toBe(0);
+    },
+    120_000,
+  );
+
+  it.each([
+    ['dynamic-context-mutation', 'r4.dynamic.replaced'],
+    ['http-mutation', 'r4.http.replaced'],
+  ] as const)(
+    'documents the still-open privileged %s counterexample, not an assurance PASS',
+    async (mode, hook) => {
+      const result = await runSeededReview(mode);
+      const invocation = result.reviewAssurance!.invocations[0];
+      expect(invocation).toBeDefined();
+      expect(result.reviewAssurance!.obligations[0]!.status).toBe('fulfilled');
+      expect((await probe!.resultObservations()).some((entry) => entry.hook === hook)).toBe(true);
+      const reviewBodies = probe!.calls.filter((call) => call.phase === 'review');
+      expect(reviewBodies.some((call) => JSON.stringify(call.body).includes(RESULT_SENTINEL))).toBe(
+        true,
+      );
+      expect(JSON.stringify(await probe!.history(invocation!.childSessionId))).not.toContain(
+        RESULT_SENTINEL,
+      );
+      expect(probe!.serializations()).toBe(1);
+      expect(probe!.providerErrors).toEqual([]);
     },
     120_000,
   );

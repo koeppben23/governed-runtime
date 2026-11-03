@@ -157,8 +157,11 @@ not installed support; see the [V2 inventory](./host-probes/opencode-v2/implemen
 The [native transport prerequisite](./host-probes/opencode-v2/reviewer-transport-mechanism.md)
 observes controlled foreground/same-child completion plus adversarial windows
 without loading the product or writing evidence. The four required product
-reviewer contracts remain red; no optional-review workaround or proof-generation
-reinterpretation is authorized by those mechanism positives.
+reviewer contracts and independent-review-e2e pass in reviewed CI at `b9a41e5b`;
+local follow-up adds native process-restart proof. Complete race/R4/parity and
+installed acceptance remain open in the
+[subcontract matrix](./host-probes/opencode-v2/phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03).
+No optional-review workaround or proof-generation reinterpretation is authorized.
 
 ### Terminal reviewer capacity failures
 

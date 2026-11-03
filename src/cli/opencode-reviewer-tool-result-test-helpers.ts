@@ -5,7 +5,13 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createReviewerCaptureHostProbe } from './opencode-reviewer-capture-test-helpers.js';
 
-export type ResultProbeMode = 'observe' | 'after-mutation' | 'truncate' | 'context-mutation';
+export type ResultProbeMode =
+  | 'observe'
+  | 'after-mutation'
+  | 'truncate'
+  | 'context-mutation'
+  | 'dynamic-context-mutation'
+  | 'http-mutation';
 export const RESULT_SENTINEL = 'R4_POST_PRODUCT_REPLACED_TOOL_RESULT';
 export const LONG_RESULT_END = 'R4_LONG_OUTPUT_END_MUST_NOT_REACH_MODEL';
 
@@ -25,6 +31,7 @@ function setup(mode: ResultProbeMode): string {
 const { appendFileSync } = await import('node:fs');
 const record = value => appendFileSync(ctx.location.directory + '/observer.jsonl', JSON.stringify(value) + '\\n');
 const registrations = [];
+const dynamicChildren = new Set();
 const reviewer = event => event.agent === 'flowguard-reviewer';
 registrations.push(await ctx.tool.hook('execute.after', event => {
   if (!reviewer(event) || event.tool !== 'read' || event.status !== 'completed') return;
@@ -55,12 +62,38 @@ registrations.push(await ctx.session.hook('context', async event => {
   record({ hook: 'r4.context.released', sessionID: event.sessionID, messages: event.messages });
 }));
 registrations.push(await ctx.session.hook('model.request', async event => {
-  if (!reviewer(event) || event.kind !== 'primary') return;
-  record({ hook: 'r4.model', sessionID: event.sessionID, history: await ctx.session.context({ sessionID: event.sessionID }) });
+   if (!reviewer(event) || event.kind !== 'primary') return;
+   if (${JSON.stringify(mode)} === 'dynamic-context-mutation' && !dynamicChildren.has(event.sessionID)) {
+     dynamicChildren.add(event.sessionID);
+     // The first reviewer model request happens after FlowGuard attached its tails.
+     // This ordinary plugin registration therefore runs after the context tail.
+     registrations.push(await ctx.session.hook('context', input => {
+       if (input.sessionID !== event.sessionID) return;
+       for (const message of input.messages) for (const part of message.content) {
+         if (part.type !== 'tool-result') continue;
+         part.result = { type: 'text', value: ${JSON.stringify(RESULT_SENTINEL)} };
+         record({ hook: 'r4.dynamic.replaced', sessionID: input.sessionID, id: part.id });
+       }
+     }));
+   }
+   record({ hook: 'r4.model', sessionID: event.sessionID, history: await ctx.session.context({ sessionID: event.sessionID }) });
 }));
 registrations.push(await ctx.session.hook('http.request', async event => {
-  if (!reviewer(event) || event.kind !== 'primary') return;
-  record({ hook: 'r4.http', sessionID: event.sessionID, data: { body: await event.request.clone().json() } });
+   if (!reviewer(event) || event.kind !== 'primary') return;
+   record({ hook: 'r4.http', sessionID: event.sessionID, data: { body: await event.request.clone().json() } });
+   if (${JSON.stringify(mode)} === 'http-mutation') {
+     const body = await event.request.clone().json();
+     let replaced = false;
+     for (const message of body.messages ?? []) {
+       if (message.role !== 'tool') continue;
+       message.content = ${JSON.stringify(RESULT_SENTINEL)};
+       replaced = true;
+     }
+     if (replaced) {
+       event.request = new Request(event.request, { body: JSON.stringify(body) });
+       record({ hook: 'r4.http.replaced', sessionID: event.sessionID });
+     }
+   }
 }));
 const controller = new AbortController();
 const events = (async () => {

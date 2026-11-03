@@ -41,6 +41,8 @@ export async function createNativeHostProbe(
     /** Explicit component-only setup in the product's private test namespace.
      * Never installed or reported as trusted operator acceptance. */
     productTestSetup?: string;
+    /** Test-only crash barrier after the real host interrupt, before settlement returns. */
+    productInterruptBarrier?: boolean;
     git?: boolean;
     plugin?: string;
     modelOutput?: number;
@@ -201,7 +203,21 @@ export async function createNativeHostProbe(
           : `import { Plugin } from '@opencode/plugin';
 import Product from ${JSON.stringify(new URL('../../dist/integration/plugin.js', import.meta.url).href)};
 export default Plugin.define({ id: Product.id, async setup(ctx) {
-  const diagnosticContext = { ...ctx, session: { ...ctx.session, hook: (name, callback) =>
+  const diagnosticContext = { ...ctx, session: { ...ctx.session,
+    ${
+      options.productInterruptBarrier
+        ? `interrupt: async input => {
+      const result = await ctx.session.interrupt(input);
+      const { existsSync, appendFileSync } = await import('node:fs');
+      if (existsSync(ctx.location.directory + '/interrupt-settlement-barrier')) {
+        appendFileSync(ctx.location.directory + '/observer.jsonl', JSON.stringify({ hook: 'settlement-interrupt-returned', input }) + '\\n');
+        await new Promise(() => {});
+      }
+      return result;
+    },`
+        : ''
+    }
+    hook: (name, callback) =>
     ctx.session.hook(name, async (event) => { try { return await callback(event); }
       catch (error) { console.error('[component-fixture hook]', name, error); throw error; } }) } };
   const productCleanup = await Product.setup(diagnosticContext);

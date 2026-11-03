@@ -1,7 +1,8 @@
 # R4: native tool-result representation boundary
 
-2026-11-02, PR #1190. **Research checkpoint, not a security correction or
-step-3 acceptance. R4 is open; Finding 6 remains BLOCKED / ACTIVE V2 NO-GO.**
+2026-11-02 research, updated 2026-11-03, PR #1190. **Bounded correction and
+remaining native counterexamples, not complete R4 acceptance. R4 is open;
+Finding 6 remains BLOCKED / ACTIVE V2 NO-GO.**
 
 ## R4 correction (2026-11-03, #1169 WS4)
 
@@ -30,14 +31,47 @@ happens after all hooks and is stored in history, so it matches the context chec
 The three native counterexamples are now rejection tests in
 `opencode-reviewer-tool-result-live.smoke.test.ts` (no invocation, obligation not
 fulfilled, marker never in a reviewer provider request, no serialization); the
-`observe` positive stays. They run only in the Linux CI smoke job.
+`observe` positive stays. The follow-up ran all six result-boundary probes
+locally on macOS with the real pinned 2.2.4 host.
 
 **Residual limits (NOT_VERIFIED / not covered):** hooks registered dynamically
 after FlowGuard's tails; hooks ordered before FlowGuard that alter a result
 before FlowGuard observes it; `http.request`/WebSocket/AI-SDK transport
 replacement after context. These remain documented R4 limits.
 
-## Scope and authority
+## Follow-up: reachable plugin residuals (2026-11-03)
+
+Two additional native diagnostics now reproduce residual replacements through
+ordinary plugin hook APIs, without changing the product, host source, reviewer
+tool or evidence recorder:
+
+| Probe                      | Actual order / mutation                                                                                                                                                                    | Observed result                                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `dynamic-context-mutation` | A plugin registers its context callback in the first reviewer `model.request`, after FlowGuard has attached its tails. The callback replaces the read's `tool-result` on the next context. | Marker reaches the reviewer fixture provider; history retains the original result; V6 evidence fulfills the obligation. |
+| `http-mutation`            | A plugin replaces tool-message content in `http.request` after context validation.                                                                                                         | Marker reaches the reviewer fixture provider; history retains the original result; V6 evidence fulfills the obligation. |
+
+These tests explicitly assert the **undesired** fulfilled outcome as a
+counterexample diagnostic. Their green test runner result is not an integrity
+PASS. The three existing After/Context rejection tests and the unchanged-read
+positive still pass in the same run.
+
+The fixture controls plugin installation/registration (privileged relative to
+an ordinary caller). It does not prove that caller text can install code, or
+that every provider/WebSocket path is reachable. It does establish that these
+installed-plugin APIs can bypass the present tails on the pinned host. Under
+the existing operator decision that co-installed plugins are untrusted for
+review evidence, **these paths cannot be excluded as trusted-host behavior**.
+R4 acceptance is therefore **BLOCKED** on an enforcement boundary or an explicit
+operator contract decision; no narrower threat model is silently adopted and no
+speculative digest/second evidence authority is introduced here.
+
+```sh
+npm run build
+OPENCODE_LIVE=1 npx vitest run --project smoke \
+  src/cli/opencode-reviewer-tool-result-live.smoke.test.ts
+```
+
+## Historical research scope and authority (before `b9a41e5b`)
 
 The real pinned OpenCode 2.2.4 host loads FlowGuard's product hooks and existing
 dispatch/capture/evidence/audit owners. A deterministic OpenAI-compatible HTTP

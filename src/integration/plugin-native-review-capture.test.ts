@@ -2,6 +2,8 @@
  * These tests do not establish native-host provenance or restart recovery. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { verifyChain } from '../audit/integrity.js';
 import { createTestWorkspace } from './test-helpers.js';
 import { seedStrictPlanSession } from './plugin-host-task-diagnostics-test-helpers.js';
 import { createWorkspace } from './plugin-workspace.js';
@@ -352,4 +354,120 @@ describe('native capture composition with durable evidence', () => {
     expect(reopened.dispatches).toEqual(blocked.reviewAssurance!.dispatches);
     expect(resolveReviewContinuation(reopened, 'plan').kind).toBe('interrupted_dispatch');
   });
+
+  it.each(['interrupt', 'wait', 'context', 'late_history'])(
+    'preserves the durable lock and audit when settlement fails at %s',
+    async (phase) => {
+      const h = await unknownOutcomeFixture();
+      const before = await readState(h.seeded.sessDir);
+      const audit = await readAuditTrail(h.seeded.sessDir);
+      if (phase === 'interrupt') h.host.interrupt.mockRejectedValueOnce(new Error('interrupt'));
+      if (phase === 'wait') h.wait.mockRejectedValueOnce(new Error('wait'));
+      if (phase === 'context')
+        h.host.sessionContext.mockImplementation(async (input) => {
+          if ((input as { sessionID: string }).sessionID === 'root') return laterUserTurn;
+          throw new Error('context');
+        });
+      if (phase === 'late_history') {
+        let reads = 0;
+        h.host.sessionContext.mockImplementation(async (input) => {
+          if ((input as { sessionID: string }).sessionID === 'root') return laterUserTurn;
+          return reads++ === 0 ? h.history() : [...h.history(), assistant('msg_late')];
+        });
+      }
+      await expect(h.reviewer.beforeTool(h.root, retryEvent)).rejects.toBeDefined();
+      expect((await readState(h.seeded.sessDir))!.reviewAssurance).toEqual(h.blocked);
+      expect(await readState(h.seeded.sessDir)).toEqual(before);
+      expect(await readAuditTrail(h.seeded.sessDir)).toEqual(audit);
+      expect(h.host.prompt).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('serializes competing settlements to one durable reopen intent and rejects the loser', async () => {
+    const h = await unknownOutcomeFixture();
+    let arrivals = 0;
+    let release!: () => void;
+    const bothWaiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    h.wait.mockImplementation(async () => {
+      if (++arrivals === 2) release();
+      await bothWaiting;
+    });
+    const results = await Promise.allSettled([
+      h.reviewer.beforeTool(h.root, retryEvent),
+      h.reviewer.beforeTool(h.root, retryEvent),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({ code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN' }),
+      }),
+    ]);
+    const persisted = (await readState(h.seeded.sessDir))!;
+    const reopened = persisted.reviewAssurance!;
+    expect(reopened.capacityLock).toBeNull();
+    expect(reopened.attempts).toEqual(h.blocked.attempts);
+    expect(reopened.dispatches).toEqual(h.blocked.dispatches);
+    expect(reopened.invocations).toEqual([]);
+    const audit = await readAuditTrail(h.seeded.sessDir);
+    expect(
+      persisted.pendingAuditOperations.filter(
+        (operation) =>
+          operation.kind === 'semantic' &&
+          operation.semantic.event === 'review:obligation_reopened',
+      ),
+    ).toHaveLength(1);
+    expect(verifyChain(audit).valid).toBe(true);
+  });
+
+  it('rejects late completion and old-child execution after settlement with fresh authority', async () => {
+    const h = await unknownOutcomeFixture();
+    await h.reviewer.beforeTool(h.root, retryEvent);
+    const settled = (await readState(h.seeded.sessDir))!;
+    const audit = await readAuditTrail(h.seeded.sessDir);
+    // No initial-run receipt or capture lease survives authority reconstruction.
+    const fresh = createNativeReviewerAuthority(h.host.ctx, async () => h.runtime as never);
+    await expect(fresh.capture(h.root, h.event)).rejects.toHaveProperty(
+      'code',
+      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    );
+    await expect(fresh.validate(h.child)).rejects.toHaveProperty(
+      'code',
+      'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+    );
+    await expect(
+      fresh.prompt(h.child, {
+        sessionID: 'child',
+        messageID: 'msg_late',
+        prompt: { text: 'resume old reviewer' },
+      } as never),
+    ).rejects.toHaveProperty('code', 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+    expect((await readState(h.seeded.sessDir))!.reviewAssurance).toEqual(settled.reviewAssurance);
+    expect(await readAuditTrail(h.seeded.sessDir)).toEqual(audit);
+    expect(h.host.prompt).toHaveBeenCalledTimes(1);
+  });
 });
+
+const laterUserTurn = [
+  { type: 'assistant', id: 'message' },
+  { type: 'user', id: 'msg_later_user' },
+];
+const retryEvent = {
+  agent: 'build',
+  tool: 'flowguard_plan',
+  sessionID: 'root',
+  input: { reviewRecovery: 'retry_transport' },
+};
+
+async function unknownOutcomeFixture() {
+  const h = await fixture();
+  h.wait.mockRejectedValueOnce(new Error('injected wait failure'));
+  await h.reviewer.capture(h.root, h.event);
+  const blocked = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+  expect(blocked.capacityLock?.code).toBe('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+  h.host.sessionContext.mockImplementation(async (input) =>
+    (input as { sessionID: string }).sessionID === 'root' ? laterUserTurn : h.history(),
+  );
+  return { ...h, blocked };
+}

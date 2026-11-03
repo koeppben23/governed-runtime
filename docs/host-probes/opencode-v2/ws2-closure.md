@@ -50,12 +50,14 @@ npx vitest run --project unit src/adapters/session-authority.test.ts
 
 ## Assurance scope for reviewer result bytes
 
-The current receipt binds the reviewer child, owning assistant, call identity,
-tool input and terminal status. It does **not** attest the final consumed
-tool-result representation. Native R4 probes showed that privileged host plugin
-hooks registered after the product can alter After/Context content without
-preventing evidence fulfillment. This is a trusted-host boundary, not an
-unprivileged exploit: unprivileged reachability remains **NOT_VERIFIED**.
+The receipt now also binds the result observed at FlowGuard's after-hook, and
+per-child tails reject the previously reproduced later After/Context changes
+(`b9a41e5b`). It does **not** attest the final consumed tool-result
+representation. Follow-up native diagnostics reproduce replacement by a later
+dynamic context hook and by `http.request` while V6 evidence still fulfills.
+These require installed plugin privileges, not merely caller text. Under the
+operator's untrusted-co-installed-plugin model they remain R4 blockers, not
+trusted-host exclusions; see the [R4 report](./reviewer-tool-result-evidence.md#follow-up-reachable-plugin-residuals-2026-11-03).
 
 FlowGuard therefore must not describe the terminal receipt as proof of the exact
 tool-result bytes consumed by the model. A future final-consumption attestation
@@ -66,16 +68,16 @@ privileged host plugin code.
 
 ## Missing V1 reviewer parity (separate workstream)
 
-These mechanisms remain owners with tests but have no V2 production call path.
+These mechanisms remain owners with tests; their V2 integration is partial or absent.
 They are parity work inside PR #1190, not additional WS2 host-neutralization.
 Each item needs a positive product contract and a fail-closed negative.
 
-| Mechanism                                         | Current owner                                                                                 | Missing V2 call path                                                                                                | Required implementation/tests                                                                                                                                                                                                                           |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Retry classification and bounded diagnostics      | `src/integration/review/dispatch/capture-retry.ts`                                            | `native-review-capture` currently closes every non-provenance failure terminally                                    | Route retryable capture failures through the existing classifier and durable re-arm; test one bounded re-arm on the same frozen obligation, no second child after terminal closure, and exhaustion.                                                     |
-| Durable re-arm                                    | `src/integration/review/dispatch/durable-dispatch.ts` (`abandonAndRearmByHostCall`)           | V2 after-hook/capture-failure path never calls it                                                                   | Persist `outcome_unknown` and the fresh attempt in one mutation; test stale/late old-child completion, restart, and no dispatch replay.                                                                                                                 |
-| Incoherent / pre-bind / expired-dispatch closures | `src/integration/review/dispatch/native-review-execution.ts`                                  | No V2 product caller                                                                                                | Connect the canonical closure owners to capture settlement; test each closure leaves no invocation and one audit intent, and that a late answer cannot bind.                                                                                            |
-| Reviewer observation replay                       | `src/integration/review/observations/observation-replay*.ts` + `flowguard_observe_repository` | V2 reviewer tool path cannot record the observation ledger and the parent never replays it after the child is known | Expose the sanctioned observation tool to the reviewer execution step, then replay/bind after the actual child identity; test positive observation evidence and rejection of foreign-session, wrong-revision, digest-mismatch and parent-side captures. |
+| Mechanism                                         | Current owner                                                                                                        | Missing V2 call path                                                                                                                                                       | Required implementation/tests                                                                                                                                                                                                                           |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Retry classification and bounded diagnostics      | `src/integration/review/dispatch/capture-retry.ts`                                                                   | `native-review-capture` currently closes every non-provenance failure terminally                                                                                           | Route retryable capture failures through the existing classifier and durable re-arm; test one bounded re-arm on the same frozen obligation, no second child after terminal closure, and exhaustion.                                                     |
+| Durable re-arm                                    | `src/integration/review/dispatch/durable-dispatch.ts` (`buildInterruptedDispatchRearm`, `abandonAndRearmByHostCall`) | Partial: proven unknown-outcome settlement now reopens, and the typed tool retry uses `buildInterruptedDispatchRearm`; automatic classified capture retry is still unwired | Native fresh-attempt recovery passes; local crash/old-child probes supplement it. Preserve quarantine and exact lineage; complete bounded retry/exhaustion and native concurrent/late-completion coverage, not an automatic unlock.                     |
+| Incoherent / pre-bind / expired-dispatch closures | `src/integration/review/dispatch/native-review-execution.ts`                                                         | No V2 product caller                                                                                                                                                       | Connect the canonical closure owners to capture settlement; test each closure leaves no invocation and one audit intent, and that a late answer cannot bind.                                                                                            |
+| Reviewer observation replay                       | `src/integration/review/observations/observation-replay*.ts` + `flowguard_observe_repository`                        | V2 reviewer tool path cannot record the observation ledger and the parent never replays it after the child is known                                                        | Expose the sanctioned observation tool to the reviewer execution step, then replay/bind after the actual child identity; test positive observation evidence and rejection of foreign-session, wrong-revision, digest-mismatch and parent-side captures. |
 
 These rows are the authoritative V2 parity backlog. They must not be marked
 done from component tests alone; completion requires the actual product flow on

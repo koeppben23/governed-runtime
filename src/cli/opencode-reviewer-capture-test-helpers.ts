@@ -35,12 +35,16 @@ interface ReviewerHostProbe extends Omit<NativeHostProbe, 'session' | 'entries'>
     mode: 'positive' | 'tool' | 'interrupted',
   ): ReturnType<NativeHostProbe['prompt']>;
   serializations(): number;
+  complete(sessionID: string): ReturnType<NativeHostProbe['prompt']>;
 }
 export async function createReviewerCaptureHostProbe(
   options: {
     readonly reviewArguments?: Record<string, unknown>;
     readonly onReview?: (childSessionID: string) => Promise<void>;
     readonly initialRead?: boolean;
+    /** Test-only failure when the product projects its already-committed evidence. */
+    readonly failResultProjection?: boolean;
+    readonly interruptBarrier?: boolean;
     /** Adversarial/observational fixture hooks registered AFTER Product.setup.
      * Never installed authority and never a replacement product implementation. */
     readonly postProductSetup?: string;
@@ -53,9 +57,11 @@ export async function createReviewerCaptureHostProbe(
   let project = '';
   const calls: ReviewerProbeCall[] = [];
   let initialReads = 0;
+  let completing = false;
   const sentinel = 'READ_MUST_NOT_REACH_THE_PROVIDER_4782';
   const probe = await createNativeHostProbe({
     product: true,
+    productInterruptBarrier: options.interruptBarrier === true,
     productTestSetup:
       options.postProductSetup === undefined
         ? COMPONENT_ACTIVATION_SETUP
@@ -68,7 +74,19 @@ import { appendFileSync } from 'node:fs';
 export default Plugin.define({ id: 'reviewer-observer', async setup(ctx) {
   const record = entry => appendFileSync(ctx.location.directory + '/observer.jsonl', JSON.stringify(entry) + '\\n');
   const registrations = [];
-  for (const hook of ['execute.before', 'execute.after']) registrations.push(await ctx.tool.hook(hook, input => record({ hook, input })));
+   for (const hook of ['execute.before', 'execute.after']) registrations.push(await ctx.tool.hook(hook, input => {
+     record({ hook, input });
+     if (${options.failResultProjection === true} && hook === 'execute.after' && input.tool === 'subagent' && input.status === 'completed') {
+       // The observer loads before the product. Fail only its final outward result
+       // assignment, never dispatch/capture/evidence persistence or reviewer execution.
+       const original = input.result;
+       Object.defineProperty(input, 'result', { configurable: true, get: () => original, set: () => {
+         Object.defineProperty(input, 'result', { value: original, configurable: true, writable: true, enumerable: true });
+         record({ hook: 'projection-failure', input: { sessionID: input.sessionID } });
+         throw new Error('injected post-commit result projection failure');
+       } });
+     }
+   }));
   for (const hook of ['prompt', 'context', 'model.request']) registrations.push(await ctx.session.hook(hook, input => record({ hook, input })));
   record({ hook: 'plugin-loaded' });
   return async () => { for (const registration of registrations) await registration.dispose(); };
@@ -85,6 +103,10 @@ export default Plugin.define({ id: 'reviewer-observer', async setup(ctx) {
         body,
       });
       if (nativeReview && !serialization) await options.onReview?.(sessionID);
+      if (!nativeReview && completing)
+        return parentStage++ === 0
+          ? { tool: { name: 'flowguard_plan', arguments: { reviewVerdict: 'accept' } } }
+          : { text: 'Committed review verdict submitted.' };
       if (nativeReview && !serialization && options.initialRead && initialReads++ === 0)
         return {
           tool: { name: 'read', arguments: { path: join(project, 'capture-sentinel.txt') } },
@@ -138,6 +160,9 @@ export default Plugin.define({ id: 'reviewer-observer', async setup(ctx) {
   });
   return {
     ...probe,
+    get client() {
+      return probe.client;
+    },
     sentinel,
     calls,
     providerErrors: probe.errors,
@@ -159,6 +184,14 @@ export default Plugin.define({ id: 'reviewer-observer', async setup(ctx) {
       );
     },
     serializations: () => serializationCalls,
+    complete(sessionID: string) {
+      completing = true;
+      parentStage = 0;
+      return probe.prompt(
+        sessionID,
+        'Submit the accept verdict using the already committed plan review. Do not invoke another reviewer.',
+      );
+    },
   };
 }
 

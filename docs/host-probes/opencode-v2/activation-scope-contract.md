@@ -117,7 +117,9 @@ Reviewer enrollment additionally requires the
 [canonical independent-review dispatch authority](./reviewer-dispatch-authority.md),
 durable before native release and bound to the actual progress-receipt child.
 The [step-3 capture port](./reviewer-capture-evidence.md) connects evidence
-generation 6 and terminal same-child binding. Safe recovery remains blocked. None of these
+generation 6 and terminal same-child binding. The required native recovery test
+passes in reviewed CI at `b9a41e5b`; complete race/restart/R4 and installed
+acceptance remain separate (see the [subcontract matrix](./phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03)). None of these
 ordinary-delegation receipts mint reviewer evidence,
 operator decisions or regular edit-error terminality. Transport-v5 and
 `review-assurance.v7` remain unchanged.

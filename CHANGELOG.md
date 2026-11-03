@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Reviewer acceptance evidence (#1190).** Split P0-05/P0-08 into the passing
+  native recovery/E2E subcontracts at `b9a41e5b` and the still-open restart,
+  settlement-race, R4 and reviewer-parity requirements. Earlier red results and
+  mutation scores remain explicitly historical, not current acceptance.
+- **Reviewer restart and settlement regressions (#1190).** Native tests kill
+  the real host after a committed V6 result-projection failure and during
+  settlement after interrupt; canonical continuation retains evidence/lineage
+  without repeating the committed review. Composition tests cover competing
+  recovery, failed settlement and stale-child rejection. R4 diagnostics reproduce
+  the still-open dynamic-context/HTTP plugin replacements; their successful
+  reproduction is not security acceptance.
+
 ### Added
 
 - **R4 reviewer tool-result integrity (#1190, Finding 6, #1169 WS4).** Co-installed

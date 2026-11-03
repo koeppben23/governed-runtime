@@ -8,6 +8,10 @@ import { withTestEnv } from '../integration/test-helpers.js';
 import { writeStateWithArtifacts } from '../integration/tools/helpers.js';
 import { nativeOpenCodeCandidate } from './opencode-live-host-test-helpers.js';
 import { encodeHostCallId } from '../state/host-identity.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { verifyChain } from '../audit/integrity.js';
+import { writeFile, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const ENABLED =
   process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
@@ -23,8 +27,8 @@ afterEach(async () => {
   }
 });
 
-async function openReview() {
-  probe = await createReviewerCaptureHostProbe();
+async function openReview(options: Parameters<typeof createReviewerCaptureHostProbe>[0] = {}) {
+  probe = await createReviewerCaptureHostProbe(options);
   restore = withTestEnv({ OPENCODE_CONFIG_DIR: probe.env.OPENCODE_CONFIG_DIR! });
   const sessionID = await probe.session();
   const seeded = await seedStrictPlanSession(probe.project, sessionID);
@@ -232,5 +236,120 @@ describe.skipIf(!ENABLED)('actual FlowGuard native reviewer capture on pinned Op
       historicalInvocations.some((invocation) => invocation.invocationId === fresh?.invocationId),
     ).toBe(false);
     expect(probe.calls.some((call) => call.phase === 'serialization')).toBe(true);
+    const settled = recovered!.reviewAssurance!;
+    const oldChild = historicalAttempts[0]!.childSessionId!;
+    const oldRequests = probe.requests.filter((request) => request.sessionID === oldChild).length;
+    await expect(
+      probe.client.session.prompt({
+        sessionID: oldChild,
+        text: 'Resume the old reviewer after interruption.',
+      }),
+    ).rejects.toBeDefined();
+    expect(probe.requests.filter((request) => request.sessionID === oldChild)).toHaveLength(
+      oldRequests,
+    );
+    expect((await readState(seeded.sessDir))!.reviewAssurance).toEqual(settled);
+  }, 180_000);
+
+  it('keeps settlement quarantined across SIGKILL after real interrupt and recovers on a later native turn', async () => {
+    const { probe, sessionID, seeded } = await openReview({ interruptBarrier: true });
+    const running = probe.run(sessionID, 'interrupted');
+    try {
+      await vi.waitFor(() => expect(probe.serializations()).toBe(1), { timeout: 15_000 });
+      await probe.client.session.interrupt({
+        sessionID: probe.requests.at(-1)!.sessionID,
+        resume: false,
+      });
+    } finally {
+      await running;
+    }
+    const blocked = (await readState(seeded.sessDir))!;
+    expect(blocked.reviewAssurance!.capacityLock?.code).toBe('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    const barrier = join(probe.project, 'interrupt-settlement-barrier');
+    await writeFile(barrier, 'Crash only after the real host interrupt has returned.');
+    const recovering = probe.run(sessionID, 'positive').then(
+      () => ({ kind: 'completed' as const }),
+      (error: unknown) => ({ kind: 'interrupted' as const, error }),
+    );
+    await vi.waitFor(
+      async () =>
+        expect(
+          (await probe.entries()).some((entry) => entry.hook === 'settlement-interrupt-returned'),
+        ).toBe(true),
+      { timeout: 15_000 },
+    );
+    const beforeCrash = (await readState(seeded.sessDir))!;
+    expect(beforeCrash.reviewAssurance).toEqual(blocked.reviewAssurance);
+    const audit = await readAuditTrail(seeded.sessDir);
+    await unlink(barrier);
+    await probe.restart('SIGKILL');
+    await recovering;
+    expect((await readState(seeded.sessDir))!.reviewAssurance).toEqual(blocked.reviewAssurance);
+    expect(await readAuditTrail(seeded.sessDir)).toEqual(audit);
+    expect(probe.serializations()).toBe(0);
+    await probe.run(sessionID, 'positive');
+    const recovered = (await readState(seeded.sessDir))!.reviewAssurance!;
+    expect(recovered.obligations[0]?.status).toBe('fulfilled');
+    expect(recovered.invocations).toHaveLength(1);
+    for (const attempt of blocked.reviewAssurance!.attempts)
+      expect(recovered.attempts).toContainEqual(attempt);
+    for (const dispatch of blocked.reviewAssurance!.dispatches)
+      expect(recovered.dispatches).toContainEqual(dispatch);
+    expect(recovered.invocations[0]!.attemptId).not.toBe(
+      blocked.reviewAssurance!.attempts[0]!.attemptId,
+    );
+    expect(verifyChain(await readAuditTrail(seeded.sessDir)).valid).toBe(true);
+  }, 180_000);
+
+  it('R2 consumes committed V6 evidence after SIGKILL and native reload without another reviewer', async () => {
+    const { probe, sessionID, seeded } = await openReview({ failResultProjection: true });
+    await probe.run(sessionID, 'positive');
+    expect(
+      (await probe.entries()).filter((entry) => entry.hook === 'projection-failure'),
+    ).toHaveLength(1);
+    const committed = (await readState(seeded.sessDir))!;
+    const assurance = committed.reviewAssurance!;
+    expect(assurance.obligations[0]?.status).toBe('fulfilled');
+    expect(assurance.invocations).toHaveLength(1);
+    expect(assurance.invocations[0]).toMatchObject({
+      transportVersion: 6,
+      consumedByObligationId: null,
+    });
+    expect(probe.serializations()).toBe(1);
+    const sessions = (await probe.client.session.list({})).data;
+    const audit = await readAuditTrail(seeded.sessDir);
+    const calls = probe.calls.length;
+    const beforeRestart = (await probe.entries()).filter(
+      (entry) => entry.hook === 'plugin-loaded',
+    ).length;
+
+    // Real server process death, same persistent host/plugin/workflow stores.
+    // No activation reseed, fixture rewrite or direct tool execution after reload.
+    await probe.restart('SIGKILL');
+    expect((await readState(seeded.sessDir))!.reviewAssurance).toEqual(assurance);
+    expect(await readAuditTrail(seeded.sessDir)).toEqual(audit);
+    await probe.complete(sessionID);
+    expect(
+      (await probe.entries()).filter((entry) => entry.hook === 'plugin-loaded').length,
+    ).toBeGreaterThan(beforeRestart);
+
+    const completed = (await readState(seeded.sessDir))!.reviewAssurance!;
+    expect(completed.obligations[0]?.status).toBe('consumed');
+    expect(completed.invocations).toHaveLength(1);
+    expect(completed.invocations[0]).toMatchObject({
+      invocationId: assurance.invocations[0]!.invocationId,
+      consumedByObligationId: assurance.obligations[0]!.obligationId,
+    });
+    expect(completed.attempts).toEqual(assurance.attempts);
+    expect(completed.dispatches).toEqual(assurance.dispatches);
+    expect(probe.serializations()).toBe(1);
+    expect(probe.calls.slice(calls).every((call) => call.phase === 'parent')).toBe(true);
+    expect((await probe.client.session.list({})).data.map((session) => session.id).sort()).toEqual(
+      sessions.map((session) => session.id).sort(),
+    );
+    const finalAudit = await readAuditTrail(seeded.sessDir);
+    expect(finalAudit.slice(0, audit.length)).toEqual(audit);
+    expect(verifyChain(finalAudit).valid).toBe(true);
+    expect(probe.providerErrors).toEqual([]);
   }, 180_000);
 });
