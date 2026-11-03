@@ -51,11 +51,33 @@ describe.skipIf(!LIVE)('native /start command on the pinned host', () => {
       sessionId: governed.id,
     });
     expect(authority.status, probe.output()).toBe('resolved');
-    const history = await probe.client.session.context({ sessionID: governed.id });
-    expect(JSON.stringify(history)).toContain('FlowGuard governance is ACTIVE');
+    // The report exists right after /start: delivered to history or pending in
+    // the inbox (a non-resuming synthetic item). Record where, never guess.
+    const report = 'FlowGuard governance is ACTIVE';
+    let location: 'history' | 'inbox' | undefined;
+    for (let attempt = 0; attempt < 40 && location === undefined; attempt++) {
+      if (
+        JSON.stringify(await probe.client.session.context({ sessionID: governed.id })).includes(
+          report,
+        )
+      )
+        location = 'history';
+      else if (
+        JSON.stringify(await probe.client.session.inbox.list({ sessionID: governed.id })).includes(
+          report,
+        )
+      )
+        location = 'inbox';
+      else await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    console.log('[start-report-location]', location);
+    expect(location, probe.output()).toBeDefined();
+    expect(probe.requests.length).toBe(before);
 
     await probe.prompt(governed.id, 'After start.');
     expect(productiveTools(probe.requests.at(-1)!)).toContain('flowguard_status');
+    // At the latest the next turn carries the report into the conversation.
+    expect(JSON.stringify(probe.requests.at(-1)!.body.messages)).toContain(report);
 
     await probe.restart('SIGKILL');
     await probe.prompt(governed.id, 'After restart.');
