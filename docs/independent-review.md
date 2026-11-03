@@ -202,7 +202,7 @@ audited as `review:obligation_reopened`; the historical attempt, dispatch and
 child stay verbatim. The existing re-arm mints one fresh attempt within the frozen
 budget, and only that superseding attempt may be released. If any proof fails, the
 obligation stays blocked. Caller text, idle events, timeouts and owner cleanup
-release nothing. A terminal step-budget or output-limit lock is released only by
+release nothing. A terminal reviewer closure lock is released only by
 the explicit native `/recover-capacity` command, which requires the exact blocked
 obligation, stale attempt and `outcome_unknown` dispatch lineage, refuses an
 unknown execution outcome or any still-authorized/bound reviewer, and clears only

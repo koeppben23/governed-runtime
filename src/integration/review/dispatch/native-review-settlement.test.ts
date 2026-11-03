@@ -115,7 +115,7 @@ describe('unknown reviewer outcome settlement', () => {
     expect(unknownOutcomeTarget(state, 'plan')).toBeNull();
   });
 
-  it('releases only the two exact terminal capacity closures and audits the proven lineage', async () => {
+  it('releases a proven terminal closure and audits the exact lineage', async () => {
     const { state, attemptId } = await blockedByCode('REVIEWER_STEP_BUDGET_EXHAUSTED');
     const target = recoverableCapacityTarget(state);
     expect(target).toMatchObject({
@@ -150,6 +150,10 @@ describe('unknown reviewer outcome settlement', () => {
   it('never releases an unknown outcome, foreign lock, authorized dispatch or bound attempt', async () => {
     const unknown = await blockedByCode();
     expect(recoverableCapacityTarget(unknown.state)).toBeNull();
+    const mandate = await blockedByCode('SUBAGENT_MANDATE_MISMATCH');
+    expect(recoverableCapacityTarget(mandate.state)).toMatchObject({
+      lock: { code: 'SUBAGENT_MANDATE_MISMATCH' },
+    });
 
     const budget = await blockedByCode('REVIEWER_STEP_BUDGET_EXHAUSTED');
     const target = recoverableCapacityTarget(budget.state)!;

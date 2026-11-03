@@ -1,9 +1,9 @@
 /**
  * Native RecoverCapacity and EndGovernance commands.
  *
- * RecoverCapacity releases only the two host-capacity closures whose terminal
- * lineage is durable; it never reopens an obligation, rewrites an attempt or
- * clears an unknown-outcome fence. EndGovernance closes activation through the
+ * RecoverCapacity releases a terminal reviewer closure whose durable lineage is
+ * proven; it never reopens an obligation, rewrites an attempt or clears an
+ * unknown-outcome fence. EndGovernance closes activation through the
  * canonical journal only after safe workflow closure and audit reconciliation.
  */
 import { randomUUID } from 'node:crypto';
@@ -60,7 +60,7 @@ export function addGovernanceLifecycleCommands(
   editor.add({
     name: NATIVE_RECOVER_CAPACITY_COMMAND,
     description:
-      'FlowGuard — explicitly release a terminal reviewer step-budget or output-limit capacity lock after its durable lineage is verified.',
+      'FlowGuard — explicitly release a proven terminal reviewer closure lock after its durable lineage is verified.',
     execute: (input) => deps.guard(() => executeRecoverCapacity(ctx, deps, input.sessionID)),
   });
   editor.add({

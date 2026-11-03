@@ -203,7 +203,7 @@ the explicit check scope; the next root prompt clears it. The compatibility
 
 `/recover-capacity` and `/end-governance` are native command operations with
 separate safe-closure preconditions. Capacity recovery releases only an exact
-terminal step-budget/output-limit lineage and never an unknown reviewer outcome.
+terminal reviewer closure lineage and never an unknown reviewer outcome.
 EndGovernance requires a terminal workflow, no live reviewer/mutation execution,
 no active capacity lock and reconciled audit operations, then commits the
 canonical ENDING→INACTIVE journal decision and a separate `governance:ended`

@@ -179,7 +179,7 @@ describe('native governance lifecycle commands', () => {
     expect(governanceEndBlocker(makeState('READY'))).toBeNull();
   });
 
-  it('releases only a proven step-budget/output-capacity lock and refuses an unknown outcome', async () => {
+  it('releases a proven terminal closure lock and refuses an unknown outcome', async () => {
     const capacity = await capacityLockedState();
     await seedState(capacity);
     const before = await workflow();

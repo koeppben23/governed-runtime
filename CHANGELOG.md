@@ -18,10 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   templates are removed; independent-review and override preconditions remain
   canonical and unchanged.
 
-- Native `/recover-capacity` releases only exact terminal reviewer step-budget
-  and output-limit locks whose stale attempt, blocked obligation and
-  `outcome_unknown` dispatch lineage is durable; unknown outcomes keep their
-  typed `retry_transport` path. `/end-governance` closes activation through the
+- Native `/recover-capacity` releases a proven terminal reviewer closure lock
+  whose stale attempt, blocked obligation and `outcome_unknown` dispatch lineage
+  is durable; unknown execution outcomes remain blocked on their typed
+  `retry_transport` path. `/end-governance` closes activation through the
   canonical ENDING→INACTIVE journal only after terminal workflow closure, no live
   reviewer/mutation execution and reconciled audit operations. Both record the
   actual `host_command` channel and resolved actor, remain idempotent/replay-safe,

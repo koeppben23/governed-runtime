@@ -80,9 +80,8 @@ a confirmed decision do not undo the committed outcome.
 
 ## Reviewer capacity recovery and EndGovernance
 
-`/recover-capacity` is a native operator command. It releases only the persisted
-capacity lock produced by a terminal `REVIEWER_STEP_BUDGET_EXHAUSTED` or
-`REVIEWER_OUTPUT_TRUNCATED` closure. The command verifies the exact blocked
+`/recover-capacity` is a native operator command. It releases a persisted
+terminal reviewer closure lock (for example step-budget or output truncation). The command verifies the exact blocked
 obligation, stale attempt and `outcome_unknown` dispatch, and refuses to release a
 lock when a reviewer dispatch is still authorized, an attempt is still bound, or
 the closure is `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` (use the typed

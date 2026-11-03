@@ -203,11 +203,8 @@ export function reopenAuditIntents(target: UnknownOutcomeTarget) {
   ];
 }
 
-/** Capacity closures that an explicit native RecoverCapacity operation may release. */
-export const CAPACITY_RECOVERY_CODES: ReadonlySet<string> = new Set([
-  'REVIEWER_STEP_BUDGET_EXHAUSTED',
-  'REVIEWER_OUTPUT_TRUNCATED',
-]);
+/** Terminal closures an explicit native RecoverCapacity operation may release. */
+export const NON_RECOVERABLE_CAPACITY_CODES: ReadonlySet<string> = new Set([UNKNOWN]);
 
 export interface RecoverableCapacityTarget {
   readonly lock: NonNullable<Assurance['capacityLock']>;
@@ -216,15 +213,16 @@ export interface RecoverableCapacityTarget {
 }
 
 /**
- * The exact durable lineage behind a recoverable terminal capacity lock. Only
- * the two host-capacity closures qualify; an unknown execution outcome keeps its
- * own typed transport-settlement path. A live/authorized dispatch or bound
- * attempt means execution may continue and is never released here.
+ * The exact durable lineage behind a recoverable terminal reviewer lock. Any
+ * terminal closure except an unknown execution outcome qualifies; unknown
+ * outcomes keep their own typed transport-settlement path. A live/authorized
+ * dispatch or bound attempt means execution may continue and is never released
+ * here.
  */
 export function recoverableCapacityTarget(state: SessionState): RecoverableCapacityTarget | null {
   const assurance = ensureReviewAssurance(state.reviewAssurance);
   const lock = assurance.capacityLock;
-  if (!lock || !CAPACITY_RECOVERY_CODES.has(lock.code)) return null;
+  if (!lock || NON_RECOVERABLE_CAPACITY_CODES.has(lock.code)) return null;
   const obligation = assurance.obligations.find((item) => item.obligationId === lock.obligationId);
   if (obligation?.status !== 'blocked' || obligation.blockedCode !== lock.code) return null;
   const dispatches = assurance.dispatches.filter(
