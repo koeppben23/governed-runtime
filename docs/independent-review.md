@@ -178,6 +178,20 @@ the observation tool. See the [native parity contracts](./host-probes/opencode-v
 This restores a missing V2 call path; it does not close the documented R4
 installed-plugin/transport integrity gaps or the remaining retry/closure backlog.
 
+### Retryable native capture failures
+
+Retryable capture/binding failures now go through
+`review/dispatch/capture-retry.ts` and the existing
+`abandonAndRearmByHostCall` durable mutation. The failed authorized dispatch
+becomes `outcome_unknown`, the spent attempt is `stale` with its exact child
+lineage, and one fresh attempt is minted on the same frozen obligation. The tool
+response carries the canonical `reviewRetry` envelope with bounded, untrusted
+diagnostics; no invocation or authoritative evidence is written by the failed
+attempt. Terminal, provenance, mandate and integrity codes still close
+fail-closed, and a second re-arm beyond the frozen budget closes the obligation.
+Native exhaustion and concurrent/late-completion coverage remain open reviewer
+parity work.
+
 ### Terminal reviewer capacity failures
 
 A reviewer step-budget or output-limit failure is a terminal capacity failure,

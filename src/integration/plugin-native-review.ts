@@ -10,8 +10,16 @@ import type { GovernanceDelegationDispatch } from '../state/governance-activatio
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { encodeHostCallId } from '../state/host-identity.js';
-import { abandonAndBlockByHostCall } from './review/dispatch/durable-dispatch.js';
+import {
+  abandonAndBlockByHostCall,
+  abandonAndRearmByHostCall,
+} from './review/dispatch/durable-dispatch.js';
 import { projectFulfilledReview } from './review/dispatch/native-review-execution.js';
+import {
+  buildCaptureFailureDiagnostics,
+  buildReviewerCaptureRetryOutput,
+  classifyReviewerCaptureFailure,
+} from './review/dispatch/capture-retry.js';
 import {
   NativeReviewCaptureFence,
   executeNativeReviewCapture,
@@ -246,15 +254,27 @@ async function runNativeReviewerCapture(input: {
     };
     return;
   }
-  await closeNativeReviewerCapture({
+  const closure = await closeNativeReviewerCapture({
     resolved,
     lineage,
     nativeCallId,
     childSessionId,
     outcome,
   });
-  blocked(outcome.code, outcome.reason);
+  if (closure.kind === 'retry') {
+    event.result = {
+      ...(event.result ?? {}),
+      content: closure.output,
+      metadata: { ...metadata },
+    };
+    return;
+  }
+  blocked(closure.code, closure.reason);
 }
+
+type CaptureClosure =
+  | { readonly kind: 'retry'; readonly output: string }
+  | { readonly kind: 'blocked'; readonly code: string; readonly reason: string };
 
 async function closeNativeReviewerCapture(input: {
   readonly resolved: Awaited<ReturnType<typeof stateFor>>;
@@ -262,8 +282,40 @@ async function closeNativeReviewerCapture(input: {
   readonly nativeCallId: string;
   readonly childSessionId: string;
   readonly outcome: Extract<NativeCaptureOutcome, { readonly kind: 'blocked' }>;
-}): Promise<void> {
+}): Promise<CaptureClosure> {
   const { resolved, lineage, nativeCallId, childSessionId, outcome } = input;
+  const decision = classifyReviewerCaptureFailure(outcome.code);
+  if (decision.retryable) {
+    const diagnostics = buildCaptureFailureDiagnostics(
+      outcome.code,
+      parseCaptureDetails(outcome.reason),
+    );
+    const rearm = await abandonAndRearmByHostCall(
+      resolved.runtime.orchestratorDeps,
+      resolved.sessDir,
+      nativeCallId,
+      undefined,
+      { code: outcome.code, diagnostics, childSessionId },
+    );
+    if (rearm.kind === 'rearmed')
+      return {
+        kind: 'retry',
+        output: buildReviewerCaptureRetryOutput({
+          code: outcome.code,
+          obligationId: rearm.obligationId,
+          attemptId: rearm.attempt.attemptId,
+          diagnostics,
+        }),
+      };
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      reason:
+        rearm.kind === 'blocked'
+          ? `Reviewer retry budget exhausted: ${rearm.reason}`
+          : 'The retryable reviewer failure could not be re-armed on its exact lineage.',
+    };
+  }
   if (outcome.code === 'REVIEWER_CAPTURE_PROVENANCE_INVALID') {
     await rejectNativeReviewCapture({
       runtime: resolved.runtime,
@@ -274,7 +326,7 @@ async function closeNativeReviewerCapture(input: {
       code: outcome.code,
       reason: outcome.reason,
     });
-    return;
+    return { kind: 'blocked', code: outcome.code, reason: outcome.reason };
   }
   await abandonAndBlockByHostCall(
     resolved.runtime.orchestratorDeps,
@@ -287,6 +339,18 @@ async function closeNativeReviewerCapture(input: {
       attemptId: lineage.attempt.attemptId,
     },
   );
+  return { kind: 'blocked', code: outcome.code, reason: outcome.reason };
+}
+
+function parseCaptureDetails(reason: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(reason);
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 type Registration = { dispose(): Promise<void> };

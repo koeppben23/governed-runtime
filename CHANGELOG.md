@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   INACTIVE sessions and frozen reviewer contexts receive none. The compatibility
   `/validate` surface is unchanged.
 
+- Route retryable native reviewer capture/binding failures through the existing
+  classifier and durable re-arm owner. The failed dispatch becomes
+  `outcome_unknown`, the spent attempt stays attributable as `stale`, one fresh
+  attempt is minted on the same frozen obligation, and the caller receives the
+  canonical bounded `reviewRetry` envelope. Terminal/provenance/mandate failures
+  remain fail-closed; native exhaustion and R4 remain open.
+
 - Document the distinction between autonomous-activation RPC access and the
   server-resolved actor identity, including shared-instance access-control and
   installed-acceptance limits. Actor assurance does not authenticate each caller.

@@ -840,9 +840,10 @@ This is not R4 or complete reviewer-parity acceptance. The V1 glue that only con
 after-hook (`capture-failure-routing.ts`, binding-failure routing and the
 unable-to-review output projection) is removed because the unused-export gate
 admits no unwired production code; V2 must route through these owners anew. The
-V2 capture currently closes every non-provenance capture failure terminally. The
-deleted V1 plugin-level tests documented these V1 behaviors and must be
-re-proven on the V2 path, not restored:
+V2 capture now routes retryable capture/binding failures through the existing
+classifier and durable re-arm (`reviewRetry`), while terminal and provenance
+failures still close fail-closed. The deleted V1 plugin-level tests documented
+these V1 behaviors and must be re-proven on the V2 path, not restored:
 
 | Removed V1 test                               | V1 behavior to re-prove on V2                                                                      |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------- |

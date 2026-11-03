@@ -255,7 +255,7 @@ async function fixture(observation = false) {
 
 describe('native capture composition with durable evidence', () => {
   it.each(['replay', 'persistence'] as const)(
-    'blocks a required repository citation when observation %s fails',
+    're-arms the same frozen obligation when observation %s fails',
     async (phase) => {
       const h = await fixture(true);
       const before = (await readState(h.seeded.sessDir))!;
@@ -319,14 +319,24 @@ describe('native capture composition with durable evidence', () => {
       await h.reviewer.capture(h.root, h.event);
       expect(h.runtime.logError).toHaveBeenCalledWith(`observation ${phase} failed`, fault);
       const after = (await readState(h.seeded.sessDir))!.reviewAssurance!;
-      expect(after.obligations[0]).toMatchObject({
-        status: 'blocked',
-        blockedCode: 'REVIEW_EVIDENCE_NOT_OBSERVED',
-      });
+      expect(after.obligations[0]).toMatchObject({ status: 'pending', blockedCode: null });
       expect(after.invocations).toEqual([]);
-      expect(after.attempts[0]!.observations).toEqual([]);
+      expect(after.attempts[0]!.status).toBe('stale');
+      expect(after.attempts).toHaveLength(2);
+      expect(after.attempts[1]).toMatchObject({
+        status: 'created',
+        origin: { kind: 'dispatch_rearm', predecessorAttemptId: attempt.attemptId },
+      });
+      expect(after.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
+      expect(JSON.parse(h.event.result.content)).toMatchObject({
+        reviewDispatch: { required: true, completed: false },
+        reviewRetry: {
+          retryable: true,
+          code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
+          obligationId: h.seeded.obligationId,
+        },
+      });
       expect(h.host.prompt).toHaveBeenCalledTimes(1);
-      expect(h.event.result.content).toContain('REVIEW_EVIDENCE_NOT_OBSERVED');
     },
   );
 
