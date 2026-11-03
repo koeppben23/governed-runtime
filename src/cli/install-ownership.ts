@@ -12,7 +12,7 @@ import { CliInstallError } from './errors.js';
 import { InstallError } from './install-recovery.js';
 import { parseJsonc } from './install-json.js';
 import { isManagedArtifact, PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './templates.js';
-import { NATIVE_START_COMMAND } from '../shared/flowguard-identifiers.js';
+import { NATIVE_PLUGIN_COMMANDS } from '../shared/flowguard-identifiers.js';
 import {
   FLOWGUARD_INSTRUCTION_ENTRIES,
   OPENCODE_CONFIG_FILENAMES,
@@ -109,14 +109,17 @@ export async function assertNativeOpenCodeInstallTarget(
   configDirectories: readonly string[],
 ): Promise<void> {
   await assertNoObsoleteOpenCodeInstallation(target, configDirectories);
-  // The plugin registers /start natively. An installed template of that name,
-  // whoever owns it, would collide with it; it is never removed or overwritten.
-  const shadow = join(target, 'commands', `${NATIVE_START_COMMAND}.md`);
-  if (await installationEntry(shadow))
-    throw new InstallError(
-      'MANAGED_ARTIFACT_CONFLICT',
-      `${shadow} collides with the native FlowGuard /${NATIVE_START_COMMAND} command; move or rename it, then retry. --force does not remove it.`,
-    );
+  // The plugin registers these commands natively. An installed template of any
+  // of these names, whoever owns it, would collide with it; it is never removed
+  // or overwritten.
+  for (const command of NATIVE_PLUGIN_COMMANDS) {
+    const shadow = join(target, 'commands', `${command}.md`);
+    if (await installationEntry(shadow))
+      throw new InstallError(
+        'MANAGED_ARTIFACT_CONFLICT',
+        `${shadow} collides with the native FlowGuard /${command} command; move or rename it, then retry. --force does not remove it.`,
+      );
+  }
   const plugin = join(target, PLUGIN_RELATIVE_PATH);
   const entry = await installationEntry(plugin);
   if (

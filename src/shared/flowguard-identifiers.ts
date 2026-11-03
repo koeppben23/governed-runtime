@@ -14,11 +14,20 @@
 export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
 
 /**
- * Native host command registered by the FlowGuard plugin to start governance.
- * It is never installed as a command template; an installed template of the same
- * name would collide with it.
+ * Native plugin commands registered by the FlowGuard plugin. They are never
+ * installed as command templates; an installed template of the same name would
+ * collide with the native registration. This list is a parity-tested projection
+ * of the canonical installed-command catalogue.
  */
 export const NATIVE_START_COMMAND = 'start';
+export const NATIVE_DECISION_COMMANDS = [
+  'review-decision',
+  'approve',
+  'override-approve',
+  'request-changes',
+  'reject',
+] as const;
+export const NATIVE_PLUGIN_COMMANDS = [NATIVE_START_COMMAND, ...NATIVE_DECISION_COMMANDS] as const;
 
 /**
  * Block code when the session write lock could not be acquired before timeout

@@ -422,6 +422,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Native command installation collisions (#1190).** Install and doctor now
+  refuse any pre-existing `commands/<name>.md` for every natively registered
+  command (`/start`, `/approve`, `/override-approve`, `/request-changes`,
+  `/reject`, `/review-decision`). The conflicting file is preserved byte-for-byte,
+  is never overwritten or removed by `--force`, and the shared native-command
+  list is parity-tested against the installed command catalogue.
+
 - **Production build-boundary guard timeout (#1190).** The guard that builds
   the real production program timed out at the 15 s default on loaded CI
   runners (coverage job). It now skips the default library and ambient type

@@ -7,7 +7,7 @@ import {
 } from './installed-commands.js';
 import { COMMANDS } from '../templates/commands/index.js';
 import { TOOL_FLOWGUARD_ARCHIVE, TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
-import { NATIVE_START_COMMAND } from '../shared/flowguard-identifiers.js';
+import { NATIVE_PLUGIN_COMMANDS } from '../shared/flowguard-identifiers.js';
 
 describe('installed command catalogue', () => {
   it('has unique stable IDs, invocations, and filenames-per-ID', () => {
@@ -119,22 +119,15 @@ describe('installed command catalogue', () => {
     }
   });
 
-  it('keeps /start as the native plugin command, never an installed template', () => {
+  it('keeps native command names aligned with the installer collision authority', () => {
     const native = INSTALLED_COMMANDS.filter((definition) => definition.templateFile === null);
-    expect(native.map((definition) => definition.invocation)).toEqual([
-      '/review-decision',
-      `/${NATIVE_START_COMMAND}`,
-      '/approve',
-      '/override-approve',
-      '/request-changes',
-      '/reject',
-    ]);
+    expect(native.map((definition) => definition.invocation.slice(1)).sort()).toEqual(
+      [...NATIVE_PLUGIN_COMMANDS].sort(),
+    );
     for (const command of native) {
       expect(COMMANDS).not.toHaveProperty(`${command.invocation.slice(1)}.md`);
       expect(INSTALLED_TEMPLATE_FILES).not.toContain(`${command.invocation.slice(1)}.md`);
     }
-    expect(INSTALLED_TEMPLATE_FILES).not.toContain(`${NATIVE_START_COMMAND}.md`);
-    expect(COMMANDS).not.toHaveProperty(`${NATIVE_START_COMMAND}.md`);
   });
 
   it('does not treat export and archive as aliases', () => {

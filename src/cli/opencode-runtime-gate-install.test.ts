@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { install } from './install-command.js';
 import { uninstall } from './uninstall-command.js';
 import { PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './templates.js';
+import { NATIVE_PLUGIN_COMMANDS } from '../shared/flowguard-identifiers.js';
 import {
   repoArgs,
   globalArgs,
@@ -210,12 +211,14 @@ describe('native installation boundary', () => {
       expect(await readFile(old, 'utf8')).toBe('obsolete bytes');
     },
   );
-  it.each([false, true])(
-    'refuses an installed commands/start.md that collides with native /start, force=%s',
-    async (force) => {
+  it.each(
+    NATIVE_PLUGIN_COMMANDS.flatMap((command) => [false, true].map((force) => ({ command, force }))),
+  )(
+    'refuses an installed commands/$command.md that collides with native /$command, force=$force',
+    async ({ command, force }) => {
       const commands = join(tmpDir, '.opencode', 'commands');
       await mkdir(commands, { recursive: true });
-      const shadow = join(commands, 'start.md');
+      const shadow = join(commands, `${command}.md`);
       await writeFile(shadow, 'any owner bytes');
       const result = await install(repoArgs({ coreTarball: await createMockTarball(), force }));
       expect(result.ops).toEqual([]);
@@ -231,9 +234,10 @@ describe('native installation boundary', () => {
       expect(await readFile(shadow, 'utf8')).toBe('any owner bytes');
     },
   );
-  it('never installs a start command template next to the native /start command', async () => {
+  it('never installs a command template for a natively registered command', async () => {
     const result = await install(repoArgs({ coreTarball: await createMockTarball() }));
     expect(result.errors).toEqual([]);
-    expect(existsSync(join(tmpDir, '.opencode', 'commands', 'start.md'))).toBe(false);
+    for (const command of NATIVE_PLUGIN_COMMANDS)
+      expect(existsSync(join(tmpDir, '.opencode', 'commands', `${command}.md`))).toBe(false);
   });
 });
