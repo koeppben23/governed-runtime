@@ -117,9 +117,10 @@ only proven terminal reviewer capacity closures; native `/end-governance` commit
 the canonical ENDING→INACTIVE journal after safe workflow closure and reconciles
 its audit. Installed-host acceptance remains open. Native decision operations bind
 the current subject and source rather than issuing a TTL permission for a later
-model call; activation supplies no gate approval or capacity release. Native
-`/check` owns its explicit command scope, and ACTIVE non-reviewer requests receive
-the canonical phase-aware mandates; INACTIVE sessions receive none.
+model call; activation supplies no gate approval or capacity release. The installed
+`/check` prompt marker installs its explicit command scope, and ACTIVE
+non-reviewer requests receive the canonical phase-aware mandates; INACTIVE
+sessions receive none.
 
 ## Decision
 

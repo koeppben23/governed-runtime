@@ -69,7 +69,7 @@ scoped, exact-subject decision operations; no second workflow machine is added.
 WS3 lifecycle commands add `plugin-governance-lifecycle-command.ts` and the pure
 `governance-end-preconditions.ts`; they reuse the canonical review-settlement and
 activation-journal authorities and add no parallel state machine.
-WS3 `/check` and mandate injection add `plugin-check-command.ts` and
+WS3 `/check` scope and mandate injection add `plugin-command-scope.ts` and
 `plugin-mandates.ts`; both consume the existing command-scope and mandates
 renderer authorities.
 

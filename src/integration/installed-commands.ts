@@ -327,7 +327,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'alias.check',
-    templateFile: null,
+    templateFile: 'check.md',
     invocation: '/check',
     kind: 'preferred_name',
     target: { toolName: TOOL_FLOWGUARD_RUN_CHECK, workflowCommand: Command.VALIDATE },

@@ -25,7 +25,7 @@ import {
   type DispatchLedgerWriteDeps,
 } from './review/dispatch/durable-dispatch.js';
 import { governanceEndBlocker } from './governance-end-preconditions.js';
-import { executeCheckCommand } from './plugin-check-command.js';
+import { updateCommandScope } from './plugin-command-scope.js';
 
 const NOW = '2026-11-03T12:00:00.000Z';
 let ws: TestWorkspace;
@@ -212,37 +212,24 @@ describe('native governance lifecycle commands', () => {
       'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
     );
   });
-  it('runs the native /check prompt inside the explicit check scope and clears it afterwards', async () => {
+  it('installs the explicit check scope from the installed prompt marker only', () => {
     const sessionId = 'check-session';
     const scopes = new Map<string, 'check'>();
     const rework = new Map([[sessionId, { marker: true }]]);
     const runtime = {
       activeCommandScopes: scopes,
       checkReworkContinuations: rework,
-    };
-    const synthetic = vi.fn(async () => {
-      expect(scopes.get(sessionId)).toBe('check');
-      return { id: 'synthetic', type: 'synthetic' };
-    });
-    const wait = vi.fn(async () => {});
-    const ctx = { session: { synthetic, wait } } as never;
-    const deps = {
-      guard: <T>(run: () => Promise<T>) => run(),
-      invoke: async (
-        _id: string,
-        action: (entry: { runtime: unknown; scope: unknown }) => Promise<unknown>,
-      ) => action({ runtime, scope: { sessionId, root: { sessionId } } }),
     } as never;
-    await executeCheckCommand(ctx, deps, sessionId);
-    expect(synthetic).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionID: sessionId,
-        resume: true,
-        text: expect.stringContaining('flowguard_run_check'),
-      }),
-    );
-    expect(wait).toHaveBeenCalledWith({ sessionID: sessionId });
+    updateCommandScope(runtime, sessionId, 'ordinary prompt');
     expect(scopes.has(sessionId)).toBe(false);
+    updateCommandScope(
+      runtime,
+      sessionId,
+      'Run automated verification checks for the current implementation.',
+    );
+    expect(scopes.get(sessionId)).toBe('check');
     expect(rework.has(sessionId)).toBe(false);
+    updateCommandScope(runtime, sessionId, 'next explicit command');
+    expect(scopes.has(sessionId)).toBe(false);
   });
 });

@@ -98,6 +98,7 @@ describe('command templates: agent pinning for review-orchestration commands', (
     'implement.md',
     'review.md',
     'architecture.md',
+    'check.md',
   ] as const;
 
   for (const cmd of COMMANDS_REQUIRING_BUILD_AGENT) {

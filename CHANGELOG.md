@@ -28,11 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and never claim verified human provenance. RecoverCapacity does not reopen the
   blocked obligation; EndGovernance is not `/finish` or `/abort`.
 
-- Native `/check` installs the explicit check scope for its synthetic check turn
-  and clears it at idle, preserving the canonical status/run-check/review loop.
-  Verified ACTIVE non-reviewer requests receive the phase-aware FlowGuard
-  mandates through the context hook; INACTIVE sessions and frozen reviewer
-  contexts receive none. The compatibility `/validate` surface is unchanged.
+- The installed `/check` prompt is recognized by a stable marker in the native
+  prompt hook, which installs the explicit check scope and clears any rework
+  latch; the next root prompt clears it. The template keeps its `agent: build`
+  pin and the canonical status/run-check/review loop. Verified ACTIVE
+  non-reviewer requests receive the phase-aware FlowGuard mandates through the
+  context hook; INACTIVE sessions and frozen reviewer contexts receive none. The
+  compatibility `/validate` surface is unchanged.
 
 - Document the distinction between autonomous-activation RPC access and the
   server-resolved actor identity, including shared-instance access-control and

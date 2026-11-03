@@ -21,6 +21,7 @@ import { IMPLEMENT_COMMAND } from './implement.js';
 import { RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND } from './resolve-implementation-challenge.js';
 import { RECONCILE_MUTATION_EPISODE_COMMAND } from './reconcile-mutation-episode.js';
 import { VALIDATE_COMMAND } from './validate.js';
+import { CHECK_COMMAND } from './check.js';
 import { REVIEW_COMMAND } from './review.js';
 import { ARCHITECTURE_COMMAND } from './architecture.js';
 import { ABORT_COMMAND } from './abort.js';
@@ -42,6 +43,7 @@ const COMMAND_BODIES: Record<string, string> = {
   'resolve-implementation-challenge.md': RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND,
   'reconcile-mutation-episode.md': RECONCILE_MUTATION_EPISODE_COMMAND,
   'validate.md': VALIDATE_COMMAND,
+  'check.md': CHECK_COMMAND,
   'review.md': REVIEW_COMMAND,
   'architecture.md': ARCHITECTURE_COMMAND,
   'abort.md': ABORT_COMMAND,

@@ -33,6 +33,7 @@ describe('installed command catalogue', () => {
     const affectedTemplates = [
       'task.md',
       'ticket.md',
+      'check.md',
       'validate.md',
       'abort.md',
       'archive.md',

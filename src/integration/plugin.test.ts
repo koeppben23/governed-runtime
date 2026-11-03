@@ -187,6 +187,33 @@ describe('native V2 plugin definition and lifecycle', () => {
     expect(inactiveEvent.system).toEqual([]);
   });
 
+  it('installs and clears the /check scope from the root prompt marker', async () => {
+    const h = await fixture();
+    const checkPrompt = h.host.sessionHooks.get('prompt')!;
+    await checkPrompt({
+      sessionID: h.sessionID,
+      messageID: 'check-message',
+      prompt: { text: 'Run automated verification checks for the current implementation.' },
+      delivery: 'queue',
+    });
+    await expect(
+      h.host.before(
+        v2ToolEvent({ sessionID: h.sessionID, tool: 'read', input: { filePath: 'README.md' } }),
+      ),
+    ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+    await checkPrompt({
+      sessionID: h.sessionID,
+      messageID: 'next-message',
+      prompt: { text: 'next explicit command' },
+      delivery: 'queue',
+    });
+    await expect(
+      h.host.before(
+        v2ToolEvent({ sessionID: h.sessionID, tool: 'read', input: { filePath: 'README.md' } }),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
   it('compacts an absent workflow session without inventing governed context', async () => {
     const h = await fixture(false);
     const event = {

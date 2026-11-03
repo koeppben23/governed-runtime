@@ -36,7 +36,6 @@ import { hydrate, resolveHydratePolicy } from './tools/index.js';
 import { FlowGuardGovernance, type AutonomousStartRequest } from './opencode-governance-rpc.js';
 import { addDecisionCommands } from './plugin-decision-command.js';
 import { addGovernanceLifecycleCommands } from './plugin-governance-lifecycle-command.js';
-import { addCheckCommand } from './plugin-check-command.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import {
   appendAuditEventAlreadyLocked,
@@ -106,7 +105,6 @@ function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Prom
     });
     addDecisionCommands(ctx, deps, editor);
     addGovernanceLifecycleCommands(ctx, deps, editor);
-    addCheckCommand(ctx, deps, editor);
   });
 }
 

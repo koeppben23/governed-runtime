@@ -197,9 +197,9 @@ not invented UI provenance. The prior session-only TTL permission cache is gone.
 Verified ACTIVE non-reviewer model requests receive the canonical phase-aware
 mandates through the native context hook; INACTIVE/absent authority and frozen
 reviewer contexts receive none. The injected system part is host-neutral text,
-not a new policy authority. Native `/check` establishes the explicit check scope
-for its synthetic turn and clears it at idle; the compatibility `/validate`
-surface remains available.
+not a new policy authority. The installed `/check` prompt is recognized by its stable marker and establishes
+the explicit check scope; the next root prompt clears it. The compatibility
+`/validate` surface remains available.
 
 `/recover-capacity` and `/end-governance` are native command operations with
 separate safe-closure preconditions. Capacity recovery releases only an exact

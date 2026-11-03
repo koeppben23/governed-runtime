@@ -364,7 +364,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/plugin-audit-reconcile.ts', owner: 'root-composition' },
   { file: 'integration/plugin-audit.ts', owner: 'root-composition' },
   { file: 'integration/plugin-beforehooks.ts', owner: 'root-composition' },
-  { file: 'integration/plugin-check-command.ts', owner: 'root-composition' },
+  { file: 'integration/plugin-command-scope.ts', owner: 'root-composition' },
   { file: 'integration/plugin-compaction.ts', owner: 'root-composition' },
   { file: 'integration/plugin-discovery-health.ts', owner: 'root-composition' },
   { file: 'integration/plugin-enforcement-tracking.ts', owner: 'root-composition' },
