@@ -28,6 +28,17 @@ import {
 } from './review/dispatch/native-review-initial.js';
 import type { ActiveGovernanceScope, NativeBefore } from './opencode-governance.js';
 import {
+  assertLaterUserTurn,
+  proveChildSettled,
+  reopenAuditIntents,
+  reopenUnknownOutcome,
+  unknownOutcomeTarget,
+} from './review/dispatch/native-review-settlement.js';
+import {
+  obligationTypeForTool,
+  resolveReviewObligationTool,
+} from './review/obligations/obligation-tools.js';
+import {
   authorizeNativeReviewDispatch,
   bindNativeReviewChild,
   nativeReviewDispatchLineage,
@@ -319,6 +330,57 @@ function guardReviewerTool(
     );
 }
 
+type NativeToolBefore = {
+  readonly agent: string;
+  readonly tool: string;
+  readonly sessionID: string;
+  readonly input: unknown;
+};
+
+/**
+ * Typed transport recovery of a review family whose reviewer outcome is
+ * unknown. Runs before the capacity gate: only a proven later user turn, a
+ * proven settled stale child and the exact durable lineage reopen the
+ * obligation. Every other case leaves the lock to the existing capacity gate.
+ */
+async function settleUnknownReviewerOutcome(
+  ctx: Plugin.Context,
+  runtimeFor: RuntimeFor,
+  scope: ActiveGovernanceScope,
+  event: NativeToolBefore,
+): Promise<void> {
+  const input = event.input as Record<string, unknown> | null;
+  const owner = resolveReviewObligationTool(event.tool);
+  if (
+    owner === undefined ||
+    input === null ||
+    typeof input !== 'object' ||
+    input.reviewRecovery !== 'retry_transport' ||
+    scope.sessionId !== scope.root.sessionId ||
+    event.sessionID !== scope.root.sessionId
+  )
+    return;
+  const resolved = await stateFor(runtimeFor, scope);
+  const target = unknownOutcomeTarget(resolved.state, obligationTypeForTool(owner));
+  if (!target) return;
+  assertLaterUserTurn(
+    await ctx.session.context({ sessionID: scope.root.sessionId }),
+    target.dispatch,
+  );
+  await proveChildSettled(
+    {
+      context: (sessionID) => ctx.session.context({ sessionID }),
+      interrupt: (sessionID) => ctx.session.interrupt({ sessionID, resume: false }),
+      wait: (sessionID) => ctx.session.wait({ sessionID }),
+    },
+    target.attempt.childSessionId,
+  );
+  await resolved.runtime.ws.updateReviewAssurance(
+    resolved.sessDir,
+    (state) => reopenUnknownOutcome(state, target),
+    reopenAuditIntents(target),
+  );
+}
 export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: RuntimeFor) {
   const captureFence = new NativeReviewCaptureFence();
   const initial = new NativeReviewInitialController();
@@ -380,11 +442,9 @@ export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: R
         event,
       });
     },
-    async beforeTool(
-      scope: ActiveGovernanceScope,
-      event: { readonly agent: string; readonly tool: string },
-    ) {
+    async beforeTool(scope: ActiveGovernanceScope, event: NativeToolBefore) {
       guardReviewerTool(captureFence, scope, event);
+      await settleUnknownReviewerOutcome(ctx, runtimeFor, scope, event);
     },
     authorizeTool(event: InitialToolBoundary) {
       initial.beforeTool(event);

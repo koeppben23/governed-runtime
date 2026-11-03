@@ -37,6 +37,7 @@ describe('native V2 host adapter', () => {
     ['session', 'context'],
     ['session', 'prompt'],
     ['session', 'wait'],
+    ['session', 'interrupt'],
     ['tool', 'hook'],
     ['tool', 'transform'],
     ['session', 'hook'],

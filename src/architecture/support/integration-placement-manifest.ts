@@ -91,6 +91,11 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     targetProductionFiles: 13,
     budgetExceptions: [
       {
+        file: 'integration/review/dispatch/native-review-settlement.ts',
+        reason:
+          'Unknown-outcome recovery (later user turn, settled stale child, exact lineage) is a separate proof from capture; capture stays below its size budget and cannot reopen authority itself.',
+      },
+      {
         file: 'integration/review/dispatch/native-review-initial.ts',
         reason:
           'Initial review sequence verification consumes live prompt/model/tool boundaries before sealing the capture baseline; history cannot mint missing execution receipts.',
@@ -431,6 +436,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/dispatch/native-review-dispatch.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-review-capture.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-review-initial.ts', owner: 'review-dispatch' },
+  { file: 'integration/review/dispatch/native-review-settlement.ts', owner: 'review-dispatch' },
   {
     file: 'integration/review/dispatch/native-review-capture-failure.ts',
     owner: 'review-dispatch',

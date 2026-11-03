@@ -144,7 +144,12 @@ async function fixture() {
       model: controls.wrongModel ? { ...model, id: 'foreign' } : model,
     } as never);
     if (controls.tool)
-      await reviewer.beforeTool(child.scope, { agent: 'flowguard-reviewer', tool: 'read' });
+      await reviewer.beforeTool(child.scope, {
+        agent: 'flowguard-reviewer',
+        tool: 'read',
+        sessionID: child.scope.sessionId,
+        input: {},
+      });
     history = [
       ...history,
       { ...user, id: input.id, text: input.text },
@@ -266,5 +271,44 @@ describe('native capture composition with durable evidence', () => {
     );
     expect(h.host.prompt).toHaveBeenCalledTimes(1);
     expect((await readState(h.seeded.sessDir))!.reviewAssurance).toEqual(state.reviewAssurance);
+  });
+
+  it('reopens an unknown outcome only after a later user turn and a settled child', async () => {
+    const h = await fixture();
+    h.wait.mockRejectedValueOnce(new Error('injected wait failure'));
+    await h.reviewer.capture(h.root, h.event);
+    const blocked = (await readState(h.seeded.sessDir))!;
+    expect(blocked.reviewAssurance!.capacityLock?.code).toBe('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    const parent: unknown[] = [
+      { type: 'user', id: 'msg_u1' },
+      { type: 'assistant', id: 'message' },
+    ];
+    h.host.sessionContext.mockImplementation(async (input) =>
+      (input as { sessionID: string }).sessionID === 'root' ? parent : h.history(),
+    );
+    const retry = (input: Record<string, unknown>) => ({
+      agent: 'build',
+      tool: 'flowguard_plan',
+      sessionID: 'root',
+      input,
+    });
+
+    // Caller text or a retry in the same turn never reopens.
+    await h.reviewer.beforeTool(h.root, retry({ recovery: 'settled' }));
+    await expect(
+      h.reviewer.beforeTool(h.root, retry({ reviewRecovery: 'retry_transport' })),
+    ).rejects.toHaveProperty('code', 'REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND');
+    expect((await readState(h.seeded.sessDir))!.reviewAssurance).toEqual(blocked.reviewAssurance);
+    expect(h.host.interrupt).not.toHaveBeenCalled();
+
+    parent.push({ type: 'user', id: 'msg_u2' });
+    await h.reviewer.beforeTool(h.root, retry({ reviewRecovery: 'retry_transport' }));
+    const reopened = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(h.host.interrupt).toHaveBeenCalledWith({ sessionID: 'child', resume: false });
+    expect(reopened.capacityLock).toBeNull();
+    expect(reopened.obligations[0]).toMatchObject({ status: 'pending', blockedCode: null });
+    expect(reopened.attempts).toEqual(blocked.reviewAssurance!.attempts);
+    expect(reopened.dispatches).toEqual(blocked.reviewAssurance!.dispatches);
+    expect(resolveReviewContinuation(reopened, 'plan').kind).toBe('interrupted_dispatch');
   });
 });

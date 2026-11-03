@@ -6,8 +6,10 @@ FlowGuard's independent review system enables structured, policy-governed review
 evidence, full-completion and deterministic-release guarantees. It can run fully
 automatically without a human reviewer. Existing policy exceptions remain, but
 no new exception, optional-review mode or human substitution may bypass Finding 6. Human approval is a separate policy-dependent gate. The current native V2
-capture/evidence generation 6 implementation is connected; safe unknown-outcome
-recovery remains blocked, not an accepted reduced feature.
+capture/evidence generation 6 implementation is connected. Unknown-outcome
+recovery is implemented (see Terminal reviewer capacity failures) but not yet
+accepted on an installed host; Finding 6 stays BLOCKED until R2, R4 and the
+installed acceptance pass.
 The [dispatch-only port](./host-probes/opencode-v2/reviewer-dispatch-authority.md)
 connects durable authorization and actual Child binding, not completed review.
 See [ADR-010's parity amendment](./decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02).
@@ -148,8 +150,8 @@ fallback. An unreadable or invalid `flowguard.json` blocks every ACTIVE
 operation of the worktree. No parent/reviewer model or variant is substituted.
 
 The native V2 completion/capture chain now requires the bounded same-child
-terminal window and evidence generation 6. Safe unknown-outcome recovery remains
-unverified and blocked, regardless of budgeting configuration. Dispatch-only execution requires
+terminal window and evidence generation 6. Unknown-outcome recovery is implemented
+but not yet accepted on an installed host. Dispatch-only execution requires
 the existing durable ledger and exact observed Child enrollment. These are implementation limits,
 not installed support; see the [V2 inventory](./host-probes/opencode-v2/implementation-inventory.md#native-entrypointclient-implementation-in-progress).
 The [native transport prerequisite](./host-probes/opencode-v2/reviewer-transport-mechanism.md)
@@ -167,15 +169,31 @@ original code, and records one semantic `review:obligation_blocked` event in the
 same durable mutation. It also sets a persisted capacity lock for that session.
 
 The canonical lock prevents the same parent user turn from minting another review
-obligation or starting another reviewer subagent. V2 requires verified explicit
-recovery authority under the session lock; that acceptance is not implemented.
+obligation or starting another reviewer subagent.
+
+**Unknown-outcome recovery.** Only `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` has a V2
+recovery. A typed `reviewRecovery: "retry_transport"` call of the originating
+review tool first proves three facts, before the capacity gate runs: (1) a later
+user turn - the parent history has a user message after the assistant message
+that released the failed reviewer; (2) host settlement - the stale child was
+interrupted without resume, the host wait returned, and two consecutive history
+reads are identical and end in an idle boundary; (3) the exact durable lineage -
+one stale attempt, one `outcome_unknown` dispatch, no evidence and no successor.
+One durable mutation then reopens the same frozen obligation and clears the lock,
+audited as `review:obligation_reopened`; the historical attempt, dispatch and
+child stay verbatim. The existing re-arm mints one fresh attempt within the frozen
+budget, and only that superseding attempt may be released. If any proof fails, the
+obligation stays blocked. Caller text, idle events, timeouts and owner cleanup
+release nothing. Step-budget and output-limit locks still have no V2 release
+(RecoverCapacity, Finding 5).
+
 The native V2
 entrypoint registers no command-origin approval/recovery hook. Authorized
 autonomous activation does not itself authorize capacity recovery; an SDK/API/CLI
 callback proves neither that permission nor human consent. Actual human decisions
 still need the selected UI-source proof when policy requires them. The old
 V1 command-hook release path is not a V2 human-provenance mechanism. No idle
-event, timeout or owner cleanup releases an unknown-outcome fence.
+event, timeout or owner cleanup releases an unknown-outcome fence by itself.
 
 ### Reviewer authority boundaries and reference suite
 
@@ -260,10 +278,10 @@ The reviewer is a host-visible native `subagent` child, never a second reviewer 
 2. Before native release, the exact pending obligation/attempt and canonical frozen prompt are validated against fresh persisted state. `persistAuthorizedReviewDispatch()` writes the original canonical `{ sessionId, messageId, callId }` identity before the activation delegation projection is published. The caller prompt is transport filler, not authority.
 3. Exact native progress identifies the actual independent Child. Its parent, directory, agent and activation generation must agree; the canonical attempt is durably bound before activation enrollment or model execution. Initial prompt/context/model hooks require the exact authorized bytes and current lineage.
 4. The after-hook verifies the pre-bound target and the entire initial execution against live prompt/context/primary-request and exact local tool before/after observations. Legitimate multi-step reviews remain supported; unexplained assistant entries cannot be accepted merely because the last step stopped normally. Only then does it open one exclusive request-correlated serialization window, remove tools, prove the terminal assistant/model step, and bind strict findings through the canonical evidence/audit mutation as generation 6. A tool attempt or foreign window is rejected without evidence.
-5. Unknown/interrupted outcomes remain blocked; safe recovery and re-arm are step 4 and are not accepted. Reloads and unresolved earlier releases stay quarantined.
+5. Unknown/interrupted outcomes block the obligation. Recovery requires a later user turn, proven host settlement of the stale child and the exact lineage; only the superseding re-arm attempt may be released. Unresolved (`authorized`) releases stay quarantined.
 
-Three of the four required native product contracts currently pass; the recovery
-contract remains red. No verdict may be submitted from free-form Child text.
+The fourth (recovery) product contract is implemented; its native result is
+reported by the CI smoke job and is not yet an installed-host acceptance. No verdict may be submitted from free-form Child text.
 
 **Completion contract:** `reviewDispatch.completed` is signaled only after exact
 same-child, one-step tool-free request/terminal/model provenance, strict
@@ -768,11 +786,11 @@ For strict Independent Review enforcement in CI, the following checks must be **
 ## Current Status
 
 **Native V2 remains incomplete / ACTIVE NO-GO.** Canonical validation remains
-fail-closed; dispatch and evidence generation 6 are connected, while safe
-unknown-outcome recovery remains unaccepted. The retained architecture requires:
+fail-closed; dispatch, evidence generation 6 and unknown-outcome recovery are
+connected; installed-host acceptance, R2 and R4 remain open. The retained architecture requires:
 
 1. **Structural validation** — FlowGuard tools validate ReviewFindings schema, review mode vs. policy, plan-version binding, and iteration binding. Invalid findings are BLOCKED.
-2. **Deterministic dispatch authority** — The parent invokes native `subagent`; the plugin durably authorizes its exact operation, binds the actual Child, and captures one exclusive terminal JSON window as evidence generation 6. Safe unknown-outcome recovery remains blocked. There is no second runtime or text fallback.
+2. **Deterministic dispatch authority** — The parent invokes native `subagent`; the plugin durably authorizes its exact operation, binds the actual Child, and captures one exclusive terminal JSON window as evidence generation 6. Unknown outcomes are recovered only through the proven settlement above. There is no second runtime or text fallback.
 3. **Plugin-level enforcement** — Host-observed child-session enforcement via OpenCode `tool.execute.before/after` hooks:
    - L1: Invocation gate — a host-observed structured reviewer invocation must be recorded before any verdict
    - L2: Child session match — submitted session ID must match the host-observed reviewer child session

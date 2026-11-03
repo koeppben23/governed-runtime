@@ -214,6 +214,28 @@ describe('V2 native capture proof', () => {
         idle('interrupted'),
       ]),
     ).toThrow(NativeReviewCaptureOutcomeUnknownError);
+
+    // The host may record an interruption without any assistant row.
+    const early = captured();
+    expect(() =>
+      early.fence.verify('child', early.lease.leaseId, early.baseline, [
+        ...early.baseline,
+        user('serialize', early.lease.requestMessageId),
+        idle('interrupted'),
+      ]),
+    ).toThrow(NativeReviewCaptureOutcomeUnknownError);
+
+    // A tool attempt stays a provenance violation even if the window was interrupted.
+    const contaminated = captured();
+    expect(() => contaminated.fence.beforeTool('child')).toThrow(NativeReviewCaptureError);
+    const interruptedAfterTool = () =>
+      contaminated.fence.verify('child', contaminated.lease.leaseId, contaminated.baseline, [
+        ...contaminated.baseline,
+        user('serialize', contaminated.lease.requestMessageId),
+        idle('interrupted'),
+      ]);
+    expect(interruptedAfterTool).toThrow(NativeReviewCaptureError);
+    expect(interruptedAfterTool).not.toThrow(NativeReviewCaptureOutcomeUnknownError);
   });
 
   it('rejects a V6 invocation without matching provenance and a V5 invocation carrying it', () => {

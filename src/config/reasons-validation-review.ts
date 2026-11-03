@@ -133,8 +133,8 @@ export const REVIEW_VALIDATION_REASONS = [
       'A previous reviewer exhausted its execution capacity and its review obligation is blocked. No new review may start in the same user turn.',
     recoverySteps: [
       'Do not invoke the reviewer subagent, resubmit the artifact, or start another review in this turn.',
-      'Report the blocked review and stop. A new review requires a new explicit review command from the user.',
-      'Do not bypass the lock by switching review tools or retrying the same transport.',
+      'Report the blocked review and stop. A new review requires a new explicit review command from the user; an unknown reviewer outcome is instead recovered in a later user turn through reviewRecovery "retry_transport".',
+      'Do not bypass the lock by switching review tools or retrying the same transport in this turn.',
     ],
   },
 

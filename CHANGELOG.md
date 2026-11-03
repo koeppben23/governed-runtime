@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Unknown reviewer outcome recovery (#1190, Finding 6 step 4, #1169 WS4).** An
+  obligation blocked with `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` is reopened only by
+  a typed `retry_transport` call of the originating review tool that proves a
+  later user turn (user message after the failed release), host settlement of the
+  stale child (interrupt without resume, wait, two identical history reads ending
+  in an idle boundary) and the exact durable lineage (one stale attempt, one
+  `outcome_unknown` dispatch, no evidence, no successor). One durable mutation
+  reopens the obligation and clears the capacity lock, audited as
+  `review:obligation_reopened`; history stays verbatim and the existing re-arm
+  mints one fresh attempt within the frozen budget. The release fence now admits
+  only that superseding attempt instead of fencing the session forever. An
+  interrupted serialization without an assistant row is classified as an unknown
+  outcome instead of a provenance violation. Caller text, idle events and
+  timeouts still release nothing; step-budget/output locks keep no V2 release.
+  Recovery texts of both reason codes describe the actual path. R2 and R4 remain
+  open.
+
 - **Host-neutral core guard (#1190, ADR-010 D1, #1169 WS2).**
   `src/architecture/__tests__/host-neutral-core.test.ts` enforces that the core
   (all governed modules except host adapters, plus every `integration` file that

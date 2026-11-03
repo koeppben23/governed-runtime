@@ -7,6 +7,14 @@ obligations. The three capture/evidence product contracts pass; the fourth
 recovery contract remains red. Finding 6 stays BLOCKED; Draft / ACTIVE V2 NO-GO
 is unchanged.
 
+**Step-4 update (2026-11-03, #1169 WS4):** unknown-outcome recovery is implemented in
+`review/dispatch/native-review-settlement.ts` (later user turn, interrupt + stable
+idle boundary of the stale child, exact lineage, one audited reopen mutation) and
+the release fence admits only the superseding re-arm attempt. Component tests pass
+locally; the native recovery product contract runs only in the Linux CI smoke job
+(local Windows live smoke is environmentally unavailable). R2 restart
+reconciliation and R4 remain open, so Finding 6 stays BLOCKED.
+
 ## Trust chain
 
 ### R1/R3 correction: initial review provenance
@@ -123,9 +131,10 @@ rewriting the call ID. Historical bytes are not normalized.
   `REVIEWER_CAPTURE_PROVENANCE_INVALID`, leaves no invocation, and terminally
   rejects the attempt in the same mutation.
 - An interrupted/unreadable terminal window blocks with
-  `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`; the durable dispatch remains unresolved
-  and the existing quarantine fences a new reviewer release. Step 4 must prove
-  safe re-arm; this step does not.
+  `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`; the dispatch becomes `outcome_unknown`,
+  the attempt stale and a capacity lock is set. An interrupted terminal without an
+  assistant row is classified the same way (not as a provenance violation). The
+  step-4 settlement above is the only reopen path.
 - Audit persistence failure prevents the state mutation from becoming accepted
   evidence through the existing canonical outbox. No second writer is used.
 - The after-hook never trusts native result text, metadata completion, or a

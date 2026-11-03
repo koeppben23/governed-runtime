@@ -24,7 +24,7 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
   async initialize(): Promise<void> {
     const ctx = this.context;
     const available = [
-      hasMethods(ctx.session, ['get', 'context', 'prompt', 'wait', 'hook']),
+      hasMethods(ctx.session, ['get', 'context', 'prompt', 'wait', 'interrupt', 'hook']),
       hasMethods(ctx.tool, ['hook', 'transform']),
       hasMethods(ctx.event, ['subscribe']),
       hasMethods(ctx.storage, ['get', 'set', 'scan']),

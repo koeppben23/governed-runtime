@@ -191,6 +191,14 @@ export class NativeReviewCaptureFence {
     readonly provenance: NativeSubagentCaptureProvenance;
   } {
     const lease = this.lease(childSessionId, leaseId);
+    // An interrupted or failed terminal is an unknown outcome, not a provenance
+    // violation: the host may record it without an assistant row, so it must be
+    // classified before the exact window-length check. A tool attempt stays a
+    // provenance violation regardless of how the window ended.
+    if (!lease.toolAttempted && endsWithoutSuccess(baseline, history))
+      throw new NativeReviewCaptureOutcomeUnknownError(
+        'Reviewer serialization ended without a successful terminal completion.',
+      );
     this.assertWindow(lease, baseline, history);
     const window = history.slice(baseline.length);
     if (!hasTerminalWindow(window))
@@ -293,6 +301,16 @@ function responseText(content: unknown): string | null {
     text.push(part.text);
   }
   return text.join('');
+}
+
+function endsWithoutSuccess(baseline: readonly unknown[], history: readonly unknown[]): boolean {
+  if (
+    history.length <= baseline.length ||
+    canonicalJsonStringify(history.slice(0, baseline.length)) !== canonicalJsonStringify(baseline)
+  )
+    return false;
+  const terminal = record(history.at(-1));
+  return terminal.type === 'idle' && terminal.outcome !== 'succeeded';
 }
 
 function hasTerminalWindow(window: readonly unknown[]): boolean {

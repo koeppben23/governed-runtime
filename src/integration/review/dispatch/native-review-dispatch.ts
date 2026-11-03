@@ -18,9 +18,28 @@ function denied(reason: string): never {
   throw buildEnforcementError('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', reason);
 }
 
+/**
+ * An earlier release fences every new one while it is unresolved (`authorized`)
+ * or concluded with an unknown outcome that was never superseded. A superseding
+ * re-arm attempt exists only after the obligation was legitimately reopened
+ * (pending recovery, or the proven settlement of an unknown outcome), so the
+ * fresh attempt of that re-arm may be released; the stale record stays verbatim.
+ */
 function assertReleaseAvailable(state: SessionState, attemptId: string): void {
   const assurance = ensureReviewAssurance(state.reviewAssurance);
-  if (assurance.dispatches.some((item) => item.dispatchStatus !== 'completed'))
+  const superseded = (spentAttemptId: string): boolean =>
+    assurance.attempts.some(
+      (item) =>
+        item.origin.kind === 'dispatch_rearm' &&
+        item.origin.predecessorAttemptId === spentAttemptId,
+    );
+  if (
+    assurance.dispatches.some(
+      (item) =>
+        item.dispatchStatus === 'authorized' ||
+        (item.dispatchStatus === 'outcome_unknown' && !superseded(item.attemptId)),
+    )
+  )
     denied('An earlier reviewer release remains quarantined; recovery is not verified.');
   if (assurance.capacityLock || assurance.dispatches.some((item) => item.attemptId === attemptId))
     denied('This review attempt cannot be released again or through a capacity lock.');
