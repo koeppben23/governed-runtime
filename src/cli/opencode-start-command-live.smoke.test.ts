@@ -6,6 +6,8 @@ import { realpath } from 'node:fs/promises';
 import { createNativeHostProbe, type NativeHostProbe } from './opencode-native-test-helpers.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { withTestEnv } from '../integration/test-helpers.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { verifyChain } from '../audit/integrity.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
 let probe: NativeHostProbe | undefined;
@@ -74,7 +76,46 @@ describe.skipIf(!LIVE)('native /start command on the pinned host', () => {
     expect(location, probe.output()).toBeDefined();
     expect(probe.requests.length).toBe(before);
 
+    if (authority.status !== 'resolved') throw new Error('Expected native Start workflow');
+    const activationEvents = (await readAuditTrail(authority.sessDir)).filter(
+      (event) => event.event === 'governance:activated',
+    );
+    expect(activationEvents).toHaveLength(1);
+    expect(activationEvents[0]).toMatchObject({
+      hostSessionId: governed.id,
+      actorInfo: {
+        id: expect.any(String),
+        source: expect.any(String),
+        assurance: expect.any(String),
+      },
+      detail: {
+        channel: 'host_command',
+        generation: 1,
+        rootSessionId: governed.id,
+        policyDigest: authority.state.policySnapshot.hash,
+        worktreeRoot: authority.worktreeRoot,
+      },
+    });
+    await probe.client.session.command({ sessionID: governed.id, name: 'start', text: '' });
+    await probe.client.session.wait(
+      { sessionID: governed.id },
+      { signal: AbortSignal.timeout(120_000) },
+    );
+    const repeated = await resolveSessionAuthority({
+      root: authority.worktreeRoot,
+      sessionId: governed.id,
+    });
+    expect(repeated.status === 'resolved' ? repeated.state : repeated).toEqual(authority.state);
+    expect(
+      (await readAuditTrail(authority.sessDir)).filter(
+        (event) => event.event === 'governance:activated',
+      ),
+    ).toEqual(activationEvents);
     await probe.prompt(governed.id, 'After start.');
+    // resume:false admits a synthetic report without waking the model. The
+    // next user turn delivers it into history; admission is not transcript delivery.
+    const history = await probe.client.session.context({ sessionID: governed.id });
+    expect(JSON.stringify(history), probe.output()).toContain('FlowGuard governance is ACTIVE');
     expect(productiveTools(probe.requests.at(-1)!)).toContain('flowguard_status');
     // At the latest the next turn carries the report into the conversation.
     expect(JSON.stringify(probe.requests.at(-1)!.body.messages)).toContain(report);
@@ -82,6 +123,16 @@ describe.skipIf(!LIVE)('native /start command on the pinned host', () => {
     await probe.restart('SIGKILL');
     await probe.prompt(governed.id, 'After restart.');
     expect(productiveTools(probe.requests.at(-1)!)).toContain('flowguard_status');
+    await probe.client.session.command({ sessionID: governed.id, name: 'start', text: '' });
+    await probe.client.session.wait(
+      { sessionID: governed.id },
+      { signal: AbortSignal.timeout(120_000) },
+    );
+    const audit = await readAuditTrail(authority.sessDir);
+    expect(audit.filter((event) => event.event === 'governance:activated')).toEqual(
+      activationEvents,
+    );
+    expect(verifyChain(audit).valid).toBe(true);
 
     const sibling = await probe.session();
     await probe.prompt(sibling.id, 'Ordinary sibling.');

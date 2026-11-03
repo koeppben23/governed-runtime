@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Native Start transaction and audit (#1190, WS3).** The activation lock now
+  covers journal preflight and workflow preparation, not just the final journal
+  writes. ACTIVE and interrupted ACTIVATING starts validate/reuse their frozen
+  workflow without hydrating again; concurrent starts hydrate once. A hydrate
+  result that reports an error/blocked outcome cannot activate state it may have
+  prepared. Successful activation is recorded exactly once as
+  `governance:activated` in the existing audit trail, bound to
+  actor/channel/session/generation/policy and activation identity.
+  Audit-write/acknowledgement recovery does not mint another decision,
+  and a failed hydration audit does not suppress the activation audit.
+  Catalogue/report failures after that commit emit an explicit ACTIVE warning
+  instead of reporting a failed activation; `/start` can retry presentation.
+  Hydration and repeated Start share the canonical auto-approve notice renderer.
+
 - **Required observation fault regressions (#1190).** Two composition tests
   inject an observation-replay read failure and an observation-persistence write
   failure with a valid child capture and a required repository citation. Both

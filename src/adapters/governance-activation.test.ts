@@ -559,7 +559,20 @@ describe('durable governance activation authority', () => {
 });
 
 describe('root Start under one session lock', () => {
-  const scope = { sessionId, directory: '/project', worktreeRoot: '/project', policyDigest };
+  const scope = {
+    sessionId,
+    directory: '/project',
+    worktreeRoot: '/project',
+    policyDigest,
+    async prepare() {
+      return {
+        sessionId: this.sessionId,
+        directory: this.directory,
+        worktreeRoot: this.worktreeRoot,
+        policyDigest: this.policyDigest,
+      };
+    },
+  };
   type Port = GovernanceActivationWriter['authorize'];
   /** The native command port: Start mints a decision; completion re-presents the pending one. */
   const commandPort =
@@ -644,7 +657,10 @@ describe('root Start under one session lock', () => {
     const fixture = createActivationStoreFixture();
     await interrupted(fixture);
     expect(
-      await startRootGovernance(writerFor(fixture), { ...scope, policyDigest: 'b'.repeat(64) }),
+      await startRootGovernance(writerFor(fixture), {
+        sessionId,
+        prepare: async () => ({ ...(await scope.prepare()), policyDigest: 'b'.repeat(64) }),
+      }),
     ).toMatchObject({ kind: 'blocked' });
     expect(await statuses(fixture)).toEqual(['activating']);
   });

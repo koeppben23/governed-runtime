@@ -36,6 +36,45 @@ correction. No new reviewer exception is allowed to hide Finding 6.
   message/agent correlation, host progress receipt handling and scoped waits.
   `plugin.ts` composes this boundary before workflow/Git/logger/enforcement work.
 
+## Native Start coordination and audit (2026-11-03)
+
+The native command's preparation callback runs under the existing per-session
+activation lock, after journal verification. A fresh start reuses canonical
+`hydrate.execute()` once. A hydrate result carrying `error: true` or lacking its
+`status: 'ok'` success marker fails the start even when it prepared workflow
+state; no activation or activation audit is written. ACTIVE and interrupted
+ACTIVATING instead resolve the existing workflow, check worktree/frozen policy
+(and any explicit mode), and do not hydrate. Corrupt/foreign/ending authority is
+rejected before preparation.
+Hydration keeps its own workflow write lock; no cross-store ACID transaction or
+global worktree exclusion is claimed. If preparation succeeds but activation
+does not commit, workflow files alone grant no governance authority. Partial
+activation journals retain their existing BLOCKED recovery behavior; they are
+not rolled back or erased to simulate absence.
+
+After an ACTIVE revision is committed, `/start` appends `governance:activated`
+through the existing audit writer. The activation UUID is the audit commit ID;
+the audit lock and writer's exact-content idempotency prevent duplicates. The
+event records the resolved actor/assurance, `host_command` channel, actual host
+session, activation/decision identity, generation, worktree and policy digest.
+No successful activation audit is produced for failed hydration or activation
+commits. A failure to write/acknowledge audit is reported explicitly as
+**durably ACTIVE, audit unconfirmed**, not rolled back authority. Both audits are
+attempted after the commit: a hydrate/preparation-audit failure does not suppress
+the activation audit and is reported with the activation audit confirmed but the
+preparation audit unconfirmed. Repeating Start repairs/confirms that audit
+without hydration or another decision. The gap between the activation-head and
+audit commits is recoverable, not claimed atomic.
+
+Only after audit confirmation does presentation run. Catalogue publication and
+non-resuming synthetic reporting each emit an explicit warning on failure; they
+do not turn an already committed/audited activation into a failed Start. A later
+`/start` retries presentation and reports the current bound phase/policy. The
+auto-approve warning uses the same pure renderer as hydration, including retries.
+The component tests inject each failure and lost audit acknowledgement; the
+pinned native smoke checks one activation audit across repeat Start and SIGKILL.
+These bounded contracts are not complete installed Desktop/autonomous acceptance.
+
 ## Inactive, active and blocked
 
 Verified nonenrollment requires a successful absent-head read, absent independent

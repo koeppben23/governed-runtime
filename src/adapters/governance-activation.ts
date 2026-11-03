@@ -368,28 +368,60 @@ export type GovernanceRootStartResult =
  */
 export async function startRootGovernance(
   writer: GovernanceActivationWriter,
-  request: GovernanceRootStart,
+  input: {
+    readonly sessionId: string;
+    readonly prepare: (
+      current: GovernanceActivationRevision | null,
+    ) => Promise<GovernanceRootStart>;
+  },
 ): Promise<GovernanceRootStartResult> {
-  return writer.withLock(request.sessionId, async () => {
-    const journal = await readJournalForStart(writer.store, request.sessionId);
+  return writer.withLock(input.sessionId, async () => {
+    const journal = await readJournalForStart(writer.store, input.sessionId);
     if ('kind' in journal) return journal;
     const current = journal.history.at(-1) ?? null;
-    const revision = journal.head?.revision ?? 0;
     const settled = settledStart(current);
+    if (settled?.kind === 'blocked') return settled;
+    const request = await input.prepare(current);
+    if (request.sessionId !== input.sessionId)
+      return unavailable('Start preparation changed its session.');
+    if (current?.status === 'active' && !rootStartBindingMatches(current, request))
+      return unavailable('The ACTIVE activation does not match the current workflow binding.');
     if (settled !== null) return settled;
-    if (current?.status === 'activating') return completeStart(writer, current, request, revision);
-    const started = await commitLocked(writer, {
-      ...request,
-      action: 'start',
-      expectedRevision: revision,
-      rootSessionId: request.sessionId,
-      activationId: randomUUID(),
-      generation: (current?.generation ?? 0) + 1,
-      parentDispatch: null,
-    });
-    if (started.kind === 'blocked') return started;
-    return completeStart(writer, started.record, request, started.record.revision, false);
+    return commitPreparedStart(writer, current, journal.head?.revision ?? 0, request);
   });
+}
+
+function rootStartBindingMatches(
+  current: GovernanceActivationRevision,
+  request: GovernanceRootStart,
+): boolean {
+  return (
+    current.sessionId === request.sessionId &&
+    current.directory === request.directory &&
+    current.worktreeRoot === request.worktreeRoot &&
+    current.policyDigest === request.policyDigest
+  );
+}
+
+/** Journal verification and preparation have completed under the caller's lock. */
+async function commitPreparedStart(
+  writer: GovernanceActivationWriter,
+  current: GovernanceActivationRevision | null,
+  revision: number,
+  request: GovernanceRootStart,
+): Promise<GovernanceRootStartResult> {
+  if (current?.status === 'activating') return completeStart(writer, current, request, revision);
+  const started = await commitLocked(writer, {
+    ...request,
+    action: 'start',
+    expectedRevision: revision,
+    rootSessionId: request.sessionId,
+    activationId: randomUUID(),
+    generation: (current?.generation ?? 0) + 1,
+    parentDispatch: null,
+  });
+  if (started.kind === 'blocked') return started;
+  return completeStart(writer, started.record, request, started.record.revision, false);
 }
 
 async function readJournalForStart(
@@ -424,11 +456,7 @@ async function completeStart(
   revision: number,
   resumed = true,
 ): Promise<GovernanceRootStartResult> {
-  if (
-    pending.directory !== request.directory ||
-    pending.worktreeRoot !== request.worktreeRoot ||
-    pending.policyDigest !== request.policyDigest
-  )
+  if (!rootStartBindingMatches(pending, request))
     return unavailable(
       'The interrupted activation is bound to another directory, worktree or frozen policy.',
     );

@@ -50,8 +50,10 @@ host-native, and an unreadable or invalid `flowguard.json` now blocks ACTIVE
 runtime creation in `plugin.ts` instead of only the reviewer context.
 
 WS3 (#1190) adds `plugin-start-command.ts` at the composition boundary: it registers
-the native `/start` command and sequences hydrate, the activation commit and the
-catalogue publication. The Start decision itself (channel, actor, lock, journal)
+the native `/start` command and sequences locked preflight/fresh hydration, the
+activation commit, idempotent audit and best-effort catalogue/report publication.
+ACTIVE/ACTIVATING reuse their verified workflow; no hydrate is used as a status
+query. The Start decision itself (channel, actor, lock, journal)
 remains owned by `opencode-governance.ts` and `adapters/governance-activation.ts`;
 the command module adds no activation, approval or workflow authority.
 

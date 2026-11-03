@@ -22,6 +22,7 @@ import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import { LOCK_CONTENDED_OUTPUT_FIELD } from '../../../shared/flowguard-identifiers.js';
 import { PHASE_LABELS } from '../../../presentation/phase-labels.js';
 import { renderMarkdown } from '../../../presentation/markdown.js';
+import { buildGateNotice } from '../../../presentation/gate-notice.js';
 import { getInstalledCommand } from '../../installed-commands.js';
 import type {
   CompactCardDocument,
@@ -484,18 +485,6 @@ export function injectLockContended(output: string): string {
 }
 
 // ─── Gate Notice ──────────────────────────────────────────────────────────
-
-export function buildGateNotice(
-  gateBehavior: string | undefined,
-  mode: string | undefined,
-): string | null {
-  if (gateBehavior !== 'auto_approve') return null;
-  return (
-    `Auto-approve is active (mode: ${mode ?? 'unknown'}). ` +
-    'Plan and evidence review gates advance WITHOUT a human decision. ' +
-    'Use team or regulated for human-gated approval.'
-  );
-}
 
 /** Inject a non-null gateNotice into the JSON head of a hydrate output. */
 export function injectGateNotice(output: string, notice: string | null): string {

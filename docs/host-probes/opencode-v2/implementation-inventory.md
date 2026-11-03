@@ -684,6 +684,14 @@ cutover, not a permanently supported V1/V2 dual path.
 
 ## Trust boundaries before security implementation
 
+**Native Start follow-up (2026-11-03):** the hydrate-then-activate row above
+describes fresh preparation only, now serialized with journal preflight under
+the existing activation lock. ACTIVE/ACTIVATING reuse the bound workflow without
+hydration. Successful activation has one idempotent `governance:activated` event
+in the existing audit trail; audit-unconfirmed recovery and post-commit
+presentation warnings are distinct. See the
+[Start coordination contract](./activation-scope-contract.md#native-start-coordination-and-audit-2026-11-03).
+
 Apply revised ADR-010: trusted host/OS infrastructure, untrusted model/caller
 assertions, governance/evidence integrity and scoped controlled-path prevention.
 These are authority questions and claim limits, not requirements to deploy a new

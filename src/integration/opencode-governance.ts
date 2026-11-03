@@ -105,7 +105,7 @@ export class OpenCodeGovernance {
   }
 
   /** The host-observed root session an operator Start may bind; delegated children never start. */
-  async startableRoot(sessionId: string): Promise<{ readonly directory: string }> {
+  private async startableRoot(sessionId: string): Promise<{ readonly directory: string }> {
     validateSessionId(sessionId);
     const session = await this.host.getSession(sessionId);
     if (session.parentSessionId !== undefined)
@@ -121,15 +121,22 @@ export class OpenCodeGovernance {
    * completing an interrupted ACTIVATING revision re-presents exactly that decision.
    */
   async startRoot(
-    request: GovernanceRootStart,
-    actor: GovernanceDecisionActor,
+    sessionId: string,
+    prepare: (
+      current: GovernanceActivationRevision | null,
+      directory: string,
+    ) => Promise<{
+      readonly workflow: Pick<GovernanceRootStart, 'worktreeRoot' | 'policyDigest'>;
+      readonly actor: GovernanceDecisionActor;
+    }>,
   ): Promise<Exclude<GovernanceRootStartResult, { kind: 'blocked' }>> {
+    let actor: GovernanceDecisionActor | undefined;
     const result = await startRootGovernance(
       {
         store: this.store,
         withLock: (id, run) => this.withLock(id, run),
         authorize: async (input, current) => {
-          if (this.signal.aborted || input.sessionId !== request.sessionId)
+          if (this.signal.aborted || input.sessionId !== sessionId || actor === undefined)
             return this.block('The governance adapter stopped or the Start scope changed.');
           if (input.action === 'start')
             return { kind: 'authorized', decisionId: randomUUID(), source: 'host_command', actor };
@@ -143,7 +150,15 @@ export class OpenCodeGovernance {
           return this.block('The Start command authorizes only Start and its completion.');
         },
       },
-      request,
+      {
+        sessionId,
+        prepare: async (current) => {
+          const { directory } = await this.startableRoot(sessionId);
+          const prepared = await prepare(current, directory);
+          actor = prepared.actor;
+          return { sessionId, directory, ...prepared.workflow };
+        },
+      },
     );
     if (result.kind === 'blocked') throw this.error(result.reason);
     return result;
