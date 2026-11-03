@@ -82,7 +82,10 @@ async function runStart(
         : 'is ACTIVE';
   await ctx.session.synthetic({
     sessionID: input.sessionID,
-    text: `FlowGuard governance ${status} for this session: ${workflow.state.policySnapshot.mode} policy, phase ${workflow.state.phase}.`,
+    text: [
+      `FlowGuard governance ${status} for this session: ${workflow.state.policySnapshot.mode} policy, phase ${workflow.state.phase}.`,
+      ...workflow.report,
+    ].join('\n\n'),
     resume: false,
   });
 }
@@ -105,7 +108,11 @@ async function hydrateWorkflow(
   directory: string,
   policyMode: PolicyMode | undefined,
   signal: AbortSignal,
-): Promise<{ readonly worktreeRoot: string; readonly state: SessionState }> {
+): Promise<{
+  readonly worktreeRoot: string;
+  readonly state: SessionState;
+  readonly report: readonly string[];
+}> {
   const before = await resolveSessionAuthority({ root: directory, sessionId });
   if (before.status === 'unavailable') throw buildEnforcementError(before.code, before.reason);
   const { worktreeRoot } = before;
@@ -122,13 +129,49 @@ async function hydrateWorkflow(
       metadata: () => {},
     },
   );
+  const text = typeof output === 'string' ? output : output.output;
   const after = await resolveSessionAuthority({ root: directory, sessionId });
   if (after.status !== 'resolved' || after.worktreeRoot !== worktreeRoot)
     throw buildEnforcementError(
       'SESSION_DIR_NOT_FOUND',
-      `Start could not establish the workflow state: ${typeof output === 'string' ? output : output.output}`,
+      `Start could not establish the workflow state: ${text}`,
     );
-  return { worktreeRoot, state: after.state };
+  return { worktreeRoot, state: after.state, report: hydrateReport(text, after.state) };
+}
+
+/**
+ * The hydrate presentation the former prompt template printed verbatim. An
+ * auto-approve gate notice must reach the operator; an unreadable report or a
+ * missing notice fails Start before any activation write.
+ */
+function hydrateReport(output: string, state: SessionState): readonly string[] {
+  const record = jsonHead(output);
+  const presentation = isRecord(record.presentation) ? record.presentation.markdown : undefined;
+  const markdown = typeof presentation === 'string' ? presentation : undefined;
+  const notice = typeof record.gateNotice === 'string' ? record.gateNotice : undefined;
+  if (state.policySnapshot.effectiveGateBehavior === 'auto_approve' && notice === undefined)
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'Start cannot report the auto-approve gate notice of the hydrated workflow.',
+    );
+  return [
+    ...(markdown === undefined ? [] : [markdown]),
+    ...(notice === undefined || markdown?.includes(notice) === true ? [] : [notice]),
+  ];
+}
+
+/** Tool results carry one JSON head line; an unreadable head yields no fields. */
+function jsonHead(output: string): Record<string, unknown> {
+  try {
+    const head: unknown = JSON.parse(output.split('\n', 1)[0] ?? '');
+    return isRecord(head) ? head : {};
+  } catch {
+    return {};
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function toDecisionActor(actor: ActorInfo): GovernanceDecisionActor {

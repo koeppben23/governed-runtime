@@ -12,6 +12,7 @@ import {
 } from '../adapters/governance-activation.js';
 import type { GovernanceActivationRevision } from '../state/governance-activation.js';
 import { parseStartArguments } from './plugin-start-command.js';
+import * as tools from './tools/index.js';
 
 let ws: TestWorkspace;
 let host: ReturnType<typeof createV2Host>;
@@ -102,6 +103,31 @@ describe('native /start command', () => {
     const authority = await workflow(sessionId);
     if (authority.status !== 'resolved') throw new Error('Expected workflow state');
     expect(authority.state.policySnapshot.mode).toBe('solo');
+    expect(host.synthetic).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('Auto-approve is active') }),
+    );
+  });
+
+  it('never activates when the auto-approve gate notice cannot be reported', async () => {
+    await open();
+    const execute = tools.hydrate.execute.bind(tools.hydrate);
+    vi.spyOn(tools.hydrate, 'execute').mockImplementation(async (args, context) => {
+      const output = await execute(args, context);
+      const text = typeof output === 'string' ? output : output.output;
+      const [head = '', ...tail] = text.split('\n');
+      const {
+        gateNotice: _notice,
+        presentation: _presentation,
+        ...rest
+      } = JSON.parse(head) as Record<string, unknown>;
+      return [JSON.stringify(rest), ...tail].join('\n');
+    });
+    const sessionId = randomUUID();
+    await expect(host.command('start', sessionId, 'solo')).rejects.toThrow(
+      /PLUGIN_ENFORCEMENT_UNAVAILABLE/,
+    );
+    expect(revisions()).toEqual([]);
+    expect(host.synthetic).not.toHaveBeenCalled();
   });
 
   it('is idempotent for an ACTIVE root and never mints a second decision', async () => {

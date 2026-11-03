@@ -186,7 +186,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the same decision and actor, never a newly minted one. Delegated child
   sessions, unsupported arguments, ENDING scopes, replayed decisions and a stopped
   plugin are rejected before any authority write. The productive catalogue is
-  published and a non-resuming synthetic message reports the result. New reason
+  published and a non-resuming synthetic message reports the result together with
+  the hydrate presentation; an auto-approve gate notice that cannot be reported
+  fails Start before any activation write. New reason
   code `START_ARGUMENTS_INVALID`; the `GOVERNANCE_NOT_ACTIVE` recovery now names
   `/start`. ADR-004 records the new composition file.
 
