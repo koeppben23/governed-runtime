@@ -190,7 +190,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the hydrate presentation; an auto-approve gate notice that cannot be reported
   fails Start before any activation write. New reason
   code `START_ARGUMENTS_INVALID`; the `GOVERNANCE_NOT_ACTIVE` recovery now names
-  `/start`. ADR-004 records the new composition file.
+  `/start`. ADR-004 records the new composition file. A live smoke test drives
+  `/start` through the SDK command channel of the pinned host, including restart
+  and an untouched sibling session.
 
 - **`/start` is no longer an installed command template (#1190).** The
   `start.md` template is removed; the command catalogue marks `/start` as a
