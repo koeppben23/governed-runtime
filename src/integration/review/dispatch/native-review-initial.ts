@@ -39,6 +39,8 @@ type Run = {
   prefix: readonly unknown[];
   contextDigest?: string;
   step?: Step;
+  /** Effective model/variant of the first step; every later step must match it. */
+  model?: ReviewerModelSelection;
   sealed: boolean;
   violation?: string;
 };
@@ -97,8 +99,14 @@ export class NativeReviewInitialController {
     if (run.contextDigest === undefined || digest(history) !== run.contextDigest)
       reject(run, 'Primary reviewer request has no exact preceding context.');
     delete run.contextDigest;
+    const selected = selectedModel(model);
+    // Evidence binds one effective model/variant. An unproved mid-review switch
+    // cannot be represented by that binding and invalidates assurance (ADR-010 D5).
+    if (run.model !== undefined && digest(run.model) !== digest(selected))
+      reject(run, 'The effective reviewer model or variant changed between review steps.');
+    run.model = selected;
     run.prefix = structuredClone(history);
-    run.step = { model: selectedModel(model), tools: new Map() };
+    run.step = { model: selected, tools: new Map() };
   }
 
   beforeTool(event: InitialToolBoundary): void {

@@ -1054,6 +1054,12 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Reviewer evidence binds the model of every step (#1190, ADR-010 D5, #1169
+  WS4).** The initial review accepted a different effective model or variant on a
+  later step and bound only the last one. A mid-review switch now invalidates the
+  run (`REVIEWER_COMPLETION_UNVERIFIABLE`), so the single recorded model/variant
+  truthfully covers every step. Model choice itself stays host-native; no model
+  is restricted or substituted. The evidence format is unchanged.
 - **Host-neutral state identities (#1190, WS2).** State-owned host session and
   assistant-message identifiers, plus the exact `{sessionId, messageId, callId}`
   call tuple, now use neutral `Host*` schemas owned by

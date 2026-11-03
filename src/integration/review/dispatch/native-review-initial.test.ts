@@ -76,16 +76,29 @@ describe('initial native reviewer sequence and hook provenance', () => {
       control.afterTool({ ...call, status });
       const history = toolHistory(call, status);
       control.context(child, history);
-      const other = { providerID: 'other', id: 'different', variant: undefined };
-      control.request(child, history, other);
-      const final = [...history, assistant({ id: 'msg_final', model: other }), idle];
+      control.request(child, history, model);
+      const final = [...history, assistant({ id: 'msg_final' }), idle];
       expect(completed(control, final).model).toEqual({
-        providerID: 'other',
-        modelID: 'different',
-        variant: null,
+        providerID: model.providerID,
+        modelID: model.id,
+        variant: model.variant,
       });
     },
   );
+
+  it.each([
+    { providerID: 'other', id: 'different', variant: undefined },
+    { ...model, variant: 'another-native-variant' },
+  ])('rejects a mid-review model or variant switch %j', (other) => {
+    const control = started();
+    const call = boundary();
+    control.beforeTool(call);
+    control.afterTool({ ...call, status: 'completed' });
+    const history = toolHistory(call, 'completed');
+    control.context(child, history);
+    expect(() => control.request(child, history, other)).toThrow('changed between review steps');
+    expect(() => completed(control, [...history, assistant({ id: 'msg_final' }), idle])).toThrow();
+  });
 
   it('supports parallel tools within one observed assistant, not extra assistants', () => {
     const control = started();
