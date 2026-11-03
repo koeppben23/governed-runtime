@@ -75,9 +75,16 @@ describe('production/test distribution boundary', () => {
     }
   });
 
-  it('keeps internal test support out of the production program graph', () => {
+  // Building the real production program parses every source file; on loaded CI
+  // runners this exceeds the 15 s default. The graph (not type checking) is the
+  // contract, so the default library and ambient type packages are not loaded:
+  // they cannot add a `src/` file to the program.
+  it('keeps internal test support out of the production program graph', { timeout: 60_000 }, () => {
     const parsed = parseConfig('tsconfig.json');
-    const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
+    const program = ts.createProgram({
+      rootNames: parsed.fileNames,
+      options: { ...parsed.options, noLib: true, types: [], noEmit: true },
+    });
     const srcSources = program.getSourceFiles().filter((source) => isUnderSrc(source.fileName));
 
     // Non-vacuum: the production program really is the production graph.

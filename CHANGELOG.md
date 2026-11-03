@@ -267,6 +267,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Production build-boundary guard timeout (#1190).** The guard that builds
+  the real production program timed out at the 15 s default on loaded CI
+  runners (coverage job). It now skips the default library and ambient type
+  packages, which cannot add a `src/` file to the graph, and carries an explicit
+  60 s budget. The transitive-inclusion contract is unchanged.
 - **Native regular edit-error recovery (#1190).** Exact current native
   session/message/call history can close a local typed edit failure through the
   existing root-owned completion and audit writer, including delegated calls.
