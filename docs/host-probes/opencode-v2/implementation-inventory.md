@@ -82,6 +82,16 @@ becomes PASS; actual product/installed acceptance and release remain NOT_VERIFIE
 
 ## Native entrypoint/client implementation in progress
 
+**Current P0-00 closure (2026-11-04, `2f4aa06d`):** installed CLI/server parity
+passes 65/65 on each of Linux, macOS and Windows in acceptance run `41855491592`,
+on one checksum-verified package. Required CI `41855408259` passes on attempt 2;
+the initial PERF failure remains unattributed and the macOS cancellation is
+explicitly attributed by GitHub to unavailable hosted-runner capacity. The
+Windows diagnosis is closed; Desktop, full ACTIVE and R4 are not. See the
+[final diagnostic closure](./p0-00-inactive-parity.md#final-windowscli-server-diagnostic-closure-on-2f4aa06d).
+The following checkpoint paragraphs retain their dated execution history;
+they are not a claim that today's Windows matrix remains unexecuted or blocked.
+
 **P0-00 installed follow-up (2026-11-04):** the
 [packed INACTIVE comparison](./p0-00-inactive-parity.md) and original counterprobes now pass 65 contracts on
 macOS/OpenCode 2.2.4 across isolated repo/global installs and Git/non-Git projects.
@@ -112,8 +122,9 @@ opens the literal encoded directory. Upstream `0e3568f0` now emits an unencoded
 `~`, spaces and `#`. Current-build run `41829567943` on `d5d88a8e` passes the
 Windows split matrix **65/65, 0 failed**; Linux/macOS also pass 65/65 on the same
 artifact. The full matrix now lives in the separate manual/nightly
-`opencode-parity.yml` acceptance workflow, not the PR gate. No test/hook/coverage
-budget or assertion changed. The joint bootstrap mechanism remains NOT_VERIFIED;
+`opencode-parity.yml` acceptance workflow, not the PR gate. Workflow relocation
+preserves cases and assertions; preceding setup/cleanup-budget changes are
+recorded explicitly in the P0-00 report. The joint bootstrap mechanism remains NOT_VERIFIED;
 no governance regression is established. Upstream `78298e2a` adds an exact
 transient retry for the macOS `ServiceUnavailableError` ("Location plugins did
 not finish activating") finding; the current-build macOS matrix passes 65/65.
@@ -796,19 +807,93 @@ Confirmed on the reviewed surface:
 
 - `review/dispatch/native-task-review.ts` and the V1 same-child follow-up,
   watchdog/persisters, host-adapter throws and unreachable reason codes are
-  removed; `plugin-orchestrator.ts` is now only the `OrchestratorDeps` type
-  surface and registers nothing.
+  removed. The remaining `plugin-orchestrator.ts` type-only forwarding surface
+  is removed by the bounded audit follow-up below; `review/pipeline-types.ts`
+  owns `OrchestratorDeps` directly.
 - The remaining `plugin.ts`, `plugin-beforehooks`, review rails and tool modules
   are canonical reused governance logic, not a second executable runtime or
   evidence writer.
 - `session-state.json` remains workflow-state authority; activation uses its
   separate append-only host-storage journal/head/enrollment authority.
 
-**P0-10 remains NOT_VERIFIED.** A complete import/call-path and ownership audit
-of every remaining adapter, transport and compatibility module, including proof
-that no dormant V1 path is reachable, is still required. This section records
-the measurement and the already-removed surfaces; it does not declare P0-10
-complete.
+**P0-10 remains open.** The bounded import/ownership audit below adds executed
+source evidence and concrete closure blockers. Static module reachability is
+not complete function/call-path proof, and removing one forwarding file does not
+close the remaining V1 demo/compatibility and alternate-path work.
+
+### Bounded P0-10 source audit on `2f4aa06d` (2026-11-04)
+
+Scope: shipped package exports/binaries, native plugin composition and adapter,
+activation versus workflow authority, reviewer dispatch/capture/evidence owners,
+remaining type facades and live demo compatibility consumers. This is not a new
+architecture phase or an independent line-by-line review of the whole PR.
+
+The audit uses the existing canonical `collectProductionSources`,
+`isTestSourcePath` and AST `collectImportSpecifiers` authorities, TypeScript module
+resolution, and type-erased imports from transpilation. All 14 package export/bin
+roots are included. At the clean `2f4aa06d` checkpoint it scans **726 production
+files**, **249 integration files**, **3,852 internal import sites** and finds
+**zero unresolved relative imports**. The static runtime closure contains 689
+modules from package roots and 601 from the native plugin root; the combined
+type/runtime closure contains 717. The one computed import found is the optional
+OTLP SDK loader in `logging/otlp-sink.ts`, not a reviewer/plugin dispatcher.
+
+These are module-level facts, not proof that every function executes or that
+filesystem-loaded scripts have no additional consumers. Indeed, the demo pin
+below is a concrete counterexample to equating "no TypeScript importer" with
+"unused". No dormant-code deletion is authorized by graph absence alone.
+
+Using the **same current canonical source classification for both trees**, the
+PR base `03a6a278` has 723 production files / 242 integration files /
+5,217,234 bytes, versus 726 / 249 / 5,259,201 at `2f4aa06d`. The older review
+figures above used a different source inventory; do not mix their denominators.
+Neither comparison proves a net complexity reduction. The local type-facade
+removal takes the current inventory to 725 / 248; runtime reachability is unchanged.
+
+| Surface                          | Inspected ownership/reachability                                                                                                                                                                                                                          | Result                                                                                                                                                                                                           |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Installed OpenCode entry         | `plugin.ts` owns one `Plugin.define` setup; the installed wrapper exports only that definition. No second callable V1 factory or old SDK autospawn entry was found.                                                                                       | Retain the native composition and its fail-closed lifecycle.                                                                                                                                                     |
+| Host adapter                     | `opencode-host-adapter.ts` implements exact metadata/history operations; `adapters/host-adapter.ts` and `review/types.ts` are structural ports, not competing SDK transports.                                                                             | Retain semantic boundaries; SDK mechanics stay at the host edge.                                                                                                                                                 |
+| Activation/workflow              | `adapters/governance-activation.ts` owns the host-storage journal/head/enrollment; `adapters/session-authority.ts` resolves bound workflow files.                                                                                                         | Different authorities for different state, not duplicate workflow-state writers.                                                                                                                                 |
+| Reviewer execution               | `plugin-native-review.ts` consumes native dispatch, initial request, capture and settlement owners. Dispatch uses the durable ledger; capture calls the existing `reviewer-evidence-recorder.ts`, which commits through injected `updateReviewAssurance`. | No second reviewer runtime/evidence writer found on this inspected chain. SDK-worded DTO names alone do not establish a V1 runtime. R4 is unchanged.                                                             |
+| Historical transport evidence    | Current evidence schemas retain recorded transport generations; `session-authority.ts` blocks nonterminal sessions carrying historical transport 5.                                                                                                       | Archive verification is not live V1 dispatch, read-time synthesis or permission to continue old authority.                                                                                                       |
+| `plugin-orchestrator.ts`         | Exactly one production importer, `plugin-shared.ts`, uses it as a type only. The file only re-exports the existing `OrchestratorDeps` definition.                                                                                                         | Proven redundant facade removed; direct canonical type import, placement entry and source/docs guards updated. No runtime behavior changes.                                                                      |
+| `cli/opencode-runtime-compat.ts` | No production TypeScript importer, but `demos/lib/environment-gate.mjs` and `demos/java-task-manager/run-live-matrix.mjs` actively read it from the filesystem and extract `TESTED_OPENCODE_HOST_VERSION = '1.19.5'`.                                     | Live V1 tooling residue, not just historical evidence. Must port these consumers to the current candidate contract and remove the obsolete classifier/pin, not falsely certify V2 by changing the literal alone. |
+
+Nine production-class modules lie outside the combined shipped type/runtime
+graph (both before and after the facade removal):
+
+- `cli/opencode-runtime-compat.ts` — active filesystem demo consumers as above.
+- `integration/review/evidence/review-provenance.ts` — no import site found;
+  compare its validators with the live evidence owners before removal.
+- `integration/review/obligations/obligation-settlement.ts` — its named function
+  is called only by its unit suite, not current native retry/closure wiring.
+- `rails/plan.ts`, `rails/implement.ts`, `rails/continue.ts`, `rails/validate.ts`
+  — imported by `rails/async-rails.test.ts`, not exported from the package root
+  or called by the native tool path. They contain executable executor/self-review
+  seams, not just types; `ImplExecutors.reviewAndRevise` is explicitly documented
+  as historical and test-retained. Their required assertions must be mapped to
+  canonical current paths before deleting redundant implementations/tests.
+- `providers/registry-validation.ts` — `validateProviderExtensions` is used by
+  its test suite only; determine whether this is an unwired required guard or
+  removable duplicate validation. Do not turn a missing caller into proof that
+  validation is unnecessary.
+- `shared/product-inventory.ts` — deliberate documentation-generation authority;
+  graph absence is not a reason to remove it.
+
+`installed-commands.ts` also labels six current presentation entries
+`compatibility`. These labels are not proof of a second SDK runtime. The
+remaining contract work must distinguish genuinely required current manual
+operations from superseded aliases; deleting HYDRATE/CONTINUE/validation
+behavior merely from the label would risk the required governance parity. No
+exception allowing obsolete FlowGuard source is introduced by this audit.
+
+**Closure decision: P0-10 is not PASS.** The static audit is executed and one
+redundancy is removed, but live V1 demo consumers and the test-only production
+paths above remain concrete cleanup/wiring blockers. Required acceptance
+assertions, mutation profiles, thresholds and guard behavior must remain intact.
+Do not start whole-product ACTIVE acceptance with the old V1 demo gate, or claim
+that passing architecture/unused-export checks proves complete reachability.
 
 ### First implemented preparatory simplification (#1169)
 

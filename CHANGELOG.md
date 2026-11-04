@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Close the bounded P0-00 CLI/server Windows diagnosis on `2f4aa06d`: one
+  checksum-verified package passes 65/65 on Linux, macOS and Windows; required
+  CI passes on attempt 2. Retain the initial 182.47 ms PERF failure and the
+  independently attributed macOS runner-capacity cancellation. Neither green
+  reruns nor CLI evidence establish Desktop, full ACTIVE or R4 acceptance.
+
+- Record the bounded P0-10 import/ownership audit and its concrete remaining
+  blockers, including the live demo V1 pin and production-class modules outside
+  the shipped entrypoint graph. Remove the proven redundant, type-only
+  plugin-orchestrator facade; its one caller now imports the existing canonical
+  review wiring type directly. No runtime/governance behavior changes or net
+  complexity-reduction claim.
+
 - Apply runner-temp preparation to every current Windows CI test job through
   the existing Node preparation action and a Windows-only release-smoke step.
   Remove the redundant parity-only override, retain Linux/macOS/local defaults,

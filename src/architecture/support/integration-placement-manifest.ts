@@ -375,7 +375,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/plugin-mandates.ts', owner: 'root-composition' },
   { file: 'integration/plugin-mutation-episodes.ts', owner: 'root-composition' },
   { file: 'integration/plugin-mutation-reconciliation.ts', owner: 'root-composition' },
-  { file: 'integration/plugin-orchestrator.ts', owner: 'root-composition' },
   { file: 'integration/plugin-policy.ts', owner: 'root-composition' },
   { file: 'integration/plugin-regulated-recovery.ts', owner: 'root-composition' },
   { file: 'integration/plugin-rework-continuation.ts', owner: 'root-composition' },

@@ -39,10 +39,11 @@ describe('bounded OpenCode V2 acceptance claims', () => {
   });
 
   it('does not list the executed Windows matrix as an unverified remaining gate', () => {
-    const remaining = readDoc('docs/host-probes/opencode-v2/p0-00-inactive-parity.md').split(
-      '## Reproduction and remaining gates',
-    )[1]!;
-    expect(remaining).toContain('41829567943');
+    const report = readDoc('docs/host-probes/opencode-v2/p0-00-inactive-parity.md');
+    const remaining = report.split('## Reproduction and remaining gates')[1]!;
+    expect(remaining).toContain('41855491592');
+    expect(remaining).toContain('2f4aa06d');
+    expect(report).toContain('41829567943');
     expect(remaining).toContain('65/65');
     expect(remaining).not.toContain('NOT_VERIFIED:** complete Windows');
     expect(remaining).toContain('Desktop 2.2.4');

@@ -7,6 +7,45 @@ all 65 cases on the current-build artifact (2 mixed + 28 repo + 28 global +
 unchanged untrusted-plugin contract and its security requirement remains
 BLOCKED. No ACTIVE-V2 release follows from this result.
 
+## Final Windows/CLI-server diagnostic closure on `2f4aa06d`
+
+[Acceptance run 41855491592](https://github.com/koeppben23/governed-runtime/actions/runs/41855491592)
+on `2f4aa06d5791dab9cf943c4f19175525f7d21430` passes **65/65 each on Linux,
+macOS and Windows**. The Windows reports execute 2 mixed, 28 repo, 28 global
+and 7 original cases; their passed-name union contains exactly 65 unique cases,
+with no missing or additional case relative to Linux's full report. Filtered
+entries in individual shard JSON are not missing acceptance cases.
+
+All platform bootstrap identities match the shared tarball/checksum SHA-256
+`5e5480b43aad21f656830a0453c8a54c88a07a9593f5355ee04fef0561375ec3`.
+Its embedded merge build is `70fc3e0461c96fa665965d2adc7c1cff7e97560e`,
+built `2026-11-04T15:15:27.096Z`. Windows installer calls complete in
+**27,133–61,224 ms**. The preceding runner-temp-only correction also passed the
+complete matrix in [run 41853631296](https://github.com/koeppben23/governed-runtime/actions/runs/41853631296)
+on `2384f282`, package SHA-256
+`c1a0b2b9bcdb7e29809974e3c7c9dfec838895f2fbaeb0eefa10fb64119012bc`.
+
+[Required CI 41855408259](https://github.com/koeppben23/governed-runtime/actions/runs/41855408259)
+on the same `2f4aa06d` head is **PASS on attempt 2**. All five normal Windows
+jobs pass: scripts, critical state/hooks/recovery, architecture, install-verify
+and install/doctor. Attempt 1 remains **FAIL**: integration PERF measured
+**182.467809 ms against the unchanged <150 ms limit**; macOS install was not
+acquired by a hosted runner, with no assigned runner or executed steps. GitHub's
+annotations explicitly report macOS ARM64 capacity constraints. One unchanged
+failed-job rerun passed PERF, macOS install and the gate. That rerun does not
+establish the initial PERF failure's cause or make it a proven flake. An initial
+watch reconnect failed with GitHub API HTTP 502; that was not a test result.
+
+**Closed scope:** P0-00's installed CLI/server parity matrix and the Windows
+fixture-location correction, including the broader CI preparation. No further
+harness optimization is required absent a new counterexample. The release
+publishing workflow was not triggered; its Windows-smoke preparation is guarded
+by source tests, while CI executes the same install-verify smoke file.
+Desktop 2.2.4, untested host boundaries, full ACTIVE workflow, R4 and final
+merge-gate enforcement remain separate open acceptance items. The OS-level
+cause of slow system-temp unpack and the earlier non-reproduced global
+discovery error remain unattributed, not product fixes claimed by this closure.
+
 ## Initial 56-case checkpoint: product and installation identity
 
 - Node `22.22.2`; `/opt/homebrew/bin/opencode` reports `opencode v2.2.4` and
@@ -643,10 +682,11 @@ documentation check and its working-tree changelog validation passed separately;
 neither alone is a hosted-CI result for the later follow-up.
 
 **Executed CLI/server acceptance:** run
-[`41829567943`](https://github.com/koeppben23/governed-runtime/actions/runs/41829567943)
-on `d5d88a8e` passes 65/65 on Windows, Linux and macOS using the shared artifact
-identified above. This closes the Windows bootstrap/execution blocker for that
-matrix. Earlier failures remain historical evidence, not the current outcome.
+[`41855491592`](https://github.com/koeppben23/governed-runtime/actions/runs/41855491592)
+on `2f4aa06d` passes 65/65 on Windows, Linux and macOS using the shared artifact
+identified in the final closure above; required CI passes on attempt 2. The
+earlier accepted `d5d88a8e` result and intervening failures remain separate
+historical evidence, not a fabricated uninterrupted green history.
 
 **NOT_VERIFIED:** installed Desktop 2.2.4 acceptance, live remote catalogue-refresh
 parity and all-provider/media execution. Run the owning suites for the untested

@@ -33,6 +33,16 @@ function relative(path: string): string {
 }
 
 describe('structured review authority hard cut', () => {
+  it('owns review wiring types directly without a plugin-orchestrator forwarding facade', () => {
+    expect(existsSync(join(SRC, 'integration/plugin-orchestrator.ts'))).toBe(false);
+    const owners = listProductionSources(SRC)
+      .filter((file) => /export interface OrchestratorDeps\b/.test(readFileSync(file, 'utf8')))
+      .map(relative);
+    expect(owners).toEqual(['integration/review/pipeline-types.ts']);
+    expect(readFileSync(join(SRC, 'integration/plugin-shared.ts'), 'utf8')).toContain(
+      "import type { OrchestratorDeps } from './review/pipeline-types.js'",
+    );
+  });
   it('retires the reviewer Task and manual/native attestation authority', () => {
     const retirements =
       /\b(manual_attested|native_subagent_attested|recordSubmittedReviewInvocation|resolveNativeAttestation|reviewInvocationPolicy|host_task_required|host_task_preferred|reviewerTaskPrompt)\b/;

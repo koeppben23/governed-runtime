@@ -8,14 +8,20 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-11-03):
+(counts updated 2026-11-04):
 
-- `root-composition`: 33 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 32 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 7 named files (`host-mutation-observation.ts`,
   `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 55 root production files
+- total: 54 root production files
+
+The bounded P0-10 audit removes `plugin-orchestrator.ts`, which only forwarded
+the `OrchestratorDeps` type to one production caller. That caller now imports
+the existing canonical owner `review/pipeline-types.ts` directly. This shrinks
+the frozen composition matrix by one; no replacement module or runtime
+authority is added.
 
 The activation/scope change in #1190 adds `plugin-native-tools.ts` for native
 catalogue/executor/completion composition and `opencode-governance.ts` for exact

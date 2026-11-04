@@ -179,8 +179,8 @@ describe('check command: implementation review orchestration', () => {
  * P1.3 slice 6 — narrative drift guard.
  *
  * The third LoopVerdict 'unable_to_review' is part of the runtime contract
- * (see src/types/loop-verdict.ts, src/integration/review-validation.ts,
- * src/integration/plugin-orchestrator.ts). Slash-command narratives MUST
+ * (see src/state/evidence-primitives.ts and
+ * src/integration/review/validation/review-validation.ts). Slash-command narratives MUST
  * teach the agent how to handle it, otherwise the agent will mishandle
  * BLOCKED responses with code SUBAGENT_UNABLE_TO_REVIEW.
  *

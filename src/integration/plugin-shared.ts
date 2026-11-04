@@ -16,7 +16,7 @@ import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { createWorkspace } from './plugin-workspace.js';
 import type { RiskEnforcementDeps } from './plugin-risk.js';
 import type { DiscoveryHealthEnforcementDeps } from './plugin-discovery-health.js';
-import type { OrchestratorDeps } from './plugin-orchestrator.js';
+import type { OrchestratorDeps } from './review/pipeline-types.js';
 import type { AuditDeps } from './plugin-audit.js';
 import type { ToolHookBeforeInput } from './types.js';
 
