@@ -397,11 +397,14 @@ at `10:19:14Z`, but the **35-minute job limit** cancels at `10:21:00Z` after
 `35m08s`. No results JSON is written; the missing file is cancellation, not a
 reported failure.
 
-The Windows job budget is therefore **90 minutes**, documented in the workflow
-and pinned by the CI-source test. The 300-second bootstrap/test budgets, 65
-cases, assertions and dependency selection are unchanged. Windows acceptance
-remains **BLOCKED** until the full matrix executes and passes; no PASS is
-inferred from either timeout.
+Windows parity is therefore split into four parallel CI jobs — `mixed`, `repo`,
+`global` and `original` — each with a 25-minute job budget and a distinct
+bootstrap prefix. Each job runs only its selected cases through Vitest's exact
+name filter; the installed suite still performs its real installer runs for its
+own arms, and all 65 cases/assertions remain. The 300-second bootstrap/test
+budgets and dependency selection are unchanged. Windows acceptance remains
+**BLOCKED** until all four jobs execute and pass; no PASS is inferred from either
+timeout.
 
 ### Intervening `a38dd3a7` run, retained separately
 

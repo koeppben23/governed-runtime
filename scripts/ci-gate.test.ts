@@ -14,7 +14,12 @@ const workflow = parse(
       needs?: string | string[];
       if?: string;
       'timeout-minutes'?: number;
-      strategy?: { matrix: { os: string[] } };
+      strategy?: {
+        matrix: {
+          os?: string[];
+          include?: Array<{ suite: string; file: string; filter: string }>;
+        };
+      };
       steps: {
         name?: string;
         run?: string;
@@ -41,6 +46,7 @@ const dependencies = [
   'regulated_e2e',
   'doc-drift',
   'inactive-parity',
+  'inactive-parity-windows',
 ];
 
 function executeGate(overrides: Record<string, string> = {}) {
@@ -59,7 +65,7 @@ describe('required ci-gate documentation enforcement', () => {
   it('runs both installed-parity suites on every OS against one shared build artifact', () => {
     const parity = requiredJob('inactive-parity');
     expect(parity.needs).toBe('build');
-    expect(parity.strategy?.matrix.os).toEqual(['ubuntu-latest', 'macos-latest', 'windows-latest']);
+    expect(parity.strategy?.matrix.os).toEqual(['ubuntu-latest', 'macos-latest']);
     expect(parity.steps.some((step) => step.with?.name === 'inactive-parity-package')).toBe(true);
     expect(requiredJob('build').steps.some((step) => step.run === 'npm run pack:checksums')).toBe(
       true,
@@ -82,7 +88,7 @@ describe('required ci-gate documentation enforcement', () => {
     const download = steps.find((step) => step.name === 'Download identical packed product');
     expect(download?.with?.['run-id']).toBeUndefined();
     expect(download?.with?.['github-token']).toBeUndefined();
-    expect(requiredJob('inactive-parity')['timeout-minutes']).toBe(90);
+    expect(requiredJob('inactive-parity')['timeout-minutes']).toBe(25);
     const run = steps.find(
       (step) => step.name === 'Reconcile original probes and verify installed mixed-session parity',
     );
@@ -97,6 +103,38 @@ describe('required ci-gate documentation enforcement', () => {
     expect(upload?.if).toBe('always()');
     expect(upload?.with?.path).toBe('inactive-parity-diagnostics/');
     expect(upload?.with?.['if-no-files-found']).toBe('error');
+  });
+  it('splits Windows parity into parallel installer-bearing subsets', () => {
+    const win = requiredJob('inactive-parity-windows');
+    expect(win.needs).toBe('build');
+    expect(win['timeout-minutes']).toBe(25);
+    const suites = win.strategy?.matrix.include ?? [];
+    expect(suites.map((suite) => suite.suite)).toEqual(['mixed', 'repo', 'global', 'original']);
+    expect(suites.every((suite) => suite.file.startsWith('src/cli/opencode-inactive-'))).toBe(true);
+    expect(suites.find((suite) => suite.suite === 'mixed')?.filter).toBe(
+      'scoped during live catalogue',
+    );
+    expect(suites.find((suite) => suite.suite === 'repo')?.filter).toBe(
+      'Git=(true|false), scope=repo',
+    );
+    expect(suites.find((suite) => suite.suite === 'global')?.filter).toBe(
+      'Git=(true|false), scope=global',
+    );
+    expect(suites.find((suite) => suite.suite === 'original')?.file).toBe(
+      'src/cli/opencode-inactive-parity.smoke.test.ts',
+    );
+    expect(
+      win.steps.some(
+        (step) =>
+          step.name === 'Run Windows parity suite ${{ matrix.suite }}' &&
+          step.env?.SUITE_FILTER === '${{ matrix.filter }}',
+      ),
+    ).toBe(true);
+    expect(win.steps.some((step) => step.with?.name === 'inactive-parity-package')).toBe(true);
+    expect(
+      win.steps.find((step) => step.name === 'Upload installed-parity test results')?.with?.name,
+    ).toBe('inactive-parity-results-windows-${{ matrix.suite }}');
+    expect(dependencies).toContain('inactive-parity-windows');
   });
   it('serializes critical Windows unit workers without dropping suites or changing PERF budgets', () => {
     const commands = requiredJob('critical-windows').steps.flatMap((step) =>

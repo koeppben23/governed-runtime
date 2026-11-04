@@ -112,13 +112,14 @@ opens the literal encoded directory. Upstream `0e3568f0` now emits an unencoded
 `~`, spaces and `#`. Current-build run `41806050855` installs through that path
 on Windows without installer errors, but its 20-minute job limit cancels the
 matrix midway through the second scope; a 35-minute rerun reached the final
-seven-case suite before cancellation at 35m08s. The job budget is now 90
-minutes, with no test/hook/coverage budget or assertion change. The joint bootstrap mechanism remains NOT_VERIFIED; no governance
+seven-case suite before cancellation at 35m08s. Windows parity is now split
+into four parallel 25-minute jobs (`mixed`, `repo`, `global`, `original`), with
+no test/hook/coverage budget or assertion change. The joint bootstrap mechanism remains NOT_VERIFIED; no governance
 regression is established. Linux/macOS each pass 65/65 in this run; local reuse
 passes 65/65 with one npm install. Upstream `78298e2a` adds an exact transient
 retry for the macOS `ServiceUnavailableError` ("Location plugins did not finish
 activating") finding; the current-build macOS matrix now passes 65/65. Windows
-remains BLOCKED until its 90-minute matrix executes and passes. See the
+remains BLOCKED until all four split jobs execute and pass. See the
 [diagnostic results](./p0-00-inactive-parity.md#executed-hosted-diagnostic-on-82a490aa).
 
 This section describes the subsequent native API implementation and local

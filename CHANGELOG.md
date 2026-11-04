@@ -517,9 +517,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after four successful installs and no assertion failure. The 35-minute rerun
   `41809656855` completed all installs and the installed suite, then reached the
   final seven-case suite before cancellation at 35m08s, again with no installer
-  or assertion failure. The `inactive-parity` job budget is now 90 minutes,
-  pinned by the CI-source test. Test, hook and coverage budgets, case count and
-  assertions are unchanged.
+  or assertion failure. Windows parity is now split into four parallel 25-minute
+  jobs (`mixed`, `repo`, `global`, `original`), pinned by the CI-source test.
+  Test, hook and coverage budgets, case count and assertions are unchanged.
 
 - **P0-00 current-build evidence and smoke follow-ups (#1190).** The
   installed-parity matrix now downloads the current build job's package and

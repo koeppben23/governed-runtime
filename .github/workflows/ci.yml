@@ -105,6 +105,7 @@ jobs:
         regulated_e2e,
         doc-drift,
         inactive-parity,
+        inactive-parity-windows,
       ]
     if: always()
     timeout-minutes: 1
@@ -120,7 +121,8 @@ jobs:
           echo "regulated-e2e: ${{ needs.regulated_e2e.result }}"
           echo "doc-drift: ${{ needs.doc-drift.result }}"
           echo "inactive-parity: ${{ needs.inactive-parity.result }}"
-          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.scripts-windows.result }}" != "success" ] || [ "${{ needs.critical-windows.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.regulated_e2e.result }}" != "success" ] || [ "${{ needs.doc-drift.result }}" != "success" ] || [ "${{ needs.inactive-parity.result }}" != "success" ]; then
+          echo "inactive-parity-windows: ${{ needs.inactive-parity-windows.result }}"
+          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.scripts-windows.result }}" != "success" ] || [ "${{ needs.critical-windows.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.regulated_e2e.result }}" != "success" ] || [ "${{ needs.doc-drift.result }}" != "success" ] || [ "${{ needs.inactive-parity.result }}" != "success" ] || [ "${{ needs.inactive-parity-windows.result }}" != "success" ]; then
             echo "Blocked: a required test or documentation job did not succeed"
             exit 1
           fi
@@ -524,15 +526,13 @@ jobs:
     name: inactive-parity (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: build
-    # Native Windows host setup and 65 real E2E cases take ~36-38 min; run
-    # 41809656855 was cancelled at 35 min during the final 7-case suite after the
-    # 58 installed cases completed. This is a generous job budget only;
-    # test/hook/coverage budgets remain unchanged.
-    timeout-minutes: 90
+    # Linux/macOS run both suites together. Windows is split into parallel
+    # suites below because six real npm installs take ~3.5 min each.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
@@ -585,6 +585,95 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
         with:
           name: inactive-parity-bootstrap-${{ matrix.os }}
+          path: inactive-parity-diagnostics/
+          if-no-files-found: error
+          retention-days: 7
+
+  inactive-parity-windows:
+    name: inactive-parity (windows-latest, ${{ matrix.suite }})
+    runs-on: windows-latest
+    needs: build
+    # Split the slow Windows matrix so each job runs one installer-bearing
+    # subset. Every case/assertion is preserved; Linux/macOS stay combined.
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: mixed
+            file: src/cli/opencode-inactive-installed.smoke.test.ts
+            filter: scoped during live catalogue
+          - suite: repo
+            file: src/cli/opencode-inactive-installed.smoke.test.ts
+            filter: Git=(true|false), scope=repo
+          - suite: global
+            file: src/cli/opencode-inactive-installed.smoke.test.ts
+            filter: Git=(true|false), scope=global
+          - suite: original
+            file: src/cli/opencode-inactive-parity.smoke.test.ts
+            filter: ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Download identical packed product
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
+        with:
+          name: inactive-parity-package
+          path: inactive-parity-package/
+      - name: Install and resolve the exact native candidate executable
+        shell: bash
+        run: |
+          OPENCODE_SPEC=$(node -p "const c = require('./.sdk-baselines/opencode/cli-candidate.json'); c.package + '@' + c.version")
+          npm install -g --prefer-offline --no-audit --no-fund "$OPENCODE_SPEC"
+          OPENCODE_PACKAGE_ROOT="$(npm root -g)" node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const { appendFileSync, existsSync } = require('node:fs');
+          const { join } = require('node:path');
+          const candidate = require('./.sdk-baselines/opencode/cli-candidate.json');
+          const root = join(process.env.OPENCODE_PACKAGE_ROOT, candidate.package);
+          const pkg = require(join(root, 'package.json'));
+          const bin = join(root, typeof pkg.bin === 'string' ? pkg.bin : pkg.bin.opencode);
+          const version = execFileSync(bin, ['--version'], { encoding: 'utf8', timeout: 30000 }).trim();
+          if (version !== `opencode v${candidate.version}`) throw new Error(`Unexpected native host: ${version}`);
+          const tarball = join(process.cwd(), 'inactive-parity-package', `flowguard-core-${require('./package.json').version}.tgz`);
+          if (!existsSync(tarball)) throw new Error(`Missing shared parity artifact: ${tarball}`);
+          appendFileSync(process.env.GITHUB_ENV, `OPENCODE_CLI=${bin}\nFLOWGUARD_TARBALL=${tarball}\n`);
+          NODE
+      - name: Run Windows parity suite ${{ matrix.suite }}
+        shell: bash
+        run: |
+          if [ -n "$SUITE_FILTER" ]; then
+            npx vitest run --no-file-parallelism --project smoke "$SUITE_FILE" -t "$SUITE_FILTER" \
+              --silent=false --reporter=default --reporter=json \
+              --outputFile="inactive-parity-results-$SUITE_NAME.json"
+          else
+            npx vitest run --no-file-parallelism --project smoke "$SUITE_FILE" \
+              --silent=false --reporter=default --reporter=json \
+              --outputFile="inactive-parity-results-$SUITE_NAME.json"
+          fi
+        env:
+          FORCE_COLOR: 0
+          OPENCODE_LIVE: '1'
+          SUITE_FILE: ${{ matrix.file }}
+          SUITE_FILTER: ${{ matrix.filter }}
+          SUITE_NAME: ${{ matrix.suite }}
+          FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR: inactive-parity-diagnostics/${{ matrix.suite }}
+          FLOWGUARD_BOOTSTRAP_PREFIX: inactive-parity-shared-bootstrap-${{ matrix.suite }}
+      - name: Upload installed-parity test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
+        with:
+          name: inactive-parity-results-windows-${{ matrix.suite }}
+          path: inactive-parity-results-${{ matrix.suite }}.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload bootstrap phases and npm diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
+        with:
+          name: inactive-parity-bootstrap-windows-${{ matrix.suite }}
           path: inactive-parity-diagnostics/
           if-no-files-found: error
           retention-days: 7

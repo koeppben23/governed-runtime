@@ -176,12 +176,13 @@ not new-head certification; the restored current-build runs certify the tested
 head. An expired/missing historical artifact must fail, not silently fall back.
 See the
 [bounded diagnostic protocol](./host-probes/opencode-v2/p0-00-inactive-parity.md#bounded-bootstrap-diagnostic-checkpoint).
-The `inactive-parity` Windows job uses a **90-minute job budget**: a current-build
-run was cancelled at 20 minutes midway through the second matrix scope, and a
-35-minute rerun completed the installed suite but was cancelled during the final
-seven-case suite. No installer or assertion failure was reported. This changes
-no test/hook/coverage budget, case count or assertion; all three OS jobs still
-run the same 65 cases.
+Windows parity is split into four **25-minute jobs** (`mixed`, `repo`, `global`,
+`original`) because six real npm installs dominate the runtime. A current-build
+single-job run was cancelled at 20 minutes mid-matrix, and a 35-minute rerun
+completed the installed suite but was cancelled during the final seven-case
+suite; neither reported an installer or assertion failure. The split preserves
+all 65 cases, assertions and test/hook/coverage budgets; Linux/macOS still run
+both suites together.
 
 Coverage CI bounds competing instrumented Vitest workers to two. It still covers
 the complete unit/integration projects with the same 80% gates and 15-second test
