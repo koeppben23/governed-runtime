@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Label the inherited duplicate settlement assertion without implying a second
+  governance-rejection class, and put the current P0-10 status and SHA-scoped
+  evidence boundaries ahead of the retained historical audit checkpoints.
+
 - Adapt the lifecycle artwork proposed in PR #1186 for the V2 README, retaining
   its nine-step layout as an editable SVG. Correct activation (`/start`, not
   `/hydrate`), clarify exhausted-review overrides, and state policy/omission,

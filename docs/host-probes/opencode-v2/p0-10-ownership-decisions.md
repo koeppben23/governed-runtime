@@ -1,6 +1,29 @@
 # P0-10: remaining ownership decisions
 
-Date: 2026-11-04. Inspected HEAD: `7d9560e2638408afa40f02bfa3d9052ef250039f`,
+## Current status and evidence scope — 2026-11-04
+
+Review baseline: **`f048acc0d2782f17424526f6bfbe20b94ca72bc5`** (PR #1190,
+Draft / **NO-GO**). The local follow-up to that baseline explicitly labels the
+inherited duplicate settlement assertion; it proves no separate governance
+rejection class.
+
+| Surface                                       | Current disposition / evidence scope                                                                                                                            |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host classifier                               | Removed in `3c210bae`; nine purposes mapped to exact current-candidate selection, not installed-product certification.                                          |
+| Generic settlement                            | Removed in `6dd00388`; seven purposes run on both artifact routes (14 component cases with real persistence).                                                   |
+| Lifecycle artwork                             | V2-corrected SVG in `f048acc0`; diagram/transition checks are documentation evidence, not product acceptance.                                                   |
+| Four historical rails                         | Still OPEN pending case-by-case current-owner evidence; no callback executor will be reactivated.                                                               |
+| Latest full local tests / coverage            | Settlement working tree incorporated in `6dd00388`: 12,974 passed / 2 skipped; coverage 12,965 passed / 11 skipped. These results do not certify later commits. |
+| ISO publication exclusivity                   | OPEN: earlier Hosted-CI `[0, 0]` observations remain unexplained; later passes establish neither a fix nor a flake.                                             |
+| Default mutation / final installed acceptance | NOT_VERIFIED: `npm run mutation` and final SHA/artifact-bound CLI/Desktop workflow remain required.                                                             |
+| R4                                            | Separate external host-security dependency; BLOCKED / NOT_SUPPORTED under the unchanged untrusted-plugin threat model.                                          |
+
+The historical checkpoints below retain their original identities and scopes.
+This status is not a P0-10 completion claim or final call-path certification.
+
+## Historical audit and follow-ups
+
+Original audit date: 2026-11-04. Inspected HEAD: `7d9560e2638408afa40f02bfa3d9052ef250039f`,
 plus the explicitly described local follow-up. PR #1190 remains Draft / NO-GO.
 This is a bounded source audit, not installed ACTIVE/Desktop acceptance or R4
 certification. The two accepted changes (`167d7c57`, `7d9560e2`) remain closed.
@@ -151,7 +174,7 @@ removed only after those current-owner tests execute successfully.
 | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Keep bindable pending work                         | Exact obligation/attempt re-emitted with required dispatch; persisted state byte-unchanged.                                                                                                                                                                                                                                                                                                                                        |
 | Block output rejection                             | Exact `REVIEW_ATTEMPT_UNAVAILABLE` response and persisted blocked obligation; no reissue, evidence, dispatch or phase change.                                                                                                                                                                                                                                                                                                      |
-| Block governance rejection                         | The original suite used the same `consistency_invalid` fixture for both rejection labels. Both cases remain explicit; no invented second reason contract.                                                                                                                                                                                                                                                                          |
+| Inherited duplicate structured rejection           | The original suite used the same `consistency_invalid` fixture for two labels. The duplicate remains explicitly labelled as such, not as a separate governance or security rejection class.                                                                                                                                                                                                                                        |
 | Block reasonless rejection                         | Same durable closure without relying on a structured rejection marker.                                                                                                                                                                                                                                                                                                                                                             |
 | Preserve fulfilled state                           | Routing returns no new instruction and leaves evidence/attempt/dispatch and state bytes unchanged; canonical continuation is `awaiting_verdict`. The fixture now has mandatory current invocation and completed-release lineage, not the old invalid bare `fulfilled` record. Routing is not evidence certification or verdict approval.                                                                                           |
 | Broken frozen material: zero status mutation       | The old subject-digest mismatch is explicitly rejected at the current persistence schema with unchanged disk bytes. A schema-valid content/digest mismatch also executes both routes: `REVIEW_MATERIAL_INTEGRITY_FAILED`, obligation still pending, no blocked code, byte-unchanged persisted state.                                                                                                                               |

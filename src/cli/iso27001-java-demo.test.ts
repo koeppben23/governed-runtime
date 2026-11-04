@@ -17,6 +17,8 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
+  realpath,
   rm,
   stat,
   symlink,
@@ -58,14 +60,15 @@ const report = {
     { controlRef: { controlId: 'A.8.29' }, status: 'EVIDENCE_MISSING', rules: [{}] },
     { controlRef: { controlId: 'A.8.32' }, status: 'EVIDENCE_LINKED_VERIFIED', rules: [{}] }
   ],
-  reportDigest: '${C}'
+  reportDigest: '${C}',
+  publisher: process.env.FAKE_PUBLISHER || null
 };
 const write = () => {
   if (args.includes('--json')) {
     fs.writeFileSync(output, JSON.stringify(report, null, 2));
   } else {
     const reportDigest = mode === 'mismatch' ? '${D}' : report.reportDigest;
-    fs.writeFileSync(output, '# ISO report\n' + reportDigest + '\n' + report.organization.mappingDigest + '\n' + report.evidencePackage.packageSha256 + '\n');
+    fs.writeFileSync(output, '# ISO report\n' + reportDigest + '\n' + report.organization.mappingDigest + '\n' + report.evidencePackage.packageSha256 + '\nPublisher: ' + report.publisher + '\n');
   }
 };
 const delay = Number(process.env.FAKE_DELAY_MS || 0);
@@ -318,6 +321,112 @@ describe.skipIf(!POSIX)('java demo ISO wrapper', () => {
       ]);
       expect(files[0]).toContain(C);
       expect(files[1]).toContain(C);
+    } finally {
+      await rm(workspace.root, { recursive: true, force: true });
+    }
+  });
+
+  it('traces concurrent native mkdir claims and the winning publication independently of exit observation', async () => {
+    const workspace = await createWorkspace();
+    try {
+      const final = path.join(await realpath(workspace.root), 'reports', SESSION);
+      const bin = path.join(workspace.root, 'bin');
+      const barrier = path.join(workspace.root, 'barrier');
+      const trace = path.join(workspace.root, 'mkdir-claims.jsonl');
+      await mkdir(bin);
+      await mkdir(barrier);
+      const native = spawnSync('bash', ['-c', 'type -P mkdir'], { encoding: 'utf8' });
+      expect(native.status, native.stderr).toBe(0);
+      const nativeMkdir = native.stdout.trim();
+      expect(path.isAbsolute(nativeMkdir)).toBe(true);
+      const tracer = path.join(workspace.root, 'trace-mkdir.cjs');
+      // Test-only scheduling: both publishers reach the reservation before
+      // either calls the REAL mkdir. No production hook, retry or lock substitute.
+      await writeFile(
+        tracer,
+        String.raw`
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+const isClaim = args.length === 1 && args[0] === process.env.CLAIM_TARGET;
+if (isClaim) {
+  fs.writeFileSync(path.join(process.env.CLAIM_BARRIER, process.env.FAKE_PUBLISHER), 'ready');
+  const deadline = Date.now() + 4000;
+  const wait = new Int32Array(new SharedArrayBuffer(4));
+  while (!['publisher-a', 'publisher-b'].every(p => fs.existsSync(path.join(process.env.CLAIM_BARRIER, p)))) {
+    if (Date.now() >= deadline) { process.stderr.write('claim rendezvous expired'); process.exit(99); }
+    Atomics.wait(wait, 0, 0, 5);
+  }
+}
+const result = spawnSync(process.env.NATIVE_MKDIR, args, { encoding: 'utf8' });
+if (isClaim) fs.appendFileSync(process.env.CLAIM_TRACE, JSON.stringify({
+  publisher: process.env.FAKE_PUBLISHER, target: args[0],
+  realParent: fs.realpathSync(path.dirname(args[0])),
+  status: result.status, error: result.error?.message,
+  inode: fs.existsSync(args[0]) ? fs.statSync(args[0]).ino : null,
+}) + '\n');
+if (result.stdout) process.stdout.write(result.stdout);
+if (result.stderr) process.stderr.write(result.stderr);
+process.exit(result.status ?? 99);
+`,
+        'utf8',
+      );
+      await writeFile(
+        path.join(bin, 'mkdir'),
+        '#!/usr/bin/env bash\nexec "$NODE" "$CLAIM_TRACER" "$@"\n',
+      );
+      await chmod(path.join(bin, 'mkdir'), 0o755);
+      const publishers = ['publisher-a', 'publisher-b'];
+      const results = await Promise.all(
+        publishers.map((publisher) =>
+          runWrapperAsync(
+            workspace,
+            ['--session', SESSION, '--output-root', workspace.outputRoot],
+            {
+              PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`,
+              FAKE_PUBLISHER: publisher,
+              NATIVE_MKDIR: nativeMkdir,
+              CLAIM_TARGET: final,
+              CLAIM_BARRIER: barrier,
+              CLAIM_TRACE: trace,
+              CLAIM_TRACER: tracer,
+            },
+          ),
+        ),
+      );
+      const observations = JSON.stringify({ final, publishers, results });
+      expect(existsSync(trace), observations).toBe(true);
+      const claims = (await readFile(trace, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line)) as {
+        publisher: string;
+        target: string;
+        realParent: string;
+        status: number;
+        inode: number;
+      }[];
+      const diagnostic = JSON.stringify({ final, publishers, results, claims });
+      expect(results.map((result) => result.status).sort(), diagnostic).toEqual([0, 1]);
+      expect(claims.map((claim) => claim.status).sort(), diagnostic).toEqual([0, 1]);
+      expect(claims).toHaveLength(2);
+      expect(new Set(claims.map((claim) => claim.target))).toEqual(new Set([final]));
+      expect(new Set(claims.map((claim) => claim.realParent)).size).toBe(1);
+      expect(new Set(claims.map((claim) => claim.inode))).toEqual(
+        new Set([(await stat(final)).ino]),
+      );
+      const winner = claims.find((claim) => claim.status === 0)!.publisher;
+      expect(publishers[results.findIndex((result) => result.status === 0)]).toBe(winner);
+      const json = JSON.parse(await readFile(path.join(final, 'iso27001-report.json'), 'utf8'));
+      expect(json.publisher, diagnostic).toBe(winner);
+      expect(await readFile(path.join(final, 'iso27001-report.md'), 'utf8')).toContain(
+        `Publisher: ${winner}\n`,
+      );
+      expect(results.find((result) => result.status === 1)!.stderr).toContain(
+        'refusing to overwrite',
+      );
+      expect(await readdir(workspace.outputRoot)).toEqual([SESSION]);
     } finally {
       await rm(workspace.root, { recursive: true, force: true });
     }

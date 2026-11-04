@@ -254,7 +254,7 @@ describe.each<Family>(['plan', 'architecture'])(
       await rejectsWithoutRepair('consistency_invalid');
     });
 
-    it('blocks after governance rejection (the original identical structured-reason case)', async () => {
+    it('retains the inherited duplicate structured-rejection assertion (not a separate governance class)', async () => {
       await rejectsWithoutRepair('consistency_invalid');
     });
 
