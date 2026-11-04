@@ -195,10 +195,6 @@ jobs:
           SUITE_NAME: ${{ matrix.suite }}
           FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR: inactive-parity-diagnostics/${{ matrix.suite }}
           FLOWGUARD_BOOTSTRAP_PREFIX: inactive-parity-shared-bootstrap-${{ matrix.suite }}
-          # Same-VM control in run 41849104623 measured 17s npm unpack here,
-          # versus 206–249s in the inherited system temp. Keep real installs.
-          TEMP: ${{ runner.temp }}
-          TMP: ${{ runner.temp }}
       - name: Upload installed-parity test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2

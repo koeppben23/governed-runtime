@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -11,6 +13,7 @@ const workflow = parse(
     string,
     {
       name?: string;
+      'runs-on'?: string | string[];
       needs?: string | string[];
       if?: string;
       'timeout-minutes'?: number;
@@ -22,6 +25,8 @@ const workflow = parse(
       };
       steps: {
         name?: string;
+        uses?: string;
+        shell?: string;
         run?: string;
         if?: string;
         env?: Record<string, string>;
@@ -30,6 +35,9 @@ const workflow = parse(
     }
   >;
 };
+const prepareNode = parse(
+  readFileSync(new URL('../.github/actions/prepare-node/action.yml', import.meta.url), 'utf8'),
+) as { runs: { steps: (typeof workflow)['jobs'][string]['steps'] } };
 function requiredJob(id: string) {
   const job = workflow.jobs[id];
   if (!job) throw new TypeError(`Missing CI job: ${id}`);
@@ -89,6 +97,7 @@ describe('required ci-gate documentation enforcement', () => {
           steps?: Array<{
             id?: string;
             name?: string;
+            uses?: string;
             run?: string;
             if?: string;
             env?: Record<string, string>;
@@ -111,10 +120,11 @@ describe('required ci-gate documentation enforcement', () => {
     const parity = windowsSteps.find((step) => step.id === 'windows-parity');
     expect(parity).toBeDefined();
     expect(parity?.env).toMatchObject({
-      TEMP: '${{ runner.temp }}',
-      TMP: '${{ runner.temp }}',
       FLOWGUARD_BOOTSTRAP_PREFIX: 'inactive-parity-shared-bootstrap-${{ matrix.suite }}',
     });
+    expect(parity?.env).not.toHaveProperty('TEMP');
+    expect(parity?.env).not.toHaveProperty('TMP');
+    expect(windowsSteps.some((step) => step.uses === './.github/actions/prepare-node')).toBe(true);
     expect(parity?.['continue-on-error']).toBeUndefined();
     expect(source).not.toContain('inactive-parity-volume-control');
     expect(acceptance.jobs['inactive-parity-windows']?.strategy?.matrix?.include).toEqual([
@@ -135,6 +145,93 @@ describe('required ci-gate documentation enforcement', () => {
       },
       { suite: 'original', file: 'src/cli/opencode-inactive-parity.smoke.test.ts', filter: '' },
     ]);
+  });
+  it('prepares runner temp before every Windows test job without changing non-Windows environments', () => {
+    const temp = prepareNode.runs.steps.find(
+      (step) => step.name === 'Use runner temporary directory on Windows',
+    );
+    expect(temp).toMatchObject({
+      if: "runner.os == 'Windows'",
+      shell: 'bash',
+      env: { TEST_TEMP: '${{ runner.temp }}' },
+    });
+    expect(prepareNode.runs.steps.indexOf(temp!)).toBeLessThan(
+      prepareNode.runs.steps.findIndex((step) => step.run === 'npm ci'),
+    );
+    const windowsJobs: string[] = [];
+    const directory = new URL('../.github/workflows/', import.meta.url);
+    for (const file of readdirSync(directory).filter((name) => /\.ya?ml$/.test(name))) {
+      const parsed = parse(readFileSync(new URL(file, directory), 'utf8')) as typeof workflow;
+      for (const [id, job] of Object.entries(parsed.jobs)) {
+        if (!JSON.stringify([job['runs-on'], job.strategy?.matrix]).includes('windows-')) continue;
+        windowsJobs.push(`${file}:${id}`);
+        const shared = job.steps.findIndex(
+          (step) => step.uses === './.github/actions/prepare-node',
+        );
+        const local = job.steps.findIndex((step) => step.name === temp?.name);
+        const prepared = shared >= 0 ? shared : local;
+        expect(
+          prepared,
+          `${file}:${id} must prepare Windows temporary directories`,
+        ).toBeGreaterThanOrEqual(0);
+        expect(prepared).toBeLessThan(
+          job.steps.findIndex((step, index) => step.run !== undefined && index !== local),
+        );
+        if (shared < 0) expect(job.steps[local]).toEqual(temp);
+        for (const step of job.steps) {
+          expect(step.env ?? {}).not.toHaveProperty('TEMP');
+          expect(step.env ?? {}).not.toHaveProperty('TMP');
+        }
+      }
+    }
+    expect(windowsJobs.sort()).toEqual([
+      'ci.yml:architecture-windows',
+      'ci.yml:critical-windows',
+      'ci.yml:install',
+      'ci.yml:install-verify',
+      'ci.yml:scripts-windows',
+      'opencode-parity.yml:inactive-parity-windows',
+      'release.yml:release-smoke',
+    ]);
+  });
+
+  it('exports literal Windows temp paths through GITHUB_ENV, including spaces and backslashes', () => {
+    const temp = prepareNode.runs.steps.find(
+      (step) => step.name === 'Use runner temporary directory on Windows',
+    );
+    const root = mkdtempSync(join(tmpdir(), 'fg-windows-test-env-'));
+    try {
+      const envFile = join(root, 'github-env');
+      const windowsPath = 'D:\\a\\_temp\\literal path & data';
+      const result = spawnSync('bash', ['-c', temp!.run!], {
+        encoding: 'utf8',
+        env: { ...process.env, TEST_TEMP: windowsPath, GITHUB_ENV: envFile },
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(envFile, 'utf8')).toBe(`TEMP=${windowsPath}\nTMP=${windowsPath}\n`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it('rejects a missing runner temp rather than exporting empty Windows paths', () => {
+    const temp = prepareNode.runs.steps.find(
+      (step) => step.name === 'Use runner temporary directory on Windows',
+    );
+    const root = mkdtempSync(join(tmpdir(), 'fg-missing-windows-test-env-'));
+    try {
+      const envFile = join(root, 'github-env');
+      const result = spawnSync('bash', ['-c', temp!.run!], {
+        encoding: 'utf8',
+        env: { ...process.env, TEST_TEMP: '', GITHUB_ENV: envFile },
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('Runner temporary directory is required');
+      expect(() => readFileSync(envFile, 'utf8')).toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
   it('serializes critical Windows unit workers without dropping suites or changing PERF budgets', () => {
     const commands = requiredJob('critical-windows').steps.flatMap((step) =>

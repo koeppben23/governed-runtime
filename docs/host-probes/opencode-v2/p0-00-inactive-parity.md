@@ -570,8 +570,12 @@ the same Windows VM and use the same npm cache; the control records
 | Inherited system temp (`C:\Users\RUNNER~1\AppData\Local\Temp`) | 232,048 / 206,460 ms        | 284,294 / 249,094 ms          | 2/2 PASS    |
 | Runner temp (`D:\a\_temp`)                                     | 53,456 / 17,345 ms          | 45,568 / 17,368 ms            | 2/2 PASS    |
 
-This supports a bounded CI-harness correction: the Windows parity step sets
-`TEMP` and `TMP` to `runner.temp` for all four shards. Every arm still performs
+This supports a bounded CI-harness correction: Windows test preparation exports
+`TEMP` and `TMP` as `runner.temp`, inherited by all four parity shards. The
+existing Node preparation action owns the shared setting; release smoke uses
+the same Windows-only export with its existing Node setup. The full job inventory
+and verification limits are in [Testing Strategy](../../testing-strategy.md).
+Every arm still performs
 its real installation and every existing case/assertion remains; the product,
 package-manager choice, npm cache, bootstrap algorithm and timeouts are unchanged.
 The now-completed extra control step is removed, not kept as a second acceptance

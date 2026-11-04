@@ -185,13 +185,38 @@ Windows parity is split into four **25-minute jobs** (`mixed`, `repo`, `global`,
 `41829567943` passes all 65 executed cases across the split jobs, 0 failed.
 Because this is acceptance evidence rather than per-PR feedback, the full matrix
 now lives in the separate manual/nightly/label-triggered workflow and is not a required PR gate.
-The Windows test step uses `runner.temp` for `TEMP`/`TMP` after the same-VM
+Windows test preparation uses `runner.temp` for `TEMP`/`TMP` after the same-VM
 comparison in run `41849104623` localized a large unpack-time difference between
 system-temp and runner-temp fixtures. The completed extra control step is removed.
 This fixture-location correction preserves all 65 cases, real installer calls,
 assertions and current test/hook/coverage budgets; it is not a product fix or an
 antivirus/disk root-cause claim. See the
 [volume-control evidence](./host-probes/opencode-v2/p0-00-inactive-parity.md#executed-volume-control-on-e2b25677).
+
+All current Windows test jobs inherit this setting before dependency installation
+and test execution. The existing `.github/actions/prepare-node` action exports
+it through `GITHUB_ENV` only when `runner.os == 'Windows'`. Release smoke retains
+its existing Node setup and exports the same setting in a Windows-only step.
+The seven workflow job definitions covered are:
+
+- `ci.yml`: `scripts-windows`, `critical-windows`, `architecture-windows`,
+  `install-verify` and `install` (the last two have Windows matrix legs).
+- `opencode-parity.yml`: all four `inactive-parity-windows` shards.
+- `release.yml`: the Windows `release-smoke` matrix leg, which runs the same
+  install-verify smoke file as CI.
+
+`install-verify.smoke.test.ts` and the scripts/state/hook/architecture fixtures
+use `os.tmpdir()` or directories derived from it, so changing the CI environment
+does not require rewriting their test helpers. The regular `install` job already
+installs into the checkout; its subprocess temporary files now inherit runner
+temp as well. Explicit isolated directories and negative path fixtures remain
+unchanged. CI-source tests enumerate every Windows-capable job, require setup
+before its commands, and execute the environment export with literal Windows
+paths containing spaces/backslashes. Linux/macOS and local test environments are
+not changed. Only parity has measured before/after runtime evidence: this
+configuration change does not attribute earlier failures or prove speedups in
+the other jobs. Hosted verification of those jobs remains required; no release
+tag or publishing workflow is triggered just to test this change.
 
 Coverage CI bounds competing instrumented Vitest workers to two. It still covers
 the complete unit/integration projects with the same 80% gates and 15-second test

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Apply runner-temp preparation to every current Windows CI test job through
+  the existing Node preparation action and a Windows-only release-smoke step.
+  Remove the redundant parity-only override, retain Linux/macOS/local defaults,
+  and guard workflow-wide coverage plus literal Windows-path export in tests.
+  No assertions, test selection, npm cache or time budgets change; measured
+  runtime evidence remains limited to parity, not other Windows jobs.
+
 - Use GitHub's runner temporary directory for all Windows installed-parity
   fixtures after same-VM control run `41849104623` measured npm unpack at 17s
   there versus 206–249s in system temp. Remove the completed extra control;
