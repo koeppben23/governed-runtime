@@ -338,9 +338,12 @@ is explicit generation 6 (`native_subagent_message_json`) with
 **Provenance limit:** the receipt binds the exact child, owning assistant, call,
 tool input and terminal status. It does not attest the final consumed tool-result
 representation after host normalization, truncation or transport mapping.
-Privileged host plugin hooks remain outside this assurance boundary; the
-unprivileged reachability of such a change is **NOT_VERIFIED**. No current
-receipt should be described as tool-result-byte attestation. See the
+Co-installed plugins remain untrusted: their mutable Context/HTTP paths are an
+unclosed requirement, not a trusted-host exclusion. The bounded investigation
+classifies final-input integrity as **NOT_SUPPORTED** by the public OpenCode
+2.2.4 APIs; R4 remains **BLOCKED**, without a new runtime bypass or policy
+exception. Unprivileged hook-installation reachability is **NOT_VERIFIED**. No
+current receipt should be described as tool-result-byte attestation. See the
 [R4 result-boundary report](./host-probes/opencode-v2/reviewer-tool-result-evidence.md)
 and [WS2 closure/parity backlog](./host-probes/opencode-v2/ws2-closure.md).
 

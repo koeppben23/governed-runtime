@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Document the bounded R4 feasibility result for OpenCode 2.2.4: final reviewer
+  input integrity against untrusted co-installed plugins is `NOT_SUPPORTED` by
+  the public host APIs. Identify HTTP/WebSocket/SDK handoffs and required
+  host-side enforcement; the six unchanged diagnostics retain two successful
+  replacement counterexamples. R4 remains BLOCKED with no runtime or trust-model
+  change.
+
 - Native `/approve`, `/override-approve`, `/request-changes`, `/reject` and
   `/review-decision` execute the canonical decision rail without prompting a
   model. Their scoped operations bind action, rationale, state, policy, worktree

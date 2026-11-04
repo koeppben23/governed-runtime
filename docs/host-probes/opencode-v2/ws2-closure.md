@@ -57,7 +57,14 @@ representation. Follow-up native diagnostics reproduce replacement by a later
 dynamic context hook and by `http.request` while V6 evidence still fulfills.
 These require installed plugin privileges, not merely caller text. Under the
 operator's untrusted-co-installed-plugin model they remain R4 blockers, not
-trusted-host exclusions; see the [R4 report](./reviewer-tool-result-evidence.md#follow-up-reachable-plugin-residuals-2026-11-03).
+trusted-host exclusions; see the [R4 report](./reviewer-tool-result-evidence.md#bounded-feasibility-conclusion-2026-11-04).
+
+The bounded 2026-11-04 source/API investigation classifies the required
+final-input integrity as **NOT_SUPPORTED** on OpenCode 2.2.4's public contract.
+Internal HTTP/WebSocket send boundaries are not protected plugin validators;
+SDK substitution also prevents an all-provider guarantee. The six unchanged
+diagnostics still reproduce two accepted-evidence replacements. This does not
+close R4 or change runtime behavior, trust assumptions or review requirements.
 
 FlowGuard therefore must not describe the terminal receipt as proof of the exact
 tool-result bytes consumed by the model. A future final-consumption attestation

@@ -107,6 +107,14 @@ failing (132 native smoke PASS / 1 FAIL / 3 conditional skips). That result is
 retained as historical evidence, not the current P0-05 status. Finding 6 as a
 whole remains **BLOCKED**, and PR #1190 remains **NO-GO**.
 
+**R4 feasibility update (2026-11-04, product source `94194531`):** the
+[bounded pinned-host investigation](./reviewer-tool-result-evidence.md#bounded-feasibility-conclusion-2026-11-04)
+finds final-input integrity **NOT_SUPPORTED** by the public OpenCode 2.2.4 APIs
+under the unchanged untrusted-co-installed-plugin contract. Six unchanged
+diagnostics pass as tests, including two still-successful replacement
+counterexamples. R4 remains BLOCKED; this adds no runtime exception and neither
+closes P0-00 nor establishes installed Desktop/CLI acceptance.
+
 ## Governance failure versus an uncontrolled host effect
 
 1. Keep native operation unrestricted when FlowGuard is absent or INACTIVE.

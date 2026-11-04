@@ -1,8 +1,149 @@
 # R4: native tool-result representation boundary
 
-2026-11-02 research, updated 2026-11-03, PR #1190. **Bounded correction and
-remaining native counterexamples, not complete R4 acceptance. R4 is open;
-Finding 6 remains BLOCKED / ACTIVE V2 NO-GO.**
+2026-11-02 research, updated 2026-11-04, PR #1190. **R4 final-input integrity
+under the untrusted-co-installed-plugin contract is NOT_SUPPORTED by the public
+OpenCode 2.2.4 APIs. This is a feasibility finding, not R4 acceptance or a new
+runtime status. Finding 6 remains BLOCKED / ACTIVE V2 NO-GO.**
+
+## Bounded feasibility conclusion (2026-11-04)
+
+**Result: NOT_SUPPORTED on the pinned public host contract.** OpenCode has
+internal send boundaries, but FlowGuard has no host-reserved, non-bypassable
+integrity check there. The presence of an internal final send is not a public
+plugin capability. No production code, tail hook, digest, verifier, test outcome,
+provider/model selection or trust assumption is changed by this investigation.
+The undesired evidence fulfillment in the counterexamples remains reproducible;
+this documentation does not add a runtime refusal for those paths.
+
+### Evidence and pin
+
+- FlowGuard source/build: `9419453196c9a14ec7437c0ded72ff7722c27e86`.
+- Executed host: `/opt/homebrew/bin/opencode`, reporting `opencode v2.2.4`;
+  the existing fixture enforces that exact version. Node: `22.22.2`.
+- Re-fetched source: OpenCode release commit
+  [`45898d0f8569225eb1ddb4ee13f8581b34dff311`](https://github.com/anomalyco/opencode/commit/45898d0f8569225eb1ddb4ee13f8581b34dff311)
+  (`release: v2.2.4`). Source conclusions below refer to this commit, not current
+  upstream HEAD. Version matching is not a reproducible binary-build attestation.
+- The [V2 server-plugin documentation](https://opencode.ai/v2/docs/build/plugins/server)
+  describes mutable request hooks and ordering, not a protected final verifier.
+  The pinned source and installed `@opencode/plugin@2.2.4` declarations were
+  checked rather than assuming the live documentation is version-frozen.
+
+### Last exposed mutation versus actual send
+
+These are the last **supported hook** mutation points on the inspected paths,
+not a claim that arbitrary code in the server process cannot mutate anything
+later. Co-installed plugins remain untrusted for reviewer integrity.
+
+1. **Shared hook dispatch:**
+   [`plugin/hooks.ts:69–95`](https://github.com/anomalyco/opencode/blob/45898d0f8569225eb1ddb4ee13f8581b34dff311/packages/core/src/plugin/hooks.ts#L69-L95)
+   appends registrations and passes the same event through callbacks in order.
+   It returns that event without sealing it. The public
+   [`ModelHooks` contract](https://github.com/anomalyco/opencode/blob/45898d0f8569225eb1ddb4ee13f8581b34dff311/packages/plugin/src/promise/registration.ts#L1-L19)
+   offers registration/disposal and provider scoping, not an exclusive last
+   observer, immutable receipt or protected veto. Registering another tail does
+   not reserve the last position against future registrations.
+2. **Native HTTP:** context processing is followed by media shaping and
+   `model.request` in
+   [`model-request.ts:263–333`](https://github.com/anomalyco/opencode/blob/45898d0f8569225eb1ddb4ee13f8581b34dff311/packages/core/src/session/model-request.ts#L263-L333).
+   After protocol lowering, `http.request` callbacks may replace the web
+   `Request`. Only after **all** callbacks return does
+   [`model-request.ts:334–364`](https://github.com/anomalyco/opencode/blob/45898d0f8569225eb1ddb4ee13f8581b34dff311/packages/core/src/session/model-request.ts#L334-L364)
+   construct the private `sent` request and call `handler(sent)`. The native
+   [`executor.ts:229–246`](https://github.com/anomalyco/opencode/blob/45898d0f8569225eb1ddb4ee13f8581b34dff311/packages/ai/src/route/executor.ts#L229-L246)
+   hands it to `http.execute`. FlowGuard cannot register a protected check between
+   final construction and that handoff. `http.response` runs after sending and
+   carries `before.request`, not a host-origin attestation of private `sent`;
+   its TypeScript `readonly request` is neither a pre-send gate nor a runtime seal.
+3. **Session WebSocket:**
+   [`model-request.ts:366–391`](https://github.com/anomalyco/opencode/blob/45898d0f8569225eb1ddb4ee13f8581b34dff311/packages/core/src/session/model-request.ts#L366-L391)
+   forwards `experimental.ws.send`'s replaceable `frame` to the transport.
+   [`model-transport.ts:370–392`](https://github.com/anomalyco/opencode/blob/45898d0f8569225eb1ddb4ee13f8581b34dff311/packages/core/src/session/model-transport.ts#L370-L392)
+   runs that interceptor after driver frame creation, then sends its returned
+   string through `connection.sendText`; the connector calls
+   [`ws.send(message)`](https://github.com/anomalyco/opencode/blob/45898d0f8569225eb1ddb4ee13f8581b34dff311/packages/ai/src/route/transport/websocket.ts#L285-L307).
+   This is the last exposed frame rewrite, not an exclusive validator. Stateful
+   continuation/checkpoint and HTTP fallback also preclude treating a single
+   context snapshot as universal wire proof.
+4. **AI-SDK routes:** the public
+   [`sdk`/`language` hooks](https://github.com/anomalyco/opencode/blob/45898d0f8569225eb1ddb4ee13f8581b34dff311/packages/plugin/src/promise/aisdk.ts)
+   can substitute provider objects. The host ultimately calls
+   [`language.doStream(options)`](https://github.com/anomalyco/opencode/blob/45898d0f8569225eb1ddb4ee13f8581b34dff311/packages/core/src/aisdk.ts#L711-L723).
+   When an SDK uses the host-supplied fetch, the HTTP middleware delegates to
+   the selected `send` function in
+   [`aisdk.ts:122–224`](https://github.com/anomalyco/opencode/blob/45898d0f8569225eb1ddb4ee13f8581b34dff311/packages/core/src/aisdk.ts#L122-L224).
+   A substituted language implementation is not publicly required to use that
+   fetch. Hence neither `http.request` nor an SDK wrapper establishes an
+   all-provider mandatory final boundary. This is source evidence, not a new
+   executed SDK-bypass probe.
+
+### Six unchanged native controls
+
+Reran `src/cli/opencode-reviewer-tool-result-live.smoke.test.ts` with its helpers
+and assertions unchanged on the built source above: **6 passed, 0 failed,
+0 skipped** (22.19 seconds). Interpretation remains deliberately asymmetric:
+
+| Controls                                         | Count | Result                                                                                                                                                                         |
+| ------------------------------------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `observe`                                        | 1     | Original read correlates across After, terminal event, History, Context and fixture-provider request.                                                                          |
+| `after-mutation`, `truncate`, `context-mutation` | 3     | Existing bounded protections reject before the replacement marker reaches the provider; no invocation or serialization.                                                        |
+| `dynamic-context-mutation`, `http-mutation`      | 2     | **Counterexamples persist:** replacement marker reaches the fixture provider, History retains the original, one serialization binds an invocation and the obligation fulfills. |
+
+This is a diagnostic runner PASS and an **R4 assurance failure**. It proves
+fixture-provider reception on the exercised text/HTTP path, not internal model
+consumption, unprivileged hook installation, all-provider/media coverage or
+WebSocket rejection. Component-seeded activation is not installed operator
+acceptance. Reproduction (build first; never rebuild during a native run):
+
+```sh
+npm run build
+OPENCODE_LIVE=1 OPENCODE_CLI=/opt/homebrew/bin/opencode \
+  npx vitest run --project smoke \
+  src/cli/opencode-reviewer-tool-result-live.smoke.test.ts
+```
+
+### Required host-side extension, not a proposed plugin workaround
+
+A usable host contract would need all of the following; these capabilities do
+**not** exist in the inspected public 2.2.4 API:
+
+- A host-owned validation/send transaction after every plugin transformation,
+  host normalization/truncation, protocol/body overlay and transport lowering.
+  The validator must see an owned immutable snapshot, and the host must send
+  exactly that accepted snapshot with no subsequent plugin rewrite or retained
+  mutable alias (no check/send race).
+- A protected capability to deny dispatch before any bytes/frame are sent;
+  ordinary plugins must not remove, reorder, replace or bypass that validator.
+  Identical enforcement must cover retries, continuations, WebSocket full/delta
+  frames, reconnects, HTTP fallback and SDK/custom transports. Opaque routes
+  without this guarantee must be explicitly unsupported, not silently exempted.
+- Host-origin lineage and a verifiable mapping from the canonical terminal tool
+  result to the outgoing representation: session/child, owning assistant/tool
+  call, model/provider, request/step, transport and any continuation base. A
+  post-send receipt must distinguish accepted snapshot, attempted send and
+  confirmed delivery; none alone proves a provider's internal model consumption.
+- A documented enforcement/isolation boundary for untrusted plugin code. A new
+  ordinary hook or a frozen object alone cannot protect a verifier against
+  arbitrary same-process code. The host must state and enforce which plugin
+  capabilities are confined; this investigation does not establish such isolation.
+
+No host patch or upstream issue is created here. R4 remains **BLOCKED** until
+such a contract is implemented and verified against the retained counterexamples
+and applicable transport paths. `NOT_SUPPORTED` is not an optional-review mode,
+human-reviewer substitution, policy exception, provider restriction or permission
+to trust co-installed plugins. P0-00 INACTIVE parity and installed Desktop/CLI
+acceptance remain independent, unfinished gates; PR #1190 stays Draft / NO-GO.
+
+**NOT_VERIFIED in this documentation-only investigation:** new host enforcement
+(requires the host extension), native SDK/WebSocket/media adversarial coverage,
+installed Desktop/CLI acceptance, and full regression/coverage/default mutation
+reruns (`npm test`, `npm run test:coverage:ci`, `npm run mutation`). The six
+unchanged diagnostics do not substitute for those checks.
+
+## Earlier bounded correction and counterexamples
+
+The dated sections below retain earlier observations and check results. They are
+historical evidence, not additional verification of the feasibility conclusion.
 
 ## R4 correction (2026-11-03, #1169 WS4)
 
