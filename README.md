@@ -61,6 +61,13 @@ Three governed flows are available after `/start`:
 
 **Ticket flow** — full development lifecycle:
 
+![FlowGuard's intended human-gated ticket lifecycle: independently reviewed plan, approval, baseline validation, implementation, fresh verification, independent review, evidence approval and persisted export. V2 acceptance and R4 reviewer-input integrity remain blocked.](./docs/assets/development-lifecycle.svg)
+
+The diagram shows the standard full-ceremony, human-gated path, not completed V2
+acceptance. `/start` activates governance; `/hydrate` does not. Policy-authorized
+autonomy and reduced ceremony are separate paths. R4 remains an unresolved host
+integrity dependency; a native command alone does not prove human identity.
+
 1. `/start` — start governance and bootstrap the session
 2. `/task "description"` — capture your governed task
 3. `/plan` — generate an implementation plan (subagent-reviewed iteratively)

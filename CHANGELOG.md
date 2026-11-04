@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Adapt the lifecycle artwork proposed in PR #1186 for the V2 README, retaining
+  its nine-step layout as an editable SVG. Correct activation (`/start`, not
+  `/hydrate`), clarify exhausted-review overrides, and state policy/omission,
+  human-provenance and unresolved R4/acceptance boundaries explicitly. Regression
+  tests bind every displayed phase and transition to the canonical state machine.
+
 - Retire the unused generic review-obligation settlement executor after porting
   its seven assertion purposes to live plan and architecture continuation routes
   with real persistence (14 cases). Missing attempts close deterministically;
