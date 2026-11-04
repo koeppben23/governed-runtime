@@ -54,14 +54,15 @@ describe('native candidate host resolver', () => {
     });
     expect(nativeOpenCodeCandidate.version).toBe(sdk.packages['@opencode/client']);
     expect(nativeOpenCodeCandidate.version).toBe(sdk.packages['@opencode/plugin']);
-    const workflow = readFileSync(
-      new URL('../../.github/workflows/ci.yml', import.meta.url),
-      'utf8',
-    );
+    const workflows = ['ci.yml', 'opencode-parity.yml']
+      .map((file) =>
+        readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), 'utf8'),
+      )
+      .join('\n');
     expect(
-      workflow.match(/require\('\.\/\.sdk-baselines\/opencode\/cli-candidate\.json'\)/g),
+      workflows.match(/require\('\.\/\.sdk-baselines\/opencode\/cli-candidate\.json'\)/g),
     ).toHaveLength(8);
-    expect(workflow).not.toContain('opencode-ai@');
+    expect(workflows).not.toContain('opencode-ai@');
   });
 
   it('requires an explicit binary to report the exact native version', () => {
