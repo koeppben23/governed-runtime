@@ -524,7 +524,10 @@ jobs:
     name: inactive-parity (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: build
-    timeout-minutes: 20
+    # Native Windows host setup and 65 real E2E cases take ~30-32 min (run 41806050855
+    # was cancelled at 20 min midway through the second matrix scope). This is a job
+    # budget only; test/hook/coverage budgets remain unchanged.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:

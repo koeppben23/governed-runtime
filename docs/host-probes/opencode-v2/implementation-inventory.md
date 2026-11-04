@@ -109,13 +109,16 @@ Retained npm logs on run `41801596586` attribute the installer ENOENT to Node's
 `pathToFileURL` encoding `~` as `%7E` on Windows 8.3 short-name paths; npm then
 opens the literal encoded directory. Upstream `0e3568f0` now emits an unencoded
 `file:../vendor/...` spec relative to the staging root, with a real-npm test for
-`~`, spaces and `#`. This product portability fix still requires Windows
-re-execution. The joint bootstrap mechanism remains NOT_VERIFIED; no governance
-regression is established. Linux/macOS each pass 65/65 in this diagnostic run;
-local reuse passes 65/65 with one npm install. Upstream `78298e2a` adds an exact
-transient retry for the separate macOS `ServiceUnavailableError`
-("Location plugins did not finish activating") finding; its macOS re-execution
-is still pending. See the
+`~`, spaces and `#`. Current-build run `41806050855` installs through that path
+on Windows without installer errors, but its 20-minute job limit cancels the
+matrix midway through the second scope; observed timings project 30–32 minutes.
+The job budget is now 35 minutes, with no test/hook/coverage budget or assertion
+change. The joint bootstrap mechanism remains NOT_VERIFIED; no governance
+regression is established. Linux/macOS each pass 65/65 in this run; local reuse
+passes 65/65 with one npm install. Upstream `78298e2a` adds an exact transient
+retry for the macOS `ServiceUnavailableError` ("Location plugins did not finish
+activating") finding; the current-build macOS matrix now passes 65/65. Windows
+remains BLOCKED until its 35-minute matrix executes and passes. See the
 [diagnostic results](./p0-00-inactive-parity.md#executed-hosted-diagnostic-on-82a490aa).
 
 This section describes the subsequent native API implementation and local

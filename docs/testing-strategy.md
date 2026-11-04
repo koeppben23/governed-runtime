@@ -171,6 +171,11 @@ not new-head certification; the restored current-build runs certify the tested
 head. An expired/missing historical artifact must fail, not silently fall back.
 See the
 [bounded diagnostic protocol](./host-probes/opencode-v2/p0-00-inactive-parity.md#bounded-bootstrap-diagnostic-checkpoint).
+The `inactive-parity` Windows job uses a **35-minute job budget**: a current-build
+run was cancelled at 20 minutes midway through the second matrix scope after four
+successful installs and no assertion failure, and the observed case timings
+project 30–32 minutes. This changes no test/hook/coverage budget, case count or
+assertion; all three OS jobs still run the same 65 cases.
 
 Coverage CI bounds competing instrumented Vitest workers to two. It still covers
 the complete unit/integration projects with the same 80% gates and 15-second test

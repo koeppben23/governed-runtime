@@ -101,8 +101,12 @@ literal encoded directory. Upstream `0e3568f0` now emits an unencoded
 `file:../vendor/...` spec relative to the staging root; a real-npm test covers
 `~`, spaces and `#`, and Windows must re-execute on the current build.
 Linux/macOS each pass 65/65; the joint bootstrap
-mechanism remains NOT_VERIFIED. No dependency, assertion or budget changes. The
-intervening macOS activation failure on `a38dd3a7` is retained
+mechanism remains NOT_VERIFIED. On current-build run `41806050855`, Windows is
+cancelled at the 20-minute job limit midway through the second matrix scope
+after four successful installs and no assertion failure; observed timings
+project 30–32 minutes. The job budget is now 35 minutes with no test/hook/
+coverage budget, case-count or assertion change. Windows remains BLOCKED until
+that run passes. The intervening macOS activation failure on `a38dd3a7` is retained
 separately in the [executed diagnostic results](./p0-00-inactive-parity.md#executed-hosted-diagnostic-on-82a490aa).
 
 ### P0-05 / P0-08 evidence breakdown (2026-11-03)

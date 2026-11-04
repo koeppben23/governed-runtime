@@ -498,6 +498,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Windows P0-00 execution budget.** Current-build run `41806050855` was
+  cancelled at the 20-minute job limit midway through the second matrix scope
+  after four successful installs and no assertion failure; observed timings
+  project 30–32 minutes for all 65 Windows cases. The `inactive-parity` job
+  budget is now 35 minutes, pinned by the CI-source test. Test, hook and coverage
+  budgets, case count and assertions are unchanged.
+
 - **P0-00 current-build evidence and smoke follow-ups (#1190).** The
   installed-parity matrix now downloads the current build job's package and
   checksum instead of the historical diagnostic artifact; `pwsh` is declared as
