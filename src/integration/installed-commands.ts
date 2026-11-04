@@ -11,6 +11,7 @@
  */
 
 import { Command } from '../machine/commands.js';
+import { NATIVE_CHECK_COMMAND } from '../shared/flowguard-identifiers.js';
 import {
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHITECTURE,
@@ -53,7 +54,7 @@ export type InstalledCommandId =
   | 'variant.override-approve'
   | 'variant.request-changes'
   | 'variant.reject'
-  | 'alias.check'
+  | 'operational.check'
   | 'workflow.export'
   | 'alias.why'
   | 'operational.finish'
@@ -89,11 +90,20 @@ export interface InstalledCommandDefinition {
   readonly templateFile: `${string}.md` | null;
   readonly invocation: `/${string}`;
   readonly kind: 'workflow' | 'operational' | 'preferred_name' | 'action_variant' | 'convenience';
-  readonly target: Readonly<{
-    toolName: ToolName;
-    fixedArgs?: Readonly<Record<string, unknown>>;
-    workflowCommand?: Command;
-  }>;
+  readonly target: Readonly<
+    | {
+        toolName: ToolName;
+        fixedArgs?: Readonly<Record<string, unknown>>;
+        workflowCommand?: Command;
+        nativeCommand?: never;
+      }
+    | {
+        nativeCommand: typeof NATIVE_CHECK_COMMAND;
+        toolName?: never;
+        fixedArgs?: never;
+        workflowCommand?: never;
+      }
+  >;
   readonly visibility: 'primary' | 'visible_alias' | 'compatibility';
   readonly presentationGroup: PresentationGroup;
   /** Presentation copy for operational interfaces. */
@@ -150,12 +160,12 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     id: 'workflow.continue',
     templateFile: 'continue.md',
     invocation: '/continue',
-    kind: 'workflow',
-    target: { toolName: TOOL_FLOWGUARD_CONTINUE, workflowCommand: Command.CONTINUE },
+    kind: 'operational',
+    target: { toolName: TOOL_FLOWGUARD_CONTINUE },
     visibility: 'compatibility',
     presentationGroup: 'work',
     description:
-      'Compatibility routing surface: advances the workflow on explicit request. Not workflow guidance.',
+      'Read-only routing: report the canonical next action without executing checks, reviews or transitions.',
   },
   {
     id: 'workflow.implement',
@@ -326,15 +336,15 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     intent: 'reject',
   },
   {
-    id: 'alias.check',
+    id: 'operational.check',
     templateFile: null,
     invocation: '/check',
-    kind: 'preferred_name',
-    target: { toolName: TOOL_FLOWGUARD_RUN_CHECK, workflowCommand: Command.VALIDATE },
+    kind: 'operational',
+    target: { nativeCommand: NATIVE_CHECK_COMMAND },
     visibility: 'compatibility',
     presentationGroup: 'verify',
     description:
-      'Compatibility surface: records verification results when explicitly requested. Validation runs automatically. Not workflow guidance.',
+      'Run the canonical verification checks and review loop for the current implementation.',
     intent: 'run_validation',
   },
   {

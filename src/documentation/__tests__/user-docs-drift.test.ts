@@ -92,6 +92,7 @@ const productAliasTemplates = new Set<string>(
 
 function canonicalTargetFor(definition: InstalledCommandDefinition): string {
   if (definition.target.workflowCommand) return slash(definition.target.workflowCommand);
+  if (definition.target.nativeCommand !== undefined) return slash(definition.target.nativeCommand);
   const invocation = preferredInvocationForTool(definition.target.toolName);
   if (!invocation) throw new TypeError(`no primary invocation for ${definition.id}`);
   return invocation;

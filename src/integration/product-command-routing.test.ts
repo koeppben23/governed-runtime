@@ -1,7 +1,7 @@
 /**
  * @test-policy
  * HAPPY: product aliases route through command policy correctly (approve in review phases,
- *        check in VALIDATION, export in COMPLETE).
+ *        validate in VALIDATION, export in COMPLETE). Native check is not a machine alias.
  * BAD: approve in non-review phase is blocked, reject without review gate is blocked.
  * CORNER: canonical commands are unaffected — same policy logic applies regardless of alias input.
  * EDGE: alias passthrough unknowns are rejected by the command policy fail-closed.
@@ -64,8 +64,14 @@ describe('alias → command policy integration', () => {
       expect(isAliasAllowed('PLAN_REVIEW', 'reject')).toBe(true);
     });
 
-    it('/check is allowed in VALIDATION (maps to validate)', () => {
-      expect(isAliasAllowed('VALIDATION', 'check')).toBe(true);
+    it('/validate retains machine admissibility in VALIDATION', () => {
+      expect(isAliasAllowed('VALIDATION', 'validate')).toBe(true);
+    });
+
+    it('/check identifies the native callback without claiming VALIDATE authority', () => {
+      expect(getInstalledCommand('/check')?.target).toEqual({ nativeCommand: 'check' });
+      expect(canonicalMachineCommand('check')).toBe('check');
+      expect(isAliasAllowed('VALIDATION', 'check')).toBe(false);
     });
 
     it('/export is canonical and allowed only after final approval', () => {
@@ -96,7 +102,7 @@ describe('alias → command policy integration', () => {
       expect(isAliasAllowed('VALIDATION', 'request-changes')).toBe(false);
     });
 
-    it('/check in READY is blocked (validate not allowed)', () => {
+    it('machine alias routing cannot authorize native /check even at READY', () => {
       expect(isAliasAllowed('READY', 'check')).toBe(false);
     });
   });
@@ -107,9 +113,10 @@ describe('alias → command policy integration', () => {
       expect(isAliasAllowed('TICKET', 'approve')).toBe(false);
     });
 
-    it('canonical validate is allowed in VALIDATION, same as /check', () => {
+    it('canonical validate remains allowed without treating native check as its alias', () => {
       expect(isCommandAllowed('VALIDATION', Command.VALIDATE)).toBe(true);
-      expect(isAliasAllowed('VALIDATION', 'check')).toBe(true);
+      expect(isAliasAllowed('VALIDATION', 'validate')).toBe(true);
+      expect(getInstalledCommand('/check')?.target.workflowCommand).toBeUndefined();
     });
   });
 

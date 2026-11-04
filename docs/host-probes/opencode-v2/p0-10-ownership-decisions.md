@@ -5,6 +5,38 @@ plus the explicitly described local follow-up. PR #1190 remains Draft / NO-GO.
 This is a bounded source audit, not installed ACTIVE/Desktop acceptance or R4
 certification. The two accepted changes (`167d7c57`, `7d9560e2`) remain closed.
 
+**Metadata follow-up after `fd8d275f`:** F1/F2 are corrected in the catalogue,
+help and structural projections: `/continue` has no mutating machine target;
+`/check` has the explicit native target `check` and current identity
+`operational.check`, not the removed `alias.check`/VALIDATE mapping. The
+callback still owns ACTIVE-root admission, scope, agent execution and cleanup;
+its execution body and the read-only continue tool are unchanged. These
+corrections do not port the old asynchronous rails or settle R4.
+
+The corrected help preflight is a display projection, not a new permission gate:
+`/continue` is shown as read-only at work/gate/terminal phases and retains the
+READY ambiguity blocker; `/check` is shown as eligible to attempt with a session,
+not authorized by VALIDATE. Missing sessions still block both. Runtime tool
+classification, audit reconciliation, capacity/scope guards, machine commands
+and native admission are unchanged. The native registration now reads its copy
+and native target from the catalogue and fails explicitly on missing/non-native
+metadata; it does not dispatch a tool alias. ProofGraph validates and digest-binds
+the native identity instead of serializing an invented run-check target.
+
+An execution-body comparison to `fd8d275f` confirms that `executeCheckCommand`
+and the entire current `tools/simple/continue-tool.ts` remain identical. The
+ISO wrapper/test and all old rail/settlement suites also remain unchanged.
+
+Executed on the F1/F2 metadata working tree after `fd8d275f`: 150 targeted
+integration tests, 820 documentation tests / 1 skipped, and `npm test` with
+**12,966 passed / 2 skipped**. The unchanged canonical `npm run test:coverage`
+passes **12,957 tests / 11 skipped**, with statements **91.01%**, branches
+**84.26%**, functions **95.48%** and lines **92.51%**. The ISO concurrent
+publication assertion passes in this local coverage run too; that observation
+still does not explain or repair its earlier failure. Default mutation
+certification remains NOT_VERIFIED (`npm run mutation`), and these local
+results are not Hosted-CI or installed ACTIVE/Desktop acceptance.
+
 ## Decision vocabulary and evidence boundary
 
 Each row has exactly one disposition: **canonical and necessary**, **historically
@@ -74,14 +106,14 @@ scope and existing workflow authority (`plugin-native-tools.ts`). A prompt or
 `/hydrate` cannot create activation authority. No command is removed, renamed or
 promoted by this audit.
 
-| Invocation / catalogue ID                                                         | Disposition             | Actual contract and decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/hydrate` / `workflow.hydrate`                                                   | canonical and necessary | Retain authorized workflow reload/refresh through `tools/hydrate/hydrate.ts`. V2 activation belongs solely to `plugin-start-command.ts` and policy-authorized Start RPC; direct native tool execution requires existing bound ACTIVE workflow state. Do not equate catalogue `/start`→HYDRATE metadata with the native activation callback.                                                                                                                                                                                                                                 |
-| `/ticket` / `workflow.ticket`                                                     | canonical and necessary | Current interface onto the same canonical `flowguard_ticket` task capture as `/task`, not a second executor or old input adapter. `tools/simple/ticket-tool.ts` binds actual content or runtime-read repository content. Preserve that contract; no separate ticket runtime is justified.                                                                                                                                                                                                                                                                                   |
-| `/continue` / `workflow.continue`                                                 | canonical and necessary | Retain explicit read-only deterministic routing through `tools/simple/continue-tool.ts`, including READY ambiguity, gate and terminal responses. It needs no independent state transition because it executes none. The catalogue's phrase "advances the workflow" and machine-command metadata do not describe the actual tool's mutation behavior; do not wire the obsolete asynchronous rail to make that prose true.                                                                                                                                                    |
-| `/resolve-implementation-challenge` / `workflow.resolve-implementation-challenge` | canonical and necessary | `tools/challenge/challenge-resolution.ts` records append-only, current-digest advisory resolution evidence. It checks challenge lifecycle and passing implementation-scope attempts and never grants review acceptance. Independent verdict remains mandatory.                                                                                                                                                                                                                                                                                                              |
-| `/validate` / `workflow.validate`                                                 | canonical and necessary | Explicit manual execution/retry through the same `flowguard_run_check` owner used by automatic validation. It is not a second verifier or agent self-report path. Automatic work does not remove the need for recovery after errors. The template is scoped to baseline VALIDATION; do not infer post-implementation or whole-review behavior from its name.                                                                                                                                                                                                                |
-| `/check` / `alias.check`                                                          | replace with V2         | Preserve the native manual check/review operation in `plugin-check-command.ts`: it establishes a bounded command scope, invokes the canonical check prompt under the build agent, waits, and clears scope/restores the prior agent. The catalogue still projects it as a simple RUN_CHECK/VALIDATE alias; `product-command-routing.test.ts` checks that projection, not the native callback. Reconcile that metadata/test contract with the actual V2 operation before declaring this item closed. Do not delete the native command or weaken its scope/cleanup assertions. |
+| Invocation / catalogue ID                                                         | Disposition             | Actual contract and decision                                                                                                                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/hydrate` / `workflow.hydrate`                                                   | canonical and necessary | Retain authorized workflow reload/refresh through `tools/hydrate/hydrate.ts`. V2 activation belongs solely to `plugin-start-command.ts` and policy-authorized Start RPC; direct native tool execution requires existing bound ACTIVE workflow state. Do not equate catalogue `/start`→HYDRATE metadata with the native activation callback.                                 |
+| `/ticket` / `workflow.ticket`                                                     | canonical and necessary | Current interface onto the same canonical `flowguard_ticket` task capture as `/task`, not a second executor or old input adapter. `tools/simple/ticket-tool.ts` binds actual content or runtime-read repository content. Preserve that contract; no separate ticket runtime is justified.                                                                                   |
+| `/continue` / `workflow.continue`                                                 | canonical and necessary | Read-only routing through `tools/simple/continue-tool.ts`, including READY ambiguity, gates and terminal responses. The metadata now describes guidance and has no CONTINUE machine target; help reports read-only eligibility. No old executor is wired into the tool.                                                                                                     |
+| `/resolve-implementation-challenge` / `workflow.resolve-implementation-challenge` | canonical and necessary | `tools/challenge/challenge-resolution.ts` records append-only, current-digest advisory resolution evidence. It checks challenge lifecycle and passing implementation-scope attempts and never grants review acceptance. Independent verdict remains mandatory.                                                                                                              |
+| `/validate` / `workflow.validate`                                                 | canonical and necessary | Explicit manual execution/retry through the same `flowguard_run_check` owner used by automatic validation. It is not a second verifier or agent self-report path. Automatic work does not remove the need for recovery after errors. The template is scoped to baseline VALIDATION; do not infer post-implementation or whole-review behavior from its name.                |
+| `/check` / `operational.check`                                                    | canonical and necessary | Native manual check/review operation in `plugin-check-command.ts`. The catalogue now identifies the native callback, not a RUN_CHECK/VALIDATE alias; registration copy, help, routing tests and ProofGraph agree. ACTIVE-root admission, bounded scope, build-agent execution, wait and cleanup remain in the callback. Tool phase/evidence/policy guards are not bypassed. |
 
 Relevant existing command evidence: `plugin-start-command.test.ts`,
 `plugin-governance-lifecycle-command.test.ts`, `plugin-beforehooks.test.ts`,
@@ -94,7 +126,7 @@ host-command authority or installed acceptance.
 
 ## Follow-up graph and verification boundaries
 
-Executed static graph on the local follow-up: **723 production files / 247
+Executed static graph for the `fd8d275f` follow-up: **723 production files / 247
 integration files**, 3,849 internal import sites, zero unresolved relative
 imports; package runtime closure 689, plugin runtime closure 601, combined
 type/runtime closure 716. Seven production-class files remain outside that
@@ -119,15 +151,23 @@ No cause or flake is established. This is a separate publication-exclusivity
 blocker; this ownership follow-up does not modify the wrapper, assertion or
 timeout and does not claim to repair it.
 
-Local follow-up verification: the narrow provider/provenance boundary selection
+**Hosted CI on `fd8d275f`: PASS**, run `41890648033`, **37/37 jobs**.
+Coverage job `126786822294` passes **12,926 tests / 11 skipped** across 705
+files, including the ISO publication assertion. No publication-path change
+separates these commits. This later green run does not establish the previous
+failure's cause or certify it as a flake. The F1/F2 metadata patch is a separate
+working tree and must not inherit this Hosted-CI result.
+
+Local `fd8d275f` follow-up verification: the narrow provider/provenance boundary selection
 passes 46 tests; `npm test` passes **12,935 tests / 2 skipped** across 705 files,
 including the complete integration project. Architecture passes **549 tests**;
 type checks, strict lint and unused-dependency checks pass. The provider helper
 and test implementation statements compare identical to `7d9560e2`; all five
 old rail suites and the settlement suite compare byte-identical. The local
 non-coverage pass does not establish the Hosted-CI failure's cause, a flake or
-a publication fix. Coverage and default mutation certification remain
-NOT_VERIFIED (`npm run test:coverage`, `npm run mutation`).
+a publication fix. At that initial local checkpoint coverage and default
+mutation certification had not been run; subsequent Hosted-CI and F1/F2 local
+coverage results are recorded separately above. Default mutation remains open.
 
 Build/doc-drift, format, unused-export and PR-base documentation checks also
 pass. The rebuilt `dist` and `npm pack --dry-run` file list contain neither the
@@ -136,8 +176,8 @@ the production registry remains present. This is distribution-content evidence,
 not a packed-install or final-candidate acceptance run.
 
 **P0-10 remains open.** The safe provenance removal and registry test-support
-relocation do not close the old rail/settlement/classifier assertion ports or
-the native `/check` metadata discrepancy. Final import/call-path proof and
+relocation and current F1/F2 metadata fixes do not close the old
+rail/settlement/classifier assertion ports. Final import/call-path proof and
 whole-test/coverage/default-mutation certification must follow their resolution
 on the actual final HEAD. R4 and installed ACTIVE/Desktop acceptance remain
 independently open.

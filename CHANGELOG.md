@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Align current `/continue` and `/check` metadata with their V2 contracts:
+  continue is read-only routing without a mutating CONTINUE target; check is a
+  native scoped operation, not a RUN_CHECK/VALIDATE alias. Synchronize help,
+  registration-consistency/ProofGraph projections, native registration copy,
+  routing tests and command documentation without changing command execution.
+  CI on `fd8d275f` passes, including coverage; the earlier ISO publication
+  counterexample remains unexplained, not claimed repaired by that green run.
+
 - Classify the remaining P0-10 test-only paths and six explicitly callable
   command surfaces against current owners. Remove the uncalled metadata-only
   review-provenance validator and classify built-in provider-catalogue validation

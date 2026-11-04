@@ -132,7 +132,12 @@ describe('developer onboarding documentation contract', () => {
 
     for (const definition of exceptions) {
       expect(commands, definition.invocation).toContain(`\`${definition.invocation}\``);
-      expect(commands, definition.target.toolName).toContain(`\`${definition.target.toolName}\``);
+      if (definition.target.nativeCommand !== undefined) {
+        expect(commands).toContain('native scoped command');
+        expect(definition.target.toolName).toBeUndefined();
+      } else {
+        expect(commands, definition.target.toolName).toContain(`\`${definition.target.toolName}\``);
+      }
     }
   });
 

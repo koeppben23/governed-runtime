@@ -17,8 +17,8 @@ audit/compliance data.
 
 ## Recovery Summary
 
-Use `/check` or `/validate` only when a validation run must be continued or
-recorded manually, `/continue` for explicit deterministic routing, and `/abort`
+Use native `/check` for an explicit scoped verification/review turn, `/validate`
+for manual baseline validation, `/continue` for read-only deterministic routing, and `/abort`
 for irreversible emergency termination. Missing safety-critical headless input
 returns `BLOCKED`; see [Distribution Model](./distribution-model.md).
 
@@ -37,7 +37,8 @@ FlowGuard uses a two-level command surface:
 | **User-facing** | `/<command>`            | `/start`, `/task`, `/plan`              | OpenCode chat commands |
 | **Internal**    | `flowguard_<tool-name>` | `flowguard_hydrate`, `flowguard_ticket` | OpenCode tool bindings |
 
-The `/<command>` syntax invokes the corresponding `flowguard_<tool-name>` tool internally.
+Template commands invoke their corresponding tools; native callbacks such as
+`/check` own a scoped operation instead of aliasing one tool call.
 
 **Naming exceptions** (slash command and tool name differ):
 
@@ -50,7 +51,8 @@ The `/<command>` syntax invokes the corresponding `flowguard_<tool-name>` tool i
 | `/review-decision` (compatibility)                             | `flowguard_decision`      | Native verdict-routing surface kept for scripts; the product variants above are the recommended interface                                   |
 | `/recover-capacity`                                            | native review-assurance   | Explicitly releases a proven terminal reviewer capacity lock; not a model tool and not an automatic unlock                                  |
 | `/end-governance`                                              | native activation         | Ends opt-in governance after safe closure; distinct from `/finish` and `/abort`                                                             |
-| `/validate`, `/check`                                          | `flowguard_run_check`     | `/check` is a native scoped command; `/validate` remains the compatibility template; validation runs automatically                          |
+| `/validate`                                                    | `flowguard_run_check`     | Explicit baseline validation through the same evidence path as automatic validation                                                         |
+| `/check`                                                       | native scoped command     | Runs the canonical verification/review turn under the build agent, then clears scope and restores the prior agent; not a VALIDATE alias     |
 | `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                                                   |
 | `/help`, `/commands`, `/commands --all`                        | `flowguard_help`          | Contextual help and command-list views supply fixed help arguments                                                                          |
 
@@ -98,7 +100,7 @@ Product commands are the recommended human surface. They invoke canonical FlowGu
 | `/request-changes`  | `/review-decision changes_requested` | `flowguard_decision`     | Request changes at the current review gate                                                                                                                                          |
 | `/reject`           | `/review-decision reject`            | `flowguard_decision`     | End the governed workflow at the terminal REJECTED position                                                                                                                         |
 | `/implement`        | `/implement`                         | `flowguard_implement`    | Execute the approved plan                                                                                                                                                           |
-| `/check`            | `/validate`                          | `flowguard_run_check`    | Native command: runs the canonical check prompt inside the explicit check scope; `/validate` remains the compatibility surface                                                      |
+| `/check`            | `/check`                             | native scoped command    | Explicit ACTIVE-root operation; runs the canonical check/review prompt, waits, clears scope and restores the prior agent. Individual tools retain their own phase/evidence guards   |
 | `/export`           | `/export`                            | `flowguard_export`       | Materialize the required verifiable export and complete the workflow                                                                                                                |
 | `/status`           | `/status`                            | `flowguard_status`       | Show current phase, directive, and evidence                                                                                                                                         |
 | `/why`              | `/status --why-blocked`              | `flowguard_status`       | Explain the current blocker                                                                                                                                                         |
@@ -110,6 +112,10 @@ Compatibility surfaces such as `/hydrate`, `/ticket`, `/validate`, `/check`,
 recovery, but they are never recommended by the runtime directive and are not
 part of the happy path. The runtime directive resolved from persisted state is
 the single authority for what to do next.
+
+Here "compatibility" is a presentation visibility classification, not permission
+to bypass current contracts. `/check` is an independent native operation, not a
+machine-command alias for `/validate`; `/continue` only returns guidance.
 
 ## Diagnose
 
@@ -472,7 +478,7 @@ Use these commands only for an explicit recovery action or a terminal operation.
 
 Run validation checks against the approved plan. This is a compatibility surface:
 FlowGuard records validation automatically when the phase is entered, and
-`/validate` (or `/check`) remains available to record results explicitly.
+`/validate` remains available to execute and record baseline results explicitly.
 
 **Allowed in:** VALIDATION
 **Checks:** Derived from `verificationCandidates` (refer to `docs/configuration.md#profileactivechecks`)
@@ -482,16 +488,26 @@ When `flowguard_run_check` executes, a failed or timed-out check includes an adv
 
 ### /continue
 
-Compatibility routing surface. The canonical runtime directive is the next-action
-authority; `/continue` inspects the current phase and performs the next appropriate
-action only when explicitly requested.
+Read-only routing surface. It reports the canonical next action without executing
+checks, reviews or transitions. It does not call the historical asynchronous rail.
 
-- At user gates: returns "waiting" (use the gate commands from the runtime directive: `/approve`, `/override-approve`, `/request-changes`, or `/reject`)
-- At PLAN: runs one independent subagent review iteration
-- At ARCHITECTURE: runs one ADR review iteration
-- At IMPL_REVIEW: runs one independent implementation review iteration
-- At VALIDATION: runs all validation checks
-- At other phases: evaluates and auto-advances if evidence is present
+- At READY: blocks with `CONTINUE_AMBIGUOUS` until a flow is selected.
+- At user gates: reports the decision context and canonical gate commands; it never decides.
+- At terminal phases: reports terminal orientation without modifying evidence.
+- At work phases: reports phase/reviewer continuation guidance without executing it.
+
+### /check
+
+Native scoped command, not a direct `flowguard_run_check` or VALIDATE alias.
+The callback requires a verified ACTIVE root session; catalogue/help eligibility
+does not grant that authority, and delegated children cannot invoke it for the root.
+
+For one explicit invocation it installs the check scope, switches to the build
+agent when needed, submits the canonical verification/review prompt, waits for
+idle, then clears scope and attempts to restore the previous agent, including on
+turn failure. Restoration errors are surfaced as warnings after scope cleanup.
+The individual verification/review tools retain their current phase, evidence,
+policy and independent-review guards. This is not automatic human approval.
 
 ### /abort
 

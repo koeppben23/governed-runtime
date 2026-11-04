@@ -828,9 +828,12 @@ classify every outside-graph candidate and all six compatibility-labelled
 commands. They correct the incomplete rail test-importer inventory below,
 record one additional proven removal and the assertion-identical provider
 validator move into test support, and identify unresolved assertion-contract
-and native `/check` metadata mismatches. P0-10 remains open. Hosted CI on
-`7d9560e2` is now FAIL on ISO publication exclusivity, not still queued; this
-does not reopen the accepted P0-00 matrix on `2f4aa06d`.
+mismatches. The subsequent F1/F2 patch corrects read-only `/continue` and native
+`/check` metadata without changing their execution. P0-10 remains open.
+Hosted CI on `7d9560e2` failed ISO publication exclusivity; CI `41890648033`
+on `fd8d275f` passes all 37 jobs including coverage without a publication fix.
+The prior failure remains unexplained, not a proven flake. Neither result
+reopens the accepted P0-00 matrix on `2f4aa06d`.
 
 Scope: shipped package exports/binaries, native plugin composition and adapter,
 activation versus workflow authority, reviewer dispatch/capture/evidence owners,

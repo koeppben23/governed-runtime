@@ -19,10 +19,14 @@ import { INSTALLED_COMMANDS } from '../installed-commands.js';
 import { COMMANDS } from '../../templates/commands/index.js';
 import { Command } from '../../machine/commands.js';
 import { ALL_FLOWGUARD_TOOL_NAMES } from '../tool-names.js';
+import { NATIVE_PLUGIN_COMMANDS } from '../../shared/flowguard-identifiers.js';
 
 /** Which registration invariant a finding violated. */
 export type RegistrationConsistencyRule =
-  'template_body_present' | 'tool_name_registered' | 'workflow_command_valid';
+  | 'template_body_present'
+  | 'tool_name_registered'
+  | 'workflow_command_valid'
+  | 'native_command_registered';
 
 /** A single detected registration inconsistency. */
 export interface RegistrationConsistencyFinding {
@@ -43,7 +47,17 @@ export interface InstalledCommandView {
   readonly invocation: string;
   /** `null` for a native plugin command, which has no installed body by design. */
   readonly templateFile: string | null;
-  readonly target: { readonly toolName: string; readonly workflowCommand?: string | undefined };
+  readonly target:
+    | {
+        readonly toolName: string;
+        readonly workflowCommand?: string | undefined;
+        readonly nativeCommand?: never;
+      }
+    | {
+        readonly nativeCommand: string;
+        readonly toolName?: never;
+        readonly workflowCommand?: never;
+      };
 }
 
 /** Injected registries the evaluation is checked against. */
@@ -55,6 +69,8 @@ export interface RegistrationConsistencyInputs {
   readonly toolNames: ReadonlySet<string>;
   /** Valid machine command names. */
   readonly workflowCommands: ReadonlySet<string>;
+  /** Canonical native command identities, not model tool names. */
+  readonly nativeCommands: ReadonlySet<string>;
 }
 
 /**
@@ -73,7 +89,18 @@ export function evaluateRegistrationConsistency(
         detail: `no installed template body for ${cmd.templateFile}`,
       });
     }
-    if (!inputs.toolNames.has(cmd.target.toolName)) {
+    if (cmd.target.nativeCommand !== undefined) {
+      if (
+        !inputs.nativeCommands.has(cmd.target.nativeCommand) ||
+        cmd.templateFile !== null ||
+        cmd.invocation !== `/${cmd.target.nativeCommand}`
+      )
+        findings.push({
+          rule: 'native_command_registered',
+          invocation: cmd.invocation,
+          detail: `invalid native command target: ${cmd.target.nativeCommand}`,
+        });
+    } else if (!inputs.toolNames.has(cmd.target.toolName)) {
       findings.push({
         rule: 'tool_name_registered',
         invocation: cmd.invocation,
@@ -98,13 +125,11 @@ export function checkRegistrationConsistency(): RegistrationConsistencyReport {
     installedCommands: INSTALLED_COMMANDS.map((definition) => ({
       invocation: definition.invocation,
       templateFile: definition.templateFile,
-      target: {
-        toolName: definition.target.toolName,
-        workflowCommand: definition.target.workflowCommand,
-      },
+      target: definition.target,
     })),
     templateFiles: new Set(Object.keys(COMMANDS)),
     toolNames: ALL_FLOWGUARD_TOOL_NAMES,
     workflowCommands: new Set<string>(Object.values(Command)),
+    nativeCommands: new Set<string>(NATIVE_PLUGIN_COMMANDS),
   });
 }

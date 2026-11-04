@@ -25,9 +25,34 @@ import {
   type DispatchLedgerWriteDeps,
 } from './review/dispatch/durable-dispatch.js';
 import { governanceEndBlocker } from './governance-end-preconditions.js';
-import { executeCheckCommand } from './plugin-check-command.js';
+import { addCheckCommand, executeCheckCommand } from './plugin-check-command.js';
+import { getInstalledCommand } from './installed-commands.js';
 
 const NOW = '2026-11-03T12:00:00.000Z';
+
+function checkHarness(rootSessionId = 'check-session') {
+  const scopes = new Map<string, 'check'>();
+  const runtime = { activeCommandScopes: scopes, checkReworkContinuations: new Map() };
+  const ctx = {
+    session: {
+      get: vi.fn(async () => ({ agent: 'plan' })),
+      switchAgent: vi.fn(async () => {}),
+      synthetic: vi.fn(async () => ({ id: 'synthetic', type: 'synthetic' })),
+      wait: vi.fn(async () => {}),
+    },
+  };
+  const deps = {
+    guard: <T>(run: () => Promise<T>) => run(),
+    invoke: vi.fn(
+      async (_id: string, action: (entry: unknown) => Promise<unknown>, _required: boolean) =>
+        action({
+          runtime,
+          scope: { sessionId: 'check-session', root: { sessionId: rootSessionId } },
+        }),
+    ),
+  };
+  return { scopes, ctx, deps };
+}
 let ws: TestWorkspace;
 let host: ReturnType<typeof createV2Host>;
 let cleanup: (() => void | Promise<void>) | undefined;
@@ -311,4 +336,63 @@ describe('native governance lifecycle commands', () => {
     );
     expect(scopes.has(sessionId)).toBe(false);
   });
+
+  it('registers check from the native catalogue without routing it through a tool alias', () => {
+    const h = checkHarness();
+    const add = vi.fn();
+    addCheckCommand(h.ctx as never, h.deps as never, { add });
+    expect(add).toHaveBeenCalledOnce();
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: getInstalledCommand('/check')?.target.nativeCommand,
+        description: `FlowGuard — ${getInstalledCommand('/check')?.description}`,
+        execute: expect.any(Function),
+      }),
+    );
+    expect(h.deps.invoke).not.toHaveBeenCalled();
+  });
+
+  it('does not grant native check authority to a delegated child', async () => {
+    const h = checkHarness('parent-session');
+    await expect(
+      executeCheckCommand(h.ctx as never, h.deps as never, 'check-session'),
+    ).rejects.toThrow('A delegated child cannot run the root /check command.');
+    expect(h.scopes.size).toBe(0);
+    expect(h.ctx.session.get).not.toHaveBeenCalled();
+    expect(h.ctx.session.synthetic).not.toHaveBeenCalled();
+  });
+
+  it('requires ACTIVE callback admission before touching the agent or check scope', async () => {
+    const h = checkHarness();
+    h.deps.invoke.mockRejectedValueOnce(
+      Object.assign(new Error('inactive scope'), { code: 'GOVERNANCE_AUTHORITY_BLOCKED' }),
+    );
+    await expect(
+      executeCheckCommand(h.ctx as never, h.deps as never, 'check-session'),
+    ).rejects.toMatchObject({ code: 'GOVERNANCE_AUTHORITY_BLOCKED' });
+    expect(h.deps.invoke).toHaveBeenCalledWith('check-session', expect.any(Function), true);
+    expect(h.scopes.size).toBe(0);
+    expect(h.ctx.session.get).not.toHaveBeenCalled();
+    expect(h.ctx.session.synthetic).not.toHaveBeenCalled();
+  });
+
+  it.each(['synthetic', 'wait'] as const)(
+    'cleans check scope and restores the agent if %s fails',
+    async (operation) => {
+      const h = checkHarness();
+      h.ctx.session[operation].mockRejectedValueOnce(new Error('check turn failed'));
+      await expect(
+        executeCheckCommand(h.ctx as never, h.deps as never, 'check-session'),
+      ).rejects.toThrow('check turn failed');
+      expect(h.scopes.size).toBe(0);
+      expect(h.ctx.session.switchAgent).toHaveBeenNthCalledWith(1, {
+        sessionID: 'check-session',
+        agent: 'build',
+      });
+      expect(h.ctx.session.switchAgent).toHaveBeenNthCalledWith(2, {
+        sessionID: 'check-session',
+        agent: 'plan',
+      });
+    },
+  );
 });

@@ -33,6 +33,7 @@ import {
   TOOL_FLOWGUARD_HELP,
   TOOL_FLOWGUARD_HYDRATE,
   TOOL_FLOWGUARD_STATUS,
+  TOOL_FLOWGUARD_CONTINUE,
 } from '../tool-names.js';
 import { IntegrationInvariantError } from '../errors.js';
 
@@ -237,16 +238,8 @@ function preflight(
       recovery: 'Run /hydrate to initialize a session.',
     };
   }
-  // /continue at READY deterministically yields CONTINUE_AMBIGUOUS.
-  if (definition.id === 'workflow.continue' && state.phase === 'READY') {
-    return {
-      status: 'blocked',
-      guarantee: 'eligible_to_attempt',
-      reasonCode: 'CONTINUE_AMBIGUOUS',
-      message: 'Continue requires a selected workflow. Choose a flow first.',
-      recovery: 'Run /task, /architecture, or /review to select a flow.',
-    };
-  }
+  const operation = explicitOperationPreflight(definition, state);
+  if (operation) return operation;
   if (
     definition.target.workflowCommand &&
     !isCommandAllowed(state.phase, definition.target.workflowCommand)
@@ -265,6 +258,28 @@ function preflight(
       guarantee: 'eligible_to_attempt',
     }
   );
+}
+
+/** Display eligibility only; native admission remains in the ACTIVE-root callback. */
+function explicitOperationPreflight(
+  definition: InstalledCommandDefinition,
+  state: SessionState,
+): CommandPreflight | null {
+  if (definition.target.toolName === TOOL_FLOWGUARD_CONTINUE) {
+    if (state.phase === 'READY')
+      return {
+        status: 'blocked',
+        guarantee: 'eligible_to_attempt',
+        reasonCode: 'CONTINUE_AMBIGUOUS',
+        message: 'Continue requires a selected workflow. Choose a flow first.',
+        recovery: 'Run /task, /architecture, or /review to select a flow.',
+      };
+    // Read-only at gates/terminal phases too; never the old mutating rail.
+    return { status: 'available', guarantee: 'read_only_available' };
+  }
+  if (definition.target.nativeCommand !== undefined)
+    return { status: 'available', guarantee: 'eligible_to_attempt' };
+  return null;
 }
 
 function approvalPreflight(

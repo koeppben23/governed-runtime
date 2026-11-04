@@ -10,6 +10,7 @@ import { NATIVE_CHECK_COMMAND } from '../shared/flowguard-identifiers.js';
 import { buildEnforcementError } from './blocked-result.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
+import { getInstalledCommand } from './installed-commands.js';
 
 interface CheckCommandDeps {
   readonly guard: <T>(run: () => Promise<T>) => Promise<T>;
@@ -30,10 +31,15 @@ export function addCheckCommand(
   deps: CheckCommandDeps,
   editor: CommandEditor,
 ): void {
+  const command = getInstalledCommand(`/${NATIVE_CHECK_COMMAND}`);
+  if (command?.target.nativeCommand !== NATIVE_CHECK_COMMAND)
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'The native check command metadata is missing or has a non-native target.',
+    );
   editor.add({
-    name: NATIVE_CHECK_COMMAND,
-    description:
-      'FlowGuard — run the canonical verification checks and review loop for the current implementation.',
+    name: command.target.nativeCommand,
+    description: `FlowGuard — ${command.description}`,
     execute: (input) => deps.guard(() => executeCheckCommand(ctx, deps, input.sessionID)),
   });
 }

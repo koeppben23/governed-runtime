@@ -36,6 +36,7 @@ import {
   CONFIG_TOP_LEVEL_KEYS,
 } from './config-default-consistency.js';
 import { computeSurfaceDigest } from './surface-digest.js';
+import { NATIVE_PLUGIN_COMMANDS } from '../../shared/flowguard-identifiers.js';
 
 /** Stable identifier of the command-registration consistency surface. */
 export const SURFACE_COMMAND_REGISTRATION = 'command-registration';
@@ -80,24 +81,27 @@ function evaluateCommandRegistrationSurface(): StructuralSurfaceEvaluation {
     installedCommands: INSTALLED_COMMANDS.map((c) => ({
       invocation: c.invocation,
       templateFile: c.templateFile,
-      toolName: c.target.toolName,
+      toolName: c.target.toolName ?? null,
+      nativeCommand: c.target.nativeCommand ?? null,
       workflowCommand: c.target.workflowCommand ?? null,
     })).sort((a, b) => (a.invocation < b.invocation ? -1 : 1)),
     templateFiles: Object.keys(COMMANDS).sort(),
     toolNames: [...ALL_FLOWGUARD_TOOL_NAMES].sort(),
     workflowCommands: Object.values(Command).sort(),
+    nativeCommands: [...NATIVE_PLUGIN_COMMANDS].sort(),
   };
   return {
     surfaceId: SURFACE_COMMAND_REGISTRATION,
     providerKind: 'structural_assertion',
     providerId: 'registration-consistency',
     assertion:
-      'every installed command has an installed template body, a registered target tool, and a valid workflow command',
+      'every installed command has its declared template and a registered tool or native command target, with valid declared workflow commands',
     locations: [
       'src/integration/installed-commands.ts',
       'src/templates/commands/index.ts',
       'src/machine/commands.ts',
       'src/integration/tool-names.ts',
+      'src/shared/flowguard-identifiers.ts',
     ],
     digest: computeSurfaceDigest(surfaceData),
     ok: report.ok,

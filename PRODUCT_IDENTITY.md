@@ -114,33 +114,36 @@ The system establishes workspace binding (OpenCode session to git worktree via r
 
 ### 2. Governed Command Surface
 
-Nineteen installed core FlowGuard commands cover workflow, diagnostics, and operations:
+Twenty installed core FlowGuard commands (templates plus native callbacks) cover workflow, diagnostics, and operations:
 
-| Command                             | Purpose                                                                                                             |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `/hydrate`                          | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                               |
-| `/status`                           | Show current phase, blockers, evidence, context, and readiness projections                                          |
-| `/finish`                           | Read-only Finish Card: overall readiness, evidence, and non-normative next-action guidance before export/PR/archive |
-| `/help`                             | Read-only context-sensitive guidance for the current workflow situation                                             |
-| `/commands`                         | Read-only list of context-relevant commands; `--all` shows the complete reference                                   |
-| `/ticket`                           | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs.      |
-| `/plan`                             | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.                 |
-| `/architecture`                     | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**.  |
-| `/review`                           | Generate peer or content-aware review. Completed reviews display a **Review Report Card**.                          |
-| `/review-decision`                  | Record human verdict at User Gates (approve / changes_requested / reject)                                           |
-| `/implement`                        | Execute implementation, record evidence, run review loop                                                            |
-| `/export`                           | Materialize the required verifiable export; the workflow reaches COMPLETE only after export evidence is persisted   |
-| `/resolve-implementation-challenge` | Record advisory evidence addressing an implementation review challenge                                              |
-| `/override-approve`                 | Accept an exhausted review gate with an explicit, recorded governance override                                      |
-| `/reconcile-mutation-episode`       | Resolve a host mutation episode whose outcome can never be observed; forces a fresh worktree recapture              |
-| `/validate`                         | Record validation checks (test quality, rollback safety); validation runs automatically (compatibility surface)     |
-| `/continue`                         | Compatibility routing — advance the workflow on explicit request, not workflow guidance                             |
-| `/abort`                            | Emergency session termination                                                                                       |
-| `/archive`                          | Archive a completed session as `.tar.gz`                                                                            |
+| Command                             | Purpose                                                                                                                       |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `/hydrate`                          | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                                         |
+| `/status`                           | Show current phase, blockers, evidence, context, and readiness projections                                                    |
+| `/finish`                           | Read-only Finish Card: overall readiness, evidence, and non-normative next-action guidance before export/PR/archive           |
+| `/help`                             | Read-only context-sensitive guidance for the current workflow situation                                                       |
+| `/commands`                         | Read-only list of context-relevant commands; `--all` shows the complete reference                                             |
+| `/ticket`                           | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs.                |
+| `/plan`                             | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.                           |
+| `/architecture`                     | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**.            |
+| `/review`                           | Generate peer or content-aware review. Completed reviews display a **Review Report Card**.                                    |
+| `/review-decision`                  | Record human verdict at User Gates (approve / changes_requested / reject)                                                     |
+| `/implement`                        | Execute implementation, record evidence, run review loop                                                                      |
+| `/export`                           | Materialize the required verifiable export; the workflow reaches COMPLETE only after export evidence is persisted             |
+| `/resolve-implementation-challenge` | Record advisory evidence addressing an implementation review challenge                                                        |
+| `/override-approve`                 | Accept an exhausted review gate with an explicit, recorded governance override                                                |
+| `/reconcile-mutation-episode`       | Resolve a host mutation episode whose outcome can never be observed; forces a fresh worktree recapture                        |
+| `/validate`                         | Record validation checks (test quality, rollback safety); validation runs automatically (compatibility surface)               |
+| `/continue`                         | Read-only routing: report the canonical next action without executing checks, reviews or transitions                          |
+| `/check`                            | Native ACTIVE-root check/review turn with explicit scope, build-agent execution and scope/agent cleanup; not a VALIDATE alias |
+| `/abort`                            | Emergency session termination                                                                                                 |
+| `/archive`                          | Archive a completed session as `.tar.gz`                                                                                      |
 
-Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
+Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/why`) provide user-facing entry points to canonical activation, decision and tool operations. `/check` is the native scoped operation listed above, not a tool alias. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
 
-Each command is tied to phase admissibility rules, evidence requirements, and state transitions.
+Mutating commands retain their phase, evidence and policy guards. Read-only commands
+report state without performing transitions; native `/check` admission belongs to
+its ACTIVE-root callback, not to the catalogue's machine-command projection.
 
 ### 3. Phase Workflow
 
