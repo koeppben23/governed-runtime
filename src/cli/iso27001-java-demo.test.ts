@@ -359,11 +359,14 @@ if (isClaim) {
     Atomics.wait(wait, 0, 0, 5);
   }
 }
+const existedBefore = fs.existsSync(args[0]);
 const result = spawnSync(process.env.NATIVE_MKDIR, args, { encoding: 'utf8' });
 if (isClaim) fs.appendFileSync(process.env.CLAIM_TRACE, JSON.stringify({
   publisher: process.env.FAKE_PUBLISHER, target: args[0],
   realParent: fs.realpathSync(path.dirname(args[0])),
-  status: result.status, error: result.error?.message,
+  nativeMkdir: process.env.NATIVE_MKDIR, existedBefore,
+  status: result.status, signal: result.signal, error: result.error?.message,
+  nativeStderr: result.stderr?.trim() || null,
   inode: fs.existsSync(args[0]) ? fs.statSync(args[0]).ino : null,
 }) + '\n');
 if (result.stdout) process.stdout.write(result.stdout);
@@ -404,7 +407,12 @@ process.exit(result.status ?? 99);
         publisher: string;
         target: string;
         realParent: string;
+        nativeMkdir: string;
+        existedBefore: boolean;
         status: number;
+        signal: string | null;
+        error: string | null;
+        nativeStderr: string | null;
         inode: number;
       }[];
       const diagnostic = JSON.stringify({ final, publishers, results, claims });
