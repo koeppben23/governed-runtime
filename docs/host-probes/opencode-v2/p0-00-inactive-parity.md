@@ -259,14 +259,96 @@ Supporting local verification for this test-only diagnostic change passes
 architecture tests; type checks, strict lint, build/documentation drift (17 tests),
 formatting, actionlint and action pinning also pass. These are not Windows
 execution evidence.
-**NOT_VERIFIED:** the diagnostic Windows solo/joint result and timeout root cause;
-run the instrumented CI matrix before choosing a correction.
 
-A solo PASS followed by a joint timeout would narrow the hypothesis, not prove
-cache contention by itself: the second run also inherits a warmed cache and
-logging changes timing. If logs establish contention, reuse or serialize the
-identical bootstrap within the test job; if a lone npm process blocks, resolve
-its concrete cause instead. No correction is selected before that evidence.
+### Executed hosted diagnostic on `82a490aa`
+
+[CI run 41797089286](https://github.com/koeppben23/governed-runtime/actions/runs/41797089286)
+on `82a490aa7dc814855f9b5ab6b58f1fb9f3dcab0e` fails only Windows parity and
+the required `ci-gate`; every other job, including integration PERF, passes.
+Downloaded Linux/macOS JSON reports each establish **65 passed, 0 failed,
+0 pending**. Their bootstrap phase files and all three Windows phase files
+record the original shared tarball digest `1ecca9459cfdcffc39399cbbfdb057a3b5ba16ecb1a3e21e34e4fb396450723b`.
+These are new test-run observations of the original CI merge build
+`5bbdc3c4a7892e7b1b7cbdc5b20f15e8c68a47ad`, not a newly built product at
+`82a490aa`.
+
+The Windows job is
+[`126464145222`](https://github.com/koeppben23/governed-runtime/actions/runs/41797089286/job/126464145222).
+Downloaded artifacts `13307335143` (phases/npm logs) and `13307490658`
+(both JSON reports) independently distinguish:
+
+| Arm     | Worker / npm PID | npm interval, UTC             | Result                                                                         |
+| ------- | ---------------- | ----------------------------- | ------------------------------------------------------------------------------ |
+| Solo    | `3724` / `1792`  | `08:10:38.425`–`08:15:06.240` | 267,815 ms by recorded elapsed counters; exit 0; final package identity logged |
+| Joint 1 | `7972` / `6688`  | `08:15:55.989`–`08:20:56.063` | 300,072 ms; `ETIMEDOUT`, status null, `SIGTERM`                                |
+| Joint 2 | `7440` / `5964`  | `08:15:58.161`–`08:20:58.216` | 300,054 ms; `ETIMEDOUT`, status null, `SIGTERM`                                |
+
+All three inherit `C:\npm\cache`; each installation and diagnostic directory is
+distinct. The configured process and `beforeAll` limits remain 300,000 ms;
+the recorded timeout intervals include termination overhead, not raised limits.
+The solo stdout reports 472 packages added and its debug log ends `verbose exit
+0` / `info ok`. It also records cache-miss tarball fetch intervals of 187,544 ms
+for `hono` and 195,535 ms for `@grpc/grpc-js`, both HTTP 200. Those are npm-reported
+fetch intervals, not independent network-only measurements.
+
+Both joint debug logs stop after cached tarball/reification activity and
+deprecation warnings, without npm completion. Their recorded metadata requests
+return HTTP 200; no explicit cache lock, `EBUSY`, `EPERM`, `EINTEGRITY` or network
+error explains the timeout. Thus **the slow solo success and overlapping joint
+timeouts are established, but cache/filesystem contention is NOT_VERIFIED**.
+Logging affects timing, and the joint arm also inherits a warmed cache. No
+serialization, bootstrap reuse, dependency-selection change or product fix is
+justified by this comparison alone.
+
+**Solo bootstrap completion is not solo conformance PASS.** Its JSON report
+records **0 passed, 7 failed, 0 pending**; the joint JSON report records
+**0 passed, 0 failed assertions, 65 pending**, with both suites failed in setup.
+The solo failures expose separate boundaries previously hidden by bootstrap:
+
+- Both shell-effect cases fail in the **absent** control: the quoted executable
+  followed by `-e` is rejected by PowerShell (`Unexpected token '-e'`), and the
+  file remains `original`. This fixture command is not valid for the observed
+  Windows shell. It is not evidence of an INACTIVE FlowGuard veto.
+- The absent subagent control also leaves the child-effect file `original`.
+  Its child uses the same command construction, but its terminal child-tool
+  details were not captured in the failure log; that exact cause is NOT_VERIFIED.
+- The two edit cases, catalogue case and compaction case reach the packed
+  installer, which fails dependency setup with npm `ENOENT` opening a local
+  tarball. Its scrubbed output includes a `file:C:` reference with `[path:RUNNER]%7E1`
+  path text. This is an observed installed-path failure, not a proven corrupt
+  artifact, governance failure or general Windows installer defect. Source
+  inspection identifies `install-transaction.ts` staging through
+  `pathToFileURL(tx.vendorTarballPath).href`; the failing unredacted staging input
+  and child npm debug log were not retained, so the precise cause is NOT_VERIFIED.
+- Solo `afterAll` cleanup additionally exceeds its unchanged 10,000 ms hook
+  limit. That is distinct from the 300-second bootstrap limit.
+
+The successful `install (windows-latest)` and `install-verify (windows-latest)`
+jobs remain separate evidence; they do not negate the specific path failure or
+certify these native conformance cases. No product code or parity assertion is
+changed in response to this diagnostic result.
+
+Recovery needs concrete attribution of the joint stall (npm phase timing and
+Windows process/filesystem observations), a Windows-valid absent-control command
+with unchanged effect assertions, and retained unredacted staging-path/npm
+diagnostics for the installer failure. These are separate investigations. P0-00
+Windows remains **BLOCKED**; the requested diagnostic was executed, not left
+unrun, but its timeout root cause remains **NOT_VERIFIED**.
+
+### Intervening `a38dd3a7` run, retained separately
+
+[CI run 41793806176](https://github.com/koeppben23/governed-runtime/actions/runs/41793806176)
+on docs-only `a38dd3a7e3d2cae9cf4a826738aabcf073a7c314` also fails Windows
+bootstrap, macOS parity, integration PERF and the required gate. The downloaded
+macOS JSON reports **51 passed, 0 failed assertions, 14 pending**, with the
+Git/repo subgroup setup failing `ServiceUnavailableError: Location plugins did
+not finish activating`. Both packed helpers had logged digest
+`9dde01d22463bbe8ebd41ea433b90a59ca6cb659ef8a476cc4a73eb1e83cd157` and embedded
+merge-build SHA `eee6923c5c4c8bbdd2e186cf5e94e1cda95c1eb6`; this is not the
+original diagnostic artifact. The PERF measurement is 167.69 ms against <150 ms.
+The later diagnostic run's PASS does not establish either failure's root cause
+or reclassify it as infrastructure noise/a flake. No fix or unchanged rerun is
+performed for these separate findings in this Windows diagnostic task.
 
 ### Desktop boundary
 
@@ -303,7 +385,7 @@ skipped**; `npm run test:architecture` passed **547 tests**; build, `check`,
 documentation check and its working-tree changelog validation passed separately;
 neither alone is a hosted-CI result for the later follow-up.
 
-**NOT_VERIFIED:** Windows native-parity execution, live remote catalogue-refresh
+**NOT_VERIFIED:** complete Windows 65-case native-parity execution, live remote catalogue-refresh
 parity and all-provider/media execution. Exact-head CI for the extended suites
 was executed and failed as recorded above, not left unrun. Run the owning suite
 on the unresolved platforms and use the actual Desktop/native UI for that

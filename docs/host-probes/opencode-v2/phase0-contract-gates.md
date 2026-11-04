@@ -89,9 +89,14 @@ Desktop is version 2.2.5, so pinned 2.2.4 Desktop acceptance remains BLOCKED.
 
 The [bounded bootstrap diagnostic checkpoint](./p0-00-inactive-parity.md#bounded-bootstrap-diagnostic-checkpoint)
 retains npm logs and compares one Windows bootstrap alone against both suites
-jointly on the original package. Local instrumented controls pass 7/7 solo and
-65/65 joint on macOS; Windows diagnostics remain NOT_VERIFIED. No product fix,
-serialization, cache isolation or budget change is inferred from that control.
+jointly on the original package. Hosted execution on `82a490aa` proves solo npm
+completion in 267.8 seconds and two joint npm timeouts. Its seven solo cases
+fail at native-control effects or installer setup; all 65 joint cases remain
+unexecuted. Linux/macOS each pass 65/65. Windows acceptance is BLOCKED, not a
+governance-regression finding; contention and installer-path root causes remain
+NOT_VERIFIED. No product fix, serialization, cache isolation or budget change
+is inferred. The intervening macOS activation failure on `a38dd3a7` is retained
+separately in the [executed diagnostic results](./p0-00-inactive-parity.md#executed-hosted-diagnostic-on-82a490aa).
 
 ### P0-05 / P0-08 evidence breakdown (2026-11-03)
 

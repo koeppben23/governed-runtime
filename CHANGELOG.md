@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Record the executed Windows bootstrap diagnostic on the original package:
+  the solo npm install exits successfully after 267.8 seconds, both joint
+  installs time out, and the solo suite exposes native-control quoting and
+  installer-path failures. Preserve these as separate blockers, not evidence
+  of a governance regression or proven cache contention. Linux/macOS each pass
+  65/65 in the same diagnostic run; no product fix or budget change is made.
+
 - Instrument the packed-test npm bootstrap with phase/digest, PID, duration and
   exit/timeout diagnostics plus retained stdout/stderr and verbose npm debug
   logs. A bounded Windows solo-then-joint CI comparison uses the original shared

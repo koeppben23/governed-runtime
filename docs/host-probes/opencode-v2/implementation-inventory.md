@@ -99,10 +99,14 @@ remain unverified. R4 stays NOT_SUPPORTED on
 the pinned public API and its security requirement remains BLOCKED.
 
 The bounded follow-up instruments only the packed bootstrap and retains npm
-diagnostics. CI compares one Windows bootstrap alone with the unchanged joint
-65-case run on the original package; its result remains NOT_VERIFIED. The local
-macOS instrumented 7/7 solo and 65/65 joint controls do not resolve Windows or
-justify a contention fix. See the [diagnostic protocol](./p0-00-inactive-parity.md#bounded-bootstrap-diagnostic-checkpoint).
+diagnostics. CI on `82a490aa` compares one Windows bootstrap alone with the
+unchanged joint 65-case run on the original package: solo npm succeeds in 267.8
+seconds, both joint npm processes time out, and all seven solo cases fail at
+native-control effects or installed dependency setup. Cache contention and the
+installer ENOENT root cause remain NOT_VERIFIED; no governance regression is
+established. Linux/macOS each pass 65/65 in this diagnostic run. The separate
+macOS activation failure on `a38dd3a7` (51 passed, 14 unexecuted) remains a real
+historical failure, not a proven flake. See the [diagnostic results](./p0-00-inactive-parity.md#executed-hosted-diagnostic-on-82a490aa).
 
 This section describes the subsequent native API implementation and local
 verification, not the baseline table below, a completed product cutover or
