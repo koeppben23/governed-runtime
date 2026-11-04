@@ -152,6 +152,11 @@ Linux, macOS and Windows. The build job packs one product tarball plus checksum
 once; every runner downloads those identical bytes through `FLOWGUARD_TARBALL`,
 installs the exact native candidate and publishes its JSON test results. This
 separates native session/provider-wire parity from package-install/doctor checks.
+The original parity suite performs one real packed installation per run and
+copies that installed tree into its cases to avoid repeated Windows `npm install`
+latency; the installed comparison suite still executes the real installer for
+every repo/global and Git/non-Git arm. Test count, assertions, timeouts and the
+shared artifact are unchanged.
 For the bounded Windows bootstrap diagnosis, the diagnostic runs temporarily
 downloaded the original package from run `41790845872` rather than the new build's
 package. Current-build sourcing is restored: each run now uses the `build` job's

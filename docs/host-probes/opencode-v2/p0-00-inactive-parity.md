@@ -124,8 +124,12 @@ The apparently contradictory results refer to different product implementations:
    packed-install helper. Its expected file effects, completed statuses and
    catalogue equality (excluding only permitted help) are unchanged. It positively
    verifies loaded/absent product identity and seeds no workflow or activation.
-   Both suites were rerun together against the **same supplied tarball**, not
-   independently rebuilt workspace wrappers.
+   To keep the Windows E2E runtime bounded, the suite performs **one real packed
+   installation per run** as a template and copies that installed `.opencode`
+   tree into each case; the installed comparison suite still runs the real
+   installer separately for repo/global and Git/non-Git arms. Both suites were
+   rerun together against the **same supplied tarball**, not independently rebuilt
+   workspace wrappers.
 
 ### Exact executed follow-up artifact and outcomes
 

@@ -1,6 +1,7 @@
 /** Original P0-00 counterprobe assertions against real packed install bytes.
  * No workflow/activation fixture is seeded; this is not operator-UI proof. */
-import { readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionMessageAssistantTool } from '@opencode/client';
@@ -11,6 +12,7 @@ import { createPackedFlowGuardInstall } from './opencode-packed-install-test-hel
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
 const probes: NativeHostProbe[] = [];
 let artifact: Awaited<ReturnType<typeof createPackedFlowGuardInstall>>;
+let installedTemplate: string | undefined;
 afterEach(async () => {
   for (const probe of probes.splice(0).reverse()) await probe.close();
 });
@@ -30,15 +32,24 @@ function nativeWriteCommand(target: string, effect: string) {
   return `node -e "require('node:fs').writeFileSync('${path}', '${effect}')"`;
 }
 
+/** Copy the one real packed installation instead of running npm per test. */
+async function installTemplate(project: string) {
+  if (!installedTemplate) throw new Error('Packed installation template is not ready');
+  await cp(join(installedTemplate, '.opencode'), join(project, '.opencode'), {
+    recursive: true,
+    force: true,
+  });
+}
+
 async function mutationArm(product: boolean, git: boolean, tool: 'shell' | 'edit') {
   let target = '';
   const emitted = new Set<string>();
   const probe = await createNativeHostProbe({
     git,
-    async prepare(project, env) {
+    async prepare(project) {
       target = join(project, 'native-target.txt');
       await writeFile(target, 'original');
-      if (product) await artifact.install(project, env);
+      if (product) await installTemplate(project);
     },
     script(_body, sessionID) {
       if (emitted.has(sessionID)) return { text: 'Done.' };
@@ -77,9 +88,12 @@ async function mutationArm(product: boolean, git: boolean, tool: 'shell' | 'edit
 describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
   beforeAll(async () => {
     artifact = await createPackedFlowGuardInstall();
-  }, 300_000);
+    installedTemplate = await mkdtemp(join(tmpdir(), 'fg-packed-template-'));
+    await artifact.install(installedTemplate, process.env, 'repo');
+  }, 600_000);
   afterAll(async () => {
     await artifact?.close();
+    if (installedTemplate) await rm(installedTemplate, { recursive: true, force: true });
   });
   it.each([
     { git: true, tool: 'shell' },
@@ -103,8 +117,8 @@ describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
     const catalogues: string[][] = [];
     for (const product of [false, true]) {
       const probe = await createNativeHostProbe({
-        async prepare(project, env) {
-          if (product) await artifact.install(project, env);
+        async prepare(project) {
+          if (product) await installTemplate(project);
         },
       });
       await observeProduct(probe, product);
@@ -126,10 +140,10 @@ describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
       let target = '';
       const emitted = new Set<string>();
       const probe = await createNativeHostProbe({
-        async prepare(project, env) {
+        async prepare(project) {
           target = join(project, 'child-effect.txt');
           await writeFile(target, 'original');
-          if (product) await artifact.install(project, env);
+          if (product) await installTemplate(project);
         },
         script(_body, sessionID) {
           rootID ||= sessionID;
@@ -189,8 +203,8 @@ describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
   it('does not inject governance mandates into native INACTIVE compaction', async () => {
     for (const product of [false, true]) {
       const probe = await createNativeHostProbe({
-        async prepare(project, env) {
-          if (product) await artifact.install(project, env);
+        async prepare(project) {
+          if (product) await installTemplate(project);
         },
       });
       await observeProduct(probe, product);

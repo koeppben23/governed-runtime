@@ -105,12 +105,18 @@ type Arm = Awaited<ReturnType<typeof arm>>;
 /** Only the known fixture roots and configured loopback URL differ between arms.
  * No timestamps, native definitions, instructions or result content are dropped. */
 function fixturePaths(value: unknown, probe: Arm): unknown {
+  let serialized = JSON.stringify(value);
+  // Native shell commands use forward slashes on Windows; probe roots use
+  // backslashes. Normalize both spellings before comparing arms.
+  for (const root of [probe.canonicalRoot, probe.root]) {
+    for (const variant of new Set([root, root.replaceAll('\\', '/'), root.replaceAll('/', '\\')])) {
+      serialized = serialized
+        .replaceAll(JSON.stringify(variant).slice(1, -1), '<fixture-root>')
+        .replaceAll(variant, '<fixture-root>');
+    }
+  }
   return JSON.parse(
-    JSON.stringify(value)
-      // Match JSON-escaped paths as well (notably Windows backslashes).
-      .replaceAll(JSON.stringify(probe.canonicalRoot).slice(1, -1), '<fixture-root>')
-      .replaceAll(JSON.stringify(probe.root).slice(1, -1), '<fixture-root>')
-      .replaceAll(JSON.stringify(probe.providerURL).slice(1, -1), '<fixture-provider>'),
+    serialized.replaceAll(JSON.stringify(probe.providerURL).slice(1, -1), '<fixture-provider>'),
   );
 }
 
