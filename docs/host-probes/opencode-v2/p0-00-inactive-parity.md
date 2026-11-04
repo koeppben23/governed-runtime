@@ -240,22 +240,32 @@ It must not silently substitute a fresh build if this historical artifact is
 missing or expired. This is a bounded diagnostic checkpoint, not acceptance of
 the newly built head; restore current-build sourcing after diagnosis.
 
-Windows runs the existing original seven-case suite alone first (one bootstrap),
-then the unchanged joint invocation (two independent bootstraps, all 65 cases).
-The joint step runs even after a failed solo diagnostic when host setup succeeded;
-the solo failure still fails the job. No worker limit, cache isolation,
-installation reuse, timeout increase or test filtering is introduced. Both JSON
-reports and all diagnostic files are uploaded with `always()`, including failures.
-The CI-source tests enforce this ordering, shared artifact and failure semantics.
+The first diagnostic execution on `82a490aa` ran the original seven-case suite
+alone, then both suites jointly. It established one solo npm completion and two
+joint timeouts (below). Based on that result, the test job now executes both
+suites **serially** (`--no-file-parallelism`) and reuses one digest-bound
+bootstrap through `FLOWGUARD_BOOTSTRAP_PREFIX`. The second suite verifies the
+same tarball digest and embedded build identity and skips only the duplicate npm
+install. The real installer, plugin-byte comparison and every parity assertion
+still execute in both suites. A missing, stale or different-digest prefix triggers
+a clean reinstall. The artifact, 65 cases, assertions, dependency selection and
+300-second bootstrap budget are unchanged. Serialization/reuse is a
+contention-avoidance measure supported by the solo-versus-joint result, not proof
+of the joint stall's mechanism.
 
-Local instrumented control on macOS/Node 22.22.2/OpenCode 2.2.4 passes **7/7 solo**
-then **65/65 joint**, with no pending cases. All three bootstrap logs record the
-original digest, status 0, distinct npm PIDs and preserved npm debug files.
-The solo npm interval is about 4.13 seconds; the two joint intervals overlap and
-each take about 7.50 seconds. This confirms that the diagnostics observe
-concurrency locally, not that concurrency caused the Windows timeout.
-Supporting local verification for this test-only diagnostic change passes
-12,888 unit/integration tests (703 files, 2 skipped), 318 script tests and 547
+Both JSON reports and all diagnostic files are uploaded with `always()`,
+including failures. The CI-source tests enforce serialization, digest-bound reuse,
+artifact pinning and failure semantics.
+
+Local instrumented control on macOS/Node 22.22.2/OpenCode 2.2.4 with the reuse
+path passes **65/65**, with exactly one npm install and a logged
+`bootstrap-reused` phase for the second suite. Before the correction, a local
+solo control passed 7/7 and a joint control 65/65 with two overlapping npm
+intervals (about 4.13 seconds solo; about 7.50 seconds each jointly). Those local
+timings only show that the diagnostics observe concurrency; they do not explain
+the Windows timeout.
+Supporting local verification for this test-only diagnostic/reuse change passes
+12,890 unit/integration tests (703 files, 2 skipped), 318 script tests and 547
 architecture tests; type checks, strict lint, build/documentation drift (17 tests),
 formatting, actionlint and action pinning also pass. These are not Windows
 execution evidence.
@@ -296,9 +306,10 @@ deprecation warnings, without npm completion. Their recorded metadata requests
 return HTTP 200; no explicit cache lock, `EBUSY`, `EPERM`, `EINTEGRITY` or network
 error explains the timeout. Thus **the slow solo success and overlapping joint
 timeouts are established, but cache/filesystem contention is NOT_VERIFIED**.
-Logging affects timing, and the joint arm also inherits a warmed cache. No
-serialization, bootstrap reuse, dependency-selection change or product fix is
-justified by this comparison alone.
+Logging affects timing, and the joint arm also inherits a warmed cache. The
+subsequent serialization/reuse avoids the observed overlap without claiming to
+have identified its internal mechanism; no dependency-selection change or
+product fix is made.
 
 **Solo bootstrap completion is not solo conformance PASS.** Its JSON report
 records **0 passed, 7 failed, 0 pending**; the joint JSON report records
@@ -308,10 +319,15 @@ The solo failures expose separate boundaries previously hidden by bootstrap:
 - Both shell-effect cases fail in the **absent** control: the quoted executable
   followed by `-e` is rejected by PowerShell (`Unexpected token '-e'`), and the
   file remains `original`. This fixture command is not valid for the observed
-  Windows shell. It is not evidence of an INACTIVE FlowGuard veto.
+  Windows shell. It is not evidence of an INACTIVE FlowGuard veto. The fixture
+  now emits `node -e "require('node:fs').writeFileSync('<forward-slash path>',
+'<effect>')"`, which is valid in PowerShell and POSIX sh while preserving the
+  same real-file-effect assertion. The original and installed arms use the same
+  command; the fixture change is test-only.
 - The absent subagent control also leaves the child-effect file `original`.
-  Its child uses the same command construction, but its terminal child-tool
-  details were not captured in the failure log; that exact cause is NOT_VERIFIED.
+  Its child used the same invalid command construction and is covered by the same
+  cross-shell replacement; the original failure's terminal child details were
+  not retained, so that exact cause remains **NOT_VERIFIED**.
 - The two edit cases, catalogue case and compaction case reach the packed
   installer, which fails dependency setup with npm `ENOENT` opening a local
   tarball. Its scrubbed output includes a `file:C:` reference with `[path:RUNNER]%7E1`
@@ -319,7 +335,10 @@ The solo failures expose separate boundaries previously hidden by bootstrap:
   artifact, governance failure or general Windows installer defect. Source
   inspection identifies `install-transaction.ts` staging through
   `pathToFileURL(tx.vendorTarballPath).href`; the failing unredacted staging input
-  and child npm debug log were not retained, so the precise cause is NOT_VERIFIED.
+  was not retained. The helper now gives each installer invocation an
+  `npm_config_logs_dir` outside the disposable project and keeps the npm debug
+  log, so the next execution can attribute the path failure. The precise cause is
+  **NOT_VERIFIED**.
 - Solo `afterAll` cleanup additionally exceeds its unchanged 10,000 ms hook
   limit. That is distinct from the 300-second bootstrap limit.
 
@@ -328,12 +347,13 @@ jobs remain separate evidence; they do not negate the specific path failure or
 certify these native conformance cases. No product code or parity assertion is
 changed in response to this diagnostic result.
 
-Recovery needs concrete attribution of the joint stall (npm phase timing and
-Windows process/filesystem observations), a Windows-valid absent-control command
-with unchanged effect assertions, and retained unredacted staging-path/npm
-diagnostics for the installer failure. These are separate investigations. P0-00
-Windows remains **BLOCKED**; the requested diagnostic was executed, not left
-unrun, but its timeout root cause remains **NOT_VERIFIED**.
+Remaining recovery needs concrete attribution of the installer `ENOENT` from the
+newly retained npm log, then a separate decision on whether it is a test-path or
+product installer defect. The bootstrap overlap is avoided by serialization/reuse;
+its internal Windows mechanism remains **NOT_VERIFIED** even if the serialized
+run passes. P0-00 Windows remains **BLOCKED** until the 65 cases execute and pass
+on Windows, the installer path is understood, and the solo cleanup limit is
+resolved without weakening assertions or budgets.
 
 ### Intervening `a38dd3a7` run, retained separately
 

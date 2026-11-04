@@ -563,29 +563,21 @@ jobs:
           if (!existsSync(tarball)) throw new Error(`Missing shared parity artifact: ${tarball}`);
           appendFileSync(process.env.GITHUB_ENV, `OPENCODE_CLI=${bin}\nFLOWGUARD_TARBALL=${tarball}\n`);
           NODE
-      - name: Diagnose one Windows bootstrap alone
-        if: runner.os == 'Windows'
-        run: npx vitest run --project smoke src/cli/opencode-inactive-parity.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-solo-results.json
-        env:
-          FORCE_COLOR: 0
-          OPENCODE_LIVE: '1'
-          FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR: inactive-parity-diagnostics/solo
       - name: Reconcile original probes and verify installed mixed-session parity
-        # Preserve the joint comparison even if the isolated diagnostic fails.
-        if: ${{ !cancelled() && steps.parity-host.outcome == 'success' }}
-        run: npx vitest run --project smoke src/cli/opencode-inactive-parity.smoke.test.ts src/cli/opencode-inactive-installed.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-results.json
+        # One bootstrap at a time, reused by the second suite: the diagnostic
+        # proved a solo npm bootstrap completes while two concurrent ones time out.
+        run: npx vitest run --no-file-parallelism --project smoke src/cli/opencode-inactive-parity.smoke.test.ts src/cli/opencode-inactive-installed.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-results.json
         env:
           FORCE_COLOR: 0
           OPENCODE_LIVE: '1'
           FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR: inactive-parity-diagnostics/joint
+          FLOWGUARD_BOOTSTRAP_PREFIX: inactive-parity-shared-bootstrap
       - name: Upload installed-parity test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
         with:
           name: inactive-parity-results-${{ matrix.os }}
-          path: |
-            inactive-parity-results.json
-            inactive-parity-solo-results.json
+          path: inactive-parity-results.json
           if-no-files-found: error
           retention-days: 7
       - name: Upload bootstrap phases and npm diagnostics

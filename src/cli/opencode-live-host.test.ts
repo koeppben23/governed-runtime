@@ -182,6 +182,7 @@ describe('packed bootstrap diagnostics', () => {
     vi.stubEnv('npm_config_cache', '/fixture/shared-cache');
     return {
       root,
+      prefix: join(root, 'shared-bootstrap'),
       events() {
         return readdirSync(join(root, 'diagnostics')).map((dir) => {
           const directory = join(root, 'diagnostics', dir);
@@ -301,6 +302,51 @@ describe('packed bootstrap diagnostics', () => {
       expect(existsSync(phases[0].root)).toBe(false);
     },
   );
+  it('reuses one digest-bound bootstrap and records the reuse instead of npm', async () => {
+    const probe = fixture();
+    vi.stubEnv('FLOWGUARD_BOOTSTRAP_PREFIX', probe.prefix);
+    npmResult(0);
+    const first = await createPackedFlowGuardInstall();
+    await first.close();
+    const second = await createPackedFlowGuardInstall();
+    try {
+      expect(spawnSync).toHaveBeenCalledTimes(1);
+      expect(second.identity).toEqual(first.identity);
+      expect(existsSync(join(probe.prefix, 'bootstrap-identity.json'))).toBe(true);
+      const reusedRun = probe
+        .events()
+        .find((event) => event.phases.some((phase) => phase.stage === 'bootstrap-reused'));
+      expect(reusedRun?.phases.map((event) => event.stage)).toEqual([
+        'tarball-begin',
+        'tarball-ready',
+        'bootstrap-reused',
+        'identity-ready',
+      ]);
+      expect(reusedRun?.phases[2].bootstrap).toBe(probe.prefix);
+    } finally {
+      await second.close();
+    }
+  });
+  it('reinstalls when the shared prefix belongs to a different artifact digest', async () => {
+    const probe = fixture();
+    vi.stubEnv('FLOWGUARD_BOOTSTRAP_PREFIX', probe.prefix);
+    npmResult(0);
+    const first = await createPackedFlowGuardInstall();
+    await first.close();
+    writeFileSync(join(probe.root, 'fixture.tgz'), 'different artifact bytes');
+    const second = await createPackedFlowGuardInstall();
+    try {
+      expect(spawnSync).toHaveBeenCalledTimes(2);
+      expect(second.identity.sha256).not.toBe(first.identity.sha256);
+      expect(
+        probe
+          .events()
+          .filter((event) => event.phases.some((phase) => phase.stage === 'npm-install-begin')),
+      ).toHaveLength(2);
+    } finally {
+      await second.close();
+    }
+  });
   it('keeps concurrent bootstrap diagnostics disjoint without reusing the installation', async () => {
     const probe = fixture();
     npmResult(0);

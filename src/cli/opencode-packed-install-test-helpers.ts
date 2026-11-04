@@ -1,7 +1,7 @@
 /** Real packed CLI/install bytes for native-host tests; never seeds governance. */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, writeFileSync } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,52 +59,81 @@ export async function createPackedFlowGuardInstall() {
     }
     const sha256 = hashBuffer(await readFile(tarball));
     checkpoint('tarball-ready', { file: basename(tarball), sha256 });
-    const bootstrap = join(root, 'bootstrap');
-    stage = 'npm-install';
-    checkpoint('npm-install-begin', {
-      timeoutMs: 300_000,
-      bootstrap,
-      // Do not change or isolate the shared cache while testing the contention hypothesis.
-      configuredCache: process.env.npm_config_cache ?? process.env.NPM_CONFIG_CACHE ?? null,
-    });
-    // Keep synchronous execution and piped stdio, as in the original execFileSync.
-    // spawnSync additionally exposes PID/status/signal on successful completion.
-    const result = spawnSync(
-      process.execPath,
-      [
-        npmCLI,
-        'install',
-        '--prefix',
+    // The CI job serializes both suites and shares one digest-bound bootstrap.
+    // Never use this prefix for concurrent test files.
+    const sharedBootstrap = process.env.FLOWGUARD_BOOTSTRAP_PREFIX
+      ? resolve(process.env.FLOWGUARD_BOOTSTRAP_PREFIX)
+      : undefined;
+    const bootstrap = sharedBootstrap ?? join(root, 'bootstrap');
+    const marker = sharedBootstrap ? join(sharedBootstrap, 'bootstrap-identity.json') : undefined;
+    let reused = false;
+    if (marker) {
+      try {
+        const prior = JSON.parse(await readFile(marker, 'utf8')) as {
+          file?: unknown;
+          sha256?: unknown;
+        };
+        reused =
+          prior.file === basename(tarball) &&
+          prior.sha256 === sha256 &&
+          existsSync(join(bootstrap, 'node_modules/@flowguard/core/dist/build-info.json'));
+      } catch {
+        reused = false;
+      }
+    }
+    if (reused) {
+      checkpoint('bootstrap-reused', { bootstrap, marker });
+    } else {
+      if (sharedBootstrap) {
+        await rm(bootstrap, { recursive: true, force: true });
+        await mkdir(sharedBootstrap, { recursive: true });
+      }
+      stage = 'npm-install';
+      checkpoint('npm-install-begin', {
+        timeoutMs: 300_000,
         bootstrap,
-        '--ignore-scripts',
-        '--no-audit',
-        '--no-fund',
-        '--loglevel=verbose',
-        `--logs-dir=${join(diagnostics, 'npm-debug')}`,
-        tarball,
-      ],
-      { cwd: root, encoding: 'utf8', timeout: 300_000 },
-    );
-    writeFileSync(join(diagnostics, 'npm.stdout.log'), result.stdout ?? '');
-    writeFileSync(join(diagnostics, 'npm.stderr.log'), result.stderr ?? '');
-    checkpoint('npm-install-end', {
-      npmPID: result.pid,
-      status: result.status,
-      signal: result.signal,
-      error: result.error
-        ? {
-            code: (result.error as NodeJS.ErrnoException).code,
-            name: result.error.name,
-            message: result.error.message,
-          }
-        : null,
-    });
-    if (result.error) throw result.error;
-    if (result.status !== 0)
-      throw Object.assign(new Error(`Packed npm bootstrap failed; see ${diagnostics}`), {
+        // Do not change or isolate the shared cache while testing the contention hypothesis.
+        configuredCache: process.env.npm_config_cache ?? process.env.NPM_CONFIG_CACHE ?? null,
+      });
+      // Keep synchronous execution and piped stdio, as in the original execFileSync.
+      // spawnSync additionally exposes PID/status/signal on successful completion.
+      const result = spawnSync(
+        process.execPath,
+        [
+          npmCLI,
+          'install',
+          '--prefix',
+          bootstrap,
+          '--ignore-scripts',
+          '--no-audit',
+          '--no-fund',
+          '--loglevel=verbose',
+          `--logs-dir=${join(diagnostics, 'npm-debug')}`,
+          tarball,
+        ],
+        { cwd: root, encoding: 'utf8', timeout: 300_000 },
+      );
+      writeFileSync(join(diagnostics, 'npm.stdout.log'), result.stdout ?? '');
+      writeFileSync(join(diagnostics, 'npm.stderr.log'), result.stderr ?? '');
+      checkpoint('npm-install-end', {
+        npmPID: result.pid,
         status: result.status,
         signal: result.signal,
+        error: result.error
+          ? {
+              code: (result.error as NodeJS.ErrnoException).code,
+              name: result.error.name,
+              message: result.error.message,
+            }
+          : null,
       });
+      if (result.error) throw result.error;
+      if (result.status !== 0)
+        throw Object.assign(new Error(`Packed npm bootstrap failed; see ${diagnostics}`), {
+          status: result.status,
+          signal: result.signal,
+        });
+    }
     stage = 'identity';
     const packedRoot = join(bootstrap, 'node_modules/@flowguard/core');
     const identity = {
@@ -116,9 +145,19 @@ export async function createPackedFlowGuardInstall() {
     };
     checkpoint('identity-ready', { identity });
     console.info('inactive-parity-artifact', JSON.stringify(identity));
+    if (marker && !reused) {
+      const pending = `${marker}.${process.pid}.tmp`;
+      await writeFile(pending, `${JSON.stringify({ file: basename(tarball), sha256 })}\n`);
+      await rename(pending, marker);
+    }
     return {
       identity,
       async install(project: string, env: NodeJS.ProcessEnv, scope: 'repo' | 'global' = 'repo') {
+        const installerDiagnostics = join(
+          diagnostics,
+          `installer-${scope}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        );
+        await mkdir(installerDiagnostics, { recursive: true });
         const output = execFileSync(
           process.execPath,
           [
@@ -131,7 +170,12 @@ export async function createPackedFlowGuardInstall() {
           ],
           {
             cwd: project,
-            env: { ...env, FLOWGUARD_INSTALL_LOCK_PATH: join(project, '.install.lock') },
+            env: {
+              ...env,
+              FLOWGUARD_INSTALL_LOCK_PATH: join(project, '.install.lock'),
+              npm_config_loglevel: 'verbose',
+              npm_config_logs_dir: installerDiagnostics,
+            },
             encoding: 'utf8',
             timeout: 300_000,
           },

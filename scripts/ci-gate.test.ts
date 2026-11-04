@@ -73,30 +73,21 @@ describe('required ci-gate documentation enforcement', () => {
           step.name === 'Reconcile original probes and verify installed mixed-session parity',
       )?.run,
     ).toBe(
-      'npx vitest run --project smoke src/cli/opencode-inactive-parity.smoke.test.ts src/cli/opencode-inactive-installed.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-results.json',
+      'npx vitest run --no-file-parallelism --project smoke src/cli/opencode-inactive-parity.smoke.test.ts src/cli/opencode-inactive-installed.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-results.json',
     );
   });
-  it('retains exact-package isolated and joint Windows bootstrap diagnostics without masking failures', () => {
+  it('reuses one digest-bound bootstrap with both suites serialized on the original package', () => {
     const steps = requiredJob('inactive-parity').steps;
     const download = steps.find((step) => step.name === 'Download identical packed product');
     expect(download?.with?.['run-id']).toBe('41790845872');
     expect(download?.with?.['github-token']).toBe('${{ github.token }}');
-    const solo = steps.findIndex((step) => step.name === 'Diagnose one Windows bootstrap alone');
-    const joint = steps.findIndex(
+    const run = steps.find(
       (step) => step.name === 'Reconcile original probes and verify installed mixed-session parity',
     );
-    expect(solo).toBeGreaterThan(-1);
-    expect(solo).toBeLessThan(joint);
-    expect(steps[solo]?.if).toBe("runner.os == 'Windows'");
-    expect(steps[solo]?.run).toBe(
-      'npx vitest run --project smoke src/cli/opencode-inactive-parity.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-solo-results.json',
-    );
-    expect(steps[joint]?.if).toBe("${{ !cancelled() && steps.parity-host.outcome == 'success' }}");
-    expect(steps[solo]?.env?.FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR).toBe(
-      'inactive-parity-diagnostics/solo',
-    );
-    expect(steps[joint]?.env?.FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR).toBe(
-      'inactive-parity-diagnostics/joint',
+    expect(run?.env?.FLOWGUARD_BOOTSTRAP_PREFIX).toBe('inactive-parity-shared-bootstrap');
+    expect(run?.env?.FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR).toBe('inactive-parity-diagnostics/joint');
+    expect(steps.some((step) => step.name?.startsWith('Diagnose one Windows bootstrap'))).toBe(
+      false,
     );
     const upload = steps.find(
       (step) => step.name === 'Upload bootstrap phases and npm diagnostics',

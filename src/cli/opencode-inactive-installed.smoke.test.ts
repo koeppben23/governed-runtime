@@ -114,12 +114,19 @@ function fixturePaths(value: unknown, probe: Arm): unknown {
   );
 }
 
+/** Native shell effect valid in PowerShell and POSIX sh: one outer
+ * double-quoted `-e` script, single-quoted JS strings, forward-slash paths. */
+function nativeWriteCommand(target: string, effect: string) {
+  const path = target.replaceAll('\\', '/').replaceAll("'", "\\'");
+  return `node -e "require('node:fs').writeFileSync('${path}', '${effect}')"`;
+}
+
 function shellEffect(target: string): NativeProbeReply {
   return {
     tool: {
       name: 'shell',
       arguments: {
-        command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(target)}, 'native-effect')`)}`,
+        command: nativeWriteCommand(target, 'native-effect'),
         description: 'P0-00 native effect',
       },
     },
@@ -393,7 +400,7 @@ describe.skipIf(!LIVE)('packed installed INACTIVE native parity', () => {
                   tool === 'edit'
                     ? { path: target, oldString: 'original', newString: 'native-effect' }
                     : {
-                        command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(target)}, 'native-effect')`)}`,
+                        command: nativeWriteCommand(target, 'native-effect'),
                         description: 'P0-00 native effect',
                       },
               },

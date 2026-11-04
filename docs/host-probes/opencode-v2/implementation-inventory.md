@@ -102,11 +102,15 @@ The bounded follow-up instruments only the packed bootstrap and retains npm
 diagnostics. CI on `82a490aa` compares one Windows bootstrap alone with the
 unchanged joint 65-case run on the original package: solo npm succeeds in 267.8
 seconds, both joint npm processes time out, and all seven solo cases fail at
-native-control effects or installed dependency setup. Cache contention and the
-installer ENOENT root cause remain NOT_VERIFIED; no governance regression is
-established. Linux/macOS each pass 65/65 in this diagnostic run. The separate
-macOS activation failure on `a38dd3a7` (51 passed, 14 unexecuted) remains a real
-historical failure, not a proven flake. See the [diagnostic results](./p0-00-inactive-parity.md#executed-hosted-diagnostic-on-82a490aa).
+native-control effects or installed dependency setup. The test job now serializes
+the two suites and reuses one digest-bound bootstrap, the Windows shell fixture
+uses a cross-shell `node -e` command, and installer npm logs are retained. These
+are test-only corrections; the joint mechanism and installer ENOENT root cause
+remain NOT_VERIFIED, and no governance regression is established. Linux/macOS
+each pass 65/65 in this diagnostic run; local reuse passes 65/65 with one npm
+install. The separate macOS activation failure on `a38dd3a7` (51 passed, 14
+unexecuted) remains a real historical failure, not a proven flake. See the
+[diagnostic results](./p0-00-inactive-parity.md#executed-hosted-diagnostic-on-82a490aa).
 
 This section describes the subsequent native API implementation and local
 verification, not the baseline table below, a completed product cutover or

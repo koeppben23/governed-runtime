@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Serialize the packed parity suites and reuse one digest-bound bootstrap after
+  the Windows diagnostic showed a solo npm install completing while two
+  concurrent installs time out. Replace the invalid PowerShell fixture command
+  with a cross-shell real-file effect and retain per-installer npm debug logs.
+  The shared artifact, 65 cases, assertions and 300-second budgets are unchanged;
+  no product code or governance behavior changes.
+
 - Record the executed Windows bootstrap diagnostic on the original package:
   the solo npm install exits successfully after 267.8 seconds, both joint
   installs time out, and the solo suite exposes native-control quoting and

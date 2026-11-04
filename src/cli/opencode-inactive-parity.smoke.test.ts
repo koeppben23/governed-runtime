@@ -23,6 +23,13 @@ async function observeProduct(probe: NativeHostProbe, installed: boolean) {
   if (installed) expect(product[0]!.state).toEqual({ status: 'active' });
 }
 
+/** Native shell effect that is valid in PowerShell and POSIX sh: one outer
+ * double-quoted `-e` script, single-quoted JS strings, forward-slash paths. */
+function nativeWriteCommand(target: string, effect: string) {
+  const path = target.replaceAll('\\', '/').replaceAll("'", "\\'");
+  return `node -e "require('node:fs').writeFileSync('${path}', '${effect}')"`;
+}
+
 async function mutationArm(product: boolean, git: boolean, tool: 'shell' | 'edit') {
   let target = '';
   const emitted = new Set<string>();
@@ -43,7 +50,7 @@ async function mutationArm(product: boolean, git: boolean, tool: 'shell' | 'edit
             tool === 'edit'
               ? { path: target, oldString: 'original', newString: 'native-effect' }
               : {
-                  command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(target)}, 'native-effect')`)}`,
+                  command: nativeWriteCommand(target, 'native-effect'),
                   description: 'Bounded native side-effect comparison',
                 },
         },
@@ -143,7 +150,7 @@ describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
             tool: {
               name: 'shell',
               arguments: {
-                command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(target)}, 'child-effect')`)}`,
+                command: nativeWriteCommand(target, 'child-effect'),
                 description: 'Bounded native child side effect',
               },
             },
