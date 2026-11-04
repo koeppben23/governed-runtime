@@ -21,11 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   governance-rejection class, and put the current P0-10 status and SHA-scoped
   evidence boundaries ahead of the retained historical audit checkpoints.
 
-- Complete and evidence P0-10 implementation cleanup: Hosted CI passes 37/37 on
-  `31341f1f`, default mutation scores 81.10 against the unchanged 80 break
-  threshold on the identical production tree, and the package/import proof
-  excludes all retired artifacts. The ISO publication race, R4 and installed
-  product acceptance remain separate open blockers.
+- Complete P0-10 implementation cleanup and record its code evidence: Hosted CI
+  passes 37/37 on `31341f1f`, default mutation scores 81.10 against the unchanged
+  80 break threshold on the identical production tree, and the package/import
+  proof excludes all retired artifacts. A later docs-only HEAD has repeated
+  `integration-perf` budget misses with unchanged thresholds, so final green
+  closure remains open. The ISO publication race, R4 and installed product
+  acceptance remain separate open blockers.
 
 - Adapt the lifecycle artwork proposed in PR #1186 for the V2 README, retaining
   its nine-step layout as an editable SVG. Correct activation (`/start`, not
