@@ -119,13 +119,6 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     dir: 'integration/review/obligations',
     description: 'Review obligations, attempts, and challenge lifecycle',
     targetProductionFiles: 12,
-    budgetExceptions: [
-      {
-        file: 'integration/review/obligations/invocation-evidence.ts',
-        reason:
-          'Extracted canonical invocation-evidence constructor keeps the transport generation explicit and assurance.ts inside the unchanged production file-size budget.',
-      },
-    ],
   },
   {
     id: 'review/context',
@@ -450,7 +443,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   },
   { file: 'integration/review/dispatch/serialization-prompt.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-review-types.ts', owner: 'review-dispatch' },
-  { file: 'integration/review/obligations/obligation-settlement.ts', owner: 'review-obligations' },
   { file: 'integration/review/obligations/obligation-state.ts', owner: 'review-obligations' },
   { file: 'integration/review/obligations/obligation-tools.ts', owner: 'review-obligations' },
   { file: 'integration/review/observations/observation-access.ts', owner: 'review-observations' },

@@ -843,6 +843,16 @@ does not preserve the obsolete warning-only classifier contract. The remaining
 executable cleanup is four asynchronous rails and old obligation settlement;
 P0-10 is not yet closed.
 
+**Settlement retirement after `3c210bae`:** the seven old settlement assertion
+purposes now execute on both live artifact continuation routes (14 cases) with
+real persistence; the old unused executor and suite are removed. The current
+schema explicitly rejects the old invalid digest and double-initial fixtures;
+route-time integrity refusal and legal V2 retry continuation are also tested.
+See the [case mapping and boundaries](./p0-10-ownership-decisions.md#completed-settlement-port-seven-purposes-on-both-current-artifact-routes).
+The source graph now has 721 production / 246 integration files and five files
+outside combined shipped reachability: four rails plus the deliberate product
+inventory authority. P0-10, R4 and final installed acceptance remain open.
+
 Scope: shipped package exports/binaries, native plugin composition and adapter,
 activation versus workflow authority, reviewer dispatch/capture/evidence owners,
 remaining type facades and live demo compatibility consumers. This is not a new

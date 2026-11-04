@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Retire the unused generic review-obligation settlement executor after porting
+  its seven assertion purposes to live plan and architecture continuation routes
+  with real persistence (14 cases). Missing attempts close deterministically;
+  frozen-material integrity failures leave status unchanged. Current schema
+  boundaries reject obsolete invalid fixtures rather than normalizing them;
+  authorized bounded retry lineage and preserved evidence remain intact.
+
 - Remove the uncalled V1 host compatibility classifier. Port its nine safety
   cases to the current native candidate resolver: exact selection, rejection
   of other/unknown/nightly versions and pin provenance, with no warning-only

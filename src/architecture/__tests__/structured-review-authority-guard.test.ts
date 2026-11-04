@@ -33,6 +33,15 @@ function relative(path: string): string {
 }
 
 describe('structured review authority hard cut', () => {
+  it('does not retain the superseded generic settlement executor', () => {
+    expect(existsSync(join(SRC, 'integration/review/obligations/obligation-settlement.ts'))).toBe(
+      false,
+    );
+    const offenders = listProductionSources(SRC).filter((file) =>
+      /\bsettleReviewObligationAfterAttempt\b/.test(readFileSync(file, 'utf8')),
+    );
+    expect(offenders.map(relative)).toEqual([]);
+  });
   it('does not retain the unused metadata-only branch provenance validator', () => {
     expect(existsSync(join(SRC, 'integration/review/evidence/review-provenance.ts'))).toBe(false);
   });
