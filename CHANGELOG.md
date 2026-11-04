@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Record the Windows installer trace from acceptance run `41841262945`: npm
+  discovery succeeds in the failed non-Git repo arm, but its npm install outlives
+  the 300-second installer deadline; 14 selected cases remain unexecuted.
+  Enable npm's own timing logs/JSON to identify the slow internal phase without
+  changing install arguments, dependencies, retries, assertions or deadlines.
+
 - Retain per-arm packed-installer phases, environment/executable candidates,
   subprocess timings and exit causes for the failed Windows repo/global setup
   in acceptance run `41836072753`. Keep bootstrap behavior, package-manager

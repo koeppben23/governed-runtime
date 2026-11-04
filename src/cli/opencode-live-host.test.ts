@@ -319,7 +319,10 @@ describe('packed bootstrap diagnostics', () => {
         expect(call[2]).toMatchObject({
           cwd: project,
           timeout: 300_000,
-          env: { NODE_OPTIONS: expect.stringContaining('--no-warnings --require ') },
+          env: {
+            NODE_OPTIONS: expect.stringContaining('--no-warnings --require '),
+            npm_config_timing: 'true',
+          },
         });
         expect(phases.some((event) => event.stage === 'installer-verified')).toBe(
           kind === 'success',

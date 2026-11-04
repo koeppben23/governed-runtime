@@ -212,6 +212,7 @@ process.on('exit', code => record('process-exit', { code }));
           FLOWGUARD_INSTALL_LOCK_PATH: join(project, '.install.lock'),
           npm_config_loglevel: 'verbose',
           npm_config_logs_dir: installerDiagnostics,
+          npm_config_timing: 'true',
           NODE_OPTIONS: [env.NODE_OPTIONS, `--require ${JSON.stringify(preload)}`]
             .filter(Boolean)
             .join(' '),

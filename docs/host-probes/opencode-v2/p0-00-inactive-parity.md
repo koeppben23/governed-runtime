@@ -470,11 +470,47 @@ instrumentation. All seven real installer invocations retain command/exit
 records; package-manager probes and installations return normally. This verifies
 the observer on real processes, not the Windows root cause or Windows acceptance.
 
-**NOT_VERIFIED:** the exact Windows arm-setup root causes and a successful full
-matrix with this diagnostic harness. Re-trigger `run-parity-acceptance` on the
-PR candidate, inspect every arm's diagnostics, and require the same run's
-checksum-verified package and 65/65 on each OS before reporting fresh acceptance.
-The older PASS remains bounded evidence, not a PASS for this failed run.
+#### Executed installer trace on `7edcbd96`
+
+[Acceptance run 41841262945](https://github.com/koeppben23/governed-runtime/actions/runs/41841262945)
+is **FAIL**. Linux/macOS each pass 65/65. Windows passes 51 distinct cases:
+2 mixed + 7 original + 28 global + 14 repo. The remaining 14 cases are exactly
+the non-Git repo arm, unexecuted after its setup fails; there are no failed case
+assertions, but this is not a successful suite or a 65/65 acceptance.
+
+All four Windows bootstrap identities match the downloaded package checksum
+`098374797abfcd15ea362a836a75cb7fdeb3611d9544d8c82d2aafc8275d5bd0`,
+embedded merge build `1f9b0f113cb0c571a8de08bbe29163e01ce67bd6`.
+
+The failed arm's subprocess trace establishes:
+
+1. npm exists in PATH and the actual pinned Node/npm CLI starts. bun returns
+   `ENOENT`; `npm --version` succeeds in **619 ms**, not the 5-second timeout.
+   This arm is not a package-manager discovery failure.
+2. The real npm install starts at `13:56:16.904Z`. At `14:01:15.445Z`, the
+   outer harness records **300,016 ms**, `ETIMEDOUT`, status null and SIGTERM
+   for the installer. No completion from its synchronous npm call was observed.
+3. The npm child later records process exit 0 at `14:02:28.886Z`, about
+   **372 seconds** after npm starts and 73 seconds after the installer is killed.
+   It outlives the timed-out parent. The first repo arm completes the npm call
+   in **233,615 ms** and the complete installer in **234,775 ms**.
+4. Both global arms now complete, with installer durations **231,759 ms** and
+   **277,977 ms**. The earlier global discovery error was not reproduced;
+   passing now does not establish its original cause.
+
+This localizes the reproduced timeout to the npm-install subprocess rather than
+bootstrap or native parity assertions. It does not yet identify why that npm
+execution took 372 seconds. To distinguish npm resolution, materialization and
+finalization, installer diagnostics additionally enable npm's own timing log and
+timing JSON via `npm_config_timing=true`. This changes logging only, not npm
+arguments, dependency selection, retries or deadlines.
+
+**NOT_VERIFIED:** the cause of slow Windows npm installation, the original
+global discovery failure, and a successful full matrix with this diagnostic
+harness. Inspect npm timing artifacts on the next candidate before choosing a
+fix; require the same run's checksum-verified package and 65/65 on each OS before
+reporting fresh acceptance. The older PASS remains bounded evidence, not a PASS
+for either failed run.
 
 ### Intervening `a38dd3a7` run, retained separately
 
