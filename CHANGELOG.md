@@ -498,12 +498,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Whole-PR documentation alignment.** Remove the Quick Start GA claim and the
+  `/hydrate` activation wording; make approval gates policy-dependent; show
+  separate activation authority, native review lineage/capture and the
+  `REDUCED_CEREMONY` edge in the architecture/phase diagrams; refresh the
+  current P0 gate rows and record the P0-10 aggregate measurement as an open
+  audit. No runtime behavior or test assertion changes.
+
 - **Windows P0-00 execution budget.** Current-build run `41806050855` was
   cancelled at the 20-minute job limit midway through the second matrix scope
-  after four successful installs and no assertion failure; observed timings
-  project 30–32 minutes for all 65 Windows cases. The `inactive-parity` job
-  budget is now 35 minutes, pinned by the CI-source test. Test, hook and coverage
-  budgets, case count and assertions are unchanged.
+  after four successful installs and no assertion failure. The 35-minute rerun
+  `41809656855` completed all installs and the installed suite, then reached the
+  final seven-case suite before cancellation at 35m08s, again with no installer
+  or assertion failure. The `inactive-parity` job budget is now 90 minutes,
+  pinned by the CI-source test. Test, hook and coverage budgets, case count and
+  assertions are unchanged.
 
 - **P0-00 current-build evidence and smoke follow-ups (#1190).** The
   installed-parity matrix now downloads the current build job's package and

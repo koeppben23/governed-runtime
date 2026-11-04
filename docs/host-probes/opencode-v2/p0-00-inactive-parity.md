@@ -362,7 +362,7 @@ separate test-cleanup issue; it did not affect a passing parity result. P0-00
 Windows remains **BLOCKED** until all 65 cases execute and pass on Windows with
 the restored current-build artifact.
 
-### Current-build Windows job-budget timeout on `151df7ed`
+### Current-build Windows job-budget limits
 
 [CI run 41806050855](https://github.com/koeppben23/governed-runtime/actions/runs/41806050855)
 on `151df7edef671888561362b1818e68204aa7f2a4` uses the current build artifact,
@@ -370,24 +370,34 @@ SHA-256 `edf0f1079e6fb98cd626a2e4374d8da0fe2630833d826c93614b4b8a57344329`,
 with embedded merge-build SHA `4c238535cbf2e58e1c60c8287a5f8ac43cbb868d`
 (built `2026-11-04T09:17:02.352Z`). Linux and macOS each pass **65/65** on these
 bytes. Windows downloads the same artifact, resolves OpenCode 2.2.4, completes
-the digest-bound npm bootstrap in **65.5 seconds**, and performs four real
-installs (mixed repo/global, then matrix Git/repo and non-Git/repo scopes) with
-no installer error.
+the digest-bound npm bootstrap in **65.5 seconds**, and performs real installs
+(mixed repo/global, then matrix Git/repo and non-Git/repo scopes) with no
+installer error.
 
-The Windows job is nevertheless **cancelled by its unchanged 20-minute job
-limit** at `09:37:23Z` (started `09:17:15Z`), midway through the second matrix
-scope. No assertion failure is reported; Vitest is killed before writing
-`inactive-parity-results.json`, so the missing JSON is cancellation, not 65
-pending cases. The last installer completes at `09:34:16Z`; the global matrix
-scopes are never reached. The observed scope timings project roughly 30–32
-minutes for all 65 Windows cases. This is an execution-budget finding, not a
-product, installer or assertion failure.
+Its Windows job is cancelled by the then-unchanged **20-minute job limit** at
+`09:37:23Z` (started `09:17:15Z`), midway through the second matrix scope. No
+assertion failure is reported; Vitest is killed before writing
+`inactive-parity-results.json`. The last installer completes at `09:34:16Z`; the
+global matrix scopes are never reached. This is an execution-budget finding, not
+a product, installer or assertion failure.
 
-The Windows job budget is therefore **35 minutes**, documented in the workflow
+[CI run 41809656855](https://github.com/koeppben23/governed-runtime/actions/runs/41809656855)
+then repeats on `96448a1c94c02192342120724631444c1080427b` with the current
+artifact SHA-256
+`77033d0078b6985a4fe1690fa6c6cacba9c1e0ba4b9c80f2459104c48ce72594`, embedded
+merge-build SHA `276354911a428c63e9a11b727f917e4f45ac783c` (built
+`2026-11-04T09:45:41.682Z`). The bootstrap completes in **70.3 seconds**; the
+mixed and all four matrix scopes perform six real installs with no installer or
+assertion failure. Vitest then advances to the final original seven-case suite
+at `10:19:14Z`, but the **35-minute job limit** cancels at `10:21:00Z` after
+`35m08s`. No results JSON is written; the missing file is cancellation, not a
+reported failure.
+
+The Windows job budget is therefore **90 minutes**, documented in the workflow
 and pinned by the CI-source test. The 300-second bootstrap/test budgets, 65
 cases, assertions and dependency selection are unchanged. Windows acceptance
-remains **BLOCKED** until the 35-minute matrix executes and passes; no PASS is
-inferred from the timeout.
+remains **BLOCKED** until the full matrix executes and passes; no PASS is
+inferred from either timeout.
 
 ### Intervening `a38dd3a7` run, retained separately
 

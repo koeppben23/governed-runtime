@@ -1,12 +1,17 @@
 # Quick Start (OpenCode)
 
-This Quick Start applies to OpenCode, the fully supported GA host.
+This Quick Start applies to OpenCode, the primary V2 host. The ACTIVE V2
+integration is still Draft/NO-GO: INACTIVE native behavior and bounded
+CLI/server parity are implemented, but installed Desktop, Windows and whole-PR
+acceptance remain open. Use this guide for evaluation, not as a GA release
+claim.
 
 ## Prerequisites
 
 - Node.js 20+
 - OpenCode
-- `git` (FlowGuard requires running inside a git worktree; missing git BLOCKs `/hydrate`)
+- `git` (FlowGuard requires running inside a git worktree; missing git BLOCKs
+  `/start`)
 
 ## Installation
 
@@ -117,9 +122,11 @@ Materializes the required verifiable export and completes the workflow once
 export evidence is persisted. Canonical verification requires an authorized raw
 auditor package.
 
-All canonical commands (`/hydrate`, `/ticket`, `/review-decision`, `/validate`,
+The workflow commands (`/ticket`, `/review-decision`, `/validate`,
 `/architecture`, `/review`, `/export`, `/archive`, `/abort`, `/continue`) remain
-fully supported for scripts, CI, and advanced workflows.
+supported for scripts, CI, and advanced workflows. `/hydrate` is a legacy
+compatibility command; it is **not** a V2 activation path and must not be used
+in place of `/start` or an authorized autonomous `StartGovernance` call.
 
 ## Architecture Flow (ADR Creation)
 
@@ -140,7 +147,7 @@ The ADR must include `## Context`, `## Decision`, and `## Consequences` sections
 ADR-specific criteria (Context completeness, Decision concreteness, Consequences
 honesty, MADR structure). The agent revises and re-submits on
 `changes_requested`. On convergence, the workflow advances to `ARCH_REVIEW`,
-where a human approves:
+where the approval authority selected by the frozen policy decides:
 
 ```
 /approve
@@ -174,32 +181,32 @@ Or review a specific GitHub pull request:
 
 **Product surface (recommended for daily use):**
 
-| Command               | Description                                 |
-| --------------------- | ------------------------------------------- |
-| `/start`              | Bootstrap session → READY                   |
-| `/task <text or URL>` | Record task (supports external URLs)        |
-| `/approve`            | Approve at the current review gate          |
-| `/request-changes`    | Request changes at the current review gate  |
-| `/reject`             | Reject at the current review gate           |
-| `/check`              | Compatibility: re-run validation            |
-| `/export`             | Materialize the verifiable export           |
-| `/why`                | Diagnostic: explain the current next-action |
-| `/status`             | Read-only session view                      |
+| Command               | Description                                       |
+| --------------------- | ------------------------------------------------- |
+| `/start`              | Activate governance for this root session → READY |
+| `/task <text or URL>` | Record task (supports external URLs)              |
+| `/approve`            | Approve at the current review gate                |
+| `/request-changes`    | Request changes at the current review gate        |
+| `/reject`             | Reject at the current review gate                 |
+| `/check`              | Compatibility: re-run validation                  |
+| `/export`             | Materialize the verifiable export                 |
+| `/why`                | Diagnostic: explain the current next-action       |
+| `/status`             | Read-only session view                            |
 
 **Canonical commands:**
 
-| Command                              | Description                          |
-| ------------------------------------ | ------------------------------------ |
-| `/hydrate`                           | Bootstrap session → READY            |
-| `/ticket <text or URL>`              | Record task (supports external URLs) |
-| `/plan`                              | Generate plan                        |
-| `/architecture`                      | Create/revise ADR                    |
-| `/implement`                         | Execute approved plan                |
-| `/validate`                          | Run validation                       |
-| `/review <PR-URL or branch>`         | Start peer review flow               |
-| `/continue`                          | Auto-advance                         |
-| `/review-decision approve`           | Approve                              |
-| `/review-decision changes_requested` | Request changes                      |
-| `/review-decision reject`            | Reject                               |
-| `/archive`                           | Archive completed session            |
-| `/abort`                             | Terminate session                    |
+| Command                              | Description                             |
+| ------------------------------------ | --------------------------------------- |
+| `/hydrate`                           | Legacy compatibility; not V2 activation |
+| `/ticket <text or URL>`              | Record task (supports external URLs)    |
+| `/plan`                              | Generate plan                           |
+| `/architecture`                      | Create/revise ADR                       |
+| `/implement`                         | Execute approved plan                   |
+| `/validate`                          | Run validation                          |
+| `/review <PR-URL or branch>`         | Start peer review flow                  |
+| `/continue`                          | Auto-advance                            |
+| `/review-decision approve`           | Approve                                 |
+| `/review-decision changes_requested` | Request changes                         |
+| `/review-decision reject`            | Reject                                  |
+| `/archive`                           | Archive completed session               |
+| `/abort`                             | Terminate session                       |

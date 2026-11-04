@@ -82,7 +82,7 @@ describe('required ci-gate documentation enforcement', () => {
     const download = steps.find((step) => step.name === 'Download identical packed product');
     expect(download?.with?.['run-id']).toBeUndefined();
     expect(download?.with?.['github-token']).toBeUndefined();
-    expect(requiredJob('inactive-parity')['timeout-minutes']).toBe(35);
+    expect(requiredJob('inactive-parity')['timeout-minutes']).toBe(90);
     const run = steps.find(
       (step) => step.name === 'Reconcile original probes and verify installed mixed-session parity',
     );

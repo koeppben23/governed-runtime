@@ -1,6 +1,10 @@
 # Phases
 
-FlowGuard uses 18 explicit workflow phases across 3 independent flows. Every session starts at the **READY** phase after `/hydrate`, with 4 transitions from READY: the three flow selections plus emergency `/abort`.
+FlowGuard uses 18 explicit workflow phases across 3 independent flows. A session
+enters the **READY** workflow phase only after the separate host activation
+lifecycle commits (`/start`, or an authorized autonomous `StartGovernance`
+call). From READY there are 4 transitions: the three flow selections plus
+emergency `/abort`.
 
 The single authority for the phase graph and progressions is
 `src/machine/topology.ts`: `TRANSITIONS`/`resolveTransition` define every edge
@@ -33,11 +37,16 @@ READY → PEER_REVIEW → PEER_REVIEW_COMPLETE
 
 ## Flow Diagram
 
+Activation is a separate host-level authority (append-only journal, atomic head
+and permanent enrollment). This diagram shows the workflow phase graph after a
+successful activation; it does not treat the workflow state file as activation
+authority.
+
 ```mermaid
 stateDiagram-v2
     direction LR
 
-    [*] --> READY : /hydrate
+    [*] --> READY : /start (activation committed)
 
     state "TICKET FLOW" as TF
     state "ARCH FLOW" as AF
@@ -66,6 +75,7 @@ stateDiagram-v2
 
     IMPLEMENTATION --> IMPL_VALIDATION : auto
     IMPL_VALIDATION --> IMPL_REVIEW : all_passed
+    IMPL_VALIDATION --> EVIDENCE_REVIEW : REDUCED_CEREMONY (TRIVIAL + all checks)
     IMPL_VALIDATION --> IMPLEMENTATION : check_failed
 
     state IMPL_REVIEW_s {
@@ -103,11 +113,11 @@ stateDiagram-v2
 
 ### Shared Entry Point
 
-| Phase    | Description                             | Gate Type      |
-| -------- | --------------------------------------- | -------------- |
-| READY    | Post-hydrate entry point, choose a flow | Command-driven |
-| ABORTED  | Session terminated by `/abort`          | Terminal       |
-| REJECTED | Human gate rejected                     | Terminal       |
+| Phase    | Description                                         | Gate Type      |
+| -------- | --------------------------------------------------- | -------------- |
+| READY    | Post-activation workflow entry point, choose a flow | Command-driven |
+| ABORTED  | Session terminated by `/abort`                      | Terminal       |
+| REJECTED | Approval gate rejected                              | Terminal       |
 
 ### Ticket Flow
 
@@ -115,22 +125,22 @@ stateDiagram-v2
 | --------------- | ------------------------------------------- | ------------------------------ |
 | TICKET          | Record task description                     | Automatic                      |
 | PLAN            | Generate plan + independent subagent review | Automatic (independent review) |
-| PLAN_REVIEW     | Human approves plan                         | **User Gate**                  |
+| PLAN_REVIEW     | Approval gate (policy-selected authority)   | **Approval Gate**              |
 | VALIDATION      | Run validation checks                       | Automatic                      |
 | IMPLEMENTATION  | Execute plan                                | Automatic                      |
 | IMPL_VALIDATION | Re-run checks against the implemented code  | Automatic                      |
 | IMPL_REVIEW     | Subagent reviews implementation             | Automatic (independent review) |
-| EVIDENCE_REVIEW | Human reviews evidence                      | **User Gate**                  |
+| EVIDENCE_REVIEW | Approval gate (policy-selected authority)   | **Approval Gate**              |
 | EXPORT_READY    | Materialize verifiable export evidence      | Command-driven                 |
 | COMPLETE        | Session complete                            | Terminal                       |
 
 ### Architecture Flow
 
-| Phase         | Description              | Gate Type              |
-| ------------- | ------------------------ | ---------------------- |
-| ARCHITECTURE  | Create ADR + review loop | Automatic (ADR review) |
-| ARCH_REVIEW   | Human reviews ADR        | **User Gate**          |
-| ARCH_COMPLETE | ADR accepted             | Terminal               |
+| Phase         | Description                               | Gate Type              |
+| ------------- | ----------------------------------------- | ---------------------- |
+| ARCHITECTURE  | Create ADR + review loop                  | Automatic (ADR review) |
+| ARCH_REVIEW   | Approval gate (policy-selected authority) | **Approval Gate**      |
+| ARCH_COMPLETE | ADR accepted                              | Terminal               |
 
 ### Peer Review Flow
 
@@ -158,9 +168,15 @@ stateDiagram-v2
 - Convergence via digest-stop (output unchanged) or max iterations from policy
 - Examples: PLAN, IMPL_REVIEW
 
-### User Gates
+### Approval Gates (policy-dependent)
 
-- Require an explicit human decision: `/approve`, `/request-changes`, or `/reject`
+- The frozen policy selects the admissible decision authority. Interactive and
+  regulated modes require an explicit operator decision; policy-authorized
+  autonomous modes may satisfy the gate with an `autonomous` decision. `/approve`,
+  `/request-changes`, and `/reject` are native decision commands; they do not by
+  themselves prove human provenance.
+- Human-source proof is required only when the frozen policy requires a human
+  decision.
 - An exhausted review loop turns the gate into a **governance override gate**:
   plain `/approve` is blocked (`GOVERNANCE_OVERRIDE_REQUIRED`) and the only
   approval path is `/override-approve`, which records the override and binds the
@@ -175,10 +191,13 @@ stateDiagram-v2
 
 ### READY
 
-**Entry:** `/hydrate`
+**Entry:** `/start` activation committed (or authorized autonomous
+`StartGovernance`)
 **Exit:** `/task`, `/architecture`, or `/review`
 
-Post-hydrate entry point. The system provides guidance on available flows. User selects a flow by issuing the corresponding command.
+Post-activation entry point. The system provides guidance on available flows.
+The operator selects a flow by issuing the corresponding command. `/hydrate` is
+a legacy compatibility command and is not a V2 activation path.
 
 ### TICKET
 
@@ -204,7 +223,12 @@ plan to start a fresh obligation. See `docs/independent-review.md`.
 **Entry:** Automatic from PLAN (independent review accepted or exhausted)
 **Exit:** `/approve`, `/override-approve`, `/request-changes`, or `/reject`
 
-Human reviews and approves the plan before implementation begins. When independent review converges, a **Plan Review Card** is displayed showing the complete plan body, version, policy mode, task title, and recommended next actions. In regulated mode, a second person must review.
+The approval authority selected by the frozen policy decides the plan before
+implementation begins. Human provenance is required only when that policy
+requires it; an `autonomous` decision is admissible only when the policy
+authorizes it. When independent review converges, a **Plan Review Card** is
+displayed showing the complete plan body, version, policy mode, task title, and
+recommended next actions. In regulated mode, a second person must review.
 
 - `approve` → VALIDATION (reviewer accepted the reviewed revision)
 - `override-approve` → VALIDATION (review exhausted without acceptance; recorded as a governance override bound to the reviewed digest)
@@ -260,9 +284,10 @@ on `unable_to_review`, BLOCKED via `SUBAGENT_UNABLE_TO_REVIEW`.
 **Entry:** Automatic from IMPL_REVIEW (review converged or exhausted)
 **Exit:** `/approve`, `/override-approve`, `/request-changes`, or `/reject`
 
-Final human review of all evidence before completion. When the implementation
-review exhausted its budget with changes requested, this gate becomes a
-governance override gate: plain `/approve` is blocked and the reviewed revision
+Final policy-selected approval of all evidence before completion. When the
+implementation review exhausted its budget with changes requested, this gate
+becomes a governance override gate: plain `/approve` is blocked and the reviewed
+revision
 can only be accepted through `/override-approve`, which binds the exact
 reviewed implementation digest.
 
@@ -306,8 +331,9 @@ semantics; `unable_to_review` consumes the obligation and BLOCKS via
 **Entry:** Automatic from ARCHITECTURE (ADR review accepted or exhausted)
 **Exit:** `/approve`, `/override-approve`, `/request-changes`, or `/reject`
 
-Human reviews the ADR. An exhausted ADR review turns this gate into a
-governance override gate; the override binds the exact reviewed ADR digest.
+The policy-selected approval authority decides the ADR. An exhausted ADR review
+turns this gate into a governance override gate; the override binds the exact
+reviewed ADR digest.
 
 - `approve` → ARCH_COMPLETE (ADR status set to "accepted")
 - `override-approve` → ARCH_COMPLETE (review exhausted; recorded override)
