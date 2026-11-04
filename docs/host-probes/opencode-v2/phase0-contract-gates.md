@@ -9,6 +9,10 @@
   The current-build Windows matrix passes 65/65 as four parallel jobs; the full
   installed matrix is now a manual/nightly/label-triggered acceptance workflow,
   not a PR gate.
+  The label trigger enables pre-merge execution but is not a required status
+  check in the effective `develop` ruleset (read-only verification, 2026-11-04).
+  Enforced acceptance of the exact final merge candidate remains an open gate;
+  a label or an earlier green run does not close it.
   Documentation/diagram drift and the P0-10 ownership audit remain open; see the
   [inventory](./implementation-inventory.md#native-entrypointclient-implementation-in-progress).
   Historical failures remain historical; no broad containment-probe campaign or

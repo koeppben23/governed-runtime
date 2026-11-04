@@ -29,11 +29,20 @@ See [Configuration](./configuration.md#presentationglyphprofile).
 
 FlowGuard operates at different enforcement levels depending on the host platform:
 
-| Level         | Platform            | Guarantee                                                                                       |
-| ------------- | ------------------- | ----------------------------------------------------------------------------------------------- |
-| `synchronous` | OpenCode Plugin SDK | In-process enforcement. Tool call blocked synchronously before execution. Full fail-closed.     |
-| `hook_gated`  | Claude Code, Codex  | Out-of-process hook evaluation. Best-effort fail-closed — platform may proceed on hook failure. |
-| `advisory`    | Any (MCP-only)      | Governance decisions returned as tool output. LLM must comply voluntarily.                      |
+| Level         | Platform            | Guarantee                                                                                                                 |
+| ------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `synchronous` | OpenCode Plugin SDK | In-process, pre-effect denial for intercepted governed tool calls; bounded by the host's observable/enforceable surfaces. |
+| `hook_gated`  | Claude Code, Codex  | Out-of-process hook evaluation. Best-effort fail-closed — platform may proceed on hook failure.                           |
+| `advisory`    | Any (MCP-only)      | Governance decisions returned as tool output. LLM must comply voluntarily.                                                |
+
+For OpenCode V2.2.4, synchronous denial is not a universal host/OS containment
+guarantee. Native pre-prompt shell and other unobservable host paths are outside
+that claim. Under the untrusted co-installed plugins contract, the public APIs
+cannot guarantee final reviewer-input integrity: R4 is `NOT_SUPPORTED` and its
+security requirement remains BLOCKED. CLI/server parity does not certify Desktop
+or the full ACTIVE workflow. The [current contract gates](./host-probes/opencode-v2/phase0-contract-gates.md)
+own these acceptance boundaries and link the retained counterexamples; no
+supported ACTIVE V2 release follows from the enforcement-level label.
 
 ---
 

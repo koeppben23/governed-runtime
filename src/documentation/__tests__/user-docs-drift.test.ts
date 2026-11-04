@@ -28,6 +28,41 @@ function readDoc(relativePath: string): string {
   return readFileSync(join(REPO_ROOT, relativePath), 'utf-8');
 }
 
+describe('bounded OpenCode V2 acceptance claims', () => {
+  it('distinguishes accepted Windows CLI/server parity from open Desktop acceptance', () => {
+    const introduction = readDoc('docs/quick-start.md').split('## Prerequisites')[0]!;
+    expect(introduction).toContain('Linux, macOS and Windows');
+    expect(introduction).toContain('65/65');
+    expect(introduction).toContain('Desktop 2.2.4');
+    expect(introduction).toContain('Draft/NO-GO');
+    expect(introduction).not.toContain('Desktop, Windows and whole-PR');
+  });
+
+  it('does not list the executed Windows matrix as an unverified remaining gate', () => {
+    const remaining = readDoc('docs/host-probes/opencode-v2/p0-00-inactive-parity.md').split(
+      '## Reproduction and remaining gates',
+    )[1]!;
+    expect(remaining).toContain('41829567943');
+    expect(remaining).toContain('65/65');
+    expect(remaining).not.toContain('NOT_VERIFIED:** complete Windows');
+    expect(remaining).toContain('Desktop 2.2.4');
+    expect(remaining).toContain('live remote catalogue-refresh');
+  });
+
+  it('bounds synchronous enforcement without claiming final reviewer-input integrity', () => {
+    const enforcement = readDoc('docs/platform-limitations.md')
+      .split('## Enforcement Levels')[1]!
+      .split('## Gap 1:')[0]!;
+    expect(enforcement).not.toContain('Full fail-closed');
+    expect(enforcement).toContain('intercepted');
+    expect(enforcement).toContain('R4');
+    expect(enforcement).toContain('NOT_SUPPORTED');
+    expect(enforcement).toContain('BLOCKED');
+    expect(enforcement).toContain('untrusted co-installed plugins');
+    expect(enforcement).toContain('unobservable');
+  });
+});
+
 function slash(name: string): string {
   return `/${name}`;
 }

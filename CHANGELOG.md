@@ -498,6 +498,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reconcile current Windows CLI/server acceptance in Quick Start and the P0-00
+  remaining-gates section with the executed 65/65 result. Bound OpenCode's
+  synchronous enforcement claim to intercepted governed paths, explicitly
+  retaining the R4, unobservable-host-path and Desktop/ACTIVE acceptance limits.
+  Add regression checks for these documentation claims and record that the
+  label-triggered acceptance workflow is not yet a required merge check.
+
 - **P0-00 Windows parity fixture efficiency.** The original counterprobe suite
   performs one real packed installation per run and copies the installed
   `.opencode` tree into its cases; the installed comparison suite still runs the

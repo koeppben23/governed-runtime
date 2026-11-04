@@ -415,9 +415,14 @@ whole CI run, including unit/coverage and Windows install-verify, is green.
 Because the full matrix is acceptance evidence rather than per-PR feedback, it
 now lives in the separate `opencode-parity.yml` workflow (`workflow_dispatch`,
 nightly schedule, and the `run-parity-acceptance` PR label), not in the required
-pull-request gate. The test files, 65
-cases, assertions and 300-second bootstrap/test budgets remain unchanged; the
-installed suite still performs its real installer runs for its own arms.
+pull-request gate. Moving the workflow preserves all 65 cases and assertions;
+the installed suite still performs its real installer runs for its own arms.
+The preceding Windows fixes did change hook budgets: original-template and
+mixed-session setup have 600-second hooks, and cleanup hooks have 60-second
+ceilings with bounded filesystem retries. Mixed-session installation moved out
+of the 300-second test body into setup; original per-case limits remain 180
+seconds. These are setup/cleanup changes, not an unchanged total execution
+budget or evidence that every earlier timeout had the same cause.
 
 ### Intervening `a38dd3a7` run, retained separately
 
@@ -472,13 +477,17 @@ skipped**; `npm run test:architecture` passed **547 tests**; build, `check`,
 documentation check and its working-tree changelog validation passed separately;
 neither alone is a hosted-CI result for the later follow-up.
 
-**NOT_VERIFIED:** complete Windows 65-case native-parity execution, live remote catalogue-refresh
-parity and all-provider/media execution. Exact-head CI for the extended suites
-was executed and failed as recorded above, not left unrun. Run the owning suite
-on the unresolved platforms and use the actual Desktop/native UI for that
-distinct acceptance. P0-00 as a whole remains
-open for its unverified/blocked surfaces. The mixed-session results above do not
-close all P0-07 shared-resource acceptance, the remaining V2 integration, or R4.
-Full native smoke, coverage and default mutation were not rerun on this test-only
-delta (`OPENCODE_LIVE=1 npm run test:smoke`, `npm run test:coverage:ci`,
-`npm run mutation`); no selection, threshold or coverage timeout was changed.
+**Executed CLI/server acceptance:** run
+[`41829567943`](https://github.com/koeppben23/governed-runtime/actions/runs/41829567943)
+on `d5d88a8e` passes 65/65 on Windows, Linux and macOS using the shared artifact
+identified above. This closes the Windows bootstrap/execution blocker for that
+matrix. Earlier failures remain historical evidence, not the current outcome.
+
+**NOT_VERIFIED:** installed Desktop 2.2.4 acceptance, live remote catalogue-refresh
+parity and all-provider/media execution. Run the owning suites for the untested
+surfaces and use the actual Desktop/native UI for that distinct acceptance.
+The bounded CLI/server matrix is a completed part of P0-00, not whole-product
+acceptance. Its mixed-session results do not close all P0-07 shared-resource
+acceptance, the remaining V2 integration, or R4. Default mutation certification
+also remains **NOT_VERIFIED** (`npm run mutation`); no selection, threshold or
+coverage timeout was changed.

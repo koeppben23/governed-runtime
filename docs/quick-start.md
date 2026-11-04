@@ -1,10 +1,12 @@
 # Quick Start (OpenCode)
 
 This Quick Start applies to OpenCode, the primary V2 host. The ACTIVE V2
-integration is still Draft/NO-GO: INACTIVE native behavior and bounded
-CLI/server parity are implemented, but installed Desktop, Windows and whole-PR
-acceptance remain open. Use this guide for evaluation, not as a GA release
-claim.
+integration is still Draft/NO-GO. The bounded OpenCode 2.2.4 CLI/server parity
+matrix passes 65/65 on Linux, macOS and Windows; see the
+[P0-00 evidence](./host-probes/opencode-v2/p0-00-inactive-parity.md).
+Installed Desktop 2.2.4 and whole-PR acceptance remain open, and R4 final
+reviewer-input integrity remains BLOCKED. Use this guide for evaluation, not as
+a GA release claim.
 
 ## Prerequisites
 
