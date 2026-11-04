@@ -159,7 +159,72 @@ export async function createPackedFlowGuardInstall() {
           `installer-${scope}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         );
         await mkdir(installerDiagnostics, { recursive: true });
-        const output = execFileSync(
+        // Observe the real installer's package-manager calls, including its 5s
+        // detection probes. Do not replace detection or retry/extend any call.
+        const preload = join(installerDiagnostics, 'observe-installer.cjs');
+        await writeFile(
+          preload,
+          `const fs = require('node:fs');
+const path = require('node:path');
+const cp = require('node:child_process');
+const log = ${JSON.stringify(join(installerDiagnostics, 'subprocesses.jsonl'))};
+const environment = env => Object.fromEntries(Object.entries(env).filter(([key]) =>
+  /^(path|pathext|comspec|systemroot|home|userprofile|appdata|localappdata|npm_execpath|npm_config_cache)$/i.test(key)));
+const record = (stage, detail = {}) => fs.appendFileSync(log, JSON.stringify({
+  stage, timestamp: new Date().toISOString(), pid: process.pid, ppid: process.ppid, ...detail
+}) + '\\n');
+const failure = error => ({ name: error.name, message: error.message,
+  code: error.code, status: error.status, signal: error.signal });
+const candidates = Object.entries(process.env).filter(([key]) => /^path$/i.test(key))
+  .flatMap(([key, value]) => value.split(path.delimiter).flatMap(directory =>
+    ['npm', 'bun'].flatMap(name => (process.platform === 'win32'
+      ? ['', ...(process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';')] : [''])
+      .map(ext => path.join(directory.replace(/^"|"$/g, ''), name + ext))
+      .filter(file => fs.existsSync(file)).map(file => ({ key, file })))));
+record('process-start', { argv: process.argv, cwd: process.cwd(),
+  environment: environment(process.env), candidates });
+for (const method of ['execSync', 'execFileSync']) {
+  const original = cp[method];
+  cp[method] = function (...args) {
+    const options = args.findLast(arg => arg && typeof arg === 'object' && !Array.isArray(arg)) || {};
+    const began = performance.now();
+    record('command-begin', { method, command: args[0], args: Array.isArray(args[1]) ? args[1] : [],
+      cwd: options.cwd || process.cwd(), timeoutMs: options.timeout,
+      environment: environment(options.env || process.env) });
+    try {
+      const result = original.apply(this, args);
+      record('command-end', { method, command: args[0], elapsedMs: Math.round(performance.now() - began),
+        status: 0 });
+      return result;
+    } catch (error) {
+      record('command-end', { method, command: args[0], elapsedMs: Math.round(performance.now() - began),
+        error: failure(error) });
+      throw error;
+    }
+  };
+}
+require('node:module').syncBuiltinESMExports();
+process.on('exit', code => record('process-exit', { code }));
+`,
+        );
+        const installerEnv = {
+          ...env,
+          FLOWGUARD_INSTALL_LOCK_PATH: join(project, '.install.lock'),
+          npm_config_loglevel: 'verbose',
+          npm_config_logs_dir: installerDiagnostics,
+          NODE_OPTIONS: [env.NODE_OPTIONS, `--require ${JSON.stringify(preload)}`]
+            .filter(Boolean)
+            .join(' '),
+        };
+        checkpoint('installer-begin', {
+          project,
+          git: existsSync(join(project, '.git')),
+          scope,
+          installerDiagnostics,
+          timeoutMs: 300_000,
+        });
+        const installBegan = performance.now();
+        const result = spawnSync(
           process.execPath,
           [
             join(packedRoot, 'dist/cli/install.js'),
@@ -171,16 +236,33 @@ export async function createPackedFlowGuardInstall() {
           ],
           {
             cwd: project,
-            env: {
-              ...env,
-              FLOWGUARD_INSTALL_LOCK_PATH: join(project, '.install.lock'),
-              npm_config_loglevel: 'verbose',
-              npm_config_logs_dir: installerDiagnostics,
-            },
+            env: installerEnv,
             encoding: 'utf8',
             timeout: 300_000,
           },
         );
+        writeFileSync(join(installerDiagnostics, 'installer.stdout.log'), result.stdout ?? '');
+        writeFileSync(join(installerDiagnostics, 'installer.stderr.log'), result.stderr ?? '');
+        checkpoint('installer-end', {
+          project,
+          scope,
+          installerDiagnostics,
+          durationMs: Math.round(performance.now() - installBegan),
+          installerPID: result.pid,
+          status: result.status,
+          signal: result.signal,
+          error: result.error
+            ? { code: (result.error as NodeJS.ErrnoException).code, message: result.error.message }
+            : null,
+        });
+        if (result.error) throw result.error;
+        if (result.status !== 0)
+          throw Object.assign(new Error(`Packed installer failed; see ${installerDiagnostics}`), {
+            status: result.status,
+            signal: result.signal,
+            stdout: result.stdout,
+            stderr: result.stderr,
+          });
         const target = scope === 'repo' ? join(project, '.opencode') : env.OPENCODE_CONFIG_DIR;
         if (!target) throw new Error('No isolated OpenCode install target');
         const installed = join(target, 'node_modules/@flowguard/core');
@@ -189,7 +271,8 @@ export async function createPackedFlowGuardInstall() {
           (await readFile(join(packedRoot, 'dist/integration/plugin.js'), 'utf8'))
         )
           throw new Error('Installed plugin differs from the packed bootstrap bytes');
-        return output;
+        checkpoint('installer-verified', { project, scope, installerDiagnostics });
+        return result.stdout;
       },
       close: () => rm(root, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 }),
     };

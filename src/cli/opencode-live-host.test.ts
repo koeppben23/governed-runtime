@@ -6,6 +6,7 @@
  */
 
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -17,6 +18,7 @@ import {
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createIsolatedOpenCodeEnvironment,
@@ -206,6 +208,8 @@ describe('packed bootstrap diagnostics', () => {
         join(packedRoot, 'build-info.json'),
         JSON.stringify({ gitSha: 'fixture-build' }),
       );
+      mkdirSync(join(packedRoot, 'integration'), { recursive: true });
+      writeFileSync(join(packedRoot, 'integration/plugin.js'), 'fixture plugin bytes');
       const logs = argv.find((arg) => arg.startsWith('--logs-dir='))!.slice('--logs-dir='.length);
       mkdirSync(logs, { recursive: true });
       writeFileSync(join(logs, 'fixture-debug.log'), 'npm debug before exit\n');
@@ -270,6 +274,139 @@ describe('packed bootstrap diagnostics', () => {
       await artifact.close();
     }
     expect(existsSync(probe.events()[0]!.directory)).toBe(true);
+  });
+  it.each(['success', 'timeout', 'exit'] as const)(
+    'retains per-arm installer diagnostics without masking %s or changing its budget',
+    async (kind) => {
+      const probe = fixture();
+      npmResult(0);
+      const artifact = await createPackedFlowGuardInstall();
+      const project = join(probe.root, 'project');
+      const installed = join(project, '.opencode/node_modules/@flowguard/core/dist/integration');
+      mkdirSync(installed, { recursive: true });
+      writeFileSync(join(installed, 'plugin.js'), 'fixture plugin bytes');
+      const error = Object.assign(new Error('installer deadline'), { code: 'ETIMEDOUT' });
+      vi.mocked(spawnSync).mockReturnValueOnce({
+        pid: 456,
+        status: kind === 'success' ? 0 : kind === 'exit' ? 1 : null,
+        signal: kind === 'timeout' ? 'SIGTERM' : null,
+        error: kind === 'timeout' ? error : undefined,
+        stdout: 'installer stdout',
+        stderr: 'installer stderr',
+        output: [null, 'installer stdout', 'installer stderr'],
+      } as ReturnType<typeof spawnSync>);
+      try {
+        const installation = artifact.install(project, { NODE_OPTIONS: '--no-warnings' });
+        if (kind === 'success') await expect(installation).resolves.toBe('installer stdout');
+        else if (kind === 'timeout') await expect(installation).rejects.toBe(error);
+        else await expect(installation).rejects.toMatchObject({ status: 1, signal: null });
+        const { phases } = probe.events()[0]!;
+        const began = phases.find((event) => event.stage === 'installer-begin');
+        const ended = phases.find((event) => event.stage === 'installer-end');
+        expect(began).toMatchObject({ project, scope: 'repo', timeoutMs: 300_000 });
+        expect(ended).toMatchObject({
+          installerPID: 456,
+          status: kind === 'success' ? 0 : kind === 'exit' ? 1 : null,
+        });
+        expect(ended.durationMs).toBeGreaterThanOrEqual(0);
+        expect(readFileSync(join(began.installerDiagnostics, 'installer.stdout.log'), 'utf8')).toBe(
+          'installer stdout',
+        );
+        expect(readFileSync(join(began.installerDiagnostics, 'installer.stderr.log'), 'utf8')).toBe(
+          'installer stderr',
+        );
+        const call = vi.mocked(spawnSync).mock.calls.at(-1)!;
+        expect(call[2]).toMatchObject({
+          cwd: project,
+          timeout: 300_000,
+          env: { NODE_OPTIONS: expect.stringContaining('--no-warnings --require ') },
+        });
+        expect(phases.some((event) => event.stage === 'installer-verified')).toBe(
+          kind === 'success',
+        );
+      } finally {
+        await artifact.close();
+      }
+    },
+  );
+  it('observes actual child calls and isolated PATH without replacing results or errors', async () => {
+    const probe = fixture();
+    npmResult(0);
+    const artifact = await createPackedFlowGuardInstall();
+    vi.mocked(spawnSync).mockReturnValueOnce({ status: 1, stdout: '', stderr: '' } as ReturnType<
+      typeof spawnSync
+    >);
+    try {
+      await expect(artifact.install(probe.root, {})).rejects.toMatchObject({ status: 1 });
+      const { installerDiagnostics } = probe
+        .events()[0]!
+        .phases.find((event) => event.stage === 'installer-begin');
+      const deadline = Object.assign(new Error('version probe deadline'), {
+        code: 'ETIMEDOUT',
+        signal: 'SIGTERM',
+      });
+      const output = Buffer.from('npm version');
+      const cp = {
+        execSync: vi.fn<(...args: unknown[]) => Buffer>(() => output),
+        execFileSync: vi.fn<(...args: unknown[]) => Buffer>(() => {
+          throw deadline;
+        }),
+      };
+      const originalExecSync = cp.execSync;
+      const originalExecFileSync = cp.execFileSync;
+      const syncBuiltinESMExports = vi.fn();
+      const executable = join(probe.root, process.platform === 'win32' ? 'npm.CMD' : 'npm');
+      writeFileSync(executable, '');
+      runInNewContext(readFileSync(join(installerDiagnostics, 'observe-installer.cjs'), 'utf8'), {
+        require: (name: string) => {
+          if (name === 'node:child_process') return cp;
+          if (name === 'node:module') return { syncBuiltinESMExports };
+          if (name === 'node:fs') return { appendFileSync, existsSync };
+          if (name === 'node:path')
+            return { join, delimiter: process.platform === 'win32' ? ';' : ':' };
+          throw new TypeError(`Unexpected preload dependency: ${name}`);
+        },
+        process: {
+          pid: 789,
+          ppid: 456,
+          argv: ['node', 'installer'],
+          platform: process.platform,
+          env: {
+            Path: probe.root,
+            PATHEXT: '.CMD',
+            USERPROFILE: probe.root,
+            SECRET_TOKEN: 'must-not-log',
+          },
+          cwd: () => probe.root,
+          on: vi.fn(),
+        },
+        performance,
+      });
+      expect(cp.execSync('npm --version', { timeout: 5000 })).toBe(output);
+      expect(() => cp.execFileSync('bun', ['--version'], { timeout: 5000 })).toThrow(deadline);
+      expect(originalExecSync).toHaveBeenCalledExactlyOnceWith('npm --version', { timeout: 5000 });
+      expect(originalExecFileSync).toHaveBeenCalledExactlyOnceWith('bun', ['--version'], {
+        timeout: 5000,
+      });
+      expect(syncBuiltinESMExports).toHaveBeenCalledOnce();
+      const log = readFileSync(join(installerDiagnostics, 'subprocesses.jsonl'), 'utf8');
+      const records = log
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      expect(records[0]).toMatchObject({
+        stage: 'process-start',
+        environment: { Path: probe.root, USERPROFILE: probe.root },
+        candidates: [{ key: 'Path', file: executable }],
+      });
+      expect(records.filter((record) => record.stage === 'command-end')).toMatchObject([
+        { command: 'npm --version', status: 0 },
+        { command: 'bun', error: { code: 'ETIMEDOUT', signal: 'SIGTERM' } },
+      ]);
+      expect(log).not.toContain('must-not-log');
+    } finally {
+      await artifact.close();
+    }
   });
   it.each(['timeout', 'exit'] as const)(
     'retains npm logs and explicitly fails on %s',

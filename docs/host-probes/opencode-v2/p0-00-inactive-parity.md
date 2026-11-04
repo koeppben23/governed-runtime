@@ -424,6 +424,58 @@ of the 300-second test body into setup; original per-case limits remain 180
 seconds. These are setup/cleanup changes, not an unchanged total execution
 budget or evidence that every earlier timeout had the same cause.
 
+### Acceptance-workflow setup failures on `6e46299b`
+
+[Acceptance run 41836072753](https://github.com/koeppben23/governed-runtime/actions/runs/41836072753)
+on `6e46299b34ae9de816472d7f414165c455e9dd7d` is **FAIL**, separately from
+the accepted `d5d88a8e` run. Linux/macOS pass 65/65; Windows mixed passes 2/2
+and original passes 7/7. Repo/global each execute **0 of their 28 selected
+cases** because arm setup fails. Their JSON reports list all 58 installed-file
+cases as skipped; 30 are intentionally filtered out and 28 were not executed.
+
+- Package SHA-256:
+  `6effe7ab1e075babcf4b43874080ec40b4d15939bc04ca69bc07fe4eb266a212`;
+  embedded merge build `8ff9c9b6fd74d9e5b9f48d492ca461a290c875f2`.
+  Comparing every regular tar member with the accepted package shows only
+  `dist/build-info.json` differs. The arm-setup test helpers are also unchanged.
+- Bootstrap succeeds: repo npm completes in 74,987 ms, global in 79,291 ms.
+  Both use Node 22.22.2/npm 10.9.7. No bootstrap change is justified by these
+  failures.
+- Both repo arms and the Git-enabled global arm fail at the outer packed-CLI
+  invocation with `ETIMEDOUT`. Each retained dependency-install npm log reaches
+  `verbose exit 0` / `info ok`, followed by an error log-location notice. Those
+  messages do not establish successful exit of the complete installer process.
+  The repo dependency-resolution logs contain the same 472 distinct
+  `placeDep` entries as the accepted run; neither a different product package
+  nor changed resolved dependency versions explains that comparison.
+- The non-Git global arm exits with `Neither bun nor npm found in PATH`.
+  Source inspection shows both failed and timed-out 5-second version probes
+  collapse to this message. The isolated host environment inherits `PATH`
+  unchanged but replaces `HOME`, `USERPROFILE`, XDG and temporary directories.
+  No retained log establishes a literally missing npm executable, a changed
+  PATH, or the exact failing detection probe. A timeout is a hypothesis, not a
+  proven explanation.
+
+The test harness now records each real installer invocation's scope/project,
+PID, duration, status/signal/error, stdout and stderr. A test-only Node preload
+records allowlisted environment fields (including case-preserved PATH keys),
+filesystem npm/bun candidates, actual subprocess command/arguments and timings,
+and child process start/exit. It observes the existing calls and rethrows their
+errors unchanged; it does not select a package manager, retry installation or
+extend deadlines. npm debug logs remain retained beside these records.
+
+Local macOS control with Node 22.22.2/OpenCode 2.2.4 and the same failed-run
+package (`6effe7ab…`) executes **65/65, 0 failed, 0 pending** with this
+instrumentation. All seven real installer invocations retain command/exit
+records; package-manager probes and installations return normally. This verifies
+the observer on real processes, not the Windows root cause or Windows acceptance.
+
+**NOT_VERIFIED:** the exact Windows arm-setup root causes and a successful full
+matrix with this diagnostic harness. Re-trigger `run-parity-acceptance` on the
+PR candidate, inspect every arm's diagnostics, and require the same run's
+checksum-verified package and 65/65 on each OS before reporting fresh acceptance.
+The older PASS remains bounded evidence, not a PASS for this failed run.
+
 ### Intervening `a38dd3a7` run, retained separately
 
 [CI run 41793806176](https://github.com/koeppben23/governed-runtime/actions/runs/41793806176)

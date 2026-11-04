@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Retain per-arm packed-installer phases, environment/executable candidates,
+  subprocess timings and exit causes for the failed Windows repo/global setup
+  in acceptance run `41836072753`. Keep bootstrap behavior, package-manager
+  selection, all deadlines and parity assertions unchanged; the diagnostic
+  harness does not claim a root cause or a new acceptance PASS.
+
 - Serialize the packed parity suites and reuse one digest-bound bootstrap after
   the Windows diagnostic showed a solo npm install completing while two
   concurrent installs time out. Replace the invalid PowerShell fixture command
