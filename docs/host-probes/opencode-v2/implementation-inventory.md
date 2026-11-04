@@ -82,6 +82,15 @@ becomes PASS; actual product/installed acceptance and release remain NOT_VERIFIE
 
 ## Native entrypoint/client implementation in progress
 
+**P0-00 installed follow-up (2026-11-04):** the
+[packed INACTIVE comparison](./p0-00-inactive-parity.md) now passes 56 contracts on
+macOS/OpenCode 2.2.4 across isolated repo/global installs and Git/non-Git projects.
+It adds executable install/provider-wire/side-effect evidence without production
+changes; it does not turn the dated defects below into historical PASS results.
+Desktop, installed Linux/Windows, live catalogue refresh, mixed ACTIVE/INACTIVE
+acceptance and full V2 integration remain unverified. R4 stays NOT_SUPPORTED on
+the pinned public API and its security requirement remains BLOCKED.
+
 This section describes the subsequent native API implementation and local
 verification, not the baseline table below, a completed product cutover or
 installed acceptance. The native

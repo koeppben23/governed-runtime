@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Packed-installed INACTIVE native parity tests compare absent and actual
+  checksum-verified repo/global installs, with and without Git: provider context
+  and native tool definitions, model variants, shell/edit/subagent effects,
+  permission denial/approval, generation/compaction, restart and no implicit
+  hydration. The bounded macOS CLI/server result does not certify Desktop,
+  live catalogue refresh, ACTIVE V2 or R4; no product guard is changed.
+
 - Document the bounded R4 feasibility result for OpenCode 2.2.4: final reviewer
   input integrity against untrusted co-installed plugins is `NOT_SUPPORTED` by
   the public host APIs. Identify HTTP/WebSocket/SDK handoffs and required
