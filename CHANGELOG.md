@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Record same-artifact Linux/macOS installed-parity results (65 native cases
+  each), while retaining both Windows bootstrap timeouts (initial attempt and
+  unchanged rerun) as failed, unexecuted acceptance attempts rather than a product
+  PASS. Pinned Desktop and Windows acceptance remain open; no runtime gate or
+  test budget is weakened.
+
 - Reconcile the original INACTIVE shell/edit/catalogue counterprobes with the
   earlier activation repair at `3a274edf`, and rerun their assertions against the
   same packed bytes as the installed matrix. Real native Start, concurrent

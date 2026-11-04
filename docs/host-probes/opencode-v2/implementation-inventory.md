@@ -90,9 +90,11 @@ changes; it does not turn the dated defects below into historical PASS results.
 The old violations were repaired earlier by `3a274edf`; the original assertions
 now run on the same packed build as the new matrix. Mixed ACTIVE/INACTIVE live
 tool publication, reload and restart have bounded repo/global proof through real
-Start. The required cross-platform matrix shares one packed artifact; its new
-Linux/Windows results must still be observed. Desktop 2.2.4, live remote model
-catalogue refresh, complete mixed-resource acceptance and full V2 integration
+Start. The required cross-platform matrix shares one packed artifact; Linux/macOS
+each pass all 65 cases on `77605384`. Windows fails at package bootstrap in both
+the initial attempt and unchanged rerun before executing any case; its root
+cause remains NOT_VERIFIED, and the required CI gate fails. Desktop 2.2.4, live
+remote model catalogue refresh, complete mixed-resource acceptance and full V2 integration
 remain unverified. R4 stays NOT_SUPPORTED on
 the pinned public API and its security requirement remains BLOCKED.
 

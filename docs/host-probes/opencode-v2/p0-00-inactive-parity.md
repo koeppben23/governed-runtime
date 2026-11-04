@@ -1,6 +1,6 @@
 # P0-00: packed-installed INACTIVE parity
 
-2026-11-04, PR #1190. **Bounded CLI/server PASS on macOS/OpenCode 2.2.4;
+2026-11-04, PR #1190. **Bounded CLI/server PASS on Linux/macOS/OpenCode 2.2.4;
 not Desktop or whole-PR acceptance.** R4 remains technically `NOT_SUPPORTED`
 under the unchanged untrusted-plugin contract and its security requirement
 remains BLOCKED. No ACTIVE-V2 release follows from this result.
@@ -171,6 +171,49 @@ Shell-free npm invocation uses Node plus `npm_execpath`, rather than assuming a
 Windows `.cmd` can be passed to `execFileSync`. Matrix success must be observed;
 workflow wiring alone is not platform acceptance.
 
+**First cross-platform run, code head `776053846d2172d22a7d31a12a2691fa935eac12`:**
+[CI run 41790845872](https://github.com/koeppben23/governed-runtime/actions/runs/41790845872)
+uses one package with independently checked SHA-256
+`1ecca9459cfdcffc39399cbbfdb057a3b5ba16ecb1a3e21e34e4fb396450723b`.
+Its embedded build SHA is the CI merge tree
+`5bbdc3c4a7892e7b1b7cbdc5b20f15e8c68a47ad`, whose parents are base
+`03a6a278129f8c1e101276ef992960f0c381116d` and that exact code head; the
+build timestamp is `2026-11-04T07:15:12.453Z`. The merge build is not mislabeled
+as a directly built branch commit.
+
+Downloaded runner JSON reports establish:
+
+| Runner                            | Executed result                                                                                |
+| --------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `ubuntu-latest`                   | 65 passed, 0 failed, 0 skipped                                                                 |
+| `macos-latest`                    | 65 passed, 0 failed, 0 skipped                                                                 |
+| `windows-latest`, first attempt   | Both bootstrap `beforeAll` hooks time out at 300,000 ms; 0 passed, 65 unexecuted/pending       |
+| `windows-latest`, unchanged rerun | Both bootstrap `beforeAll` hooks again time out at 300,000 ms; 0 passed, 65 unexecuted/pending |
+
+The first workflow attempt therefore fails its required gate; all other jobs
+pass. The Windows failure occurs before either helper returns a package identity
+or any native conformance case executes. Its root cause is **NOT_VERIFIED**;
+the available log does not prove npm rejection, infrastructure noise or a product
+regression. The unchanged failed-job rerun (attempt 2, Windows job
+[`126448686373`](https://github.com/koeppben23/governed-runtime/actions/runs/41790845872/job/126448686373))
+fails the same two hooks; its downloaded JSON artifact `13304710164` independently
+reports `success: false`, 0 passed, 0 failed assertions and 65 pending cases.
+The zero assertion-failure count is not a PASS: both suites fail before executing
+any native case. The required `ci-gate` also fails; all other jobs pass.
+No hook/test timeout, assertion, dependency selection or coverage/mutation
+threshold was changed.
+
+The complete rerun log confirms repository dependency installation and exact
+native executable/version resolution completed before the suites ran. During
+bootstrap it contains npm deprecation warnings, but no package identity,
+stage timing or npm debug log sufficient to determine the stalled operation's
+cause. Source inspection places identity logging after the helper's synchronous
+`npm install --prefix <bootstrap> --ignore-scripts --no-audit --no-fund <tarball>`;
+this narrows the investigation, not the root-cause conclusion. Recovery requires
+a diagnostic Windows execution preserving the same artifact, assertions and
+budgets, with bootstrap stage/child-process diagnostics and npm debug logs
+retained. Another unchanged rerun is not a substitute for those diagnostics.
+
 **Desktop BLOCKED for local pinned acceptance:** the installed
 `/Applications/OpenCode.app` reports bundle version **2.2.5**, not target 2.2.4.
 It was neither downgraded nor relabelled as the pinned surface. A separately
@@ -204,10 +247,11 @@ skipped**; `npm run test:architecture` passed **547 tests**; build, `check`,
 documentation check and its working-tree changelog validation passed separately;
 neither alone is a hosted-CI result for the later follow-up.
 
-**NOT_VERIFIED at this local follow-up:** installed Linux/Windows native-parity
-matrix results, live remote catalogue-refresh parity, all-provider/media execution
-and exact-head CI for the extended suites. Run the owning suite on those platforms and use the
-actual Desktop/native UI for that distinct acceptance. P0-00 as a whole remains
+**NOT_VERIFIED:** Windows native-parity execution, live remote catalogue-refresh
+parity and all-provider/media execution. Exact-head CI for the extended suites
+was executed and failed as recorded above, not left unrun. Run the owning suite
+on the unresolved platforms and use the actual Desktop/native UI for that
+distinct acceptance. P0-00 as a whole remains
 open for its unverified/blocked surfaces. The mixed-session results above do not
 close all P0-07 shared-resource acceptance, the remaining V2 integration, or R4.
 Full native smoke, coverage and default mutation were not rerun on this test-only
