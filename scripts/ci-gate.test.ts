@@ -77,7 +77,22 @@ describe('required ci-gate documentation enforcement', () => {
     expect(source).toContain('pull_request:');
     expect(source).toContain('run-parity-acceptance');
     const acceptance = parse(source) as {
-      jobs: Record<string, { needs?: string; if?: string; 'timeout-minutes'?: number }>;
+      jobs: Record<
+        string,
+        {
+          needs?: string;
+          if?: string;
+          'timeout-minutes'?: number;
+          steps?: Array<{
+            id?: string;
+            name?: string;
+            run?: string;
+            if?: string;
+            env?: Record<string, string>;
+            'continue-on-error'?: boolean;
+          }>;
+        }
+      >;
     };
     for (const id of ['build', 'inactive-parity', 'inactive-parity-windows']) {
       expect(acceptance.jobs[id]?.if).toContain(
@@ -89,6 +104,23 @@ describe('required ci-gate documentation enforcement', () => {
       expect(acceptance.jobs[id]?.['timeout-minutes']).toBe(25);
     }
     expect(acceptance.jobs.build?.needs).toBeUndefined();
+    const windowsSteps = acceptance.jobs['inactive-parity-windows']?.steps ?? [];
+    const original = windowsSteps.find((step) => step.id === 'windows-parity');
+    const control = windowsSteps.find(
+      (step) => step.name === 'Compare mixed setup on the runner temporary volume',
+    );
+    expect(original).toBeDefined();
+    expect(original?.env).not.toHaveProperty('TEMP');
+    expect(original?.['continue-on-error']).toBeUndefined();
+    expect(control?.if).toContain("!cancelled() && matrix.suite == 'mixed'");
+    expect(control?.run).toContain('-t "scoped during live catalogue"');
+    expect(control?.run).toContain('inactive-parity-volume-control.json');
+    expect(control?.env).toMatchObject({
+      TEMP: '${{ runner.temp }}',
+      TMP: '${{ runner.temp }}',
+      FLOWGUARD_BOOTSTRAP_PREFIX: 'inactive-parity-shared-bootstrap-mixed',
+    });
+    expect(control?.['continue-on-error']).toBeUndefined();
   });
   it('serializes critical Windows unit workers without dropping suites or changing PERF budgets', () => {
     const commands = requiredJob('critical-windows').steps.flatMap((step) =>

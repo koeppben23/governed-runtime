@@ -512,6 +512,45 @@ fix; require the same run's checksum-verified package and 65/65 on each OS befor
 reporting fresh acceptance. The older PASS remains bounded evidence, not a PASS
 for either failed run.
 
+#### npm timing result on `bc23a18e` and bounded volume control
+
+[Acceptance run 41845002693](https://github.com/koeppben23/governed-runtime/actions/runs/41845002693)
+is **FAIL**. Linux/macOS each pass 65/65. Windows repo/global each pass 28/28
+and original passes 7/7; both mixed cases remain unexecuted because their real
+installer setup times out. Thus Windows has **63/65 passed, 2 unexecuted**, not
+a new acceptance PASS. The missing mixed cases cannot be supplied from another
+run to certify this package.
+
+The package SHA-256 is
+`08b59bcca53084eb7c49765c30fa0188af40719eff7f07308f6059f1a1530d62`,
+embedded merge build `254b8508d57e8f8447a34b97f830cfcad2951e44`; all four
+Windows bootstrap identities match these bytes. npm discovery succeeds in every
+installer trace, including both failed mixed setups (549/748 ms). The original
+global discovery error is still not reproduced or attributed.
+
+npm's own timing output identifies **unpacking/materialization** as the slow
+phase: successful repo arms spend **252,158 / 217,222 ms** in `reify:unpack`,
+successful global arms **218,812 / 249,511 ms**, and the original template
+**222,266 ms**. Mixed repo/global time out at **300,010 / 300,015 ms** while
+`reifyNode` unpack timers are still completing. This is not a native assertion
+failure or a package-manager search failure. Timers establish the npm phase,
+not an antivirus, disk, cache or scheduler root cause.
+
+The next diagnostic preserves the ordinary full matrix and adds one **separate**
+same-VM mixed-session control after its original step, including when that step
+fails. It repeats the unchanged two mixed cases with only `TEMP` and `TMP` set
+to GitHub's `runner.temp`, instead of the inherited Windows system temporary
+directory on `C:`. It uses the same tarball, npm cache and digest-bound bootstrap
+prefix, retains its own result JSON and diagnostics, and keeps the 25-minute job
+limit. A green control cannot mask a failed original matrix or certify all 65
+cases. This is an experiment, not a proven fixture-volume fix; the comparison
+also has an explicit order effect (the runner-temp control runs second).
+
+**NOT_VERIFIED:** the controlled volume comparison, the cause below npm unpack,
+the earlier global detection failure and fresh full-matrix acceptance. No
+product correction is justified by the current evidence, and no install/test
+budget, dependency selection or assertion has been changed.
+
 ### Intervening `a38dd3a7` run, retained separately
 
 [CI run 41793806176](https://github.com/koeppben23/governed-runtime/actions/runs/41793806176)

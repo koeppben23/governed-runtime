@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Record npm unpack timings from failed acceptance run `41845002693` and add
+  a separate, same-VM runner-temp control for its two mixed-session cases. The
+  ordinary full matrix, its failures, shared package/cache/bootstrap and all
+  assertions/deadlines remain intact; the control is diagnostic, not acceptance
+  or a claimed filesystem root-cause fix.
+
 - Record the Windows installer trace from acceptance run `41841262945`: npm
   discovery succeeds in the failed non-Git repo arm, but its npm install outlives
   the 300-second installer deadline; 14 selected cases remain unexecuted.

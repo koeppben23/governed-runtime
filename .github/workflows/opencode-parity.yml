@@ -175,6 +175,7 @@ jobs:
           appendFileSync(process.env.GITHUB_ENV, `OPENCODE_CLI=${bin}\nFLOWGUARD_TARBALL=${tarball}\n`);
           NODE
       - name: Run Windows parity suite ${{ matrix.suite }}
+        id: windows-parity
         shell: bash
         run: |
           if [ -n "$SUITE_FILTER" ]; then
@@ -194,6 +195,33 @@ jobs:
           SUITE_NAME: ${{ matrix.suite }}
           FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR: inactive-parity-diagnostics/${{ matrix.suite }}
           FLOWGUARD_BOOTSTRAP_PREFIX: inactive-parity-shared-bootstrap-${{ matrix.suite }}
+      # Diagnostic A/B on the same VM: keep the original result above, then
+      # repeat its two mixed cases with only the temporary fixture volume changed.
+      # A passing control cannot replace a failed acceptance step.
+      - name: Compare mixed setup on the runner temporary volume
+        if: ${{ !cancelled() && matrix.suite == 'mixed' && steps.windows-parity.outcome != 'skipped' }}
+        shell: bash
+        run: |
+          : "${FLOWGUARD_TARBALL:?Shared artifact is required}"
+          npx vitest run --no-file-parallelism --project smoke \
+            src/cli/opencode-inactive-installed.smoke.test.ts -t "scoped during live catalogue" \
+            --silent=false --reporter=default --reporter=json \
+            --outputFile=inactive-parity-volume-control.json
+        env:
+          FORCE_COLOR: 0
+          OPENCODE_LIVE: '1'
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
+          FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR: inactive-parity-diagnostics/mixed-runner-temp
+          FLOWGUARD_BOOTSTRAP_PREFIX: inactive-parity-shared-bootstrap-mixed
+      - name: Upload runner-volume control results separately
+        if: ${{ always() && matrix.suite == 'mixed' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
+        with:
+          name: inactive-parity-volume-control-windows-mixed
+          path: inactive-parity-volume-control.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload installed-parity test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
