@@ -191,14 +191,14 @@ export async function createPackedFlowGuardInstall() {
           throw new Error('Installed plugin differs from the packed bootstrap bytes');
         return output;
       },
-      close: () => rm(root, { recursive: true, force: true }),
+      close: () => rm(root, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 }),
     };
   } catch (error) {
     checkpoint('bootstrap-failed', {
       failedStage: stage,
       error: error instanceof Error ? { name: error.name, message: error.message } : String(error),
     });
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 });
     throw error;
   }
 }

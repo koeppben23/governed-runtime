@@ -504,7 +504,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   real installer per repo/global Git/non-Git arm. Path normalization now handles
   Windows forward- and backslash spellings, and host cleanup hooks get a bounded
   60-second ceiling so Windows process teardown cannot fail otherwise-passing
-  cases. Test count and assertions are unchanged.
+  cases; locked temp trees are removed with bounded retries. Mixed-session
+  installation is setup, not test work, so its 300-second test cap is unchanged.
+  Test count and assertions are unchanged.
 
 - **Whole-PR documentation alignment.** Remove the Quick Start GA claim and the
   `/hydrate` activation wording; make approval gates policy-dependent; show

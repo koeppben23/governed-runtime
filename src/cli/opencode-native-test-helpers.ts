@@ -228,9 +228,14 @@ export async function createNativeHostProbe(
     await stopHost();
     provider.closeAllConnections();
     await new Promise<void>((resolve) => provider.close(() => resolve()));
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 });
     if (host.env.npm_config_cache)
-      await rm(host.env.npm_config_cache, { recursive: true, force: true });
+      await rm(host.env.npm_config_cache, {
+        recursive: true,
+        force: true,
+        maxRetries: 30,
+        retryDelay: 100,
+      });
   };
   try {
     await mkdir(project, { recursive: true });
