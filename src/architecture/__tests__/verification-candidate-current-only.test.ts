@@ -5,7 +5,7 @@
  * unknown keys instead of stripping them, and no kind-level execution-subject
  * fallback or host-range projection survives.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -57,7 +57,8 @@ describe('verification candidate is current-only', () => {
   });
 
   it('has no host-range compatibility projection', () => {
-    expect(source('cli/opencode-runtime-compat.ts')).not.toContain('testedRange');
+    expect(existsSync(join(SRC, 'cli/opencode-runtime-compat.ts'))).toBe(false);
+    expect(source('cli/opencode-live-host-test-helpers.ts')).not.toContain('testedRange');
     expect(source('cli/doctor-command.ts')).not.toContain('testedRange');
   });
 });

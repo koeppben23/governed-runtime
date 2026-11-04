@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Remove the uncalled V1 host compatibility classifier. Port its nine safety
+  cases to the current native candidate resolver: exact selection, rejection
+  of other/unknown/nightly versions and pin provenance, with no warning-only
+  fallback. Historical V1 config comparisons read their unchanged 1.19.5 JSON
+  snapshot directly; no executable classifier is retained as test support.
+
 - Preserve both ISO demo publisher outputs and the requested output directory
   in concurrency-assertion failures. The same `[0, 1]` exclusivity assertion
   and all execution budgets remain unchanged; this diagnoses the repeated

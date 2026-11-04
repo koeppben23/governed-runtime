@@ -23,7 +23,14 @@ import {
 } from '../../../demos/lib/host-config.mjs';
 // Historical V1 config comparison only: do not retarget this experiment to V2.
 // Active demo preflight uses cli-candidate.json and is tested separately.
-import { TESTED_OPENCODE_HOST_VERSION } from '../../cli/opencode-runtime-compat.js';
+const HISTORICAL_OPENCODE_HOST_VERSION = (
+  JSON.parse(
+    fs.readFileSync(
+      new URL('../../../.sdk-baselines/opencode/host-version.json', import.meta.url),
+      'utf8',
+    ),
+  ) as { version: string }
+).version;
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const WORST_OBSERVED_STATUS_BYTES = 51475;
@@ -46,7 +53,7 @@ function pinnedHostAvailable(): boolean {
   try {
     return (
       execFileSync('opencode', ['--version'], { encoding: 'utf8' }).trim() ===
-      TESTED_OPENCODE_HOST_VERSION
+      HISTORICAL_OPENCODE_HOST_VERSION
     );
   } catch {
     return false;
@@ -134,7 +141,7 @@ describe('isolated host config for the live demo runners', () => {
 });
 
 describe.skipIf(!pinnedHostAvailable())(
-  `pinned OpenCode ${TESTED_OPENCODE_HOST_VERSION} resolves the isolated budget`,
+  `historical OpenCode ${HISTORICAL_OPENCODE_HOST_VERSION} resolves the isolated budget`,
   () => {
     it('loads tool_output.max_bytes from OPENCODE_CONFIG_DIR via the real config path', () => {
       const configDir = tempConfigDir();

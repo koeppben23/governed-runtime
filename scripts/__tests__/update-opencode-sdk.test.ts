@@ -24,7 +24,8 @@ describe('native API updater target validation', () => {
       'package-lock.json',
       '.sdk-baselines/opencode/host-version.json',
       '.sdk-baselines/opencode/docs-hashes.json',
-      'src/cli/opencode-runtime-compat.ts',
+      '.sdk-baselines/opencode/cli-candidate.json',
+      'src/documentation/__tests__/demo-host-config.test.ts',
     ];
     const before = files.map((file) => readFileSync(file));
     const result = spawnSync(

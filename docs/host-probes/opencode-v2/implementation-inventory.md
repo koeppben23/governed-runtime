@@ -835,6 +835,14 @@ on `fd8d275f` passes all 37 jobs including coverage without a publication fix.
 The prior failure remains unexplained, not a proven flake. Neither result
 reopens the accepted P0-00 matrix on `2f4aa06d`.
 
+**Classifier retirement after `41ad3301`:** the old uncalled executable host
+classifier is removed. All nine test cases now exercise exact current candidate
+selection/fail-closed rejection; historical config comparisons directly read
+their unchanged 1.19.5 JSON snapshot. The [case-by-case mapping](./p0-10-ownership-decisions.md#completed-host-classifier-port-nine-cases)
+does not preserve the obsolete warning-only classifier contract. The remaining
+executable cleanup is four asynchronous rails and old obligation settlement;
+P0-10 is not yet closed.
+
 Scope: shipped package exports/binaries, native plugin composition and adapter,
 activation versus workflow authority, reviewer dispatch/capture/evidence owners,
 remaining type facades and live demo compatibility consumers. This is not a new
