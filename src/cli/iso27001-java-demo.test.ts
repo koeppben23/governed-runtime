@@ -335,10 +335,13 @@ describe.skipIf(!POSIX)('java demo ISO wrapper', () => {
       const trace = path.join(workspace.root, 'mkdir-claims.jsonl');
       await mkdir(bin);
       await mkdir(barrier);
-      const native = spawnSync('bash', ['-c', 'type -P mkdir'], { encoding: 'utf8' });
-      expect(native.status, native.stderr).toBe(0);
-      const nativeMkdir = native.stdout.trim();
-      expect(path.isAbsolute(nativeMkdir)).toBe(true);
+      // Resolve only real system binaries. A PATH lookup could inherit a fake
+      // mkdir from another test and turn this trace into a false positive.
+      const nativeMkdir = ['/bin/mkdir', '/usr/bin/mkdir'].find((candidate) =>
+        existsSync(candidate),
+      );
+      expect(nativeMkdir, 'a native POSIX mkdir binary must exist').toBeDefined();
+      if (!nativeMkdir) throw new Error('native mkdir is unavailable');
       const tracer = path.join(workspace.root, 'trace-mkdir.cjs');
       // Test-only scheduling: both publishers reach the reservation before
       // either calls the REAL mkdir. No production hook, retry or lock substitute.
