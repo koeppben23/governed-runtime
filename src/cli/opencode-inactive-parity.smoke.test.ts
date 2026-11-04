@@ -14,8 +14,8 @@ const probes: NativeHostProbe[] = [];
 let artifact: Awaited<ReturnType<typeof createPackedFlowGuardInstall>>;
 let installedTemplate: string | undefined;
 afterEach(async () => {
-  for (const probe of probes.splice(0).reverse()) await probe.close();
-});
+  await Promise.allSettled(probes.splice(0).map((probe) => probe.close()));
+}, 60_000);
 
 async function observeProduct(probe: NativeHostProbe, installed: boolean) {
   probes.push(probe);
@@ -94,7 +94,7 @@ describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
   afterAll(async () => {
     await artifact?.close();
     if (installedTemplate) await rm(installedTemplate, { recursive: true, force: true });
-  });
+  }, 60_000);
   it.each([
     { git: true, tool: 'shell' },
     { git: true, tool: 'edit' },

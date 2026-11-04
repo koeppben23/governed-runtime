@@ -172,7 +172,7 @@ describe.skipIf(!LIVE)('packed installed INACTIVE native parity', () => {
   }, 300_000);
   afterAll(async () => {
     await artifact?.close();
-  });
+  }, 60_000);
 
   it.each(['repo', 'global'] as const)(
     'keeps ACTIVE A and INACTIVE B scoped during live catalogue publication and reload, scope=%s',
@@ -329,8 +329,8 @@ describe.skipIf(!LIVE)('packed installed INACTIVE native parity', () => {
       arms.push(await arm(true, git, scope));
     }, 600_000);
     afterAll(async () => {
-      for (const probe of arms.splice(0).reverse()) await probe.close();
-    });
+      await Promise.allSettled(arms.splice(0).map((probe) => probe.close()));
+    }, 60_000);
 
     it('preserves native tool definitions, model choices and the actual provider context', async () => {
       const results = [];

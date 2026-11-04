@@ -502,8 +502,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   performs one real packed installation per run and copies the installed
   `.opencode` tree into its cases; the installed comparison suite still runs the
   real installer per repo/global Git/non-Git arm. Path normalization now handles
-  Windows forward- and backslash spellings. Test count, assertions and timeouts
-  are unchanged.
+  Windows forward- and backslash spellings, and host cleanup hooks get a bounded
+  60-second ceiling so Windows process teardown cannot fail otherwise-passing
+  cases. Test count and assertions are unchanged.
 
 - **Whole-PR documentation alignment.** Remove the Quick Start GA claim and the
   `/hydrate` activation wording; make approval gates policy-dependent; show
