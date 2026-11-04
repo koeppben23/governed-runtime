@@ -92,7 +92,8 @@ export async function createPackedFlowGuardInstall() {
       checkpoint('npm-install-begin', {
         timeoutMs: 300_000,
         bootstrap,
-        // Do not change or isolate the shared cache while testing the contention hypothesis.
+        // Keep the shared cache and dependency selection unchanged; reuse is
+        // opt-in and requires the CI job's serialized execution.
         configuredCache: process.env.npm_config_cache ?? process.env.NPM_CONFIG_CACHE ?? null,
       });
       // Keep synchronous execution and piped stdio, as in the original execFileSync.

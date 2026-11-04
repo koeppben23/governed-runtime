@@ -498,6 +498,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **P0-00 current-build evidence and smoke follow-ups (#1190).** The
+  installed-parity matrix now downloads the current build job's package and
+  checksum instead of the historical diagnostic artifact; `pwsh` is declared as
+  an external test-host binary for Knip; and the last post-reload registry read
+  reuses the existing transient-plugin-activation helper. No assertions,
+  governance behavior or timeout budgets change.
+
 - **Installer dependency spec for paths with `~`, spaces or `#` (#1190).** The
   dependency transaction wrote the vendored core as a `file://` URL. npm never
   percent-decodes `file:` specs, so any target path containing `~` (Windows 8.3

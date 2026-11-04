@@ -76,11 +76,11 @@ describe('required ci-gate documentation enforcement', () => {
       'npx vitest run --no-file-parallelism --project smoke src/cli/opencode-inactive-parity.smoke.test.ts src/cli/opencode-inactive-installed.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-results.json',
     );
   });
-  it('reuses one digest-bound bootstrap with both suites serialized on the original package', () => {
+  it('reuses one digest-bound bootstrap with both suites serialized on the current package', () => {
     const steps = requiredJob('inactive-parity').steps;
     const download = steps.find((step) => step.name === 'Download identical packed product');
-    expect(download?.with?.['run-id']).toBe('41790845872');
-    expect(download?.with?.['github-token']).toBe('${{ github.token }}');
+    expect(download?.with?.['run-id']).toBeUndefined();
+    expect(download?.with?.['github-token']).toBeUndefined();
     const run = steps.find(
       (step) => step.name === 'Reconcile original probes and verify installed mixed-session parity',
     );

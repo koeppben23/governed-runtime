@@ -23,7 +23,7 @@ async function observeProduct(probe: NativeHostProbe, installed: boolean) {
   if (installed) expect(product[0]!.state).toEqual({ status: 'active' });
 }
 
-/** Native shell effect that is valid in PowerShell and POSIX sh: one outer
+/** Native shell effect valid in PowerShell and POSIX sh: one outer
  * double-quoted `-e` script, single-quoted JS strings, forward-slash paths. */
 function nativeWriteCommand(target: string, effect: string) {
   const path = target.replaceAll('\\', '/').replaceAll("'", "\\'");

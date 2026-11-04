@@ -104,12 +104,18 @@ unchanged joint 65-case run on the original package: solo npm succeeds in 267.8
 seconds, both joint npm processes time out, and all seven solo cases fail at
 native-control effects or installed dependency setup. The test job now serializes
 the two suites and reuses one digest-bound bootstrap, the Windows shell fixture
-uses a cross-shell `node -e` command, and installer npm logs are retained. These
-are test-only corrections; the joint mechanism and installer ENOENT root cause
-remain NOT_VERIFIED, and no governance regression is established. Linux/macOS
-each pass 65/65 in this diagnostic run; local reuse passes 65/65 with one npm
-install. The separate macOS activation failure on `a38dd3a7` (51 passed, 14
-unexecuted) remains a real historical failure, not a proven flake. See the
+uses a cross-shell `node -e` command, and installer npm logs are retained.
+Retained npm logs on run `41801596586` attribute the installer ENOENT to Node's
+`pathToFileURL` encoding `~` as `%7E` on Windows 8.3 short-name paths; npm then
+opens the literal encoded directory. Upstream `0e3568f0` now emits an unencoded
+`file:../vendor/...` spec relative to the staging root, with a real-npm test for
+`~`, spaces and `#`. This product portability fix still requires Windows
+re-execution. The joint bootstrap mechanism remains NOT_VERIFIED; no governance
+regression is established. Linux/macOS each pass 65/65 in this diagnostic run;
+local reuse passes 65/65 with one npm install. Upstream `78298e2a` adds an exact
+transient retry for the separate macOS `ServiceUnavailableError`
+("Location plugins did not finish activating") finding; its macOS re-execution
+is still pending. See the
 [diagnostic results](./p0-00-inactive-parity.md#executed-hosted-diagnostic-on-82a490aa).
 
 This section describes the subsequent native API implementation and local

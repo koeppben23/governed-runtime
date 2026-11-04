@@ -152,9 +152,11 @@ Linux, macOS and Windows. The build job packs one product tarball plus checksum
 once; every runner downloads those identical bytes through `FLOWGUARD_TARBALL`,
 installs the exact native candidate and publishes its JSON test results. This
 separates native session/provider-wire parity from package-install/doctor checks.
-For the bounded Windows bootstrap diagnosis, this matrix temporarily downloads
-the original package from run `41790845872` rather than the new build's package.
-The diagnostic first ran the seven-case suite alone and then both suites jointly;
+For the bounded Windows bootstrap diagnosis, the diagnostic runs temporarily
+downloaded the original package from run `41790845872` rather than the new build's
+package. Current-build sourcing is restored: each run now uses the `build` job's
+tarball/checksum for that commit. The diagnostic first ran the seven-case suite
+alone and then both suites jointly;
 one solo npm install completed while both concurrent installs timed out. The job
 therefore now runs both suites serially (`--no-file-parallelism`) and reuses one
 digest-bound bootstrap via `FLOWGUARD_BOOTSTRAP_PREFIX`. The second suite verifies
@@ -164,10 +166,10 @@ A stale or different-digest prefix triggers a clean reinstall. The artifact, 65
 cases, assertions, shared npm cache and 300-second bootstrap budgets stay
 unchanged. Bootstrap phases, stdin/stdout/stderr and verbose npm debug logs,
 including per-installer logs, are retained outside disposable installation roots
-and uploaded with `always()`. This is evidence for the original product artifact,
-not new-head certification. Restore current-build artifact sourcing after
-diagnosis; an expired/missing historical artifact must fail, not silently fall
-back. See the
+and uploaded with `always()`. The pinned-original runs are diagnostic evidence,
+not new-head certification; the restored current-build runs certify the tested
+head. An expired/missing historical artifact must fail, not silently fall back.
+See the
 [bounded diagnostic protocol](./host-probes/opencode-v2/p0-00-inactive-parity.md#bounded-bootstrap-diagnostic-checkpoint).
 
 Coverage CI bounds competing instrumented Vitest workers to two. It still covers

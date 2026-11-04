@@ -233,12 +233,14 @@ retained before rethrowing a timeout/nonzero exit; neither becomes a fallback
 success. Error/timeout retention and disjoint concurrent diagnostics have unit
 coverage in the existing `opencode-live-host.test.ts` suite.
 
-The existing CI matrix is temporarily pinned to the original shared package from
-run `41790845872`, SHA-256
+The diagnostic runs were pinned to the original shared package from run
+`41790845872`, SHA-256
 `1ecca9459cfdcffc39399cbbfdb057a3b5ba16ecb1a3e21e34e4fb396450723b`.
-It must not silently substitute a fresh build if this historical artifact is
-missing or expired. This is a bounded diagnostic checkpoint, not acceptance of
-the newly built head; restore current-build sourcing after diagnosis.
+They must not silently substitute a fresh build if this historical artifact is
+missing or expired. Those pinned results are diagnostic evidence, not acceptance
+of the then-new head. Current-build sourcing is restored: the matrix now uses the
+same run's `build` artifact, so subsequent Windows results certify the tested
+commit including the installer fix below.
 
 The first diagnostic execution on `82a490aa` ran the original seven-case suite
 alone, then both suites jointly. It established one solo npm completion and two
@@ -264,10 +266,11 @@ solo control passed 7/7 and a joint control 65/65 with two overlapping npm
 intervals (about 4.13 seconds solo; about 7.50 seconds each jointly). Those local
 timings only show that the diagnostics observe concurrency; they do not explain
 the Windows timeout.
-Supporting local verification for this test-only diagnostic/reuse change passes
-12,890 unit/integration tests (703 files, 2 skipped), 318 script tests and 547
-architecture tests; type checks, strict lint, build/documentation drift (17 tests),
-formatting, actionlint and action pinning also pass. These are not Windows
+Supporting local verification passes 12,902 unit/integration tests (704 files,
+2 skipped), 318 script tests and 547 architecture tests; type checks, strict
+lint, build/documentation drift (17 tests), formatting, actionlint and action
+pinning also pass. A direct packed-installer run in a local `RUNNER~1` path
+completes with 27 files and the installed dependency tree. These are not Windows
 execution evidence.
 
 ### Executed hosted diagnostic on `82a490aa`
@@ -330,15 +333,19 @@ The solo failures expose separate boundaries previously hidden by bootstrap:
   not retained, so that exact cause remains **NOT_VERIFIED**.
 - The two edit cases, catalogue case and compaction case reach the packed
   installer, which fails dependency setup with npm `ENOENT` opening a local
-  tarball. Its scrubbed output includes a `file:C:` reference with `[path:RUNNER]%7E1`
-  path text. This is an observed installed-path failure, not a proven corrupt
-  artifact, governance failure or general Windows installer defect. Source
-  inspection identifies `install-transaction.ts` staging through
-  `pathToFileURL(tx.vendorTarballPath).href`; the failing unredacted staging input
-  was not retained. The helper now gives each installer invocation an
-  `npm_config_logs_dir` outside the disposable project and keeps the npm debug
-  log, so the next execution can attribute the path failure. The precise cause is
-  **NOT_VERIFIED**.
+  tarball. The retained npm debug log (run `41801596586`) resolves the cause:
+  Node 22 `pathToFileURL` serialized the vendored path as
+  `file:///C:/Users/RUNNER%7E1/...`; npm 10 then tried to open the literal
+  `C:\Users\RUNNER%7E1\...` directory and received `ENOENT`. The project path
+  uses the Windows 8.3 short name `RUNNER~1`, so this is a real installer
+  portability defect for `~`-containing paths, not a corrupt artifact or a
+  governance failure. Upstream commit `0e3568f0` now writes the staging
+  dependency as an unencoded `file:../vendor/...` spec relative to the staging
+  root, the same form the installed `package.json` template uses. npm resolves
+  that raw path directly, so `~`, spaces and `#` need no URL decoding. A
+  real-npm test covers a target containing all three. The fix is product code
+  and requires Windows re-execution; the previous failure remains historical
+  evidence.
 - Solo `afterAll` cleanup additionally exceeds its unchanged 10,000 ms hook
   limit. That is distinct from the 300-second bootstrap limit.
 
@@ -347,13 +354,13 @@ jobs remain separate evidence; they do not negate the specific path failure or
 certify these native conformance cases. No product code or parity assertion is
 changed in response to this diagnostic result.
 
-Remaining recovery needs concrete attribution of the installer `ENOENT` from the
-newly retained npm log, then a separate decision on whether it is a test-path or
-product installer defect. The bootstrap overlap is avoided by serialization/reuse;
-its internal Windows mechanism remains **NOT_VERIFIED** even if the serialized
-run passes. P0-00 Windows remains **BLOCKED** until the 65 cases execute and pass
-on Windows, the installer path is understood, and the solo cleanup limit is
-resolved without weakening assertions or budgets.
+The installer `ENOENT` is now attributed and fixed in product code (see above),
+but that fix must still execute on Windows. The bootstrap overlap is avoided by
+serialization/reuse; its internal Windows mechanism remains **NOT_VERIFIED** even
+if the serialized run passes. The solo `afterAll` cleanup timeout remains a
+separate test-cleanup issue; it did not affect a passing parity result. P0-00
+Windows remains **BLOCKED** until all 65 cases execute and pass on Windows with
+the restored current-build artifact.
 
 ### Intervening `a38dd3a7` run, retained separately
 
@@ -367,8 +374,11 @@ not finish activating`. Both packed helpers had logged digest
 merge-build SHA `eee6923c5c4c8bbdd2e186cf5e94e1cda95c1eb6`; this is not the
 original diagnostic artifact. The PERF measurement is 167.69 ms against <150 ms.
 The later diagnostic run's PASS does not establish either failure's root cause
-or reclassify it as infrastructure noise/a flake. No fix or unchanged rerun is
-performed for these separate findings in this Windows diagnostic task.
+or reclassify it as infrastructure noise/a flake. Upstream `78298e2a` now retries
+exactly the transient `ServiceUnavailableError` activation answer within the
+existing 60-second deadline and records deferrals; a failed activation still
+surfaces as plugin state `failed`. Its macOS re-execution and the PERF
+measurement remain open and are not certified by this diagnostic.
 
 ### Desktop boundary
 

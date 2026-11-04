@@ -539,10 +539,6 @@ jobs:
         with:
           name: inactive-parity-package
           path: inactive-parity-package/
-          # Bounded bootstrap diagnosis: retain the exact original failing package.
-          # This is not certification of a newly built product on this head.
-          run-id: '41790845872'
-          github-token: ${{ github.token }}
       - name: Install and resolve the exact native candidate executable
         id: parity-host
         shell: bash

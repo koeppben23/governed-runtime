@@ -255,7 +255,7 @@ export default Plugin.define({ id: 'flowguard-test-inventory', async setup(ctx) 
     expect(existsSync(join(target, PLUGIN_RELATIVE_PATH))).toBe(false);
     expect(existsSync(join(target, 'package.json'))).toBe(false);
     await client.location.reload({ signal: AbortSignal.timeout(60_000) });
-    await client.agent.list({ location }, { signal: AbortSignal.timeout(60_000) });
+    await awaitLocationActivation(client, location);
     const after = await client.plugin.list({ location });
     expect(after.data.some((plugin) => plugin.id === 'flowguard')).toBe(false);
     expect(await readFile(join(project, 'opencode.jsonc'), 'utf8')).toBe(customer);
