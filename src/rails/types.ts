@@ -13,12 +13,7 @@
  */
 
 import type { SessionState, Phase, Event } from '../state/schema.js';
-import type {
-  LoopVerdict,
-  ReviewDecision,
-  RevisionDelta,
-  SelfReviewLoop,
-} from '../state/evidence.js';
+import type { LoopVerdict, ReviewDecision, RevisionDelta } from '../state/evidence.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { EvalResult } from '../machine/evaluate.js';
 import { resolveTransition } from '../machine/topology.js';
@@ -530,49 +525,5 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
     currDigest: processed.artifact.digest,
     revisionDelta: processed.revisionDelta,
     verdict: result.verdict,
-  };
-}
-
-// ─── Loop State Builders ──────────────────────────────────────────────────────
-
-/**
- * Build a self-review loop state object from a convergence result.
- *
- * `reviewCycle` is the owning loop's active human review-cycle counter
- * (`state.reviewCycles.<loop>`) at creation; it is part of the persisted loop
- * identity and is never derived from the convergence result.
- *
- * Eliminates the duplicated 6-field object literal pattern that appears
- * identically at 4 call sites in continue.ts and plan.ts.
- */
-export function buildSelfReviewState(
-  loop: Omit<SelfReviewLoop, 'reviewCycle'>,
-  reviewCycle: number,
-) {
-  return {
-    iteration: loop.iteration,
-    reviewCycle,
-    maxIterations: loop.maxIterations,
-    prevDigest: loop.prevDigest,
-    currDigest: loop.currDigest,
-    revisionDelta: loop.revisionDelta,
-    verdict: loop.verdict,
-  };
-}
-
-/**
- * Build an implementation review loop state object from a convergence result.
- *
- * Extends buildSelfReviewState with the mandatory executedAt timestamp. The
- * human review-cycle counter comes from `state.reviewCycles.implementation`.
- */
-export function buildImplReviewState(
-  loop: Omit<SelfReviewLoop, 'reviewCycle'>,
-  executedAt: string,
-  reviewCycle: number,
-) {
-  return {
-    ...buildSelfReviewState(loop, reviewCycle),
-    executedAt,
   };
 }

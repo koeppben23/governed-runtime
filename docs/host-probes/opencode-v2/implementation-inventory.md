@@ -849,9 +849,21 @@ real persistence; the old unused executor and suite are removed. The current
 schema explicitly rejects the old invalid digest and double-initial fixtures;
 route-time integrity refusal and legal V2 retry continuation are also tested.
 See the [case mapping and boundaries](./p0-10-ownership-decisions.md#completed-settlement-port-seven-purposes-on-both-current-artifact-routes).
-The source graph now has 721 production / 246 integration files and five files
-outside combined shipped reachability: four rails plus the deliberate product
-inventory authority. P0-10, R4 and final installed acceptance remain open.
+At the settlement checkpoint the source graph had 721 production / 246
+integration files and five files outside combined shipped reachability: four
+rails plus the deliberate product inventory authority.
+
+**Rail retirement after `c2e71226`:** the four callback-driven rails and all
+five old suites are removed after purpose-level mapping to executable current
+owners. The retirement guard rejects reintroduced files, symbols or a mutating
+`/continue`, and verifies every preserved current-owner test title. The graph is
+now **717 production / 246 integration files**, 3,813 internal import sites,
+zero unresolved relative imports; package/plugin runtime closures remain 689/601
+and the combined type/runtime closure is 716. Only deliberate
+`shared/product-inventory.ts` remains outside the combined shipped graph. See the
+[completed rail retirement](./p0-10-ownership-decisions.md#completed-rail-retirement-78-cases-dispositioned).
+P0-10 executable cleanup is complete; default mutation, ISO publication
+exclusivity, installed acceptance and R4 remain open.
 
 Scope: shipped package exports/binaries, native plugin composition and adapter,
 activation versus workflow authority, reviewer dispatch/capture/evidence owners,
@@ -890,8 +902,10 @@ removal takes the current inventory to 725 / 248; runtime reachability is unchan
 | `plugin-orchestrator.ts`         | Exactly one production importer, `plugin-shared.ts`, uses it as a type only. The file only re-exports the existing `OrchestratorDeps` definition.                                                                                                         | Proven redundant facade removed; direct canonical type import, placement entry and source/docs guards updated. No runtime behavior changes.                                                                      |
 | `cli/opencode-runtime-compat.ts` | No production TypeScript importer, but `demos/lib/environment-gate.mjs` and `demos/java-task-manager/run-live-matrix.mjs` actively read it from the filesystem and extract `TESTED_OPENCODE_HOST_VERSION = '1.19.5'`.                                     | Live V1 tooling residue, not just historical evidence. Must port these consumers to the current candidate contract and remove the obsolete classifier/pin, not falsely certify V2 by changing the literal alone. |
 
-Nine production-class modules lie outside the combined shipped type/runtime
-graph (both before and after the facade removal):
+The original audit found nine production-class modules outside the combined
+shipped type/runtime graph. This list is retained as the historical checkpoint;
+the current graph contains only `shared/product-inventory.ts` after the
+classifier, settlement and rail retirements:
 
 - `cli/opencode-runtime-compat.ts` — active filesystem demo consumers as above.
 - `integration/review/evidence/review-provenance.ts` — no import site found;
@@ -900,10 +914,10 @@ graph (both before and after the facade removal):
   is called only by its unit suite, not current native retry/closure wiring.
 - `rails/plan.ts`, `rails/implement.ts`, `rails/continue.ts`, `rails/validate.ts`
   — imported by `rails/async-rails.test.ts`, not exported from the package root
-  or called by the native tool path. They contain executable executor/self-review
-  seams, not just types; `ImplExecutors.reviewAndRevise` is explicitly documented
-  as historical and test-retained. Their required assertions must be mapped to
-  canonical current paths before deleting redundant implementations/tests.
+  or called by the native tool path. They contained executable executor/self-review
+  seams, not just types. **Superseded:** all four implementations and five suites
+  were retired after purpose-level current-owner mapping; see the completed rail
+  retirement and its executable guard.
 - `providers/registry-validation.ts` — `validateProviderExtensions` is used by
   its test suite only; determine whether this is an unwired required guard or
   removable duplicate validation. Do not turn a missing caller into proof that

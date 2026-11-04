@@ -46,11 +46,6 @@ interface SinglePhaseAllowance {
 
 const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
   {
-    file: 'rails/continue.ts',
-    max: 1,
-    reason: 'attaches ADR status only on the architecture-flow terminal ARCH_COMPLETE',
-  },
-  {
     file: 'integration/services/decision-finalization.ts',
     max: 2,
     reason: 'flow-specific finalization: MADR on ARCH_COMPLETE, regulated artifact on COMPLETE',

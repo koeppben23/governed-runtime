@@ -39,20 +39,6 @@ export function blockedFromOverflow(overflow: AutoAdvanceOverflow): RailBlocked 
 }
 
 /**
- * Map either fail-closed auto-advance outcome (step-limit overflow or a
- * protected-approval denial) to a {@link RailBlocked}. The substantive denial
- * code comes from the canonical preflight; only the overflow receives the
- * overflow context.
- */
-export function blockedFromAutoAdvanceFailure(
-  advanced: AutoAdvanceOverflow | AutoAdvanceBlocked,
-): RailBlocked {
-  return advanced.kind === 'overflow'
-    ? blockedFromOverflow(advanced)
-    : blockedFromEvidenceApproval(advanced);
-}
-
-/**
  * Format an auto-advance overflow (#428) as a fail-closed blocked tool result.
  *
  * Used by boundary tools that call autoAdvance directly. MUST be returned

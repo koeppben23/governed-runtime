@@ -7,16 +7,16 @@ Draft / **NO-GO**). The local follow-up to that baseline explicitly labels the
 inherited duplicate settlement assertion; it proves no separate governance
 rejection class.
 
-| Surface                                       | Current disposition / evidence scope                                                                                                                            |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Host classifier                               | Removed in `3c210bae`; nine purposes mapped to exact current-candidate selection, not installed-product certification.                                          |
-| Generic settlement                            | Removed in `6dd00388`; seven purposes run on both artifact routes (14 component cases with real persistence).                                                   |
-| Lifecycle artwork                             | V2-corrected SVG in `f048acc0`; diagram/transition checks are documentation evidence, not product acceptance.                                                   |
-| Four historical rails                         | Still OPEN pending case-by-case current-owner evidence; no callback executor will be reactivated.                                                               |
-| Latest full local tests / coverage            | Settlement working tree incorporated in `6dd00388`: 12,974 passed / 2 skipped; coverage 12,965 passed / 11 skipped. These results do not certify later commits. |
-| ISO publication exclusivity                   | OPEN: earlier Hosted-CI `[0, 0]` observations remain unexplained; later passes establish neither a fix nor a flake.                                             |
-| Default mutation / final installed acceptance | NOT_VERIFIED: `npm run mutation` and final SHA/artifact-bound CLI/Desktop workflow remain required.                                                             |
-| R4                                            | Separate external host-security dependency; BLOCKED / NOT_SUPPORTED under the unchanged untrusted-plugin threat model.                                          |
+| Surface                                       | Current disposition / evidence scope                                                                                                                                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host classifier                               | Removed in `3c210bae`; nine purposes mapped to exact current-candidate selection, not installed-product certification.                                                                                            |
+| Generic settlement                            | Removed in `6dd00388`; seven purposes run on both artifact routes (14 component cases with real persistence).                                                                                                     |
+| Lifecycle artwork                             | V2-corrected SVG in `f048acc0`; diagram/transition checks are documentation evidence, not product acceptance.                                                                                                     |
+| Four historical rails                         | Removed after purpose-level current-owner mapping (see completed retirement below); no callback executor is reactivated. Current owners are executable.                                                           |
+| Latest full local tests / coverage            | Rail-retirement working tree: 12,907 passed / 2 skipped in 703 files; coverage 12,898 passed / 11 skipped (91.03% statements, 84.33% branches, 95.49% functions, 92.51% lines). Not final SHA/install acceptance. |
+| ISO publication exclusivity                   | OPEN: earlier Hosted-CI `[0, 0]` observations remain unexplained; later passes establish neither a fix nor a flake.                                                                                               |
+| Default mutation / final installed acceptance | NOT_VERIFIED: `npm run mutation` and final SHA/artifact-bound CLI/Desktop workflow remain required.                                                                                                               |
+| R4                                            | Separate external host-security dependency; BLOCKED / NOT_SUPPORTED under the unchanged untrusted-plugin threat model.                                                                                            |
 
 The historical checkpoints below retain their original identities and scopes.
 This status is not a P0-10 completion claim or final call-path certification.
@@ -104,10 +104,10 @@ names are relative to `src/integration/`.
 | `integration/review/evidence/review-provenance.ts`        | demonstrably dispensable | No production or test importers, and no other symbol consumers found. Its extractor validates old `obligation.metadata` branch/SHA/content fields. Current provenance is bound through `state/evidence-review-subject.ts`, `state/evidence-review.ts`, `state/review-continuation.ts` and `tools/review-tool/continuation-authority.ts`, not this extractor.  | Removed locally, with placement entry and a no-reintroduction guard. No test/assertion removed, no replacement validator or provenance fallback added.                                                                                                                                   |
 | `providers/registry-validation.ts`                        | canonical and necessary  | Only `providers/registry-validation.test.ts` calls it. It checks the source-owned built-in extension array, duplicate identities, parser/codec/report consistency, profile/signature ownership and unsafe probe declarations. `providers/registry.ts` derives the runtime registry from the fixed array; this validator was not a runtime registration guard. | Moved locally to `providers/registry-validation-test-helpers.ts`, classified by the existing test-helper suffix. All implementation statements and test bodies are unchanged; only the test import and helper header change. No new runtime registration feature, no removed validation. |
 | `integration/review/obligations/obligation-settlement.ts` | demonstrably dispensable | Only its old suite called it. The seven assertion purposes now run on `tools/plan/plan-route.ts` and `tools/architecture/architecture-restart.ts`, consuming canonical `state/review-continuation.ts` and `review/obligations/obligation-state.ts`.                                                                                                           | Removed after the 14-case plan/ADR port below. No runtime closure, retry authority, evidence writer or frozen-material verifier is replaced; no old executor moved into test support.                                                                                                    |
-| `rails/plan.ts`                                           | replace with V2          | `rails/plan.test.ts` and `rails/async-rails.test.ts`. Bundles author plan generation with injected reviewer callbacks. The current runtime owner is `integration/tools/plan/plan.ts`, with canonical plan authority helpers and native review dispatch/capture.                                                                                               | Keep all assertions pending porting; remove the old executor implementation only after the mappings below execute on the live owner. Do not reactivate its callback review as a second runtime.                                                                                          |
-| `rails/implement.ts`                                      | replace with V2          | `rails/implement.test.ts` and `rails/async-rails.test.ts`. Its zero-check branch still runs historical `reviewAndRevise`. Current implementation recording is `integration/tools/implementation/implement.ts`; validation/review activation uses `tools/auto-validation.ts` and `tools/implementation-review-activation.ts`.                                  | BLOCKED for deletion until implementation freshness, zero-check and budget assertions are rebound to current owners. Merely relocating the historical executor would not close this item.                                                                                                |
-| `rails/validate.ts`                                       | replace with V2          | `rails/validate.test.ts` and `rails/async-rails.test.ts`. Current execution and persistence owner is `integration/tools/validation/run-check-tool.ts`, invoked by `tools/auto-validation.ts` for system work.                                                                                                                                                 | Port ordered checks, evidence slots, failures, technical errors and zero-check cases before removal; never substitute agent-reported results or copy baseline PASS into post-implementation evidence.                                                                                    |
-| `rails/continue.ts`                                       | replace with V2          | `rails/continue.test.ts` and `rails/async-rails.test.ts`. This old function executes work and mutates review state. Current `integration/tools/simple/continue-tool.ts` is read-only routing; work belongs to the originating tools, automatic validation and native review owners.                                                                           | There is no equivalent current mutating `/continue` owner. Separate routing assertions from execution/approval assertions before removing this implementation. Wiring it into the current tool would be a regression, not cleanup.                                                       |
+| `rails/plan.ts`                                           | demonstrably dispensable | Only `rails/plan.test.ts` and `rails/async-rails.test.ts` imported it. It bundled author generation and callback self-review; current plan submission, revision, review and closure are owned by `integration/tools/plan/plan.ts`, `plan-route.ts` and native dispatch/capture.                                                                               | Removed with its suites after the purpose mapping below. No callback generation/review executor remains.                                                                                                                                                                                 |
+| `rails/implement.ts`                                      | demonstrably dispensable | Only `rails/implement.test.ts` and `rails/async-rails.test.ts` imported it. Its zero-check branch ran historical `reviewAndRevise`; current recording, fresh post-implementation validation and review activation are owned by `tools/implementation/implement.ts`, `tools/auto-validation.ts` and `tools/implementation-review-activation.ts`.               | Removed with its suites. The bundled `reviewAndRevise` seam is retired, not moved or reactivated.                                                                                                                                                                                        |
+| `rails/validate.ts`                                       | demonstrably dispensable | Only `rails/validate.test.ts` and `rails/async-rails.test.ts` imported it. Current execution, evidence, failures and technical-error routing are owned by `tools/validation/run-check-tool.ts` and `tools/auto-validation.ts`.                                                                                                                                | Removed with its suites after mapping ordered checks, scope slots, failure/timeout and zero-check purposes to executable current-owner tests.                                                                                                                                            |
+| `rails/continue.ts`                                       | demonstrably dispensable | Only `rails/continue.test.ts` and `rails/async-rails.test.ts` imported it. The old function executed work and mutated review state; current `/continue` is read-only routing in `tools/simple/continue-tool.ts`, while work belongs to originating tools, automatic validation and native review.                                                             | Removed with its suites. Execution/approval cases are explicitly retired by contract; routing cases map to the read-only tool.                                                                                                                                                           |
 | `cli/opencode-runtime-compat.ts`                          | demonstrably dispensable | No production importer or active demo filesystem reader. Its nine safety cases now exercise the existing native acceptance resolver in `cli/opencode-candidate-contract.test.ts`. The historical config comparison reads the original V1 JSON snapshot directly.                                                                                              | Removed after the nine-case port below; no executable classifier moved to test support, no compatibility facade or replacement runtime introduced.                                                                                                                                       |
 | `shared/product-inventory.ts`                             | canonical and necessary  | Deliberate documentation-generation authority used outside the shipped entrypoint graph.                                                                                                                                                                                                                                                                      | Retain. Lack of runtime reachability does not make a build/documentation authority redundant.                                                                                                                                                                                            |
 
@@ -221,27 +221,63 @@ installed acceptance. It does not explain the earlier Hosted-CI ISO failures.
 **NOT_VERIFIED:** default mutation (`npm run mutation`) and final installed
 candidate acceptance; no specialized profile substitutes for that certification.
 
-### Remaining assertion-preserving port obligations
+### Completed rail retirement: 78 cases dispositioned
 
-The following are target-owner mappings, **not completed assertion equivalence**.
-No old rail suite is deleted, skipped or rewritten in this change.
+The four callback-driven implementations and all five suites are removed. The
+78 historical cases are dispositioned by **assertion purpose**, not copied into
+a second runtime: duplicates of the same contract collapse onto one current-owner
+test, and callback-execution behavior that contradicts the current contract is
+retired explicitly. `architecture/__tests__/retired-execution-rails.test.ts`
+fails if a retired file returns, if a preserved current-owner test disappears,
+if an executor symbol reappears in production, or if `/continue` regains work
+execution or native review authority.
 
-| Existing suites                                                     | Assertions that must survive                                                                                                                                           | Current owner / verification surface                                                                                                                                                                                                       |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rails/plan.test.ts`, plan group in `async-rails.test.ts`           | Admissibility, missing ticket, empty plan, user content, history/lineage, revision, convergence and policy budget                                                      | `tools/plan/plan.ts`, `tools/plan/plan-submission-state.ts`, native dispatch/capture; `tools-execute-planning.test.ts`, `tools/plan/plan-auto-approval.test.ts`, `review/dispatch/durable-dispatch.test.ts`                                |
-| `rails/implement.test.ts`, implement group in `async-rails.test.ts` | Ticket/plan/baseline preconditions; fresh post-implementation slot; independent review activation; zero-check behavior; policy budget                                  | `tools/implementation/implement.ts`, `tools/implementation-review-activation.ts`, native capture; `tools-execute-implement.test.ts`, `auto-validation.test.ts`, `tools/implement-review-validation-gate.test.ts`                           |
-| `rails/validate.test.ts`, validate group in `async-rails.test.ts`   | Check order, commands/evidence, scope-specific slots, failure routing, infrastructure/timeout preservation and zero-check behavior                                     | `tools/validation/run-check-tool.ts`, `run-check-result.ts`, `auto-validation.ts`; `tools-execute-run-check.test.ts`, `auto-validation.test.ts`, `auto-validation-retry-authority.test.ts`                                                 |
-| `rails/continue.test.ts`, continue group in `async-rails.test.ts`   | Read-only guidance, ambiguity, gates and terminal handling; separately, work execution, review budgets, invalid ADR rejection and no advancement on `unable_to_review` | `tools/simple/continue-tool.ts` for routing (`tools/continue-tool.test.ts`); originating plan/implementation/architecture tools and native review for work. Old bundled callback expectations are not evidence of live independent review. |
+Preserved purposes and their executable owners:
 
-The old `/continue` suite expects one call to execute validation or an ADR
-review iteration and mutate evidence. The current `/continue` tool returns
-guidance without doing either. That is a concrete semantic mismatch: merely
-redirecting the old import cannot preserve its assertions. Map the execution
-assertions to the actual work owner instead of giving the read-only tool old
-executor capabilities. This port is BLOCKED, not complete. Validation outcomes
-must use `state/evidence-validation.ts`: an `inconclusive` outcome alone is not
-proof of a technical block; trustworthy artifact failures and inconclusive
-assertion extraction have distinct disposition rules.
+| Purpose                                                   | Current owner test                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan submission, empty input, missing ticket, wrong phase | `tools-execute-planning.test.ts`: `Mode A: records initial plan with digest`, `blocks with EMPTY_PLAN for empty planText`, `blocks without ticket evidence in the TICKET phase`, `blocks in READY phase (command not allowed without ticket phase)`                                                                                                                                                                       |
+| Plan revision, history, budget                            | same suite: `Mode B: changes_requested with revised plan`, `keeps plan evidence when PLAN_REVIEW changes_requested returns to PLAN`, `TEAM: presents the plan at the human gate instead of blocking (#508 regression)`                                                                                                                                                                                                    |
+| Plan input boundary                                       | same suite: `rejects a minimal plan without ATX headings before spending review authority` (V2 is stricter than the old single-character fixture)                                                                                                                                                                                                                                                                         |
+| Implementation recording and fresh slot                   | `tools-execute-implement.test.ts`: `defers implementation review obligation and invocation until post-implementation checks pass`                                                                                                                                                                                                                                                                                         |
+| Implementation preconditions, stale evidence, zero-check  | `tools-execute-implement.test.ts`, `tools/implement-review-validation-gate.test.ts`, `orchestration-dead-state-recovery.test.ts`: the cited `blocks without plan/ticket`, `blocks when passing evidence belongs to a STALE implementation digest (D3)`, `passes vacuously when there are no active checks`, `blocks implementation in TICKET phase` cases                                                                 |
+| Implementation review budget                              | `tools/implement-shared.test.ts`: `derives the implementation review budget from policy`                                                                                                                                                                                                                                                                                                                                  |
+| Validation pass/failure/order/errors                      | `tools/run-check-tool.test.ts`, `tools-execute-run-check.test.ts`, `auto-validation.test.ts`: `advances to IMPLEMENTATION when all active checks pass`, `failed check routes to PLAN through the automatic path`, `team plan approval runs every active check automatically and persists the evidence`, `an execution error keeps the validation phase and surfaces the error response`, `blocks in wrong phase (TICKET)` |
+| Validation drift, timeout, scope binding                  | `tools/run-check-tool.test.ts`, `tools/implement-review-validation-gate.test.ts`: `post-implementation subject drift keeps IMPL_VALIDATION and the implementation evidence`, `timeout evidence shape is correct`, `binds post-implementation validation attempts to the implementation digest`, `ignores baseline-scope attempts (only implementation scope counts)`                                                      |
+| `/continue` routing                                       | `tools/continue-tool.test.ts`: READY ambiguity, VALIDATION guidance, all three user gates, terminal actions, unknown phase and `IMPL_REVIEW does not introduce a local reviewer command`                                                                                                                                                                                                                                  |
+| Architecture and end-to-end flows                         | `e2e-workflow.test.ts`: architecture solo/revision and complete team workflow; `tools-execute-planning.test.ts`: plan/architecture `SUBAGENT_UNABLE_TO_REVIEW` E2E cases                                                                                                                                                                                                                                                  |
+
+Explicitly retired callback contracts (must not be restored):
+
+- rail-owned plan generation and `selfReview` callback loops;
+- implementation `reviewAndRevise`, including the old zero-check shortcut;
+- rail-owned validation execution independent of `run_check`/automatic
+  validation;
+- the mutating `/continue` executor and its review-budget loop;
+- bundled auto-advance transitions that bypassed current tool/system-work
+  ownership.
+
+These are not assertion-equivalence claims for the installed host. The current
+component and E2E tests are executable evidence on the real persistence path,
+but they are not installed Desktop/ACTIVE acceptance or reviewer-integrity proof.
+
+Executed static graph after removing the rail modules: **717 production / 246
+integration files**, 3,813 internal import sites, zero unresolved relative
+imports; package/plugin runtime closures remain 689/601, combined type/runtime
+closure 716. Only deliberate `shared/product-inventory.ts` build/documentation
+authority remains outside the combined shipped graph. This is static reachability
+evidence, not complete call-path or net-complexity certification.
+
+Local rail-retirement verification: **231 targeted integration tests** across
+planning, implementation, automatic validation, continue and end-to-end owners;
+**554 architecture tests**; `npm test` **12,907 passed / 2 skipped** across 703
+files. The unchanged coverage gate passed **12,898 / 11 skipped** (358.46 s):
+statements **91.03%**, branches **84.33%**, functions **95.49%**, lines **92.51%**.
+Type checks, strict lint, format, build/doc-drift, unused dependencies,
+unused-export and PR-base documentation checks passed. The ISO claim-trace case
+passed three consecutive local runs; that does not explain the earlier Hosted-CI
+`[0, 0]` results. **NOT_VERIFIED:** default mutation (`npm run mutation`) and
+installed CLI/Desktop ACTIVE acceptance; no specialized profile substitutes.
 
 ## Six explicitly callable command surfaces
 
@@ -321,10 +357,10 @@ old provider validator, its new test helper nor the removed provenance module;
 the production registry remains present. This is distribution-content evidence,
 not a packed-install or final-candidate acceptance run.
 
-**P0-10 remains open.** The safe provenance removal and registry test-support
-relocation and current F1/F2 metadata fixes do not close the old
-rail assertion ports. The classifier and settlement ports above are complete.
-Final import/call-path proof and
-whole-test/coverage/default-mutation certification must follow their resolution
-on the actual final HEAD. R4 and installed ACTIVE/Desktop acceptance remain
-independently open.
+**P0-10 executable cleanup is complete; acceptance remains open.** Provenance,
+registry test support, the host classifier, the generic settlement executor and
+the four callback-driven rails are dispositioned and removed. The static graph
+now has only the deliberate product-inventory authority outside the combined
+shipped graph. Whole-test/coverage results must be re-established on the final
+commit; default mutation, ISO publication exclusivity, R4 and installed
+ACTIVE/Desktop acceptance remain independently open.

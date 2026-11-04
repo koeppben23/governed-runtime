@@ -282,9 +282,8 @@ export type SelfReviewLoop = z.infer<typeof SelfReviewLoop>;
  * - `review_exhausted`: the review budget ended with `changes_requested`.
  * - `pending`: the loop has not converged.
  *
- * Canonical authority for the plan completion derivation; both the tool path
- * (`src/integration/tools/plan/plan.ts`) and the self-review rails
- * (`src/rails/plan.ts`, `src/rails/continue.ts`) derive it here.
+ * Canonical authority for the plan completion derivation; the plan tool path
+ * (`src/integration/tools/plan/plan.ts`) derives it here.
  */
 export function resolvePlanReviewCompletion(
   iteration: number,

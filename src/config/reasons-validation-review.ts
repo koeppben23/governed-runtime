@@ -105,6 +105,16 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING',
+    category: 'input',
+    messageTemplate:
+      'The artifact review subject cannot be created without ATX section anchors: {reason}',
+    recoverySteps: [
+      'Add ATX headings (for example "## Context" and "## Decision") so review findings can anchor to concrete sections',
+      'Resubmit the artifact; no plan version, ADR revision or review obligation was created by the rejected call',
+    ],
+  },
+  {
     code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
     category: 'state',
     messageTemplate:
