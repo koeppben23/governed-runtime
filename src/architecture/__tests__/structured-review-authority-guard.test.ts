@@ -33,6 +33,9 @@ function relative(path: string): string {
 }
 
 describe('structured review authority hard cut', () => {
+  it('does not retain the unused metadata-only branch provenance validator', () => {
+    expect(existsSync(join(SRC, 'integration/review/evidence/review-provenance.ts'))).toBe(false);
+  });
   it('owns review wiring types directly without a plugin-orchestrator forwarding facade', () => {
     expect(existsSync(join(SRC, 'integration/plugin-orchestrator.ts'))).toBe(false);
     const owners = listProductionSources(SRC)

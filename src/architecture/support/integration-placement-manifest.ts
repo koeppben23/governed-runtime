@@ -485,7 +485,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     file: 'integration/review/obligations/review-obligation-classification.ts',
     owner: 'review-obligations',
   },
-  { file: 'integration/review/evidence/review-provenance.ts', owner: 'review-evidence' },
   {
     file: 'integration/review/validation/review-validation-acceptance.ts',
     owner: 'review-validation',

@@ -23,6 +23,11 @@
   [ownership/removal inventory](./implementation-inventory.md).
 - **Target:** pinned Desktop and CLI/server V2.2.4, independently verified on
   each required surface. No Desktop certification follows from CLI probes.
+- **Latest follow-up:** the [remaining P0-10 ownership decisions](./p0-10-ownership-decisions.md)
+  keep assertion porting and native `/check` metadata reconciliation open.
+  Hosted CI `41865272715` on `7d9560e2` fails the ISO concurrent-publication
+  assertion (`[0, 0]` exits instead of `[0, 1]`); no flake/cause is established.
+  The earlier accepted P0-00 CLI/server matrix on `2f4aa06d` remains closed.
 
 ## Explicit change, not historical reclassification
 

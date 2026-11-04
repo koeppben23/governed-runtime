@@ -1,6 +1,8 @@
 /**
- * @module providers/registry-validation
- * @description Pure validation for AssertionProviderExtension registrations.
+ * @module providers/registry-validation-test-helpers
+ * @description Test-time invariants for the source-owned assertion provider catalogue.
+ * Not a runtime extension registration boundary; the production registry is
+ * derived from the fixed, built-in ASSERTION_PROVIDER_EXTENSIONS array.
  * @version v2
  */
 

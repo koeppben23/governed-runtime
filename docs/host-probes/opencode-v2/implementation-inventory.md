@@ -823,6 +823,15 @@ close the remaining V1 demo/compatibility and alternate-path work.
 
 ### Bounded P0-10 source audit on `2f4aa06d` (2026-11-04)
 
+**Follow-up on `7d9560e2`:** the [remaining ownership decisions](./p0-10-ownership-decisions.md)
+classify every outside-graph candidate and all six compatibility-labelled
+commands. They correct the incomplete rail test-importer inventory below,
+record one additional proven removal and the assertion-identical provider
+validator move into test support, and identify unresolved assertion-contract
+and native `/check` metadata mismatches. P0-10 remains open. Hosted CI on
+`7d9560e2` is now FAIL on ISO publication exclusivity, not still queued; this
+does not reopen the accepted P0-00 matrix on `2f4aa06d`.
+
 Scope: shipped package exports/binaries, native plugin composition and adapter,
 activation versus workflow authority, reviewer dispatch/capture/evidence owners,
 remaining type facades and live demo compatibility consumers. This is not a new

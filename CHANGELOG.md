@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Classify the remaining P0-10 test-only paths and six explicitly callable
+  command surfaces against current owners. Remove the uncalled metadata-only
+  review-provenance validator and classify built-in provider-catalogue validation
+  as test support, preserving every validation assertion. Async rail and old
+  settlement assertion porting remain open; no dormant runtime is reactivated.
+
 - Use `.sdk-baselines/opencode/cli-candidate.json` for active demo preflight,
   including the exact V2 `opencode v<version>` output. Invalid/missing candidate
   pins and other host versions fail closed without a V1 fallback. Preserve
