@@ -551,6 +551,40 @@ the earlier global detection failure and fresh full-matrix acceptance. No
 product correction is justified by the current evidence, and no install/test
 budget, dependency selection or assertion has been changed.
 
+#### Executed volume control on `e2b25677`
+
+[Acceptance run 41849104623](https://github.com/koeppben23/governed-runtime/actions/runs/41849104623)
+is **FAIL**: Linux/macOS each pass 65/65; Windows passes 37 distinct acceptance
+cases (14 repo + 14 global + 2 mixed + 7 original), with 28 selected repo/global
+cases unexecuted after setup timeouts. The separate two-case control passes but
+does not contribute additional acceptance cases.
+
+The original and control mixed steps use package SHA-256
+`278a5f324424a4d6589404df25425e9a3f9b1f015afd16e1fe3c0f824a83f22d`,
+embedded merge build `85a066989dcd64526a34c1bb2c4e7840a526e2b7`. Both run on
+the same Windows VM and use the same npm cache; the control records
+`bootstrap-reused` for the identical digest-bound prefix.
+
+| Fixture root                                                   | Repo installer / npm unpack | Global installer / npm unpack | Mixed cases |
+| -------------------------------------------------------------- | --------------------------- | ----------------------------- | ----------- |
+| Inherited system temp (`C:\Users\RUNNER~1\AppData\Local\Temp`) | 232,048 / 206,460 ms        | 284,294 / 249,094 ms          | 2/2 PASS    |
+| Runner temp (`D:\a\_temp`)                                     | 53,456 / 17,345 ms          | 45,568 / 17,368 ms            | 2/2 PASS    |
+
+This supports a bounded CI-harness correction: the Windows parity step sets
+`TEMP` and `TMP` to `runner.temp` for all four shards. Every arm still performs
+its real installation and every existing case/assertion remains; the product,
+package-manager choice, npm cache, bootstrap algorithm and timeouts are unchanged.
+The now-completed extra control step is removed, not kept as a second acceptance
+path. Source tests pin all four original shard selectors and the runner-temp
+environment. This change is not a claim that antivirus or a particular disk
+mechanism caused the slowdown; the control also ran second, not in randomized
+order.
+
+**NOT_VERIFIED:** full Linux/macOS/Windows 65/65 acceptance after this harness
+correction, the original global detection error, and the OS-level cause below
+the observed unpack/path difference. Re-run the complete installed matrix on one
+new checksum-verified artifact; do not combine cases or digests from earlier runs.
+
 ### Intervening `a38dd3a7` run, retained separately
 
 [CI run 41793806176](https://github.com/koeppben23/governed-runtime/actions/runs/41793806176)

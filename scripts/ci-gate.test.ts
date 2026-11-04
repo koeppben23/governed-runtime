@@ -83,6 +83,9 @@ describe('required ci-gate documentation enforcement', () => {
           needs?: string;
           if?: string;
           'timeout-minutes'?: number;
+          strategy?: {
+            matrix?: { include?: Array<{ suite: string; file: string; filter: string }> };
+          };
           steps?: Array<{
             id?: string;
             name?: string;
@@ -105,22 +108,33 @@ describe('required ci-gate documentation enforcement', () => {
     }
     expect(acceptance.jobs.build?.needs).toBeUndefined();
     const windowsSteps = acceptance.jobs['inactive-parity-windows']?.steps ?? [];
-    const original = windowsSteps.find((step) => step.id === 'windows-parity');
-    const control = windowsSteps.find(
-      (step) => step.name === 'Compare mixed setup on the runner temporary volume',
-    );
-    expect(original).toBeDefined();
-    expect(original?.env).not.toHaveProperty('TEMP');
-    expect(original?.['continue-on-error']).toBeUndefined();
-    expect(control?.if).toContain("!cancelled() && matrix.suite == 'mixed'");
-    expect(control?.run).toContain('-t "scoped during live catalogue"');
-    expect(control?.run).toContain('inactive-parity-volume-control.json');
-    expect(control?.env).toMatchObject({
+    const parity = windowsSteps.find((step) => step.id === 'windows-parity');
+    expect(parity).toBeDefined();
+    expect(parity?.env).toMatchObject({
       TEMP: '${{ runner.temp }}',
       TMP: '${{ runner.temp }}',
-      FLOWGUARD_BOOTSTRAP_PREFIX: 'inactive-parity-shared-bootstrap-mixed',
+      FLOWGUARD_BOOTSTRAP_PREFIX: 'inactive-parity-shared-bootstrap-${{ matrix.suite }}',
     });
-    expect(control?.['continue-on-error']).toBeUndefined();
+    expect(parity?.['continue-on-error']).toBeUndefined();
+    expect(source).not.toContain('inactive-parity-volume-control');
+    expect(acceptance.jobs['inactive-parity-windows']?.strategy?.matrix?.include).toEqual([
+      {
+        suite: 'mixed',
+        file: 'src/cli/opencode-inactive-installed.smoke.test.ts',
+        filter: 'scoped during live catalogue',
+      },
+      {
+        suite: 'repo',
+        file: 'src/cli/opencode-inactive-installed.smoke.test.ts',
+        filter: 'Git=(true|false), scope=repo',
+      },
+      {
+        suite: 'global',
+        file: 'src/cli/opencode-inactive-installed.smoke.test.ts',
+        filter: 'Git=(true|false), scope=global',
+      },
+      { suite: 'original', file: 'src/cli/opencode-inactive-parity.smoke.test.ts', filter: '' },
+    ]);
   });
   it('serializes critical Windows unit workers without dropping suites or changing PERF budgets', () => {
     const commands = requiredJob('critical-windows').steps.flatMap((step) =>

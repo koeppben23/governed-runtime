@@ -158,8 +158,9 @@ package-install/doctor checks.
 The original parity suite performs one real packed installation per run and
 copies that installed tree into its cases to avoid repeated Windows `npm install`
 latency; the installed comparison suite still executes the real installer for
-every repo/global and Git/non-Git arm. Test count, assertions, timeouts and the
-shared artifact are unchanged.
+every repo/global and Git/non-Git arm. Workflow relocation preserves test count,
+assertions and the shared artifact; the P0-00 report records the preceding
+setup/cleanup-budget changes separately.
 For the bounded Windows bootstrap diagnosis, the diagnostic runs temporarily
 downloaded the original package from run `41790845872` rather than the new build's
 package. Current-build sourcing is restored: each run now uses the `build` job's
@@ -184,7 +185,13 @@ Windows parity is split into four **25-minute jobs** (`mixed`, `repo`, `global`,
 `41829567943` passes all 65 executed cases across the split jobs, 0 failed.
 Because this is acceptance evidence rather than per-PR feedback, the full matrix
 now lives in the separate manual/nightly/label-triggered workflow and is not a required PR gate.
-All 65 cases, assertions and test/hook/coverage budgets are preserved.
+The Windows test step uses `runner.temp` for `TEMP`/`TMP` after the same-VM
+comparison in run `41849104623` localized a large unpack-time difference between
+system-temp and runner-temp fixtures. The completed extra control step is removed.
+This fixture-location correction preserves all 65 cases, real installer calls,
+assertions and current test/hook/coverage budgets; it is not a product fix or an
+antivirus/disk root-cause claim. See the
+[volume-control evidence](./host-probes/opencode-v2/p0-00-inactive-parity.md#executed-volume-control-on-e2b25677).
 
 Coverage CI bounds competing instrumented Vitest workers to two. It still covers
 the complete unit/integration projects with the same 80% gates and 15-second test

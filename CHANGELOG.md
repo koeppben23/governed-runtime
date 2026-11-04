@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Use GitHub's runner temporary directory for all Windows installed-parity
+  fixtures after same-VM control run `41849104623` measured npm unpack at 17s
+  there versus 206–249s in system temp. Remove the completed extra control;
+  preserve all four shards, 65 cases, real installations and existing budgets.
+  This is a CI-harness correction, not a product or OS-root-cause claim.
+
 - Record npm unpack timings from failed acceptance run `41845002693` and add
   a separate, same-VM runner-temp control for its two mixed-session cases. The
   ordinary full matrix, its failures, shared package/cache/bootstrap and all
