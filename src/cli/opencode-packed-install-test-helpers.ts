@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { hashBuffer } from '../shared/hashing.js';
 
 export async function createPackedFlowGuardInstall() {
+  const npmCLI = process.env.npm_execpath;
+  if (!npmCLI) throw new Error('npm_execpath is required to run packed installation tests');
   const root = await mkdtemp(join(tmpdir(), 'fg-packed-parity-'));
   try {
     let tarball: string;
@@ -17,11 +19,15 @@ export async function createPackedFlowGuardInstall() {
       await copyFile(join(dirname(supplied), 'checksums.sha256'), join(root, 'checksums.sha256'));
     } else {
       const packed = JSON.parse(
-        execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', root], {
-          cwd: fileURLToPath(new URL('../..', import.meta.url)),
-          encoding: 'utf8',
-          timeout: 60_000,
-        }),
+        execFileSync(
+          process.execPath,
+          [npmCLI, 'pack', '--json', '--ignore-scripts', '--pack-destination', root],
+          {
+            cwd: fileURLToPath(new URL('../..', import.meta.url)),
+            encoding: 'utf8',
+            timeout: 60_000,
+          },
+        ),
       ) as Array<{ filename: string }>;
       if (!packed[0]) throw new Error('npm pack returned no artifact');
       tarball = join(root, packed[0].filename);
@@ -32,8 +38,17 @@ export async function createPackedFlowGuardInstall() {
     }
     const bootstrap = join(root, 'bootstrap');
     execFileSync(
-      'npm',
-      ['install', '--prefix', bootstrap, '--ignore-scripts', '--no-audit', '--no-fund', tarball],
+      process.execPath,
+      [
+        npmCLI,
+        'install',
+        '--prefix',
+        bootstrap,
+        '--ignore-scripts',
+        '--no-audit',
+        '--no-fund',
+        tarball,
+      ],
       { cwd: root, encoding: 'utf8', timeout: 300_000 },
     );
     const packedRoot = join(bootstrap, 'node_modules/@flowguard/core');

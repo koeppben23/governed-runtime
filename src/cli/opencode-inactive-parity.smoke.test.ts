@@ -1,27 +1,37 @@
-/** Actual native-host opt-in conformance. No workflow/activation fixture is seeded.
- * Loads workspace-built product bytes, not a packed install or operator-UI proof. */
+/** Original P0-00 counterprobe assertions against real packed install bytes.
+ * No workflow/activation fixture is seeded; this is not operator-UI proof. */
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionMessageAssistantTool } from '@opencode/client';
 import { TOOL_FLOWGUARD_HELP } from '../integration/tool-names.js';
 import { createNativeHostProbe, type NativeHostProbe } from './opencode-native-test-helpers.js';
+import { createPackedFlowGuardInstall } from './opencode-packed-install-test-helpers.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
 const probes: NativeHostProbe[] = [];
+let artifact: Awaited<ReturnType<typeof createPackedFlowGuardInstall>>;
 afterEach(async () => {
   for (const probe of probes.splice(0).reverse()) await probe.close();
 });
+
+async function observeProduct(probe: NativeHostProbe, installed: boolean) {
+  probes.push(probe);
+  const plugins = await probe.client.plugin.list({ location: probe.location });
+  const product = plugins.data.filter((plugin) => plugin.id === 'flowguard');
+  expect(product).toHaveLength(installed ? 1 : 0);
+  if (installed) expect(product[0]!.state).toEqual({ status: 'active' });
+}
 
 async function mutationArm(product: boolean, git: boolean, tool: 'shell' | 'edit') {
   let target = '';
   const emitted = new Set<string>();
   const probe = await createNativeHostProbe({
-    product,
     git,
-    async prepare(project) {
+    async prepare(project, env) {
       target = join(project, 'native-target.txt');
       await writeFile(target, 'original');
+      if (product) await artifact.install(project, env);
     },
     script(_body, sessionID) {
       if (emitted.has(sessionID)) return { text: 'Done.' };
@@ -40,7 +50,7 @@ async function mutationArm(product: boolean, git: boolean, tool: 'shell' | 'edit
       };
     },
   });
-  probes.push(probe);
+  await observeProduct(probe, product);
   const session = await probe.session();
   await probe.prompt(session.id, 'Perform the requested native operation.');
   const history = await probe.client.session.context({ sessionID: session.id });
@@ -58,6 +68,12 @@ async function mutationArm(product: boolean, git: boolean, tool: 'shell' | 'edit
 }
 
 describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
+  beforeAll(async () => {
+    artifact = await createPackedFlowGuardInstall();
+  }, 300_000);
+  afterAll(async () => {
+    await artifact?.close();
+  });
   it.each([
     { git: true, tool: 'shell' },
     { git: true, tool: 'edit' },
@@ -79,8 +95,12 @@ describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
   it('keeps the effective provider-wire tool catalogue native except for an inert help affordance', async () => {
     const catalogues: string[][] = [];
     for (const product of [false, true]) {
-      const probe = await createNativeHostProbe({ product });
-      probes.push(probe);
+      const probe = await createNativeHostProbe({
+        async prepare(project, env) {
+          if (product) await artifact.install(project, env);
+        },
+      });
+      await observeProduct(probe, product);
       const session = await probe.session();
       await probe.prompt(session.id, 'Reply OK without any tool calls.');
       expect(probe.requests).toHaveLength(1);
@@ -99,10 +119,10 @@ describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
       let target = '';
       const emitted = new Set<string>();
       const probe = await createNativeHostProbe({
-        product,
-        async prepare(project) {
+        async prepare(project, env) {
           target = join(project, 'child-effect.txt');
           await writeFile(target, 'original');
+          if (product) await artifact.install(project, env);
         },
         script(_body, sessionID) {
           rootID ||= sessionID;
@@ -130,7 +150,7 @@ describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
           };
         },
       });
-      probes.push(probe);
+      await observeProduct(probe, product);
       const session = await probe.session();
       await probe.prompt(session.id);
       expect(await readFile(target, 'utf8'), probe.output()).toBe('child-effect');
@@ -161,8 +181,12 @@ describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
 
   it('does not inject governance mandates into native INACTIVE compaction', async () => {
     for (const product of [false, true]) {
-      const probe = await createNativeHostProbe({ product });
-      probes.push(probe);
+      const probe = await createNativeHostProbe({
+        async prepare(project, env) {
+          if (product) await artifact.install(project, env);
+        },
+      });
+      await observeProduct(probe, product);
       const session = await probe.session();
       await probe.prompt(session.id, 'Reply OK without tool calls.');
       const count = probe.requests.length;

@@ -147,6 +147,11 @@ They keep stdin open (EOF shuts down a stdio server), reject premature exits and
 await actual closure after termination. These are process-lifecycle checks, not
 an ACP conversation or governance proof; timeout and a PID alone never pass.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
+The required `inactive-parity` matrix runs the two existing INACTIVE suites on
+Linux, macOS and Windows. The build job packs one product tarball plus checksum
+once; every runner downloads those identical bytes through `FLOWGUARD_TARBALL`,
+installs the exact native candidate and publishes its JSON test results. This
+separates native session/provider-wire parity from package-install/doctor checks.
 
 Coverage CI bounds competing instrumented Vitest workers to two. It still covers
 the complete unit/integration projects with the same 80% gates and 15-second test
@@ -217,15 +222,24 @@ must not be inferred from the component result.
 Tarball-install failures retain the subprocess error,
 signal and killed status so an install timeout is distinguishable from npm rejection.
 
-`src/cli/opencode-inactive-parity.smoke.test.ts` compares ordinary shell/edit
-effects and provider-wire tool names with and without the actual product on the
-native host, before start and without seeded workflow or activation state. Its
-Git and non-Git controls must succeed without FlowGuard. This uses workspace-built
-product bytes, not a packed installation or host-UI activation proof.
+`src/cli/opencode-inactive-parity.smoke.test.ts` retains the original shell/edit
+effect and provider-wire catalogue assertions, now loading actual checksum-verified
+packed installations instead of workspace-built wrappers. Its Git and non-Git
+controls must succeed without FlowGuard. The source change that repaired the old
+counterexamples is `3a274edf`, not the later test-only P0-00 checkpoint.
+`opencode-inactive-installed.smoke.test.ts` also compares repo/global installs,
+permissions, context, model variants and native effects. Its additional mixed
+tests use real `/start`, concurrent A/B requests, catalogue publication, location
+reload and host restart, without fixture activation or disabled model fetching.
+They check ACTIVE A retains productive tools/mandates while INACTIVE B retains
+its native definitions/system context and can execute normally. Neither suite is
+Desktop/operator-UI proof; exact artifacts, controls and remaining gaps are in
+the [P0-00 evidence report](./host-probes/opencode-v2/p0-00-inactive-parity.md).
 `src/integration/plugin-inactive-event-scope.test.ts` injects an event-stream
 fault at the component boundary and requires unrelated unstarted usage to stay
 native. These are required conformance assertions, not expected-failure tests:
-the current product violates them and their failures block acceptance.
+any renewed failure blocks acceptance. The old dated failure reports are retained
+as historical evidence rather than reclassified as passes.
 
 `src/cli/opencode-authority-primitives.smoke.test.ts` is a separate native
 mechanism probe, not installed-product acceptance. It checks private storage

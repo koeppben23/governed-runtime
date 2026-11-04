@@ -1,4 +1,4 @@
-/** P0-00: real absent/packed-installed comparison, with no activation or workflow seed. */
+/** P0-00: real packed installs. No seeded authority; mixed tests use native Start. */
 import { existsSync } from 'node:fs';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,11 +8,21 @@ import { TOOL_FLOWGUARD_HELP } from '../integration/tool-names.js';
 import { PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './templates.js';
 import { createNativeHostProbe, type NativeProbeReply } from './opencode-native-test-helpers.js';
 import { createPackedFlowGuardInstall } from './opencode-packed-install-test-helpers.js';
+import { FLOWGUARD_TOOL_NAMES } from '../integration/tool-names.js';
+import { resolveSessionAuthority } from '../adapters/session-authority.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { renderPhaseAwareMandates } from '../rendering/mandates-renderer.js';
+import { withTestEnv } from '../integration/test-helpers.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
 let artifact: Awaited<ReturnType<typeof createPackedFlowGuardInstall>>;
 
-async function arm(installed: boolean, git: boolean, scope: 'repo' | 'global') {
+async function arm(
+  installed: boolean,
+  git: boolean,
+  scope: 'repo' | 'global',
+  catalogue: 'bundled' | 'live' = 'bundled',
+) {
   const scripts = new Map<string, NativeProbeReply[]>();
   let customerConfig = '';
   let providerURL = '';
@@ -24,8 +34,13 @@ async function arm(installed: boolean, git: boolean, scope: 'repo' | 'global') {
       // otherwise refreshes models.dev asynchronously during bootstrap, making
       // independent hosts compare bundled versus live data rather than plugins.
       // This freezes an external input; it does not filter any model/provider.
-      env.OPENCODE_DISABLE_MODELS_FETCH = '1';
+      if (catalogue === 'bundled') env.OPENCODE_DISABLE_MODELS_FETCH = '1';
+      else delete env.OPENCODE_DISABLE_MODELS_FETCH;
       const configPath = join(project, 'opencode.json');
+      await writeFile(
+        join(project, '.gitignore'),
+        '.opencode/node_modules/\n.opencode/vendor/\nobserver.jsonl\n',
+      );
       const config = JSON.parse(await readFile(configPath, 'utf8'));
       config.instructions = ['CUSTOM.md'];
       providerURL = config.providers.capture.settings.baseURL;
@@ -124,6 +139,12 @@ function nativeRequest(body: Record<string, unknown>, probe: Arm) {
   );
 }
 
+function systemMessages(body: Record<string, unknown>) {
+  return (body.messages as Array<{ role: string; content: string }>).filter(
+    (message) => message.role === 'system',
+  );
+}
+
 async function terminalTools(probe: Arm, sessionID: string, name: string) {
   return (await probe.client.session.context({ sessionID }))
     .flatMap((message) => (message.type === 'assistant' ? message.content : []))
@@ -139,6 +160,149 @@ describe.skipIf(!LIVE)('packed installed INACTIVE native parity', () => {
   afterAll(async () => {
     await artifact?.close();
   });
+
+  it.each(['repo', 'global'] as const)(
+    'keeps ACTIVE A and INACTIVE B scoped during live catalogue publication and reload, scope=%s',
+    async (scope) => {
+      const probe = await arm(true, true, scope, 'live');
+      const began = performance.now();
+      const checkpoint = (stage: string) =>
+        console.info('inactive-parity-mixed', {
+          scope,
+          stage,
+          elapsedMs: Math.round(performance.now() - began),
+        });
+      const restore = withTestEnv({ OPENCODE_CONFIG_DIR: probe.env.OPENCODE_CONFIG_DIR! });
+      try {
+        expect(probe.env.OPENCODE_DISABLE_MODELS_FETCH).toBeUndefined();
+        const active = await probe.session();
+        const inactive = await probe.session();
+        const requestBodies = (sessionID: string, start = 0) =>
+          probe.requests
+            .slice(start)
+            .filter((request) => request.sessionID === sessionID)
+            .map((request) => request.body);
+        await probe.prompt(inactive.id, 'Native baseline.');
+        const baseline = requestBodies(inactive.id)[0]!;
+        const inactiveView = (body: Record<string, unknown>) => {
+          // Compare complete tool definitions, including the permitted help tool.
+          expect(body.tools).toEqual(baseline.tools);
+          expect(systemMessages(body)).toEqual(systemMessages(baseline));
+          expect(JSON.stringify(body.messages)).not.toContain('FlowGuard governance is ACTIVE');
+          expect(body.reasoning_effort).toBe('high');
+        };
+        const beforeStart = probe.requests.length;
+        await Promise.all([
+          probe.client.session.command({ sessionID: active.id, name: 'start', text: '' }),
+          probe.prompt(inactive.id, 'Native request concurrent with Start.'),
+        ]);
+        await probe.client.session.wait(
+          { sessionID: active.id },
+          { signal: AbortSignal.timeout(120_000) },
+        );
+        checkpoint('native-start-completed');
+        expect(requestBodies(active.id, beforeStart), probe.output()).toHaveLength(0);
+        expect(requestBodies(inactive.id, beforeStart)).toHaveLength(1);
+        for (const body of requestBodies(inactive.id, beforeStart)) inactiveView(body);
+
+        const authority = await resolveSessionAuthority({
+          root: await realpath(probe.project),
+          sessionId: active.id,
+        });
+        expect(authority.status, probe.output()).toBe('resolved');
+        if (authority.status !== 'resolved')
+          throw new Error('Native Start did not create its workflow');
+        const activation = (await readAuditTrail(authority.sessDir)).filter(
+          (event) => event.event === 'governance:activated',
+        );
+        expect(activation).toHaveLength(1);
+        expect(activation[0]!.detail).toMatchObject({
+          channel: 'host_command',
+          rootSessionId: active.id,
+        });
+        const mandates = renderPhaseAwareMandates({}, authority.state.phase);
+        for (const refresh of ['publication', 'location-reload', 'host-restart'] as const) {
+          if (refresh === 'location-reload') await probe.client.location.reload();
+          if (refresh === 'host-restart') await probe.restart();
+          const start = probe.requests.length;
+          await Promise.all([
+            probe.prompt(active.id, 'Observe the active catalogue.'),
+            probe.prompt(inactive.id, 'Observe the native catalogue.'),
+          ]);
+          const activeRequests = requestBodies(active.id, start);
+          const inactiveRequests = requestBodies(inactive.id, start);
+          expect(activeRequests, `${refresh}\n${probe.output()}`).toHaveLength(1);
+          expect(inactiveRequests).toHaveLength(1);
+          const names = (activeRequests[0]!.tools as Array<{ function: { name: string } }>).map(
+            (tool) => tool.function.name,
+          );
+          expect(names.filter((name) => name.startsWith('flowguard_')).sort()).toEqual(
+            [...FLOWGUARD_TOOL_NAMES].sort(),
+          );
+          expect(
+            systemMessages(activeRequests[0]!).some((message) =>
+              message.content.includes(mandates),
+            ),
+          ).toBe(true);
+          expect(activeRequests[0]!.reasoning_effort).toBe('high');
+          inactiveView(inactiveRequests[0]!);
+          checkpoint(refresh);
+        }
+
+        const target = join(probe.project, 'inactive-next-to-active.txt');
+        await writeFile(target, 'original');
+        probe.scripts.set(inactive.id, [shellEffect(target)]);
+        const start = probe.requests.length;
+        await probe.prompt(inactive.id, 'Perform the native operation.');
+        expect(await readFile(target, 'utf8'), probe.output()).toBe('native-effect');
+        expect(
+          (await terminalTools(probe, inactive.id, 'shell')).map((part) => part.state.status),
+        ).toEqual(['completed']);
+        for (const body of requestBodies(inactive.id, start)) inactiveView(body);
+        await probe.client.session.generate({
+          sessionID: inactive.id,
+          prompt: 'Generate without governance.',
+        });
+        await probe.client.session.compact({ sessionID: inactive.id });
+        await probe.client.session.wait(
+          { sessionID: inactive.id },
+          { signal: AbortSignal.timeout(60_000) },
+        );
+        for (const body of requestBodies(inactive.id, start)) {
+          const names = (body.tools ?? []) as Array<{ function: { name: string } }>;
+          expect(
+            names.filter(
+              (tool) =>
+                tool.function.name.startsWith('flowguard_') &&
+                tool.function.name !== TOOL_FLOWGUARD_HELP,
+            ),
+          ).toEqual([]);
+          expect(JSON.stringify(body.messages)).not.toContain(
+            JSON.stringify(mandates).slice(1, -1),
+          );
+        }
+        expect(
+          (
+            await resolveSessionAuthority({
+              root: await realpath(probe.project),
+              sessionId: inactive.id,
+            })
+          ).status,
+        ).toBe('absent');
+        expect(
+          (await readAuditTrail(authority.sessDir)).filter(
+            (event) => event.event === 'governance:activated',
+          ),
+        ).toEqual(activation);
+        expect(probe.errors).toEqual([]);
+        checkpoint('inactive-effects-and-auxiliary-contexts-completed');
+      } finally {
+        restore();
+        await probe.close();
+      }
+    },
+    300_000,
+  );
 
   describe.each([
     { git: true, scope: 'repo' },

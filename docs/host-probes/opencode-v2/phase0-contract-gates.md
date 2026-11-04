@@ -74,6 +74,18 @@ failure semantics and limits. Documentation and static booleans are not proof.
 | P0-09 Build/docs/distribution             | New truthful current proof contract, package/install/doctor/docs agreement; historical bytes preserved                                                                                                                                                                                                                             | NOT_VERIFIED for the actual V2 product; checkpoint CI is not installed acceptance                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | P0-10 Portability/simplicity              | Host SDK/mechanics at adapter boundary; same host-neutral conformance suite with minimal independent test adapter; V1/duplicate layers removed                                                                                                                                                                                     | WS2 HAI/plugin removals and a minimal independent second-host contract fixture are verified; complete V2 cutover and all-host conformance NOT_VERIFIED. No general security framework                                                                                                                                                                                                                                                                                                                                                     |
 
+**P0-00/P0-07 reconciliation follow-up (2026-11-04):** the
+[same-artifact rerun](./p0-00-inactive-parity.md#counterprobe-reconciliation-and-live-publication-follow-up)
+passes 65 native contracts locally: the original seven assertions plus the
+56-case matrix and two real-Start mixed-session tests. The old counterexamples
+predate the product repair at `3a274edf`; their historical results remain valid.
+Live FlowGuard tool publication, location reload and server restart preserve
+ACTIVE A's tools/mandates and INACTIVE B's native catalogue/system context. This
+does not prove remote models.dev refresh or every shared-resource race. A required
+Linux/macOS/Windows matrix now runs both existing suites on one shared tarball;
+results must be observed before claiming those extended platform gates. Local
+Desktop is version 2.2.5, so pinned 2.2.4 Desktop acceptance remains BLOCKED.
+
 ### P0-05 / P0-08 evidence breakdown (2026-11-03)
 
 The independent review supplied CI evidence for exact HEAD

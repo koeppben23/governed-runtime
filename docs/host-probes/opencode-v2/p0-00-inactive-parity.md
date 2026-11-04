@@ -5,7 +5,7 @@ not Desktop or whole-PR acceptance.** R4 remains technically `NOT_SUPPORTED`
 under the unchanged untrusted-plugin contract and its security requirement
 remains BLOCKED. No ACTIVE-V2 release follows from this result.
 
-## Product and installation identity
+## Initial 56-case checkpoint: product and installation identity
 
 - Node `22.22.2`; `/opt/homebrew/bin/opencode` reports `opencode v2.2.4` and
   the native fixture enforces that exact version.
@@ -102,14 +102,92 @@ temporary roots/provider ports, the native two-request compaction lifecycle, and
 the help tool's required `view` argument. None is reported as a fixed product
 defect or silently ignored.
 
+## Counterprobe reconciliation and live publication follow-up
+
+The apparently contradictory results refer to different product implementations:
+
+1. `2a2abe170d24218a296ace7b8cc18103fc55eac7` added the five original
+   `opencode-inactive-parity.smoke.test.ts` comparisons. The documented failures
+   were real: Git-backed native effects were refused, non-Git prompts failed,
+   and productive FlowGuard tools appeared before activation. Those dated results
+   are not changed by this follow-up.
+2. **The product repair predates this P0-00 test work:**
+   `3a274edfc97b894a2389731b3636324de7795c4d` introduced the canonical activation
+   resolution before workflow/Git/runtime lookup in `plugin.ts`. Verified INACTIVE
+   returns before those gates. The same commit added `createNativeToolCatalogue`
+   in `plugin-native-tools.ts`: setup publishes only help, ACTIVE publication is
+   explicit, and context/compaction/generate filter productive tools per request.
+   It retained the first five assertions and added native-subagent/compaction
+   cases. This source diff, not a different permission setting or a claimed new
+   product fix in `4182c5de`, explains the changed behavior.
+3. The original suite now uses the real packed CLI/installer through the existing
+   packed-install helper. Its expected file effects, completed statuses and
+   catalogue equality (excluding only permitted help) are unchanged. It positively
+   verifies loaded/absent product identity and seeds no workflow or activation.
+   Both suites were rerun together against the **same supplied tarball**, not
+   independently rebuilt workspace wrappers.
+
+### Exact executed follow-up artifact and outcomes
+
+- Product build: `4182c5de8a8341d24f150f7a70d532e81c63be37`, version
+  `2.0.0-tp.2`, built at `2026-11-04T06:51:53.412Z`.
+- Tarball SHA-256:
+  `8dbc0de087f1fb4156c107bc47d976a56734c808ee50f2a60e23c7756093c51a`.
+  Both suites logged this identical digest and embedded build identity.
+- macOS/OpenCode 2.2.4/Node 22.22.2: **65 passed / 0 failed / 0 skipped** across
+  two suites (88.81 seconds): seven original-suite cases plus 56 installed matrix
+  cases plus two installed mixed-session cases (repo/global).
+
+Each mixed case leaves model fetching enabled. A real native `/start` activates
+only A and writes exactly one `governance:activated` audit with `host_command`
+source; it is not verified-human provenance. B submits concurrently with Start.
+After live productive-tool publication, location reload and server restart,
+concurrent A/B requests prove A has the complete canonical productive catalogue
+and phase mandates, while B retains its complete baseline definitions **including
+help** and identical system messages. B also completes a real shell effect,
+transient generation and compaction without productive-tool/mandate leakage.
+Its canonical workflow resolution stays absent; A's activation audit stays single.
+No product authority, gate, reviewer runtime or writer is replaced or seeded.
+
+These cases exercise live **FlowGuard registry publication/restoration**, not a
+deterministically observed remote models.dev refresh event. Full live remote
+model-catalogue refresh parity remains NOT_VERIFIED. Shared-resource drift and
+every P0-07 race are not established by these bounded mixed-session controls.
+
+### Hosted and Desktop boundaries
+
+CI run [41787499372](https://github.com/koeppben23/governed-runtime/actions/runs/41787499372)
+on exact head `4182c5de8a8341d24f150f7a70d532e81c63be37` completed successfully
+after one unchanged failed-job rerun. The first attempt failed `integration-perf`
+at 153.77 ms against the unchanged <150 ms limit; a rerun PASS does not establish
+the initial failure's root cause. Smoke, independent-review E2E and install/verify
+on all three operating systems passed. These older jobs are not the new Windows
+native-parity matrix.
+
+The added required `inactive-parity` CI matrix runs **these same two suites** on
+Linux/macOS/Windows. `build` creates one tarball/checksum artifact shared by all
+runners, with exact native executable/version resolution and JSON results.
+Shell-free npm invocation uses Node plus `npm_execpath`, rather than assuming a
+Windows `.cmd` can be passed to `execFileSync`. Matrix success must be observed;
+workflow wiring alone is not platform acceptance.
+
+**Desktop BLOCKED for local pinned acceptance:** the installed
+`/Applications/OpenCode.app` reports bundle version **2.2.5**, not target 2.2.4.
+It was neither downgraded nor relabelled as the pinned surface. A separately
+installed 2.2.4 Desktop and actual native UI/observer access are required. A private
+CLI server or browser page must not be presented as Desktop evidence.
+
 ## Reproduction and remaining gates
 
 Build once before running native suites; do not rebuild during a native run:
 
 ```sh
 npm run build
-OPENCODE_LIVE=1 OPENCODE_CLI=/opt/homebrew/bin/opencode \
+npm run pack:checksums
+FLOWGUARD_TARBALL="$PWD/flowguard-core-$(cat VERSION).tgz" \
+  OPENCODE_LIVE=1 OPENCODE_CLI=/opt/homebrew/bin/opencode \
   npx vitest run --project smoke \
+  src/cli/opencode-inactive-parity.smoke.test.ts \
   src/cli/opencode-inactive-installed.smoke.test.ts --silent=false
 ```
 
@@ -124,14 +202,14 @@ skipped**; `npm run test:architecture` passed **547 tests**; build, `check`,
 `lint:strict`, `check:format`, `check:doc-drift` (17 documentation tests),
 `check:unused-dependencies` and the unused-export check passed. The PR-base
 documentation check and its working-tree changelog validation passed separately;
-neither is a hosted-CI result for these uncommitted test additions.
+neither alone is a hosted-CI result for the later follow-up.
 
-**NOT_VERIFIED:** Desktop/operator UI, installed Linux/Windows comparisons,
-live remote catalogue-refresh parity, all-provider/media execution and hosted CI
-for the new suite. Run the owning suite on those installed platforms and use the
+**NOT_VERIFIED at this local follow-up:** installed Linux/Windows native-parity
+matrix results, live remote catalogue-refresh parity, all-provider/media execution
+and exact-head CI for the extended suites. Run the owning suite on those platforms and use the
 actual Desktop/native UI for that distinct acceptance. P0-00 as a whole remains
-open for its unverified surfaces. This evidence does not close P0-07 mixed
-ACTIVE/INACTIVE resource acceptance, the remaining V2 integration, or R4.
+open for its unverified/blocked surfaces. The mixed-session results above do not
+close all P0-07 shared-resource acceptance, the remaining V2 integration, or R4.
 Full native smoke, coverage and default mutation were not rerun on this test-only
 delta (`OPENCODE_LIVE=1 npm run test:smoke`, `npm run test:coverage:ci`,
 `npm run mutation`); no selection, threshold or coverage timeout was changed.

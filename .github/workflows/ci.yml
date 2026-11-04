@@ -104,6 +104,7 @@ jobs:
         provider-conformance,
         regulated_e2e,
         doc-drift,
+        inactive-parity,
       ]
     if: always()
     timeout-minutes: 1
@@ -118,7 +119,8 @@ jobs:
           echo "provider-conformance: ${{ needs.provider-conformance.result }}"
           echo "regulated-e2e: ${{ needs.regulated_e2e.result }}"
           echo "doc-drift: ${{ needs.doc-drift.result }}"
-          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.scripts-windows.result }}" != "success" ] || [ "${{ needs.critical-windows.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.regulated_e2e.result }}" != "success" ] || [ "${{ needs.doc-drift.result }}" != "success" ]; then
+          echo "inactive-parity: ${{ needs.inactive-parity.result }}"
+          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.scripts-windows.result }}" != "success" ] || [ "${{ needs.critical-windows.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.regulated_e2e.result }}" != "success" ] || [ "${{ needs.doc-drift.result }}" != "success" ] || [ "${{ needs.inactive-parity.result }}" != "success" ]; then
             echo "Blocked: a required test or documentation job did not succeed"
             exit 1
           fi
@@ -480,6 +482,19 @@ jobs:
           path: dist/
           retention-days: 1
 
+      - name: Pack one checksum-verified artifact for installed parity
+        run: npm run pack:checksums
+
+      - name: Upload shared installed-parity package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
+        with:
+          name: inactive-parity-package
+          path: |
+            flowguard-core-*.tgz
+            checksums.sha256
+          if-no-files-found: error
+          retention-days: 7
+
   build-clean:
     name: build-clean
     runs-on: ubuntu-latest
@@ -504,6 +519,58 @@ jobs:
             printf '%s\n' "$status"
             exit 1
           fi
+
+  inactive-parity:
+    name: inactive-parity (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Download identical packed product
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
+        with:
+          name: inactive-parity-package
+          path: inactive-parity-package/
+      - name: Install and resolve the exact native candidate executable
+        shell: bash
+        run: |
+          OPENCODE_SPEC=$(node -p "const c = require('./.sdk-baselines/opencode/cli-candidate.json'); c.package + '@' + c.version")
+          npm install -g --prefer-offline --no-audit --no-fund "$OPENCODE_SPEC"
+          OPENCODE_PACKAGE_ROOT="$(npm root -g)" node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const { appendFileSync, existsSync } = require('node:fs');
+          const { join } = require('node:path');
+          const candidate = require('./.sdk-baselines/opencode/cli-candidate.json');
+          const root = join(process.env.OPENCODE_PACKAGE_ROOT, candidate.package);
+          const pkg = require(join(root, 'package.json'));
+          const bin = join(root, typeof pkg.bin === 'string' ? pkg.bin : pkg.bin.opencode);
+          const version = execFileSync(bin, ['--version'], { encoding: 'utf8', timeout: 30000 }).trim();
+          if (version !== `opencode v${candidate.version}`) throw new Error(`Unexpected native host: ${version}`);
+          const tarball = join(process.cwd(), 'inactive-parity-package', `flowguard-core-${require('./package.json').version}.tgz`);
+          if (!existsSync(tarball)) throw new Error(`Missing shared parity artifact: ${tarball}`);
+          appendFileSync(process.env.GITHUB_ENV, `OPENCODE_CLI=${bin}\nFLOWGUARD_TARBALL=${tarball}\n`);
+          NODE
+      - name: Reconcile original probes and verify installed mixed-session parity
+        run: npx vitest run --project smoke src/cli/opencode-inactive-parity.smoke.test.ts src/cli/opencode-inactive-installed.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-results.json
+        env:
+          FORCE_COLOR: 0
+          OPENCODE_LIVE: '1'
+      - name: Upload installed-parity test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
+        with:
+          name: inactive-parity-results-${{ matrix.os }}
+          path: inactive-parity-results.json
+          if-no-files-found: error
+          retention-days: 7
 
   install-verify:
     name: install-verify (${{ matrix.os }})
@@ -842,6 +909,7 @@ jobs:
       - build
       - build-clean
       - install-verify
+      - inactive-parity
       - smoke
       - independent-review-e2e
       - actionlint

@@ -51,7 +51,7 @@ describe('native candidate host resolver', () => {
     );
     expect(
       workflow.match(/require\('\.\/\.sdk-baselines\/opencode\/cli-candidate\.json'\)/g),
-    ).toHaveLength(4);
+    ).toHaveLength(6);
     expect(workflow).not.toContain('opencode-ai@');
   });
 

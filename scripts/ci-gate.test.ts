@@ -11,9 +11,10 @@ const workflow = parse(
     string,
     {
       name?: string;
-      needs?: string[];
+      needs?: string | string[];
       if?: string;
-      steps: { run?: string }[];
+      strategy?: { matrix: { os: string[] } };
+      steps: { run?: string; with?: Record<string, unknown> }[];
     }
   >;
 };
@@ -32,6 +33,7 @@ const dependencies = [
   'provider-conformance',
   'regulated_e2e',
   'doc-drift',
+  'inactive-parity',
 ];
 
 function executeGate(overrides: Record<string, string> = {}) {
@@ -47,6 +49,22 @@ function executeGate(overrides: Record<string, string> = {}) {
 }
 
 describe('required ci-gate documentation enforcement', () => {
+  it('runs both installed-parity suites on every OS against one shared build artifact', () => {
+    const parity = requiredJob('inactive-parity');
+    expect(parity.needs).toBe('build');
+    expect(parity.strategy?.matrix.os).toEqual(['ubuntu-latest', 'macos-latest', 'windows-latest']);
+    expect(parity.steps.some((step) => step.with?.name === 'inactive-parity-package')).toBe(true);
+    expect(requiredJob('build').steps.some((step) => step.run === 'npm run pack:checksums')).toBe(
+      true,
+    );
+    expect(
+      requiredJob('build').steps.find((step) => step.with?.name === 'inactive-parity-package')?.with
+        ?.path,
+    ).toContain('checksums.sha256');
+    expect(parity.steps.find((step) => step.run?.startsWith('npx vitest run'))?.run).toBe(
+      'npx vitest run --project smoke src/cli/opencode-inactive-parity.smoke.test.ts src/cli/opencode-inactive-installed.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-results.json',
+    );
+  });
   it('serializes critical Windows unit workers without dropping suites or changing PERF budgets', () => {
     const commands = requiredJob('critical-windows').steps.flatMap((step) =>
       step.run ? [step.run] : [],

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Reconcile the original INACTIVE shell/edit/catalogue counterprobes with the
+  earlier activation repair at `3a274edf`, and rerun their assertions against the
+  same packed bytes as the installed matrix. Real native Start, concurrent
+  ACTIVE/INACTIVE requests, live tool publication, reload and restart now check
+  per-session catalogue/context separation. A required Linux/macOS/Windows CI
+  matrix shares one tarball/checksum artifact; Desktop 2.2.4 acceptance and R4
+  remain open. No product guard or trust contract is changed.
+
 - Packed-installed INACTIVE native parity tests compare absent and actual
   checksum-verified repo/global installs, with and without Git: provider context
   and native tool definitions, model variants, shell/edit/subagent effects,
