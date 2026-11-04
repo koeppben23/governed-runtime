@@ -1,9 +1,11 @@
 # P0-00: packed-installed INACTIVE parity
 
-2026-11-04, PR #1190. **Bounded CLI/server PASS on Linux/macOS/OpenCode 2.2.4;
-not Desktop or whole-PR acceptance.** R4 remains technically `NOT_SUPPORTED`
-under the unchanged untrusted-plugin contract and its security requirement
-remains BLOCKED. No ACTIVE-V2 release follows from this result.
+2026-11-04, PR #1190. **Bounded CLI/server PASS on Linux, macOS and Windows
+with OpenCode 2.2.4; not Desktop or whole-PR acceptance.** Windows executed
+all 65 cases on the current-build artifact (2 mixed + 28 repo + 28 global +
+7 original, 0 failed). R4 remains technically `NOT_SUPPORTED` under the
+unchanged untrusted-plugin contract and its security requirement remains
+BLOCKED. No ACTIVE-V2 release follows from this result.
 
 ## Initial 56-case checkpoint: product and installation identity
 
@@ -168,12 +170,15 @@ the initial failure's root cause. Smoke, independent-review E2E and install/veri
 on all three operating systems passed. These older jobs are not the new Windows
 native-parity matrix.
 
-The added required `inactive-parity` CI matrix runs **these same two suites** on
-Linux/macOS/Windows. `build` creates one tarball/checksum artifact shared by all
-runners, with exact native executable/version resolution and JSON results.
-Shell-free npm invocation uses Node plus `npm_execpath`, rather than assuming a
-Windows `.cmd` can be passed to `execFileSync`. Matrix success must be observed;
-workflow wiring alone is not platform acceptance.
+The dedicated `opencode-parity.yml` acceptance workflow runs **these same two
+suites** on Linux/macOS/Windows. It is manually dispatchable and scheduled, not a
+required pull-request gate: the full installed matrix is acceptance evidence,
+while the PR gate keeps the faster unit/integration/architecture checks. Its
+`build` job creates one tarball/checksum artifact shared by all runners, with
+exact native executable/version resolution and JSON results. Shell-free npm
+invocation uses Node plus `npm_execpath`, rather than assuming a Windows `.cmd`
+can be passed to `execFileSync`. Matrix success must be observed; workflow
+wiring alone is not platform acceptance.
 
 **First cross-platform run, code head `776053846d2172d22a7d31a12a2691fa935eac12`:**
 [CI run 41790845872](https://github.com/koeppben23/governed-runtime/actions/runs/41790845872)
@@ -359,12 +364,11 @@ certify these native conformance cases. No product code or parity assertion is
 changed in response to this diagnostic result.
 
 The installer `ENOENT` is now attributed and fixed in product code (see above),
-but that fix must still execute on Windows. The bootstrap overlap is avoided by
-serialization/reuse; its internal Windows mechanism remains **NOT_VERIFIED** even
-if the serialized run passes. The solo `afterAll` cleanup timeout remains a
-separate test-cleanup issue; it did not affect a passing parity result. P0-00
-Windows remains **BLOCKED** until all 65 cases execute and pass on Windows with
-the restored current-build artifact.
+and the fix executed successfully on Windows. The bootstrap overlap is avoided
+by serialization/reuse; its internal Windows mechanism remains **NOT_VERIFIED**
+even though the serialized run passed. The solo cleanup timeout was a
+test-cleanup budget issue; bounded cleanup hooks resolved it. P0-00 Windows is
+**PASS** for the current-build CLI/server matrix as recorded below.
 
 ### Current-build Windows job-budget limits
 
@@ -397,14 +401,22 @@ at `10:19:14Z`, but the **35-minute job limit** cancels at `10:21:00Z` after
 `35m08s`. No results JSON is written; the missing file is cancellation, not a
 reported failure.
 
-Windows parity is therefore split into four parallel CI jobs — `mixed`, `repo`,
-`global` and `original` — each with a 25-minute job budget and a distinct
-bootstrap prefix. Each job runs only its selected cases through Vitest's exact
-name filter; the installed suite still performs its real installer runs for its
-own arms, and all 65 cases/assertions remain. The 300-second bootstrap/test
-budgets and dependency selection are unchanged. Windows acceptance remains
-**BLOCKED** until all four jobs execute and pass; no PASS is inferred from either
-timeout.
+[CI run 41829567943](https://github.com/koeppben23/governed-runtime/actions/runs/41829567943)
+on `d5d88a8e2fa77e78928bfe61c4c8858d0d5fbec0` is the successful current-build
+run. Its artifact SHA-256 is
+`0320b43a7dcdada91326927ddd7ecd1a9ff8509a75ea1e27da8bae07ad1291a6`, with
+embedded merge-build SHA `641fbec44cfcc15b67c95c14cc84d9b387c4d211` (built
+`2026-11-04T12:29:34.830Z`). Windows is split into four parallel jobs —
+`mixed`, `repo`, `global` and `original` — with 25-minute budgets. They execute
+**2 + 28 + 28 + 7 = 65 cases, 0 failed**; the additional skipped JSON entries
+are the cases filtered out of each job, not unexecuted acceptance cases. The
+whole CI run, including unit/coverage and Windows install-verify, is green.
+
+Because the full matrix is acceptance evidence rather than per-PR feedback, it
+now lives in the separate `opencode-parity.yml` workflow (`workflow_dispatch` and
+nightly schedule), not in the required pull-request gate. The test files, 65
+cases, assertions and 300-second bootstrap/test budgets remain unchanged; the
+installed suite still performs its real installer runs for its own arms.
 
 ### Intervening `a38dd3a7` run, retained separately
 

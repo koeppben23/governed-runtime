@@ -524,6 +524,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   jobs (`mixed`, `repo`, `global`, `original`), pinned by the CI-source test.
   Test, hook and coverage budgets, case count and assertions are unchanged.
 
+- **P0-00 Windows CLI/server PASS and acceptance-CI split.** Current-build run
+  `41829567943` on `d5d88a8e` executes all **65/65** Windows cases across the
+  split jobs, 0 failed, on the shared checksum-verified artifact. Because the
+  full installed matrix is acceptance evidence rather than per-PR feedback, it
+  now runs in the separate `opencode-parity.yml` workflow (`workflow_dispatch`
+  and nightly schedule); the PR gate keeps the fast unit/integration/
+  architecture checks. Test count, assertions and budgets are unchanged.
+
 - **P0-00 current-build evidence and smoke follow-ups (#1190).** The
   installed-parity matrix now downloads the current build job's package and
   checksum instead of the historical diagnostic artifact; `pwsh` is declared as

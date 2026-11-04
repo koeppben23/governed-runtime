@@ -45,8 +45,6 @@ const dependencies = [
   'provider-conformance',
   'regulated_e2e',
   'doc-drift',
-  'inactive-parity',
-  'inactive-parity-windows',
 ];
 
 function executeGate(overrides: Record<string, string> = {}) {
@@ -62,79 +60,28 @@ function executeGate(overrides: Record<string, string> = {}) {
 }
 
 describe('required ci-gate documentation enforcement', () => {
-  it('runs both installed-parity suites on every OS against one shared build artifact', () => {
-    const parity = requiredJob('inactive-parity');
-    expect(parity.needs).toBe('build');
-    expect(parity.strategy?.matrix.os).toEqual(['ubuntu-latest', 'macos-latest']);
-    expect(parity.steps.some((step) => step.with?.name === 'inactive-parity-package')).toBe(true);
+  it('keeps installed parity out of the PR gate and in a separate acceptance workflow', () => {
+    expect(workflow.jobs).not.toHaveProperty('inactive-parity');
+    expect(workflow.jobs).not.toHaveProperty('inactive-parity-windows');
     expect(requiredJob('build').steps.some((step) => step.run === 'npm run pack:checksums')).toBe(
-      true,
-    );
-    expect(
-      requiredJob('build').steps.find((step) => step.with?.name === 'inactive-parity-package')?.with
-        ?.path,
-    ).toContain('checksums.sha256');
-    expect(
-      parity.steps.find(
-        (step) =>
-          step.name === 'Reconcile original probes and verify installed mixed-session parity',
-      )?.run,
-    ).toBe(
-      'npx vitest run --no-file-parallelism --project smoke src/cli/opencode-inactive-parity.smoke.test.ts src/cli/opencode-inactive-installed.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-results.json',
-    );
-  });
-  it('reuses one digest-bound bootstrap with both suites serialized on the current package', () => {
-    const steps = requiredJob('inactive-parity').steps;
-    const download = steps.find((step) => step.name === 'Download identical packed product');
-    expect(download?.with?.['run-id']).toBeUndefined();
-    expect(download?.with?.['github-token']).toBeUndefined();
-    expect(requiredJob('inactive-parity')['timeout-minutes']).toBe(25);
-    const run = steps.find(
-      (step) => step.name === 'Reconcile original probes and verify installed mixed-session parity',
-    );
-    expect(run?.env?.FLOWGUARD_BOOTSTRAP_PREFIX).toBe('inactive-parity-shared-bootstrap');
-    expect(run?.env?.FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR).toBe('inactive-parity-diagnostics/joint');
-    expect(steps.some((step) => step.name?.startsWith('Diagnose one Windows bootstrap'))).toBe(
       false,
     );
-    const upload = steps.find(
-      (step) => step.name === 'Upload bootstrap phases and npm diagnostics',
+    expect(dependencies).not.toContain('inactive-parity');
+
+    const source = readFileSync(
+      fileURLToPath(new URL('../.github/workflows/opencode-parity.yml', import.meta.url)),
+      'utf8',
     );
-    expect(upload?.if).toBe('always()');
-    expect(upload?.with?.path).toBe('inactive-parity-diagnostics/');
-    expect(upload?.with?.['if-no-files-found']).toBe('error');
-  });
-  it('splits Windows parity into parallel installer-bearing subsets', () => {
-    const win = requiredJob('inactive-parity-windows');
-    expect(win.needs).toBe('build');
-    expect(win['timeout-minutes']).toBe(25);
-    const suites = win.strategy?.matrix.include ?? [];
-    expect(suites.map((suite) => suite.suite)).toEqual(['mixed', 'repo', 'global', 'original']);
-    expect(suites.every((suite) => suite.file.startsWith('src/cli/opencode-inactive-'))).toBe(true);
-    expect(suites.find((suite) => suite.suite === 'mixed')?.filter).toBe(
-      'scoped during live catalogue',
-    );
-    expect(suites.find((suite) => suite.suite === 'repo')?.filter).toBe(
-      'Git=(true|false), scope=repo',
-    );
-    expect(suites.find((suite) => suite.suite === 'global')?.filter).toBe(
-      'Git=(true|false), scope=global',
-    );
-    expect(suites.find((suite) => suite.suite === 'original')?.file).toBe(
-      'src/cli/opencode-inactive-parity.smoke.test.ts',
-    );
-    expect(
-      win.steps.some(
-        (step) =>
-          step.name === 'Run Windows parity suite ${{ matrix.suite }}' &&
-          step.env?.SUITE_FILTER === '${{ matrix.filter }}',
-      ),
-    ).toBe(true);
-    expect(win.steps.some((step) => step.with?.name === 'inactive-parity-package')).toBe(true);
-    expect(
-      win.steps.find((step) => step.name === 'Upload installed-parity test results')?.with?.name,
-    ).toBe('inactive-parity-results-windows-${{ matrix.suite }}');
-    expect(dependencies).toContain('inactive-parity-windows');
+    expect(source).toContain('workflow_dispatch:');
+    expect(source).toContain('schedule:');
+    const acceptance = parse(source) as {
+      jobs: Record<string, { needs?: string; 'timeout-minutes'?: number }>;
+    };
+    for (const id of ['inactive-parity', 'inactive-parity-windows']) {
+      expect(acceptance.jobs[id]?.needs).toBe('build');
+      expect(acceptance.jobs[id]?.['timeout-minutes']).toBe(25);
+    }
+    expect(acceptance.jobs.build?.needs).toBeUndefined();
   });
   it('serializes critical Windows unit workers without dropping suites or changing PERF budgets', () => {
     const commands = requiredJob('critical-windows').steps.flatMap((step) =>
