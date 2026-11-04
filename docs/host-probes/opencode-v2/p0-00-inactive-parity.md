@@ -171,8 +171,8 @@ on all three operating systems passed. These older jobs are not the new Windows
 native-parity matrix.
 
 The dedicated `opencode-parity.yml` acceptance workflow runs **these same two
-suites** on Linux/macOS/Windows. It is manually dispatchable and scheduled, not a
-required pull-request gate: the full installed matrix is acceptance evidence,
+suites** on Linux/macOS/Windows. It is manually dispatchable, scheduled, or triggered by the
+`run-parity-acceptance` PR label, not a required pull-request gate: the full installed matrix is acceptance evidence,
 while the PR gate keeps the faster unit/integration/architecture checks. Its
 `build` job creates one tarball/checksum artifact shared by all runners, with
 exact native executable/version resolution and JSON results. Shell-free npm
@@ -413,8 +413,9 @@ are the cases filtered out of each job, not unexecuted acceptance cases. The
 whole CI run, including unit/coverage and Windows install-verify, is green.
 
 Because the full matrix is acceptance evidence rather than per-PR feedback, it
-now lives in the separate `opencode-parity.yml` workflow (`workflow_dispatch` and
-nightly schedule), not in the required pull-request gate. The test files, 65
+now lives in the separate `opencode-parity.yml` workflow (`workflow_dispatch`,
+nightly schedule, and the `run-parity-acceptance` PR label), not in the required
+pull-request gate. The test files, 65
 cases, assertions and 300-second bootstrap/test budgets remain unchanged; the
 installed suite still performs its real installer runs for its own arms.
 

@@ -4,6 +4,10 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 3 * * *'
+  # Pre-merge acceptance: add the `run-parity-acceptance` label to a PR.
+  # The job-level guard below skips runs for every other label.
+  pull_request:
+    types: [labeled]
 
 permissions:
   actions: read
@@ -16,6 +20,7 @@ concurrency:
 jobs:
   build:
     name: build
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-parity-acceptance'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -50,6 +55,7 @@ jobs:
 
   inactive-parity:
     name: inactive-parity (${{ matrix.os }})
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-parity-acceptance'
     runs-on: ${{ matrix.os }}
     needs: build
     # Linux/macOS run both suites together. Windows is split into parallel
@@ -117,6 +123,7 @@ jobs:
 
   inactive-parity-windows:
     name: inactive-parity (windows-latest, ${{ matrix.suite }})
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-parity-acceptance'
     runs-on: windows-latest
     needs: build
     # Split the slow Windows matrix so each job runs one installer-bearing

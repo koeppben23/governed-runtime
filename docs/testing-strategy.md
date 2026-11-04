@@ -148,8 +148,8 @@ await actual closure after termination. These are process-lifecycle checks, not
 an ACP conversation or governance proof; timeout and a PID alone never pass.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
 The dedicated `opencode-parity.yml` acceptance workflow runs the two existing
-INACTIVE suites on Linux, macOS and Windows. It is manually dispatchable and
-nightly, not a required pull-request gate; PR CI keeps the faster unit/
+INACTIVE suites on Linux, macOS and Windows. It is manually dispatchable, nightly, or triggered by the
+`run-parity-acceptance` PR label, not a required gate; PR CI keeps the faster unit/
 integration/architecture checks. Its build job packs one product tarball plus
 checksum once; every runner downloads those identical bytes through
 `FLOWGUARD_TARBALL`, installs the exact native candidate and publishes its JSON
@@ -183,7 +183,7 @@ Windows parity is split into four **25-minute jobs** (`mixed`, `repo`, `global`,
 `original`) because six real npm installs dominate the runtime. Current-build run
 `41829567943` passes all 65 executed cases across the split jobs, 0 failed.
 Because this is acceptance evidence rather than per-PR feedback, the full matrix
-now lives in the separate manual/nightly workflow and is not a required PR gate.
+now lives in the separate manual/nightly/label-triggered workflow and is not a required PR gate.
 All 65 cases, assertions and test/hook/coverage budgets are preserved.
 
 Coverage CI bounds competing instrumented Vitest workers to two. It still covers

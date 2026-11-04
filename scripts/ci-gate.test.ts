@@ -74,9 +74,16 @@ describe('required ci-gate documentation enforcement', () => {
     );
     expect(source).toContain('workflow_dispatch:');
     expect(source).toContain('schedule:');
+    expect(source).toContain('pull_request:');
+    expect(source).toContain('run-parity-acceptance');
     const acceptance = parse(source) as {
-      jobs: Record<string, { needs?: string; 'timeout-minutes'?: number }>;
+      jobs: Record<string, { needs?: string; if?: string; 'timeout-minutes'?: number }>;
     };
+    for (const id of ['build', 'inactive-parity', 'inactive-parity-windows']) {
+      expect(acceptance.jobs[id]?.if).toContain(
+        "github.event.label.name == 'run-parity-acceptance'",
+      );
+    }
     for (const id of ['inactive-parity', 'inactive-parity-windows']) {
       expect(acceptance.jobs[id]?.needs).toBe('build');
       expect(acceptance.jobs[id]?.['timeout-minutes']).toBe(25);
