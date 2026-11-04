@@ -3,9 +3,11 @@
 ## Current status and evidence scope — 2026-11-04
 
 Review baseline: **`f048acc0d2782f17424526f6bfbe20b94ca72bc5`** (PR #1190,
-Draft / **NO-GO**). The local follow-up to that baseline explicitly labels the
-inherited duplicate settlement assertion; it proves no separate governance
-rejection class.
+Draft / **NO-GO**). Rail-retirement code/evidence HEAD:
+**`9b42042e`**. Full tests and coverage were executed on that working tree;
+a later documentation-only commit may contain this status without changing the
+verified code. The settlement follow-up labels the inherited duplicate assertion;
+it proves no separate governance rejection class.
 
 | Surface                                       | Current disposition / evidence scope                                                                                                                                                                              |
 | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
