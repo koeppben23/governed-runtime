@@ -3,8 +3,8 @@
 FlowGuard uses 18 explicit workflow phases across 3 independent flows. A session
 enters the **READY** workflow phase only after the separate host activation
 lifecycle commits (`/start`, or an authorized autonomous `StartGovernance`
-call). From READY there are 4 transitions: the three flow selections plus
-emergency `/abort`.
+call), with 4 transitions from READY: the three flow selections plus emergency
+`/abort`.
 
 The single authority for the phase graph and progressions is
 `src/machine/topology.ts`: `TRANSITIONS`/`resolveTransition` define every edge
