@@ -4,12 +4,65 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { OpenCode, type SessionInfo, type SessionInboxUser } from '@opencode/client';
+import {
+  OpenCode,
+  isServiceUnavailableError,
+  type SessionInfo,
+  type SessionInboxUser,
+} from '@opencode/client';
 import {
   createIsolatedOpenCodeEnvironment,
   resolvePinnedOpenCodeHost,
   type PinnedOpenCodeHost,
 } from './opencode-live-host-test-helpers.js';
+
+/** Exact pinned-host answer while location plugins are still loading. */
+const LOCATION_ACTIVATING = 'Location plugins did not finish activating';
+
+/**
+ * Wait for location plugin activation through an ordinary registry read.
+ *
+ * The pinned host bounds how long one request waits for location plugins. When
+ * loading outlasts that wait it answers with `ServiceUnavailableError` and the
+ * message above; activation then continues and a later read succeeds. A failed
+ * activation is NOT reported this way: the plugin surfaces with state `failed`,
+ * which callers assert through `plugin.list`. Only that exact transient answer is
+ * retried, within one overall deadline; every other error is rethrown unchanged.
+ *
+ * @returns how many times the host deferred the read (diagnostic only).
+ */
+export async function awaitLocationActivation(
+  client: Pick<ReturnType<typeof OpenCode.make>, 'agent'>,
+  location: { directory: string },
+  timeoutMs = 60_000,
+  pauseMs = 500,
+): Promise<number> {
+  const signal = AbortSignal.timeout(timeoutMs);
+  for (let deferrals = 0; ; deferrals++) {
+    try {
+      await client.agent.list({ location }, { signal });
+      return deferrals;
+    } catch (error) {
+      if (
+        signal.aborted ||
+        !isServiceUnavailableError(error) ||
+        error.message !== LOCATION_ACTIVATING
+      )
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, pauseMs));
+    }
+  }
+}
+
+/**
+ * Shell-neutral `node -e` command for native shell-tool fixtures. The script travels
+ * as base64 (no quotes or backslashes to escape). The pinned host runs Windows shell
+ * commands in PowerShell, where a quoted executable needs the call operator.
+ */
+export function nativeNodeCommand(script: string): string {
+  const code = `eval(Buffer.from('${Buffer.from(script).toString('base64')}','base64').toString())`;
+  return `${process.platform === 'win32' ? '& ' : ''}"${process.execPath}" -e "${code}"`;
+}
 
 export interface NativeProbeReply {
   text?: string;
@@ -271,7 +324,11 @@ export default Plugin.define({ id: Product.id, async setup(ctx) {
       headers: { Authorization: `Basic ${Buffer.from('opencode:native-test').toString('base64')}` },
     });
     const location = { directory: project };
-    await client.agent.list({ location }, { signal: AbortSignal.timeout(60_000) });
+    const settle = async () => {
+      const deferrals = await awaitLocationActivation(client, location);
+      if (deferrals > 0) output += `[fixture] location activation deferred ${deferrals} read(s)\n`;
+    };
+    await settle();
     const plugins = await client.plugin.list({ location });
     if (
       plugins.data.some((plugin) => plugin.state.status !== 'active') ||
@@ -304,6 +361,7 @@ export default Plugin.define({ id: Product.id, async setup(ctx) {
             Authorization: `Basic ${Buffer.from('opencode:native-test').toString('base64')}`,
           },
         });
+        await settle();
       },
       output: () => output,
       async session(agent = 'build') {

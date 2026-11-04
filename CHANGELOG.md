@@ -498,6 +498,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Installer dependency spec for paths with `~`, spaces or `#` (#1190).** The
+  dependency transaction wrote the vendored core as a `file://` URL. npm never
+  percent-decodes `file:` specs, so any target path containing `~` (Windows 8.3
+  short names such as `C:\Users\RUNNER~1`), a space (for example a Windows user
+  name) or `#` failed with `DEPENDENCY_INSTALL_FAILED`/`ENOENT`. The staging
+  package now uses an unencoded `file:` spec relative to the staging root, the
+  form the installed `package.json` template already uses. Found through the
+  Windows P0-00 bootstrap diagnosis; a real-npm test covers such a path.
+
+- **Native-host smoke harness on Windows and slow plugin activation (#1190).**
+  The pinned host answers a registry read with `ServiceUnavailableError`
+  ("Location plugins did not finish activating") when plugin loading outlasts its
+  per-request wait; activation then completes, while a failed activation is
+  reported as plugin state `failed`, never with this answer. Probe start-up,
+  restart and reload now retry exactly that answer within the existing 60 s
+  deadline and record the deferrals. The activation-scope shell fixture uses a
+  shell-neutral `node -e` command (PowerShell call operator on Windows). No
+  product timeout changed.
+
 - **Native command installation collisions (#1190).** Install and doctor now
   refuse any pre-existing `commands/<name>.md` for every natively registered
   command (`/start`, `/approve`, `/override-approve`, `/request-changes`,

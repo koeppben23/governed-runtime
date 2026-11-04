@@ -3,6 +3,7 @@ import { readFile, realpath, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMutationHostProbe } from './opencode-mutation-test-helpers.js';
+import { awaitLocationActivation } from './opencode-native-test-helpers.js';
 import { makeProgressedState } from '../fixtures.js';
 import { computeFingerprint, sessionDir } from '../adapters/workspace/index.js';
 import { writeStateWithArtifacts } from '../integration/tools/helpers.js';
@@ -378,7 +379,7 @@ describe.skipIf(!LIVE)('MUT4 real-host FlowGuard recovery', () => {
             ).toBe(true);
           });
           await probe.client.location.reload({ signal: AbortSignal.timeout(60_000) });
-          await probe.client.agent.list({ location: probe.location });
+          await awaitLocationActivation(probe.client, probe.location);
           await rm(join(probe.project, '.fixture-drop-mutation-completion'));
           expect((await readState(stateDir))?.mutationEpisodes[0]?.status).toBe(
             'dispatch_authorized',

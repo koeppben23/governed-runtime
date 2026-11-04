@@ -11,6 +11,7 @@ import { OpenCode } from '@opencode/client';
 import { PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './templates.js';
 import { hashBuffer } from '../shared/hashing.js';
 import { nativeOpenCodeCandidate } from './opencode-live-host-test-helpers.js';
+import { awaitLocationActivation } from './opencode-native-test-helpers.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
@@ -197,7 +198,7 @@ export default Plugin.define({ id: 'flowguard-test-inventory', async setup(ctx) 
     // Registry reads activate the location; plugin.list is an observation of
     // currently active plugins, not an activation/completion operation.
     const assertSingleLoadedPlugin = async () => {
-      await client.agent.list({ location }, { signal: AbortSignal.timeout(60_000) });
+      await awaitLocationActivation(client, location);
       const plugins = await client.plugin.list(
         { location },
         { signal: AbortSignal.timeout(60_000) },

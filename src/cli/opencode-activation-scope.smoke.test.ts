@@ -4,7 +4,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { SessionMessageAssistantTool } from '@opencode/client';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createNativeHostProbe, type NativeHostProbe } from './opencode-native-test-helpers.js';
+import {
+  createNativeHostProbe,
+  type NativeHostProbe,
+  nativeNodeCommand,
+} from './opencode-native-test-helpers.js';
 import {
   COMPONENT_ACTIVATION_SETUP,
   seedNativeActiveScope,
@@ -58,7 +62,9 @@ describe.skipIf(!LIVE)('native activation scope with component-only authority', 
           tool: {
             name: 'shell',
             arguments: {
-              command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(target)}, 'native-effect')`)}`,
+              command: nativeNodeCommand(
+                `require('node:fs').writeFileSync(${JSON.stringify(target)}, 'native-effect')`,
+              ),
               description: 'Bounded scope side-effect probe',
             },
           },
