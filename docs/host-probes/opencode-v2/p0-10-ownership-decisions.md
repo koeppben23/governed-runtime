@@ -3,22 +3,27 @@
 ## Current status and evidence scope — 2026-11-04
 
 Review baseline: **`f048acc0d2782f17424526f6bfbe20b94ca72bc5`** (PR #1190,
-Draft / **NO-GO**). Rail-retirement code/evidence HEAD:
-**`9b42042e`**. Full tests and coverage were executed on that working tree;
-a later documentation-only commit may contain this status without changing the
-verified code. The settlement follow-up labels the inherited duplicate assertion;
-it proves no separate governance rejection class.
+Draft / **NO-GO**). Rail-retirement and diagnostic code/evidence HEAD:
+**`b0c378795ee742096318c58ec91ee4ba631104b9`**. Hosted CI run `41913750055`
+passed **37/37 jobs** on that SHA, including unit, coverage, integration-perf,
+smoke, install-verify and all Windows jobs. Full local tests and coverage were
+executed on the same production tree; a later documentation-only commit may
+contain this status without changing the verified code. The settlement
+follow-up labels the inherited duplicate assertion; it proves no separate
+governance rejection class.
 
-| Surface                                       | Current disposition / evidence scope                                                                                                                                                                              |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Host classifier                               | Removed in `3c210bae`; nine purposes mapped to exact current-candidate selection, not installed-product certification.                                                                                            |
-| Generic settlement                            | Removed in `6dd00388`; seven purposes run on both artifact routes (14 component cases with real persistence).                                                                                                     |
-| Lifecycle artwork                             | V2-corrected SVG in `f048acc0`; diagram/transition checks are documentation evidence, not product acceptance.                                                                                                     |
-| Four historical rails                         | Removed after purpose-level current-owner mapping (see completed retirement below); no callback executor is reactivated. Current owners are executable.                                                           |
-| Latest full local tests / coverage            | Rail-retirement working tree: 12,907 passed / 2 skipped in 703 files; coverage 12,898 passed / 11 skipped (91.03% statements, 84.33% branches, 95.49% functions, 92.51% lines). Not final SHA/install acceptance. |
-| ISO publication exclusivity                   | OPEN: earlier Hosted-CI `[0, 0]` observations remain unexplained; later passes establish neither a fix nor a flake.                                                                                               |
-| Default mutation / final installed acceptance | NOT_VERIFIED: `npm run mutation` and final SHA/artifact-bound CLI/Desktop workflow remain required.                                                                                                               |
-| R4                                            | Separate external host-security dependency; BLOCKED / NOT_SUPPORTED under the unchanged untrusted-plugin threat model.                                                                                            |
+| Surface                                       | Current disposition / evidence scope                                                                                                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host classifier                               | Removed in `3c210bae`; nine purposes mapped to exact current-candidate selection, not installed-product certification.                                                          |
+| Generic settlement                            | Removed in `6dd00388`; seven purposes run on both artifact routes (14 component cases with real persistence).                                                                   |
+| Lifecycle artwork                             | V2-corrected SVG in `f048acc0`; diagram/transition checks are documentation evidence, not product acceptance.                                                                   |
+| Four historical rails                         | Removed after purpose-level current-owner mapping (see completed retirement below); no callback executor is reactivated. Current owners are executable.                         |
+| Latest full local tests / coverage            | Rail-retirement working tree: 12,907 passed / 2 skipped in 703 files; coverage 12,898 passed / 11 skipped (91.03% statements, 84.33% branches, 95.49% functions, 92.51% lines). |
+| Hosted CI on `b0c37879`                       | PASS, run `41913750055`, **37/37 jobs**, including perf and all Windows jobs. Applies to that production tree; later docs-only commits are not re-certified by this run.        |
+| Default mutation                              | IN PROGRESS locally on the same production tree at the time of writing; final result still required.                                                                            |
+| ISO publication exclusivity                   | OPEN: earlier Hosted-CI `[0, 0]` observations remain unexplained; later passes establish neither a fix nor a flake.                                                             |
+| Default mutation / final installed acceptance | NOT_VERIFIED: `npm run mutation` and final SHA/artifact-bound CLI/Desktop workflow remain required.                                                                             |
+| R4                                            | Separate external host-security dependency; BLOCKED / NOT_SUPPORTED under the unchanged untrusted-plugin threat model.                                                          |
 
 The historical checkpoints below retain their original identities and scopes.
 This status is not a P0-10 completion claim or final call-path certification.
@@ -276,10 +281,19 @@ planning, implementation, automatic validation, continue and end-to-end owners;
 files. The unchanged coverage gate passed **12,898 / 11 skipped** (358.46 s):
 statements **91.03%**, branches **84.33%**, functions **95.49%**, lines **92.51%**.
 Type checks, strict lint, format, build/doc-drift, unused dependencies,
-unused-export and PR-base documentation checks passed. The ISO claim-trace case
-passed three consecutive local runs; that does not explain the earlier Hosted-CI
-`[0, 0]` results. **NOT_VERIFIED:** default mutation (`npm run mutation`) and
-installed CLI/Desktop ACTIVE acceptance; no specialized profile substitutes.
+unused-export and PR-base documentation checks passed.
+
+ISO trace evidence is deliberately separated from the original defect: the
+instrumented case reproduced the `[0, 0]` shape once on `4af77944` (both mkdir
+claims status 0, same inode, both publishers successful). It then passed on
+`32d21e3b` and `b0c37879`, so the observation is intermittent. After the first
+reproduction the test was tightened to resolve only `/bin/mkdir` or
+`/usr/bin/mkdir`, eliminating a possible PATH-inherited fake; production wrapper,
+assertion and budgets remain unchanged. This does not explain the earlier
+`[0, 0]` failures of the original, uninstrumented test, and a later green run
+does not establish a fix or a flake. **NOT_VERIFIED:** default mutation
+(`npm run mutation`) and installed CLI/Desktop ACTIVE acceptance; no specialized
+profile substitutes.
 
 ## Six explicitly callable command surfaces
 
