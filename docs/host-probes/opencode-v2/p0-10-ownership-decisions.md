@@ -37,6 +37,15 @@ still does not explain or repair its earlier failure. Default mutation
 certification remains NOT_VERIFIED (`npm run mutation`), and these local
 results are not Hosted-CI or installed ACTIVE/Desktop acceptance.
 
+**New Hosted-CI counterexample on `27e9584b`:** run `41898050988`, coverage
+job `126812753688`, again fails the same ISO publication assertion with
+`[0, 0]` instead of `[0, 1]` (12,956 passed / 1 failed / 11 skipped).
+An isolated unchanged local invocation of that exact test passes once; that
+does not establish a flake or explain either failure. The subsequent diagnostic
+change only attaches both publishers' captured stdout/stderr, exits and the
+requested output root to the existing assertion. No publication code,
+expected exit, timeout, test selection or retry behavior is changed.
+
 ## Decision vocabulary and evidence boundary
 
 Each row has exactly one disposition: **canonical and necessary**, **historically

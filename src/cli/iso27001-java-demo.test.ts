@@ -300,7 +300,15 @@ describe.skipIf(!POSIX)('java demo ISO wrapper', () => {
           FAKE_DELAY_MS: '250',
         }),
       ]);
-      expect([first.status, second.status].sort()).toEqual([0, 1]);
+      expect(
+        [first.status, second.status].sort(),
+        JSON.stringify({
+          platform: process.platform,
+          outputRoot: workspace.outputRoot,
+          first,
+          second,
+        }),
+      ).toEqual([0, 1]);
       const dir = path.join(workspace.outputRoot, SESSION);
       expect(existsSync(path.join(dir, 'iso27001-report.json'))).toBe(true);
       expect(existsSync(path.join(dir, 'iso27001-report.md'))).toBe(true);

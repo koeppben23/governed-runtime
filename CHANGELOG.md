@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Preserve both ISO demo publisher outputs and the requested output directory
+  in concurrency-assertion failures. The same `[0, 1]` exclusivity assertion
+  and all execution budgets remain unchanged; this diagnoses the repeated
+  Hosted-CI `[0, 0]` counterexample without claiming an unproven cause or fix.
+
 - Align current `/continue` and `/check` metadata with their V2 contracts:
   continue is read-only routing without a mutating CONTINUE target; check is a
   native scoped operation, not a RUN_CHECK/VALIDATE alias. Synchronize help,

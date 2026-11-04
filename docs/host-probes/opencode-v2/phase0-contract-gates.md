@@ -29,6 +29,9 @@
   Hosted CI `41890648033` on `fd8d275f` passes all 37 jobs including coverage.
   The prior ISO concurrent-publication failure on `7d9560e2` remains
   unexplained; that later green run is not proof of a fix or a flake.
+  CI `41898050988` on `27e9584b` now repeats that exact assertion failure.
+  Targeted failure-output diagnostics preserve the original assertion and budgets;
+  the publication cause remains unproven.
   The earlier accepted P0-00 CLI/server matrix on `2f4aa06d` remains closed.
 
 ## Explicit change, not historical reclassification
