@@ -14,7 +14,13 @@ const workflow = parse(
       needs?: string | string[];
       if?: string;
       strategy?: { matrix: { os: string[] } };
-      steps: { run?: string; with?: Record<string, unknown> }[];
+      steps: {
+        name?: string;
+        run?: string;
+        if?: string;
+        env?: Record<string, string>;
+        with?: Record<string, unknown>;
+      }[];
     }
   >;
 };
@@ -61,9 +67,43 @@ describe('required ci-gate documentation enforcement', () => {
       requiredJob('build').steps.find((step) => step.with?.name === 'inactive-parity-package')?.with
         ?.path,
     ).toContain('checksums.sha256');
-    expect(parity.steps.find((step) => step.run?.startsWith('npx vitest run'))?.run).toBe(
+    expect(
+      parity.steps.find(
+        (step) =>
+          step.name === 'Reconcile original probes and verify installed mixed-session parity',
+      )?.run,
+    ).toBe(
       'npx vitest run --project smoke src/cli/opencode-inactive-parity.smoke.test.ts src/cli/opencode-inactive-installed.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-results.json',
     );
+  });
+  it('retains exact-package isolated and joint Windows bootstrap diagnostics without masking failures', () => {
+    const steps = requiredJob('inactive-parity').steps;
+    const download = steps.find((step) => step.name === 'Download identical packed product');
+    expect(download?.with?.['run-id']).toBe('41790845872');
+    expect(download?.with?.['github-token']).toBe('${{ github.token }}');
+    const solo = steps.findIndex((step) => step.name === 'Diagnose one Windows bootstrap alone');
+    const joint = steps.findIndex(
+      (step) => step.name === 'Reconcile original probes and verify installed mixed-session parity',
+    );
+    expect(solo).toBeGreaterThan(-1);
+    expect(solo).toBeLessThan(joint);
+    expect(steps[solo]?.if).toBe("runner.os == 'Windows'");
+    expect(steps[solo]?.run).toBe(
+      'npx vitest run --project smoke src/cli/opencode-inactive-parity.smoke.test.ts --silent=false --reporter=default --reporter=json --outputFile=inactive-parity-solo-results.json',
+    );
+    expect(steps[joint]?.if).toBe("${{ !cancelled() && steps.parity-host.outcome == 'success' }}");
+    expect(steps[solo]?.env?.FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR).toBe(
+      'inactive-parity-diagnostics/solo',
+    );
+    expect(steps[joint]?.env?.FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR).toBe(
+      'inactive-parity-diagnostics/joint',
+    );
+    const upload = steps.find(
+      (step) => step.name === 'Upload bootstrap phases and npm diagnostics',
+    );
+    expect(upload?.if).toBe('always()');
+    expect(upload?.with?.path).toBe('inactive-parity-diagnostics/');
+    expect(upload?.with?.['if-no-files-found']).toBe('error');
   });
   it('serializes critical Windows unit workers without dropping suites or changing PERF budgets', () => {
     const commands = requiredJob('critical-windows').steps.flatMap((step) =>

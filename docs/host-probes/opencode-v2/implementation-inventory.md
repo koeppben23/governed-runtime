@@ -98,6 +98,12 @@ remote model catalogue refresh, complete mixed-resource acceptance and full V2 i
 remain unverified. R4 stays NOT_SUPPORTED on
 the pinned public API and its security requirement remains BLOCKED.
 
+The bounded follow-up instruments only the packed bootstrap and retains npm
+diagnostics. CI compares one Windows bootstrap alone with the unchanged joint
+65-case run on the original package; its result remains NOT_VERIFIED. The local
+macOS instrumented 7/7 solo and 65/65 joint controls do not resolve Windows or
+justify a contention fix. See the [diagnostic protocol](./p0-00-inactive-parity.md#bounded-bootstrap-diagnostic-checkpoint).
+
 This section describes the subsequent native API implementation and local
 verification, not the baseline table below, a completed product cutover or
 installed acceptance. The native

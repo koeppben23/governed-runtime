@@ -5,7 +5,15 @@
  * @test-policy HAPPY, CORNER — parallel hosts must not share mutable OpenCode paths.
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +24,7 @@ import {
   resolvePinnedOpenCodeHost,
   type PinnedOpenCodeHost,
 } from './opencode-live-host-test-helpers.js';
+import { createPackedFlowGuardInstall } from './opencode-packed-install-test-helpers.js';
 
 const host: PinnedOpenCodeHost = {
   command: 'opencode',
@@ -24,7 +33,7 @@ const host: PinnedOpenCodeHost = {
   env: {},
 };
 
-vi.mock('node:child_process', () => ({ spawnSync: vi.fn() }));
+vi.mock('node:child_process', () => ({ spawnSync: vi.fn(), execFileSync: vi.fn() }));
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetAllMocks();
@@ -152,6 +161,162 @@ describe('createIsolatedOpenCodeEnvironment', () => {
     } finally {
       rmSync(firstRoot, { recursive: true, force: true });
       rmSync(secondRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('packed bootstrap diagnostics', () => {
+  const fixtures: string[] = [];
+  afterEach(() => {
+    for (const fixture of fixtures.splice(0)) rmSync(fixture, { recursive: true, force: true });
+  });
+  function fixture() {
+    const root = mkdtempSync(join(tmpdir(), 'fg-packed-diagnostics-test-'));
+    fixtures.push(root);
+    const tarball = join(root, 'fixture.tgz');
+    writeFileSync(tarball, 'exact supplied artifact bytes');
+    writeFileSync(join(root, 'checksums.sha256'), 'supplied checksum\n');
+    vi.stubEnv('npm_execpath', '/fixture/npm-cli.js');
+    vi.stubEnv('FLOWGUARD_TARBALL', tarball);
+    vi.stubEnv('FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR', join(root, 'diagnostics'));
+    vi.stubEnv('npm_config_cache', '/fixture/shared-cache');
+    return {
+      root,
+      events() {
+        return readdirSync(join(root, 'diagnostics')).map((dir) => {
+          const directory = join(root, 'diagnostics', dir);
+          const phases = readFileSync(join(directory, 'phases.jsonl'), 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line));
+          return { directory, phases };
+        });
+      },
+    };
+  }
+  function npmResult(status: number | null, error?: NodeJS.ErrnoException) {
+    vi.mocked(spawnSync).mockImplementation((_command, args) => {
+      const argv = args as string[];
+      const bootstrap = argv[argv.indexOf('--prefix') + 1]!;
+      const packedRoot = join(bootstrap, 'node_modules/@flowguard/core/dist');
+      mkdirSync(packedRoot, { recursive: true });
+      writeFileSync(
+        join(packedRoot, 'build-info.json'),
+        JSON.stringify({ gitSha: 'fixture-build' }),
+      );
+      const logs = argv.find((arg) => arg.startsWith('--logs-dir='))!.slice('--logs-dir='.length);
+      mkdirSync(logs, { recursive: true });
+      writeFileSync(join(logs, 'fixture-debug.log'), 'npm debug before exit\n');
+      return {
+        pid: 12345,
+        status,
+        signal: error ? 'SIGTERM' : null,
+        error,
+        stdout: 'npm stdout before exit\n',
+        stderr: 'npm stderr before exit\n',
+      } as ReturnType<typeof spawnSync>;
+    });
+  }
+  it('records phases, package digest and npm PID while preserving shared cache and budgets', async () => {
+    const probe = fixture();
+    npmResult(0);
+    const artifact = await createPackedFlowGuardInstall();
+    try {
+      const { directory, phases } = probe.events()[0]!;
+      expect(phases.map((event) => event.stage)).toEqual([
+        'tarball-begin',
+        'tarball-ready',
+        'npm-install-begin',
+        'npm-install-end',
+        'identity-ready',
+      ]);
+      expect(phases[1].sha256).toBe(artifact.identity.sha256);
+      expect(phases[2]).toMatchObject({
+        timeoutMs: 300_000,
+        configuredCache: '/fixture/shared-cache',
+      });
+      expect(phases[3]).toMatchObject({
+        workerPID: process.pid,
+        npmPID: 12345,
+        status: 0,
+        signal: null,
+        error: null,
+      });
+      expect(phases[3].elapsedMs).toBeGreaterThanOrEqual(phases[2].elapsedMs);
+      expect(spawnSync).toHaveBeenCalledWith(
+        process.execPath,
+        [
+          '/fixture/npm-cli.js',
+          'install',
+          '--prefix',
+          expect.any(String),
+          '--ignore-scripts',
+          '--no-audit',
+          '--no-fund',
+          '--loglevel=verbose',
+          `--logs-dir=${join(directory, 'npm-debug')}`,
+          expect.any(String),
+        ],
+        expect.objectContaining({
+          timeout: 300_000,
+          encoding: 'utf8',
+        }),
+      );
+      expect(vi.mocked(spawnSync).mock.calls[0]![2]).not.toHaveProperty('env');
+      expect(vi.mocked(spawnSync).mock.calls[0]![2]).not.toHaveProperty('stdio');
+    } finally {
+      await artifact.close();
+    }
+    expect(existsSync(probe.events()[0]!.directory)).toBe(true);
+  });
+  it.each(['timeout', 'exit'] as const)(
+    'retains npm logs and explicitly fails on %s',
+    async (kind) => {
+      const probe = fixture();
+      const error = Object.assign(new Error('spawnSync timed out'), { code: 'ETIMEDOUT' });
+      npmResult(kind === 'timeout' ? null : 1, kind === 'timeout' ? error : undefined);
+      await expect(createPackedFlowGuardInstall()).rejects.toMatchObject(
+        kind === 'timeout' ? { code: 'ETIMEDOUT' } : { status: 1, signal: null },
+      );
+      const { directory, phases } = probe.events()[0]!;
+      expect(phases.at(-1)).toMatchObject({
+        stage: 'bootstrap-failed',
+        failedStage: 'npm-install',
+      });
+      expect(phases.at(-2)).toMatchObject({
+        stage: 'npm-install-end',
+        npmPID: 12345,
+        status: kind === 'timeout' ? null : 1,
+      });
+      if (kind === 'timeout') expect(phases.at(-2).error.code).toBe('ETIMEDOUT');
+      expect(readFileSync(join(directory, 'npm.stdout.log'), 'utf8')).toContain(
+        'npm stdout before exit',
+      );
+      expect(readFileSync(join(directory, 'npm.stderr.log'), 'utf8')).toContain(
+        'npm stderr before exit',
+      );
+      expect(readFileSync(join(directory, 'npm-debug/fixture-debug.log'), 'utf8')).toContain(
+        'npm debug before exit',
+      );
+      expect(existsSync(phases[0].root)).toBe(false);
+    },
+  );
+  it('keeps concurrent bootstrap diagnostics disjoint without reusing the installation', async () => {
+    const probe = fixture();
+    npmResult(0);
+    const artifacts = await Promise.all([
+      createPackedFlowGuardInstall(),
+      createPackedFlowGuardInstall(),
+    ]);
+    try {
+      const records = probe.events();
+      expect(records).toHaveLength(2);
+      expect(records[0]!.directory).not.toBe(records[1]!.directory);
+      expect(records[0]!.phases[0].root).not.toBe(records[1]!.phases[0].root);
+      expect(artifacts[0].identity).toEqual(artifacts[1].identity);
+      expect(spawnSync).toHaveBeenCalledTimes(2);
+    } finally {
+      await Promise.all(artifacts.map((artifact) => artifact.close()));
     }
   });
 });

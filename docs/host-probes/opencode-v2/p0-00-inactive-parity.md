@@ -214,6 +214,62 @@ a diagnostic Windows execution preserving the same artifact, assertions and
 budgets, with bootstrap stage/child-process diagnostics and npm debug logs
 retained. Another unchanged rerun is not a substitute for those diagnostics.
 
+### Bounded bootstrap diagnostic checkpoint
+
+Only the private packed-test helper is instrumented; no product authority,
+governance code or native parity assertion changes. `spawnSync` retains the
+original synchronous, shell-free Node/npm invocation, piped stdio and 300,000 ms
+timeout, while exposing npm PID, exit status, signal and timeout/error code.
+The only added npm options are verbose logging and a per-bootstrap debug-log
+directory; the shared npm cache and dependency selection are unchanged.
+
+`FLOWGUARD_BOOTSTRAP_DIAGNOSTICS_DIR` selects a retained diagnostic directory
+outside the disposable installation. Each invocation has a distinct subdirectory
+containing `phases.jsonl`, `npm.stdout.log`, `npm.stderr.log` and `npm-debug/`.
+Tarball copy/readiness, the actual digest, npm begin/end, worker/npm PIDs,
+timestamps, elapsed time, result/error and final package identity are recorded.
+Phase records are appended synchronously. Partial npm output and debug logs are
+retained before rethrowing a timeout/nonzero exit; neither becomes a fallback
+success. Error/timeout retention and disjoint concurrent diagnostics have unit
+coverage in the existing `opencode-live-host.test.ts` suite.
+
+The existing CI matrix is temporarily pinned to the original shared package from
+run `41790845872`, SHA-256
+`1ecca9459cfdcffc39399cbbfdb057a3b5ba16ecb1a3e21e34e4fb396450723b`.
+It must not silently substitute a fresh build if this historical artifact is
+missing or expired. This is a bounded diagnostic checkpoint, not acceptance of
+the newly built head; restore current-build sourcing after diagnosis.
+
+Windows runs the existing original seven-case suite alone first (one bootstrap),
+then the unchanged joint invocation (two independent bootstraps, all 65 cases).
+The joint step runs even after a failed solo diagnostic when host setup succeeded;
+the solo failure still fails the job. No worker limit, cache isolation,
+installation reuse, timeout increase or test filtering is introduced. Both JSON
+reports and all diagnostic files are uploaded with `always()`, including failures.
+The CI-source tests enforce this ordering, shared artifact and failure semantics.
+
+Local instrumented control on macOS/Node 22.22.2/OpenCode 2.2.4 passes **7/7 solo**
+then **65/65 joint**, with no pending cases. All three bootstrap logs record the
+original digest, status 0, distinct npm PIDs and preserved npm debug files.
+The solo npm interval is about 4.13 seconds; the two joint intervals overlap and
+each take about 7.50 seconds. This confirms that the diagnostics observe
+concurrency locally, not that concurrency caused the Windows timeout.
+Supporting local verification for this test-only diagnostic change passes
+12,888 unit/integration tests (703 files, 2 skipped), 318 script tests and 547
+architecture tests; type checks, strict lint, build/documentation drift (17 tests),
+formatting, actionlint and action pinning also pass. These are not Windows
+execution evidence.
+**NOT_VERIFIED:** the diagnostic Windows solo/joint result and timeout root cause;
+run the instrumented CI matrix before choosing a correction.
+
+A solo PASS followed by a joint timeout would narrow the hypothesis, not prove
+cache contention by itself: the second run also inherits a warmed cache and
+logging changes timing. If logs establish contention, reuse or serialize the
+identical bootstrap within the test job; if a lone npm process blocks, resolve
+its concrete cause instead. No correction is selected before that evidence.
+
+### Desktop boundary
+
 **Desktop BLOCKED for local pinned acceptance:** the installed
 `/Applications/OpenCode.app` reports bundle version **2.2.5**, not target 2.2.4.
 It was neither downgraded nor relabelled as the pinned surface. A separately

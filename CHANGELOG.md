@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Instrument the packed-test npm bootstrap with phase/digest, PID, duration and
+  exit/timeout diagnostics plus retained stdout/stderr and verbose npm debug
+  logs. A bounded Windows solo-then-joint CI comparison uses the original shared
+  package and preserves all 65 parity cases, assertions and 300-second budgets.
+  It diagnoses the bootstrap failure; it does not change product behavior or
+  establish Windows acceptance.
+
 - Record same-artifact Linux/macOS installed-parity results (65 native cases
   each), while retaining both Windows bootstrap timeouts (initial attempt and
   unchanged rerun) as failed, unexecuted acceptance attempts rather than a product

@@ -87,6 +87,12 @@ Linux/macOS each pass 65/65 on `77605384`; Windows times out during bootstrap
 in both attempts, each with 65 cases unexecuted. The required CI gate fails. Local
 Desktop is version 2.2.5, so pinned 2.2.4 Desktop acceptance remains BLOCKED.
 
+The [bounded bootstrap diagnostic checkpoint](./p0-00-inactive-parity.md#bounded-bootstrap-diagnostic-checkpoint)
+retains npm logs and compares one Windows bootstrap alone against both suites
+jointly on the original package. Local instrumented controls pass 7/7 solo and
+65/65 joint on macOS; Windows diagnostics remain NOT_VERIFIED. No product fix,
+serialization, cache isolation or budget change is inferred from that control.
+
 ### P0-05 / P0-08 evidence breakdown (2026-11-03)
 
 The independent review supplied CI evidence for exact HEAD

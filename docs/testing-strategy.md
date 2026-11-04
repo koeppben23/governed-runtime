@@ -152,6 +152,16 @@ Linux, macOS and Windows. The build job packs one product tarball plus checksum
 once; every runner downloads those identical bytes through `FLOWGUARD_TARBALL`,
 installs the exact native candidate and publishes its JSON test results. This
 separates native session/provider-wire parity from package-install/doctor checks.
+For the bounded Windows bootstrap diagnosis, this matrix temporarily downloads
+the original package from run `41790845872` rather than the new build's package.
+Windows first runs the existing seven-case original suite alone, then both suites
+jointly even after a solo failure. Both arms preserve the same shared npm cache
+and 300-second budgets. Bootstrap phases, stdout/stderr and verbose npm debug logs
+are retained outside disposable installation roots and uploaded with `always()`.
+This is diagnostic evidence for the original product artifact, not new-head
+product certification. Restore current-build artifact sourcing after diagnosis;
+an expired/missing historical artifact must fail, not silently fall back. See the
+[bounded diagnostic protocol](./host-probes/opencode-v2/p0-00-inactive-parity.md#bounded-bootstrap-diagnostic-checkpoint).
 
 Coverage CI bounds competing instrumented Vitest workers to two. It still covers
 the complete unit/integration projects with the same 80% gates and 15-second test
