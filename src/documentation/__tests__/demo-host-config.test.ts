@@ -21,6 +21,8 @@ import {
   HOST_TOOL_OUTPUT_MAX_BYTES,
   writeIsolatedHostConfig,
 } from '../../../demos/lib/host-config.mjs';
+// Historical V1 config comparison only: do not retarget this experiment to V2.
+// Active demo preflight uses cli-candidate.json and is tested separately.
 import { TESTED_OPENCODE_HOST_VERSION } from '../../cli/opencode-runtime-compat.js';
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');

@@ -205,7 +205,7 @@ used by `verify-evidence-package.mjs`. Do not reuse a session or a chat export
 between flows.
 
 `run-live-matrix.mjs` executes this checklist reproducibly: it reads the
-toolchain pins from the canonical repository files (`opencode-runtime-compat.ts`
+toolchain pins from the canonical repository files (`.sdk-baselines/opencode/cli-candidate.json`
 and `.node-version`), verifies the tarball against its `checksums.sha256`
 sidecar before installing, prepares fresh workspaces, opts the repository
 config into raw auditor archives next to the isolated global grant, runs every
@@ -218,6 +218,11 @@ build identity, records recovered typed denials and successful reviewer re-arms 
 stopping on any non-recoverable block, removes the isolated raw-export grant on exit, and exits
 non-zero when any requested flow did not complete. It performs no governance
 work itself.
+
+The active preflight requires the exact V2 CLI candidate's `opencode v<version>`
+output. It does not use or rewrite historical V1 comparison pins. Passing
+`--check` proves only toolchain selection, not full ACTIVE, Desktop or R4
+acceptance; the complete installed workflow remains open.
 
 The persisted terminal phase is the outcome authority: when a transport-level
 block appears after the session already reached that phase, the flow records it

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Use `.sdk-baselines/opencode/cli-candidate.json` for active demo preflight,
+  including the exact V2 `opencode v<version>` output. Invalid/missing candidate
+  pins and other host versions fail closed without a V1 fallback. Preserve
+  historical V1 comparison pins; this is not installed ACTIVE certification.
+
 - Close the bounded P0-00 CLI/server Windows diagnosis on `2f4aa06d`: one
   checksum-verified package passes 65/65 on Linux, macOS and Windows; required
   CI passes on attempt 2. Retain the initial 182.47 ms PERF failure and the

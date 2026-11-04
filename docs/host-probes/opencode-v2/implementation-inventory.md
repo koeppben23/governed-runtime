@@ -888,12 +888,29 @@ operations from superseded aliases; deleting HYDRATE/CONTINUE/validation
 behavior merely from the label would risk the required governance parity. No
 exception allowing obsolete FlowGuard source is introduced by this audit.
 
-**Closure decision: P0-10 is not PASS.** The static audit is executed and one
+**Audit checkpoint decision: P0-10 is not PASS.** The static audit is executed and one
 redundancy is removed, but live V1 demo consumers and the test-only production
 paths above remain concrete cleanup/wiring blockers. Required acceptance
 assertions, mutation profiles, thresholds and guard behavior must remain intact.
 Do not start whole-product ACTIVE acceptance with the old V1 demo gate, or claim
 that passing architecture/unused-export checks proves complete reachability.
+
+**Active demo pin follow-up (after `167d7c57`):** the environment gate and the
+Java matrix (including its claim/risk/replan consumers) now share the current
+`.sdk-baselines/opencode/cli-candidate.json` reader and exact V2
+`opencode v<version>` check. Missing/invalid candidate files do not fall back to
+`opencode-runtime-compat.ts`. The V1 pin and the historical V1 host-config
+comparison retain their original values; neither is a V2 acceptance authority.
+This closes the active demo pin-source defect recorded above, not the complete
+live-runner/API/ACTIVE contract. The test-only paths, command reconciliation and
+final import/ownership proof remain open; P0-10 is still not PASS.
+
+Executed locally on the follow-up working tree after `167d7c57`: all four
+matrix/claim/risk/replan `--check` entrypoints pass against `opencode v2.2.4`
+and Node `22.22.2`; the environment gate passes with `--skip-provider-ping`
+and no product tarball. Its manifest records the base checkout head, not a
+committed follow-up identity. No model request, installed ACTIVE flow, Desktop
+acceptance or reviewer-integrity claim follows from those preflight checks.
 
 ### First implemented preparatory simplification (#1169)
 

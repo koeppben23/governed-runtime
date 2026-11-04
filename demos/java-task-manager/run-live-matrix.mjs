@@ -8,7 +8,7 @@
  *
  * This runner contains NO governance logic and changes no product behavior:
  * - toolchain pins are READ from the canonical repository files
- *   (`src/cli/opencode-runtime-compat.ts` and `.node-version`); no version is
+ *   (`.sdk-baselines/opencode/cli-candidate.json` and `.node-version`); no version is
  *   hardcoded here;
  * - every command runs with an explicit `--dir` and a matching `PWD`; the
  *   persisted host-session and worktree binding are verified before a flow is
@@ -83,6 +83,7 @@ import { isMainModule } from '../lib/is-main-module.mjs';
 import { HARNESS_VERSION } from '../lib/harness-version.mjs';
 import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { PLAN_GATE, classifyPlanGate } from '../lib/review-continuation.mjs';
+import { readPins, assertToolchain } from '../lib/toolchain.mjs';
 
 export {
   assertExpectedDenial,
@@ -231,39 +232,6 @@ export function parseArgs(argv) {
     if (!DEFAULT_FLOWS.includes(flow)) throw new Error(`unknown flow: ${flow}`);
   }
   return options;
-}
-
-/** Canonical toolchain pins, read from the repository authorities. */
-export function readPins() {
-  const compat = fs.readFileSync(
-    path.join(REPO, 'src', 'cli', 'opencode-runtime-compat.ts'),
-    'utf8',
-  );
-  const hostMatch = /export const TESTED_OPENCODE_HOST_VERSION = '([^']+)'/.exec(compat);
-  if (!hostMatch) {
-    throw new Error('TESTED_OPENCODE_HOST_VERSION not found in the canonical compat authority');
-  }
-  const nodePin = fs.readFileSync(path.join(REPO, '.node-version'), 'utf8').trim();
-  if (!nodePin) throw new Error('.node-version is empty');
-  return { opencode: hostMatch[1], node: nodePin };
-}
-
-export function assertToolchain(pins) {
-  const problems = [];
-  const nodeVersion = process.versions.node;
-  if (nodeVersion !== pins.node) {
-    problems.push(`node ${nodeVersion} != pinned ${pins.node} (.node-version)`);
-  }
-  const opencodeVersion = execFileSync('opencode', ['--version'], { encoding: 'utf8' }).trim();
-  if (opencodeVersion !== pins.opencode) {
-    problems.push(
-      `opencode ${opencodeVersion} != tested ${pins.opencode} (opencode-runtime-compat.ts)`,
-    );
-  }
-  if (problems.length > 0) {
-    throw new Error(`toolchain pin mismatch:\n- ${problems.join('\n- ')}`);
-  }
-  return { nodeVersion, opencodeVersion };
 }
 
 /**

@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isMainModule } from './is-main-module.mjs';
+import { readPins, assertToolchain } from './toolchain.mjs';
 
 function parseArgs(argv) {
   const options = { canaryInstall: false, providerPing: true };
@@ -106,15 +107,10 @@ function main() {
   };
 
   const packageJson = JSON.parse(fs.readFileSync(path.join(options.repo, 'package.json'), 'utf8'));
-  const nodePin = fs.readFileSync(path.join(options.repo, '.node-version'), 'utf8').trim();
-  check('node pin', process.versions.node === nodePin, `observed ${process.versions.node}`);
-  const compat = fs.readFileSync(
-    path.join(options.repo, 'src', 'cli', 'opencode-runtime-compat.ts'),
-    'utf8',
-  );
-  const hostPin = /TESTED_OPENCODE_HOST_VERSION = '([^']+)'/.exec(compat)?.[1];
-  const opencodeVersion = execFileSync('opencode', ['--version'], { encoding: 'utf8' }).trim();
-  check('opencode pin', opencodeVersion === hostPin, `observed ${opencodeVersion}`);
+  const pins = readPins(options.repo);
+  const { nodeVersion, opencodeVersion } = assertToolchain(pins);
+  check('node pin', true, `observed ${nodeVersion}`);
+  check('opencode candidate pin', true, `observed ${opencodeVersion}; not ACTIVE certification`);
   const npmVersion = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim();
   check(
     'npm compatibility',

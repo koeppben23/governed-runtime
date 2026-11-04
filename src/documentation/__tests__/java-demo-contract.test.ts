@@ -25,7 +25,6 @@ import {
   assertExpectedDenial,
   assertSessionBinding,
   matrixExitCode,
-  readPins,
   runFlows,
   sha256,
   taskChildSessionIds,
@@ -34,6 +33,7 @@ import {
   verifyChecksumSidecar,
   withRawExportGrant,
 } from '../../../demos/java-task-manager/run-live-matrix.mjs';
+import { readPins } from '../../../demos/lib/toolchain.mjs';
 import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
 import { DemoNotVerifiedError } from '../../../demos/lib/results.mjs';
 
@@ -104,11 +104,17 @@ describe('Java Task Manager demo contract', () => {
     const readme = await fs.readFile(README_PATH, 'utf-8');
 
     // Pins come from the canonical authorities; no semver literal is hardcoded.
-    expect(runner).toContain('opencode-runtime-compat.ts');
+    expect(runner).toContain('.sdk-baselines/opencode/cli-candidate.json');
+    expect(runner).not.toContain('opencode-runtime-compat.ts');
     expect(runner).toContain('.node-version');
     expect(runner).not.toMatch(/\b\d+\.\d+\.\d+\b/);
     expect(readPins()).toEqual({
-      opencode: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+      opencode: JSON.parse(
+        await fs.readFile(
+          path.join(REPO_ROOT, '.sdk-baselines/opencode/cli-candidate.json'),
+          'utf8',
+        ),
+      ).version,
       node: expect.stringMatching(/^\d+\.\d+\.\d+$/),
     });
 
