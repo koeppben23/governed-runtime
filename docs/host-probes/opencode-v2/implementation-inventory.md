@@ -862,8 +862,10 @@ zero unresolved relative imports; package/plugin runtime closures remain 689/601
 and the combined type/runtime closure is 716. Only deliberate
 `shared/product-inventory.ts` remains outside the combined shipped graph. See the
 [completed rail retirement](./p0-10-ownership-decisions.md#completed-rail-retirement-78-cases-dispositioned).
-P0-10 executable cleanup is complete; default mutation, ISO publication
-exclusivity, installed acceptance and R4 remain open.
+P0-10 implementation cleanup and its required evidence pass (Hosted CI 37/37,
+default mutation 81.10, import/package proof). ISO publication exclusivity
+remains a separate open diagnosis; installed acceptance and R4 remain separate
+V2 blockers.
 
 Scope: shipped package exports/binaries, native plugin composition and adapter,
 activation versus workflow authority, reviewer dispatch/capture/evidence owners,
