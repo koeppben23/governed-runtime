@@ -217,10 +217,9 @@ async function runStart(
   ].join('\n\n');
   await presentCommittedStart(
     () =>
-      ctx.session.prompt({
-        sessionID: input.sessionID,
-        text,
-      }),
+      autonomous === undefined
+        ? ctx.session.prompt({ sessionID: input.sessionID, text })
+        : ctx.session.synthetic({ sessionID: input.sessionID, text, resume: false }),
     'status report',
     input.sessionID,
   );

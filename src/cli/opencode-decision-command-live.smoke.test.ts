@@ -259,7 +259,12 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
         name: command,
         text: 'Accept the independently reviewed README plan with the stated residual documentation risk.',
       });
-      expect(p.requests).toHaveLength(requestsBeforeApproval);
+      await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
+      expect(
+        p.requests
+          .slice(requestsBeforeApproval)
+          .some((request) => JSON.stringify(request.body.messages).includes('Decision recorded')),
+      ).toBe(true);
       expect(await receipts(p, root.id)).toMatchObject([
         {
           detail: {
@@ -272,17 +277,23 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
     },
     300_000,
   );
-  it('approves without a model turn, audits the actual source and keeps one receipt across repeat and SIGKILL/reload', async () => {
+  it('approves with a visible decision turn, audits the actual source and keeps one receipt across repeat and SIGKILL/reload', async () => {
     const p = await open();
     const root = await p.session();
     await activate(p, root.id);
     await prepareComponentDecisionGate(await workflow(p, root.id));
+    const beforeDecision = p.requests.length;
     await p.client.session.command({
       sessionID: root.id,
       name: 'approve',
       text: 'Reviewed current ADR.',
     });
-    expect(p.requests).toEqual([]);
+    await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
+    expect(
+      p.requests
+        .slice(beforeDecision)
+        .some((request) => JSON.stringify(request.body.messages).includes('Decision recorded')),
+    ).toBe(true);
     expect((await workflow(p, root.id)).state.phase).toBe('ARCH_COMPLETE');
     const events = await receipts(p, root.id);
     expect(events).toMatchObject([
