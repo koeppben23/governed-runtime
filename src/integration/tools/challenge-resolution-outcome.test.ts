@@ -2,6 +2,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeState } from '../../fixtures.js';
+import type { SessionState } from '../../state/schema.js';
 import { readState, writeState } from '../../adapters/persistence.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
 import {
@@ -11,6 +12,17 @@ import {
   parseToolResult,
 } from '../test-helpers.js';
 import { TEST_EXECUTION_OBSERVATION } from '../../state/evidence-test-constants.js';
+import { ensureReviewAssurance } from '../../state/review-dispatch.js';
+import {
+  appendObligationWithAttempt,
+  createReviewObligation,
+  freezeReviewMaterial,
+} from '../review/obligations/assurance.js';
+import {
+  abandonAndBlockByHostCall,
+  persistAuthorizedReviewDispatch,
+  type DispatchLedgerWriteDeps,
+} from '../review/dispatch/durable-dispatch.js';
 import { resolve_implementation_challenge } from './challenge/challenge-resolution.js';
 
 // #747 recording precondition: only a FAILED falsification (fail/not_verified)
@@ -28,7 +40,9 @@ const DIGEST_2 = 'impl-digest-2';
 const ATTEMPT_ID = '33333333-3333-4333-8333-333333333333';
 const ATTEMPT_ID_2 = '55555555-5555-4555-8555-555555555555';
 const FAIL_CHALLENGE = '11111111-1111-4111-8111-111111111111';
+const FAIL_CHALLENGE_2 = '66666666-6666-4666-8666-666666666666';
 const PASS_CHALLENGE = '22222222-2222-4222-8222-222222222222';
+const NOW = '2026-07-26T00:00:00.000Z';
 
 function challenge(challengeId: string, outcome: 'pass' | 'fail') {
   return {
@@ -131,6 +145,56 @@ async function seedState(options: SeedOptions = {}) {
     }),
   );
   return { context, sessDir };
+}
+
+async function blockImplementationReview(sessDir: string) {
+  const base = await readState(sessDir);
+  if (!base) throw new Error('missing seeded state');
+  const obligation = createReviewObligation({
+    policySnapshot: {
+      challengePolicy: {
+        version: 'challenge-policy.v1',
+        counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+      },
+      maxReviewerAttempts: 1,
+    },
+    obligationType: 'implement',
+    reviewCycle: 1,
+    iteration: 1,
+    planVersion: 1,
+    now: NOW,
+    subjectDigest: DIGEST,
+    reviewMaterial: freezeReviewMaterial('frozen review material', DIGEST),
+    reviewSubjectScope: { kind: 'implementation', implementationDigest: DIGEST },
+  });
+  const minted = appendObligationWithAttempt(ensureReviewAssurance(undefined), obligation, NOW);
+  let state: SessionState = { ...base, reviewAssurance: minted.assurance };
+  const deps: DispatchLedgerWriteDeps = {
+    updateReviewAssurance: async (_dir, update) => {
+      state = update(state, NOW);
+    },
+  };
+  const hostCallId = `call-${crypto.randomUUID()}`;
+  await persistAuthorizedReviewDispatch(deps, sessDir, {
+    attemptId: minted.attemptId,
+    obligationId: obligation.obligationId,
+    hostCallId,
+    canonicalPromptDigest: 'b'.repeat(64),
+    authorizedAt: NOW,
+  });
+  await abandonAndBlockByHostCall(
+    deps,
+    sessDir,
+    hostCallId,
+    'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED',
+    {
+      childSessionId: 'ses_reviewer_blocked',
+      obligationId: obligation.obligationId,
+      attemptId: minted.attemptId,
+    },
+  );
+  await writeState(sessDir, state);
+  return { obligationId: obligation.obligationId, attemptId: minted.attemptId };
 }
 
 describe('resolve_implementation_challenge — outcome precondition (#747)', () => {
@@ -265,5 +329,63 @@ describe('resolve_implementation_challenge — outcome precondition (#747)', () 
       expect(result.error).toBe(true);
       expect(result.code).toBe('IMPLEMENTATION_CHALLENGE_NOT_FAILED');
     });
+  });
+
+  it('reopens the blocked review with one fresh re-arm after the last prior challenge is resolved', async () => {
+    const { context, sessDir } = await seedState();
+    const blocked = await blockImplementationReview(sessDir);
+    const result = parseToolResult(
+      await resolve_implementation_challenge.execute(
+        { challengeId: FAIL_CHALLENGE, validationAttemptIds: [ATTEMPT_ID] },
+        context,
+      ),
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.reviewAuthorityRestored).toBe(true);
+    const state = await readState(sessDir);
+    expect(state?.reviewAssurance?.capacityLock).toBeNull();
+    const obligation = state?.reviewAssurance?.obligations.find(
+      (item) => item.obligationId === blocked.obligationId,
+    );
+    expect(obligation).toMatchObject({ status: 'pending', blockedCode: null });
+    const rearmed = state?.reviewAssurance?.attempts.filter(
+      (item) => item.obligationId === blocked.obligationId && item.origin.kind === 'dispatch_rearm',
+    );
+    expect(rearmed).toHaveLength(1);
+    expect(rearmed?.[0]).toMatchObject({
+      status: 'created',
+      origin: { kind: 'dispatch_rearm', predecessorAttemptId: blocked.attemptId },
+    });
+  });
+
+  it('keeps the block when another prior challenge still has no author resolution', async () => {
+    const { context, sessDir } = await seedState({
+      findingsList: [
+        reviewFindings({
+          challenges: [challenge(FAIL_CHALLENGE, 'fail'), challenge(FAIL_CHALLENGE_2, 'fail')],
+        }),
+      ],
+    });
+    const blocked = await blockImplementationReview(sessDir);
+    const result = parseToolResult(
+      await resolve_implementation_challenge.execute(
+        { challengeId: FAIL_CHALLENGE, validationAttemptIds: [ATTEMPT_ID] },
+        context,
+      ),
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.reviewAuthorityRestored).toBe(false);
+    const state = await readState(sessDir);
+    expect(state?.reviewAssurance?.capacityLock?.code).toBe('SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED');
+    const obligation = state?.reviewAssurance?.obligations.find(
+      (item) => item.obligationId === blocked.obligationId,
+    );
+    expect(obligation?.status).toBe('blocked');
+    expect(
+      state?.reviewAssurance?.attempts.filter(
+        (item) =>
+          item.obligationId === blocked.obligationId && item.origin.kind === 'dispatch_rearm',
+      ),
+    ).toHaveLength(0);
   });
 });

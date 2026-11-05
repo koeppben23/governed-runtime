@@ -20,6 +20,8 @@ import {
   consumeReviewObligation,
   findLatestObligation,
 } from '../../review/obligations/assurance.js';
+import { updateObligation } from '../../review/obligations/obligation-state.js';
+import { buildInterruptedDispatchRearm } from '../../review/dispatch/durable-dispatch.js';
 import { ensureReviewAssurance, isOpenReviewObligation } from '../../../state/review-dispatch.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
@@ -61,6 +63,52 @@ export function computeTargetedResolutionChallengeIds(state: SessionState): read
  */
 export function computeUnaddressedPriorFailIds(state: SessionState): readonly string[] {
   return resolutionRequirements(state).unaddressedPriorFailIds;
+}
+
+/**
+ * Reopen an implementation review that was blocked because the reviewer
+ * accepted while a prior failing challenge had no author resolution.
+ *
+ * The block is recoverable by definition: the author records the missing
+ * resolution, then a fresh reviewer must independently close the challenge.
+ * Reopening mints exactly one durable re-arm attempt for the blocked obligation
+ * and clears the capacity lock, so the next dispatch is authorized in the same
+ * turn. Any other capacity code, an ambiguous spent lineage, or still-missing
+ * resolutions leaves the blocked state untouched.
+ */
+export function reopenReviewAfterAuthorResolution(state: SessionState, now: string): SessionState {
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const lock = assurance.capacityLock;
+  if (!lock || lock.code !== 'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED') return state;
+  const obligation = assurance.obligations.find((item) => item.obligationId === lock.obligationId);
+  if (!obligation || obligation.obligationType !== 'implement' || obligation.status !== 'blocked')
+    return state;
+  if (computeUnaddressedPriorFailIds(state).length > 0) return state;
+  const spent = assurance.attempts.filter(
+    (attempt) =>
+      attempt.obligationId === obligation.obligationId &&
+      attempt.status === 'stale' &&
+      assurance.dispatches.some(
+        (dispatch) =>
+          dispatch.attemptId === attempt.attemptId &&
+          dispatch.obligationId === obligation.obligationId &&
+          dispatch.dispatchStatus === 'outcome_unknown',
+      ),
+  );
+  if (spent.length !== 1) return state;
+  const spentAttempt = spent[0];
+  if (!spentAttempt) return state;
+  const pending = updateObligation(state, obligation.obligationId, (item) => ({
+    ...item,
+    status: 'pending',
+    blockedCode: null,
+  }));
+  const rearm = buildInterruptedDispatchRearm(pending.reviewAssurance, spentAttempt, now);
+  if (rearm.kind !== 'ok') return state;
+  return {
+    ...pending,
+    reviewAssurance: { ...ensureReviewAssurance(rearm.assurance), capacityLock: null },
+  };
 }
 
 function resolutionRequirements(state: SessionState) {

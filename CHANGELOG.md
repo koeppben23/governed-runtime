@@ -679,6 +679,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore implementation-review authority after the author records the last
+  missing resolution for a prior failing challenge. A reviewer acceptance that
+  arrived before that resolution is correctly rejected with
+  `SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED`, but the rejection previously left a
+  terminal capacity lock that no later command could clear. Recording the
+  resolution now mints one durable re-arm attempt and clears the lock only when
+  no other prior challenge remains unaddressed, so the fresh reviewer can
+  independently close the challenge without `/recover-capacity` or a manual
+  state edit.
+
 - Keep the exact bound `changes_requested` implementation review readable
   through `flowguard_status({ reviewFeedback: true })` while the workflow is
   back in `IMPLEMENTATION` for rework. The consumed review is projected only

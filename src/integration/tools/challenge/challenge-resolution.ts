@@ -6,7 +6,10 @@ import type { ChallengeResolution } from '../../../state/evidence.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
-import { isOpenImplementationChallenge } from '../implementation/implement-review-state.js';
+import {
+  isOpenImplementationChallenge,
+  reopenReviewAfterAuthorResolution,
+} from '../implementation/implement-review-state.js';
 import { formatBlocked } from '../../blocked-result.js';
 import {
   enrichWithWorkflowDirective,
@@ -123,10 +126,11 @@ export const resolve_implementation_challenge: ToolDefinition = {
           resolvedAt: ctx.now(),
           ...(author ? { author } : {}),
         };
-        const nextState = {
+        const resolvedState = {
           ...state,
           challengeResolutions: [...state.challengeResolutions, resolution],
         };
+        const nextState = reopenReviewAfterAuthorResolution(resolvedState, ctx.now());
         await writeStateWithArtifacts(sessDir, nextState);
         return JSON.stringify(
           enrichWithWorkflowDirective(
@@ -135,6 +139,7 @@ export const resolve_implementation_challenge: ToolDefinition = {
               status:
                 'Implementation challenge resolution recorded as advisory NOT_VERIFIED evidence.',
               challengeResolution: resolution,
+              reviewAuthorityRestored: nextState !== resolvedState,
               advisory:
                 'NOT_VERIFIED: this evidence does not alter implementation-review acceptance.',
             },
