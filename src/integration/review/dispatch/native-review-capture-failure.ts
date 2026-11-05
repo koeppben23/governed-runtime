@@ -6,7 +6,7 @@ import {
   nativeReviewDispatchLineage,
   type NativeReviewStateAuthority,
 } from './native-review-dispatch.js';
-import { strictBlockedOutput } from '../../blocked-result.js';
+import { buildEnforcementError, strictBlockedOutput } from '../../blocked-result.js';
 import type { NativeCaptureRuntime, NativeCaptureOutcome } from './native-review-capture.js';
 import { abandonAndBlockByHostCall, abandonAndRearmByHostCall } from './durable-dispatch.js';
 import {
@@ -14,6 +14,124 @@ import {
   buildReviewerCaptureRetryOutput,
   classifyReviewerCaptureFailure,
 } from './capture-retry.js';
+
+type ReviewContext = {
+  readonly session: {
+    context(input: { readonly sessionID: string }): Promise<readonly unknown[]>;
+  };
+};
+
+type CloseDeps = Parameters<typeof abandonAndBlockByHostCall>[0];
+
+function row(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function bounded(value: string): string {
+  return value.length > 500 ? `${value.slice(0, 500)}…` : value;
+}
+
+type ChildFailureCause = {
+  readonly code: string;
+  readonly message: string;
+};
+
+/** Read the child's terminal FlowGuard error without treating it as evidence. */
+async function childFailureCause(
+  ctx: ReviewContext,
+  childSessionId: string,
+): Promise<ChildFailureCause | null> {
+  try {
+    const history = await ctx.session.context({ sessionID: childSessionId });
+    const last = row(history.at(-1));
+    const error = row(last.error);
+    const raw = typeof error.message === 'string' ? error.message : '';
+    const prefix = '[FlowGuard] ';
+    if (raw.startsWith(prefix)) {
+      try {
+        const payload = row(JSON.parse(raw.slice(prefix.length)));
+        if (typeof payload.code === 'string')
+          return {
+            code: payload.code,
+            message: bounded(typeof payload.message === 'string' ? payload.message : raw),
+          };
+      } catch {
+        // Fall through to the host error type/message.
+      }
+    }
+    if (typeof error.type === 'string')
+      return { code: error.type, message: bounded(raw || error.type) };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function childCauseDetail(
+  cause: ChildFailureCause | null,
+  childSessionId: string,
+): Record<string, string> {
+  return {
+    childSessionId,
+    transportCode: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    ...(cause === null
+      ? { causeCode: 'UNAVAILABLE' }
+      : { causeCode: cause.code, causeMessage: cause.message }),
+  };
+}
+
+function closeLineage(
+  closed: Awaited<ReturnType<typeof abandonAndBlockByHostCall>> | null,
+): boolean {
+  return closed?.kind === 'blocked' || (closed?.kind === 'terminal' && closed.status === 'blocked');
+}
+
+/**
+ * The host concluded the subagent with an error, so no completed child exists.
+ * Durably close the exact authorized dispatch first, then preserve the child's
+ * terminal cause in the parent error. A terminal cause (integrity/provenance)
+ * is never downgraded to a retryable transport failure; an unknown transport
+ * outcome keeps the canonical retry_transport recovery only when the durable
+ * lineage was actually closed.
+ */
+export async function closeUnknownOutcomeCapture(input: {
+  readonly ctx: ReviewContext;
+  readonly childSessionId: string;
+  readonly nativeCallId: string;
+  readonly resolveDeps: () => Promise<{ readonly deps: CloseDeps; readonly sessDir: string }>;
+}): Promise<never> {
+  const cause = await childFailureCause(input.ctx, input.childSessionId);
+  const terminal = cause !== null && !classifyReviewerCaptureFailure(cause.code).retryable;
+  const closureCode =
+    terminal && cause !== null ? cause.code : 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
+  let closed: Awaited<ReturnType<typeof abandonAndBlockByHostCall>> | null = null;
+  try {
+    const { deps, sessDir } = await input.resolveDeps();
+    closed = await abandonAndBlockByHostCall(deps, sessDir, input.nativeCallId, closureCode, {
+      childSessionId: input.childSessionId,
+    });
+  } catch {
+    // The parent still fails closed; no retry is offered without a proven closure.
+  }
+  const detail = childCauseDetail(cause, input.childSessionId);
+  if (!closeLineage(closed)) {
+    throw buildEnforcementError(
+      'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      'The reviewer child failed before exact completion and no unique unfinished dispatch lineage could be closed.',
+      { ...detail, reason: 'The reviewer outcome could not be durably closed.' },
+    );
+  }
+  if (terminal && cause !== null) {
+    throw buildEnforcementError(cause.code, cause.message, detail);
+  }
+  throw buildEnforcementError(
+    'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    'The native reviewer completion did not expose an exact completed child; the child terminal cause is retained in detail.',
+    detail,
+  );
+}
 
 /** Terminal, tool-contaminated capture: reject the attempt and block atomically. */
 async function rejectNativeReviewCapture(input: {

@@ -20,6 +20,7 @@ import { plan, observe_repository } from './tools/index.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import { mintObservationCapability } from './review/obligations/attempt-lifecycle.js';
 import { deriveRepositoryRevisionProvenance } from '../state/evidence-review-authority.js';
+import { unknownOutcomeTarget } from './review/dispatch/native-review-settlement.js';
 import * as observationReplay from './review/observations/observation-replay.js';
 
 const model = { providerID: 'component', id: 'review', variant: 'selected' };
@@ -231,7 +232,10 @@ async function fixture(observation = false) {
   const event = {
     ...call,
     status: 'completed',
-    result: { content: 'raw native result', metadata: { sessionID: 'child' } },
+    result: {
+      content: 'raw native result',
+      metadata: { sessionID: 'child' } as Record<string, unknown>,
+    },
   };
   return {
     ws,
@@ -401,6 +405,83 @@ describe('native capture composition with durable evidence', () => {
         operation.kind === 'semantic' && operation.semantic.event === 'review:obligation_blocked',
     );
     expect(closureAudits).toHaveLength(1);
+  });
+
+  it('preserves a terminal child integrity cause and does not offer a retry', async () => {
+    const h = await fixture();
+    h.event.status = 'error';
+    h.event.result = {
+      content: 'raw native result',
+      metadata: { sessionID: 'child', status: 'running' },
+    };
+    h.setHistory([
+      { type: 'user', id: 'msg_user', text: 'review', files: [] },
+      assistant('msg_failed'),
+      {
+        type: 'idle',
+        outcome: 'failed',
+        error: {
+          type: 'unknown',
+          message:
+            '[FlowGuard] {"error":true,"code":"REVIEWER_COMPLETION_UNVERIFIABLE","message":"A reviewer model-input tool result differs from the stored host tool history. callId=call tool=read","detail":{},"recovery":["Report the blocker"]}',
+        },
+      },
+    ]);
+    const failure = await h.reviewer.capture(h.root, h.event).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain('REVIEWER_COMPLETION_UNVERIFIABLE');
+    expect((failure as Error).message).toContain('"causeCode":"REVIEWER_COMPLETION_UNVERIFIABLE"');
+    expect((failure as Error).message).toContain(
+      '"transportCode":"REVIEWER_EXECUTION_OUTCOME_UNKNOWN"',
+    );
+    const state = (await readState(h.seeded.sessDir))!;
+    const assurance = state.reviewAssurance!;
+    expect(assurance.obligations[0]).toMatchObject({
+      status: 'blocked',
+      blockedCode: 'REVIEWER_COMPLETION_UNVERIFIABLE',
+    });
+    expect(assurance.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
+    expect(assurance.attempts[0]!.status).toBe('stale');
+    expect(assurance.capacityLock?.code).toBe('REVIEWER_COMPLETION_UNVERIFIABLE');
+    expect(unknownOutcomeTarget(state, 'plan')).toBeNull();
+    expect(assurance.invocations).toEqual([]);
+  });
+
+  it('keeps retry_transport valid only for a non-terminal child cause', async () => {
+    const h = await fixture();
+    h.event.status = 'error';
+    h.event.result = {
+      content: 'raw native result',
+      metadata: { sessionID: 'child', status: 'running' },
+    };
+    h.setHistory([
+      { type: 'user', id: 'msg_user', text: 'review', files: [] },
+      assistant('msg_failed'),
+      {
+        type: 'idle',
+        outcome: 'failed',
+        error: {
+          type: 'unknown',
+          message:
+            '[FlowGuard] {"error":true,"code":"REVIEW_EVIDENCE_NOT_OBSERVED","message":"No observation was recorded.","detail":{},"recovery":["Retry"]}',
+        },
+      },
+    ]);
+    const failure = await h.reviewer.capture(h.root, h.event).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    expect((failure as Error).message).toContain('"causeCode":"REVIEW_EVIDENCE_NOT_OBSERVED"');
+    const state = (await readState(h.seeded.sessDir))!;
+    const assurance = state.reviewAssurance!;
+    expect(assurance.obligations[0]).toMatchObject({
+      status: 'blocked',
+      blockedCode: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    expect(assurance.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
+    expect(assurance.attempts[0]!.status).toBe('stale');
+    expect(assurance.capacityLock?.code).toBe('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    expect(unknownOutcomeTarget(state, 'plan')).not.toBeNull();
+    expect(assurance.invocations).toEqual([]);
   });
 
   it('serializes concurrent capture completions exactly once', async () => {

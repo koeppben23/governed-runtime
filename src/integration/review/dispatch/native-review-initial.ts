@@ -307,10 +307,48 @@ function modelToolResult(tool: Row): unknown {
     : { type: 'content', value: state.content };
 }
 
+function shortDigest(value: unknown): string {
+  try {
+    return hashText(canonicalJsonStringify(value)).slice(0, 16);
+  } catch {
+    return 'unserializable';
+  }
+}
+
+/** Bounded structural description; never includes tool content. */
+function shapeOf(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return `array(${value.length})`;
+  if (typeof value === 'object') {
+    const keys = Object.keys(value).sort().slice(0, 8);
+    return `object(${keys.join(',')})`;
+  }
+  return typeof value;
+}
+
+function mismatchDiagnostic(part: Row, expected: unknown): string {
+  const id = typeof part.id === 'string' ? part.id : '<missing>';
+  const name = typeof part.name === 'string' ? part.name : '<missing>';
+  const observed = part.result;
+  const expectedPart =
+    expected === undefined
+      ? 'stored=missing'
+      : `expectedDigest=${shortDigest(expected)} expectedShape=${shapeOf(expected)}`;
+  return [
+    'A reviewer model-input tool result differs from the stored host tool history.',
+    `callId=${id}`,
+    `tool=${name}`,
+    `observedDigest=${shortDigest(observed)}`,
+    `observedShape=${shapeOf(observed)}`,
+    expectedPart,
+  ].join(' ');
+}
+
 /**
  * Compare every tool result offered to the reviewer model with the stored host
- * history. Returns the violation, or null when each result is exactly the
- * host-derived projection of its stored native tool part.
+ * history. Returns the violation with bounded call/shape/digest diagnostics, or
+ * null when each result is exactly the host-derived projection of its stored
+ * native tool part.
  */
 export function toolResultMismatch(
   messages: readonly unknown[],
@@ -324,7 +362,7 @@ export function toolResultMismatch(
     if (part.type !== 'tool-result') continue;
     const expected = typeof part.id === 'string' ? stored.get(part.id) : undefined;
     if (expected === undefined || !sameValue(part.result, expected))
-      return 'A reviewer model-input tool result differs from the stored host tool history.';
+      return mismatchDiagnostic(part, expected);
   }
   return null;
 }

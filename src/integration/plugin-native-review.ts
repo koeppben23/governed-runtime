@@ -22,6 +22,7 @@ import {
 import {
   blockedCaptureOutput,
   closeNativeReviewerCapture,
+  closeUnknownOutcomeCapture,
 } from './review/dispatch/native-review-capture-failure.js';
 import {
   NativeReviewInitialController,
@@ -69,6 +70,50 @@ function metadataFor(event: NativeReviewCompletion): Record<string, unknown> {
 
 function deny(reason: string): never {
   throw buildEnforcementError('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', reason);
+}
+
+function isUnknownOutcomeError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as Error & { code?: unknown }).code === 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN'
+  );
+}
+
+async function resolveCaptureTarget(input: {
+  readonly ctx: Plugin.Context;
+  readonly runtimeFor: RuntimeFor;
+  readonly scope: ActiveGovernanceScope;
+  readonly event: NativeReviewCompletion;
+}): Promise<Awaited<ReturnType<typeof resolveObservedCaptureTarget>>> {
+  try {
+    return await resolveObservedCaptureTarget(input.runtimeFor, input.scope, input.event);
+  } catch (error) {
+    // Preserve the successful-path ordering exactly; the additional identity
+    // reads happen only on the failed-child path.
+    if (input.event.status === 'completed' || !isUnknownOutcomeError(error)) throw error;
+    const metadata = metadataFor(input.event);
+    const childSessionId =
+      typeof metadata.sessionID === 'string' && metadata.sessionID.length > 0
+        ? metadata.sessionID
+        : undefined;
+    let nativeCallId: string | undefined;
+    try {
+      nativeCallId = encodeHostCallId(input.event.sessionID, input.event.messageID, input.event.id);
+    } catch {
+      nativeCallId = undefined;
+    }
+    if (childSessionId === undefined || nativeCallId === undefined) throw error;
+    await closeUnknownOutcomeCapture({
+      ctx: input.ctx,
+      childSessionId,
+      nativeCallId,
+      resolveDeps: async () => {
+        const resolved = await stateFor(input.runtimeFor, input.scope);
+        return { deps: resolved.runtime.orchestratorDeps, sessDir: resolved.sessDir };
+      },
+    });
+    throw error;
+  }
 }
 
 type RuntimeFor = (
@@ -254,8 +299,12 @@ async function runNativeReviewerCapture(input: {
     setCaptureContent(event, preBind, metadataFor(event));
     return;
   }
-  const { resolved, metadata, childSessionId, nativeCallId, lineage } =
-    await resolveObservedCaptureTarget(runtimeFor, scope, event);
+  const { resolved, metadata, childSessionId, nativeCallId, lineage } = await resolveCaptureTarget({
+    ctx,
+    runtimeFor,
+    scope,
+    event,
+  });
   const blocked = (code: string, reason: string): void =>
     setCaptureContent(event, blockedCaptureOutput(code, reason), metadata);
   const outcome = await executeNativeReviewCapture({

@@ -648,6 +648,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve the reviewer child's terminal failure code in the parent capture
+  error and durably close the exact authorized dispatch before returning it.
+  Terminal causes such as `REVIEWER_COMPLETION_UNVERIFIABLE` remain terminal and
+  never offer `retry_transport`; non-terminal unknown outcomes retain that
+  recovery only after the dispatch, attempt and capacity lineage are proven.
+  Add bounded call-ID, tool, shape and digest diagnostics to the native
+  tool-result integrity mismatch without logging content or weakening the
+  comparison.
+
 - Run marked unit PERF contracts in a dedicated single-worker CI phase and
   exclude them from the parallel unit phase. This preserves every test and the
   unchanged budgets while preventing cross-file CPU contention from deciding a

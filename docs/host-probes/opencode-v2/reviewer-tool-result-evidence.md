@@ -140,6 +140,57 @@ installed Desktop/CLI acceptance, and full regression/coverage/default mutation
 reruns (`npm test`, `npm run test:coverage:ci`, `npm run mutation`). The six
 unchanged diagnostics do not substitute for those checks.
 
+## Real Java workflow observation (2026-11-05, OpenCode 2.2.5)
+
+A real Desktop workflow (`ses_e5474d7e2ffdq5xKh6vzeCt3FG`) reached PLAN and
+delegated the reviewer child `ses_e54712495ffeJDoA48kWEn4aDf`. The local host
+database retains the complete child history; the parent export alone did not.
+The child ran six assistant steps and 31 tool calls. The only non-completed
+result was the final `read`:
+
+```text
+call_03_Vy6mwEGD2kI2NeKt2D447586 read
+path: .../src/test/resources
+error: { type: "tool.execution", message: "File not found: .../src/test/resources" }
+```
+
+Earlier context checks passed while all prior tools were completed. The child
+then failed with `REVIEWER_COMPLETION_UNVERIFIABLE`; the parent `subagent` result
+only exposed `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` ("did not expose an exact
+completed child") with `metadata.sessionID` and `status: running`. The parent
+cause was lost, and the artifacts do not contain the persisted
+`session-state.json`, so the dispatch/attempt/capacity lineage and the offered
+`retry_transport` recovery could not be confirmed from the supplied files.
+
+The child session reports host version **2.2.5**, not the pinned 2.2.4 used by
+the earlier R4 probes. The 2.2.5 `to-llm-message.ts` error projection is
+`{ error: tool.state.error, content: tool.state.content ?? [] }` with
+`resultType: "error"`, which is the shape FlowGuard's comparison expects. The
+actual model-input representation at the failing hook is not persisted in the
+supplied artifacts, so a host/provider transformation versus a pre-observed
+mutation cannot yet be distinguished. The failed `read` result is the bounded
+focus for the next isolated reproduction; no assertion is relaxed.
+
+Bounded corrections in this change:
+
+- `toolResultMismatch` now reports the call ID, tool name, observed/expected
+  structural shapes and short digests; it never logs tool content and retains
+  the exact rejection decision.
+- An errored `subagent` completion with a known child now reads the child's
+  terminal error, durably closes the exact authorized dispatch/attempt, and
+  preserves the child cause in the parent error detail. A terminal child cause
+  (including `REVIEWER_COMPLETION_UNVERIFIABLE`) blocks with that cause and does
+  **not** offer `retry_transport`; a non-terminal unknown outcome offers it only
+  after the durable lineage is proven.
+- Component tests cover both the terminal and non-terminal paths, including
+  dispatch `outcome_unknown`, stale attempt, capacity lock, parent cause detail
+  and the `unknownOutcomeTarget` recovery predicate.
+
+Exact root cause of the 2.2.5 model-input deviation remains **NOT_VERIFIED**
+until an isolated 2.2.5 reviewer run with a failed read reaches the instrumented
+comparison. No full Java workflow should be rerun before that. P1 `/start`
+selection and help metadata remain separate open findings.
+
 ## Earlier bounded correction and counterexamples
 
 The dated sections below retain earlier observations and check results. They are

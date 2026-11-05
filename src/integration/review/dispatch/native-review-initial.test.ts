@@ -318,18 +318,27 @@ describe('R4 tool-result integrity', () => {
       { type: 'text', value: 'R4_REPLACED' },
       { type: 'content', value: single },
       { type: 'text', value: 'body', extra: true },
-    ])
-      expect(toolResultMismatch(message(forged), stored(single))).toContain('differs');
-    expect(
-      toolResultMismatch(
-        [
-          {
-            content: [{ type: 'tool-result', id: 'unknown', result: { type: 'text', value: 'x' } }],
-          },
-        ],
-        stored(single),
-      ),
-    ).toContain('differs');
+    ]) {
+      const detail = toolResultMismatch(message(forged), stored(single));
+      expect(detail).toContain('differs');
+      expect(detail).toContain('callId=tool-1');
+      expect(detail).toContain('tool=read');
+      expect(detail).toContain('observedDigest=');
+      expect(detail).toContain('expectedDigest=');
+      expect(detail).toContain('observedShape=');
+      expect(detail).toContain('expectedShape=');
+    }
+    const missing = toolResultMismatch(
+      [
+        {
+          content: [{ type: 'tool-result', id: 'unknown', result: { type: 'text', value: 'x' } }],
+        },
+      ],
+      stored(single),
+    );
+    expect(missing).toContain('differs');
+    expect(missing).toContain('callId=unknown');
+    expect(missing).toContain('stored=missing');
     expect(toolResultMismatch([{ content: [{ type: 'text', text: 'no tools' }] }], [])).toBeNull();
   });
 });
