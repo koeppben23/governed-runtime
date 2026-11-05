@@ -357,6 +357,7 @@ describe('native decision commands', () => {
         text: expect.stringContaining(
           '**Decision recorded:** approved; current phase `ARCH_COMPLETE`.',
         ),
+        delivery: 'queue',
         resume: false,
       });
       const calls = f.synthetic.mock.calls as unknown as Array<[{ text: string }]>;

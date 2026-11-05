@@ -18,8 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Present `/approve` and the other decision commands as a readable confirmation
   card with the recorded verdict and current phase instead of the raw decision
-  envelope. A successful plan approval that auto-validates into `IMPLEMENTATION`
-  is now visibly recorded; a repeated approval remains a non-mutating
+  envelope, queued for delivery instead of remaining an unshown steer item. A
+  successful plan approval that auto-validates into `IMPLEMENTATION` is now
+  visibly recorded; a repeated approval remains a non-mutating
   `COMMAND_NOT_ALLOWED` at the closed gate.
 
 - Verify the actual running OpenCode service after an applied installation and

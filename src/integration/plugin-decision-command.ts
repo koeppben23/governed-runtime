@@ -169,6 +169,7 @@ async function presentDecision(
     await ctx.session.synthetic({
       sessionID,
       text: decisionConfirmation(output, result, verdict),
+      delivery: 'queue',
       resume: false,
     });
   } catch (error) {
