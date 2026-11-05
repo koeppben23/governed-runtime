@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { toolResultMismatch } from '../integration/review/dispatch/native-review-initial.js';
 import { createNativeHostProbe } from './opencode-native-test-helpers.js';
 
-const LIVE = process.env.OPENCODE_LIVE === '1';
+const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
 
 it.skipIf(!LIVE)(
   'the pinned host projects a failed tool as the canonical error envelope',
