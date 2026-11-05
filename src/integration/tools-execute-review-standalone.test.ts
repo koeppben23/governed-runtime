@@ -1471,7 +1471,7 @@ describe('review (standalone flow)', () => {
         expect(invocation.consumedByObligationId).toBe(uuid);
       });
 
-      it('H4b: submit path fails closed with SUBAGENT_REVIEW_NOT_INVOKED on unable_to_review verdict', async () => {
+      it('H4b: submit path fails closed with SUBAGENT_UNABLE_TO_REVIEW on unable_to_review verdict', async () => {
         // Item 1 defense-in-depth: even if a reviewer returns a well-attested
         // findings object whose verdict is the third LoopVerdict, the standalone
         // /review submit path MUST reject it and MUST NOT record passing evidence.
@@ -1486,7 +1486,7 @@ describe('review (standalone flow)', () => {
           ctx,
         );
         const result = parseToolResult(raw);
-        expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
+        expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
 
         const { computeFingerprint, sessionDir: resolveSessionDir } =
           await import('../adapters/workspace/index.js');

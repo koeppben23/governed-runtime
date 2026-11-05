@@ -679,6 +679,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Report `SUBAGENT_UNABLE_TO_REVIEW` instead of the misleading
+  `SUBAGENT_EVIDENCE_REUSED` when a standalone peer reviewer honestly declares
+  the supplied content unreviewable. The native capture consumes that
+  obligation in the same transition that binds the invocation, so the
+  unable-to-review check must precede the consumed-evidence diagnostic. The
+  recovery now says to abort the blocked review before starting a fresh
+  governed session.
+
 - Make standalone `/review` usable for manual text and URL content by requiring
   `targetPaths` on the first `flowguard_review` call when changed paths do not
   auto-resolve. The command previously allowed only the content field, so a

@@ -566,7 +566,7 @@ export const REVIEW_VALIDATION_REASONS = [
       'Inspect the captured reviewer findings (missingVerification[], unknowns[]) for the specific tool-failure cause',
       'Plan or ADR: submit the artifact again (/plan or /architecture) to mint a fresh review obligation',
       'Implementation: re-record the implementation and re-run the independent review',
-      'Standalone /review: start a fresh /review for the current content',
+      'Standalone /review: abort the blocked review, then start a fresh governed session and run /review for the current content',
       'If the cause is a corrupted mandate digest or template hash mismatch, re-hydrate the session before retrying',
     ],
   },

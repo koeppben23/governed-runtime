@@ -12,6 +12,7 @@ import {
 } from '../../review/obligations/assurance.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import { formatBlocked } from '../../blocked-result.js';
 import { formatSubagentReviewNotInvoked } from './obligation-format.js';
 import { validateChallengeConsistency } from '../../review/enforcement/challenge-consistency.js';
 import {
@@ -80,6 +81,18 @@ export function validateSubmittedReviewFindings(
   findings: ReviewFindings,
   obligation: ReviewObligation,
 ): string | null {
+  // Fail-closed on the third LoopVerdict before any consumed-reuse diagnostic:
+  // the native peer-review capture consumes an unable_to_review obligation in
+  // the same transition that binds its invocation. Reporting evidence reuse
+  // here would misdiagnose a fresh, honest reviewer blocker as stale evidence.
+  // This mirrors the plan/implement/architecture tool-layer guard
+  // (review-validation.ts) and the SDK gate (content-review-pipeline.ts).
+  if (findings.overallVerdict === 'unable_to_review') {
+    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: obligation.obligationId,
+    });
+  }
+
   if (obligation.status === 'consumed') {
     return formatSubagentReviewNotInvoked(
       'this review obligation has already been consumed. Start a fresh /review to create a new obligation.',
@@ -90,18 +103,6 @@ export function validateSubmittedReviewFindings(
   if (findings.reviewMode !== 'subagent') {
     return formatSubagentReviewNotInvoked(
       `reviewMode is not "subagent" — findings did not come from the ${REVIEWER_SUBAGENT_TYPE} subagent`,
-      obligation.obligationId,
-    );
-  }
-
-  // Fail-closed on the third LoopVerdict: a reviewer that declared the
-  // content unreviewable MUST NOT let the standalone /review complete with a
-  // passing report. This mirrors the plan/implement/architecture tool-layer
-  // guard (review-validation.ts) and the SDK gate (content-review-pipeline.ts),
-  // keeping all review flows symmetric and fail-closed.
-  if (findings.overallVerdict === 'unable_to_review') {
-    return formatSubagentReviewNotInvoked(
-      'reviewer returned overallVerdict "unable_to_review" — the content was declared unreviewable; this obligation is consumed and cannot pass review',
       obligation.obligationId,
     );
   }
