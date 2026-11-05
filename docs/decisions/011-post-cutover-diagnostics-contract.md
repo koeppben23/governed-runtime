@@ -1,8 +1,12 @@
 # ADR-011: Post-cutover diagnostics and human-decision UX contract
 
-- **Status:** Accepted as architecture; implementation and installed-host
-  acceptance **NOT_VERIFIED**
+- **Status:** Accepted as architecture by the operator; implementation and
+  installed-host acceptance **NOT_VERIFIED**
 - **Date:** 2026-11-05
+- **Deciders:** FlowGuard operator
+- **Landing gate:** [PR #1197](https://github.com/koeppben23/governed-runtime/pull/1197)
+  remains draft until #1190 is independently accepted; it then retargets to
+  `develop`. Merging into the cutover branch before that would expand #1190.
 - **Scope:** Post-cutover product work tracked by
   [#1191](https://github.com/koeppben23/governed-runtime/issues/1191) and its
   focused child [#1196](https://github.com/koeppben23/governed-runtime/issues/1196)
