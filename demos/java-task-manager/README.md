@@ -35,7 +35,9 @@ for already-terminal sessions and defaults to a redacted sharing archive.
 ## Prerequisites
 
 - JDK 21+
-- Node.js 22+
+- For reproducible demo runs: Node.js from `.node-version` (22.22.2) and npm 10.x.
+  Node 26/npm 11 are outside the package support contract; select the pinned
+  toolchain (for example `nvm use 22.22.2`) before installing.
 - OpenCode CLI (`opencode`) in PATH
 - FlowGuard core tarball (build with `npm run build && npm run pack:checksums`
   from the governed-runtime repo root; the script writes the tarball and the
@@ -53,8 +55,8 @@ recovery sequentially with fresh roots:
 demos/run-all-demos.sh /tmp/flowguard-demos-run
 ```
 
-The wrapper requires Node from `.node-version`, OpenCode
-`TESTED_OPENCODE_HOST_VERSION`, JDK 21+ and npm 10 (installed into the run root
+The wrapper requires Node from `.node-version`, the exact OpenCode V2 candidate
+in `.sdk-baselines/opencode/cli-candidate.json`, JDK 21+ and npm 10 (installed into the run root
 when the ambient npm major differs). Runs are intentionally sequential: the
 host installer uses a lock that the wrapper scopes per run root. Exit code `0`
 means every scenario produced accepted evidence, `2` marks unreached proofs and
@@ -68,10 +70,19 @@ tarball. It does not call `/start`, dispatch a reviewer, or complete any flow.
 Follow the live-evidence checklist below before claiming a demo was executed.
 
 The install scope defaults to `--install-scope global` (`~/.config/opencode`,
-commands available in every OpenCode project; restart OpenCode Desktop after
-the install). The runbooks below pass `--install-scope repo` explicitly: it
+commands available in every OpenCode project, but governance stays inactive).
+OpenCode V2 watches plugin/config changes; `/reload` forces rediscovery if needed.
+The runbooks below pass `--install-scope repo` explicitly: it
 keeps FlowGuard isolated inside each demo workspace, so no global state is
 touched.
+
+Setup verifies the install with `flowguard doctor` from the **same tarball** and
+requires a non-empty reviewer agent for both scopes. V2 discovers
+`plugins/flowguard/index.ts` natively: neither `opencode.json` nor V1 tool/plugin
+wrappers are required or created. Missing/modified managed artifacts, invalid
+config, unresolved dependencies or obsolete/duplicate registrations block setup.
+Doctor's runtime/activation warnings are not installed ACTIVE or Desktop
+acceptance; do not start `/start` until setup verification succeeds.
 
 ```bash
 # From demos/java-task-manager/: prepare every live demo workspace (repo-scoped)

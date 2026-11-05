@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Verify Java demo installs with the canonical V2 doctor from the same tarball,
+  retaining the mandatory reviewer check for both scopes. Remove V1-only file
+  requirements, correct V2 reload/activation guidance and document the pinned
+  Node 22/npm 10 demo toolchain. No legacy files or duplicate registrations are
+  created to satisfy setup.
+
 - Retire the four historical callback-driven execution rails and their five
   suites after purpose-level mapping to executable current owners. Preserved
   plan/implement/validate/continue assertions now run through the canonical

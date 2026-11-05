@@ -275,14 +275,15 @@ prepare_workspace "$REDUCED_OFF"
 if [[ "$MODE" == "install" && "$INSTALL_SCOPE" == "global" ]]; then
     echo ""
     echo "--- Installing FlowGuard once (install scope: global) ---"
-    echo "  Note: a global install writes to ~/.config/opencode and activates FlowGuard"
-    echo "        for every OpenCode project. The workspace policy configs written below"
+    echo "  Note: a global install writes to the OpenCode config root and makes FlowGuard"
+    echo "        available to every OpenCode project; it does not activate governance."
+    echo "        The workspace policy configs written below"
     echo "        keep team mode and set allowReducedCeremony per workspace."
-    echo "        Restart OpenCode Desktop after the install to load commands and plugin."
+    echo "        OpenCode V2 watches plugin/config changes; /reload forces rediscovery."
     flowguard_install "$TARBALL" global
     echo ""
     echo "--- Verifying FlowGuard install ---"
-    flowguard_verify_install global
+    flowguard_verify_install "$TARBALL" global
     echo "--- FlowGuard install verified ---"
 fi
 
