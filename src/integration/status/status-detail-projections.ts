@@ -308,28 +308,61 @@ function currentReviewFeedbackObligationType(state: SessionState): ReviewObligat
   if (state.phase === 'PLAN') return 'plan';
   if (state.phase === 'ARCHITECTURE') return 'architecture';
   if (state.phase === 'IMPL_REVIEW') return 'implement';
+  // A changes-requested implementation review is consumed by the decision
+  // that returns the workflow to IMPLEMENTATION. The exact rejected digest
+  // remains the binding anchor for its still-unresolved repair feedback.
+  if (state.phase === 'IMPLEMENTATION' && state.implementationRework !== null) return 'implement';
   if (state.phase === 'PEER_REVIEW') return 'review';
   return null;
+}
+
+function feedbackCandidates(
+  assurance: ReviewAssuranceState,
+  obligationType: ReviewObligationType,
+  reworkDigest: string | undefined,
+) {
+  return assurance.obligations.filter(
+    (obligation) =>
+      obligation.obligationType === obligationType &&
+      isCurrentReviewGeneration(obligation) &&
+      obligation.invocationId !== null &&
+      obligation.fulfilledAt !== null &&
+      (reworkDigest !== undefined
+        ? obligation.status === 'consumed' &&
+          obligation.consumedAt !== null &&
+          obligation.subjectDigest === reworkDigest
+        : obligation.status === 'fulfilled' && obligation.consumedAt === null),
+  );
+}
+
+function validFeedbackInvocation(input: {
+  invocation: ReviewInvocationEvidence;
+  obligation: ReviewObligation;
+  hostSessionId: string;
+  reworkDigest: string | undefined;
+}): boolean {
+  const { invocation, obligation, hostSessionId, reworkDigest } = input;
+  const expectedConsumedBy = reworkDigest !== undefined ? obligation.obligationId : null;
+  return (
+    invocation.obligationId === obligation.obligationId &&
+    invocation.obligationType === obligation.obligationType &&
+    invocation.parentSessionId === hostSessionId &&
+    invocation.fulfilledAt !== null &&
+    invocation.consumedByObligationId === expectedConsumedBy &&
+    invocation.findingsHash === hashFindings(invocation.capturedRawFindings)
+  );
 }
 
 function resolveBoundReviewFeedbackEvidence(
   state: SessionState,
 ): BoundReviewFeedbackEvidence | null {
   const assurance = state.reviewAssurance;
-  const currentObligationType = currentReviewFeedbackObligationType(state);
-  if (!assurance || !currentObligationType) return null;
-
-  const candidates = assurance.obligations.filter(
-    (obligation) =>
-      obligation.status === 'fulfilled' &&
-      obligation.obligationType === currentObligationType &&
-      isCurrentReviewGeneration(obligation) &&
-      obligation.invocationId !== null &&
-      obligation.fulfilledAt !== null &&
-      obligation.consumedAt === null,
-  );
+  const obligationType = currentReviewFeedbackObligationType(state);
+  if (!assurance || !obligationType) return null;
+  const reworkDigest =
+    state.phase === 'IMPLEMENTATION' ? state.implementationRework?.rejectedDigest : undefined;
+  const candidates = feedbackCandidates(assurance, obligationType, reworkDigest);
   if (candidates.length !== 1) return null;
-
   const obligation = candidates[0];
   if (!obligation) return null;
   const invocation = assurance.invocations.find(
@@ -337,15 +370,14 @@ function resolveBoundReviewFeedbackEvidence(
   );
   if (
     !invocation ||
-    invocation.obligationId !== obligation.obligationId ||
-    invocation.obligationType !== obligation.obligationType ||
-    invocation.parentSessionId !== state.binding.hostSessionId ||
-    invocation.fulfilledAt === null ||
-    invocation.consumedByObligationId !== null ||
-    invocation.findingsHash !== hashFindings(invocation.capturedRawFindings)
-  ) {
+    !validFeedbackInvocation({
+      invocation,
+      obligation,
+      hostSessionId: state.binding.hostSessionId,
+      reworkDigest,
+    })
+  )
     return null;
-  }
   return { assurance, obligation, invocation };
 }
 
@@ -379,7 +411,10 @@ function hasBoundReviewFeedbackLineage(
   invocation: ReviewInvocationEvidence,
   findings: ReviewFindings,
 ): boolean {
-  const accepted = findAcceptedInvocationForFindings(assurance, obligation, findings);
+  const accepted =
+    invocation.consumedByObligationId === obligation.obligationId
+      ? invocation
+      : findAcceptedInvocationForFindings(assurance, obligation, findings);
   const attempt = assurance.attempts.find((item) => item.attemptId === invocation.attemptId);
   const dispatch = assurance.dispatches.find(
     (item) =>
@@ -397,9 +432,11 @@ function hasBoundReviewFeedbackLineage(
 }
 
 /**
- * Project only a bound changes-requested review that the owning command has not
- * consumed. Invalid, ambiguous, stale, or already-consumed evidence is omitted
- * rather than reconstructed from reviewer-authored state.
+ * Project only a bound changes-requested review. In a review phase that is the
+ * unconsumed review; in the IMPLEMENTATION rework state it is the exact
+ * consumed review whose subject digest is the rejected implementation digest.
+ * Invalid, ambiguous, stale, or unrelated-consumed evidence is omitted rather
+ * than reconstructed from reviewer-authored state.
  */
 export function buildReviewFeedbackProjection(
   state: SessionState,

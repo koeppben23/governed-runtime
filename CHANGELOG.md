@@ -679,6 +679,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the exact bound `changes_requested` implementation review readable
+  through `flowguard_status({ reviewFeedback: true })` while the workflow is
+  back in `IMPLEMENTATION` for rework. The consumed review is projected only
+  when its subject digest is the rejected implementation digest and its
+  invocation was consumed by that same obligation, so the agent can repair the
+  findings and continue the review loop without a manual `/request-changes`
+  recovery step.
+
 - Preserve the reviewer child's terminal failure code in the parent capture
   error and durably close the exact authorized dispatch before returning it.
   Terminal causes such as `REVIEWER_COMPLETION_UNVERIFIABLE` remain terminal and
