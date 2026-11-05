@@ -9,6 +9,7 @@ import {
   type HostTranscript,
 } from '../adapters/diagnostics/index.js';
 import { resolveRoot } from '../adapters/git.js';
+import { NATIVE_DEBUG_EXPORT_COMMAND } from '../shared/flowguard-identifiers.js';
 
 type CommandEditor = Parameters<Parameters<Plugin.Context['command']['transform']>[0]>[0];
 
@@ -72,7 +73,7 @@ async function runDebugExport(ctx: Plugin.Context, sessionId: string): Promise<s
 
 export function addDebugExportCommand(ctx: Plugin.Context, editor: CommandEditor): void {
   editor.add({
-    name: 'debug-export',
+    name: NATIVE_DEBUG_EXPORT_COMMAND,
     description:
       'Create a bounded, read-only diagnostic snapshot for this session and its known reviewer children.',
     execute: async (input) => {
