@@ -60,15 +60,15 @@ describe.skipIf(!LIVE)('native /start command on the pinned host', () => {
       { sessionID: governed.id },
       { signal: AbortSignal.timeout(120_000) },
     );
-    // The non-resuming report must not start a model turn by itself.
-    expect(probe.requests.length, probe.output()).toBe(before);
+    // The activation report is deliberately a normal prompt turn so the
+    // Desktop transcript displays it immediately; synthetic inbox delivery is
+    // not visible in the transcript.
+    expect(probe.requests.length, probe.output()).toBe(before + 1);
     const authority = await resolveSessionAuthority({
       root: await realpath(probe.project),
       sessionId: governed.id,
     });
     expect(authority.status, probe.output()).toBe('resolved');
-    // The report exists right after /start: delivered to history or pending in
-    // the inbox (a non-resuming synthetic item). Record where, never guess.
     const report = 'FlowGuard governance is ACTIVE';
     let location: 'history' | 'inbox' | undefined;
     for (let attempt = 0; attempt < 40 && location === undefined; attempt++) {
@@ -87,8 +87,7 @@ describe.skipIf(!LIVE)('native /start command on the pinned host', () => {
       else await new Promise((resolve) => setTimeout(resolve, 250));
     }
     console.log('[start-report-location]', location);
-    expect(location, probe.output()).toBeDefined();
-    expect(probe.requests.length).toBe(before);
+    expect(location, probe.output()).toBe('history');
 
     if (authority.status !== 'resolved') throw new Error('Expected native Start workflow');
     const activationEvents = (await readAuditTrail(authority.sessDir)).filter(

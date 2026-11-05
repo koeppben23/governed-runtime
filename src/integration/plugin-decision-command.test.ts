@@ -216,13 +216,13 @@ describe('native decision commands', () => {
   );
   it('keeps a committed decision when post-commit status presentation fails', async () => {
     const before = await gate();
-    const synthetic = vi
-      .spyOn(host.ctx.session, 'synthetic')
-      .mockRejectedValueOnce(new Error('synthetic unavailable'));
+    const prompt = vi
+      .spyOn(host.ctx.session, 'prompt')
+      .mockRejectedValueOnce(new Error('prompt unavailable'));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await host.command('approve', sessionID, 'Committed despite status failure.');
     expect((await workflow()).state.phase).toBe('ARCH_COMPLETE');
-    expect(synthetic).toHaveBeenCalledWith(expect.objectContaining({ sessionID, resume: false }));
+    expect(prompt).toHaveBeenCalledWith(expect.objectContaining({ sessionID }));
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('Decision is committed and audited'),
       expect.any(Error),
@@ -278,7 +278,7 @@ describe('native decision commands', () => {
         ws: { resolveSessionAuthority },
         auditDeps: {},
       } as unknown as FlowGuardPluginRuntime;
-      const synthetic = vi.fn(async () => {});
+      const prompt = vi.fn(async () => {});
       const assertScopeCurrent = vi.fn(async () => {});
       const assertActivationAuditConfirmed = vi.fn(async () => {});
       const invoke = vi.fn(
@@ -295,12 +295,12 @@ describe('native decision commands', () => {
       vi.spyOn(afterhooks, 'toolAfter').mockResolvedValue(undefined);
       vi.spyOn(auditReconcile, 'reconcilePendingAuditOperations').mockResolvedValue(undefined);
       return {
-        ctx: { session: { synthetic } } as unknown as CommandContext,
+        ctx: { session: { prompt } } as unknown as CommandContext,
         deps,
         invoke,
         runtime,
         scope,
-        synthetic,
+        prompt,
         resolveSessionAuthority,
         assertScopeCurrent,
         assertActivationAuditConfirmed,
@@ -352,15 +352,13 @@ describe('native decision commands', () => {
       const output = JSON.stringify({ phase: 'ARCH_COMPLETE' });
       vi.spyOn(decision, 'execute').mockResolvedValue({ output });
       await executeDecisionCommand(f.ctx, f.deps, request);
-      expect(f.synthetic).toHaveBeenCalledWith({
+      expect(f.prompt).toHaveBeenCalledWith({
         sessionID: 'root',
         text: expect.stringContaining(
           '**Decision recorded:** approved; current phase `ARCH_COMPLETE`.',
         ),
-        delivery: 'queue',
-        resume: false,
       });
-      const calls = f.synthetic.mock.calls as unknown as Array<[{ text: string }]>;
+      const calls = f.prompt.mock.calls as unknown as Array<[{ text: string }]>;
       expect(calls[0]?.[0].text).toContain('The decision is durable.');
       expect(calls[0]?.[0].text).not.toContain(output);
       vi.mocked(decision.execute).mockResolvedValue('not-json');
@@ -380,7 +378,7 @@ describe('native decision commands', () => {
       });
       vi.spyOn(decision, 'execute').mockResolvedValue({ output });
       await executeDecisionCommand(f.ctx, f.deps, request);
-      const calls = f.synthetic.mock.calls as unknown as Array<[{ text: string }]>;
+      const calls = f.prompt.mock.calls as unknown as Array<[{ text: string }]>;
       const text = calls[0]?.[0].text ?? '';
       expect(text).toContain('**Decision recorded:** approved; current phase `IMPLEMENTATION`.');
       expect(text).toContain('## Validation\n\nAll active checks passed.');
@@ -399,7 +397,7 @@ describe('native decision commands', () => {
       });
       vi.spyOn(decision, 'execute').mockResolvedValue({ output });
       await executeDecisionCommand(f.ctx, f.deps, request);
-      const calls = f.synthetic.mock.calls as unknown as Array<[{ text: string }]>;
+      const calls = f.prompt.mock.calls as unknown as Array<[{ text: string }]>;
       const text = calls[0]?.[0].text ?? '';
       expect(text).toContain('**Decision recorded:** approved; current phase `IMPLEMENTATION`.');
       expect(text).toContain("Check 'test' passed with 1 skipped assertion(s).");

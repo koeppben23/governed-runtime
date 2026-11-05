@@ -63,10 +63,9 @@ export async function executeCheckCommand(
       runtime.checkReworkContinuations.delete(sessionID);
       try {
         if (switchAgent) await ctx.session.switchAgent({ sessionID, agent: 'build' });
-        await ctx.session.synthetic({
+        await ctx.session.prompt({
           sessionID,
           text: checkPromptBody(),
-          resume: true,
           metadata: { source: 'flowguard-check-command' },
         });
         await ctx.session.wait({ sessionID });

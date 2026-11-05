@@ -37,7 +37,7 @@ function checkHarness(rootSessionId = 'check-session') {
     session: {
       get: vi.fn(async () => ({ agent: 'plan' })),
       switchAgent: vi.fn(async () => {}),
-      synthetic: vi.fn(async () => ({ id: 'synthetic', type: 'synthetic' })),
+      prompt: vi.fn(async () => ({ id: 'prompt', type: 'prompt' })),
       wait: vi.fn(async () => {}),
     },
   };
@@ -148,6 +148,7 @@ describe('native governance lifecycle commands', () => {
     await seedState(makeState('ABORTED'));
     const before = await workflow();
     await host.command('end-governance', sessionID);
+    expect(host.ctx.session.prompt).toHaveBeenCalledWith(expect.objectContaining({ sessionID }));
     expect(await resolveGovernanceActivation(host.activation.store, sessionID)).toMatchObject({
       kind: 'inactive',
       record: { status: 'inactive', decisionSource: 'host_command' },
@@ -271,16 +272,16 @@ describe('native governance lifecycle commands', () => {
     const rework = new Map([[sessionId, { marker: true }]]);
     const runtime = { activeCommandScopes: scopes, checkReworkContinuations: rework };
     const switchAgent = vi.fn(async () => {});
-    const synthetic = vi.fn(async () => {
+    const prompt = vi.fn(async () => {
       expect(scopes.get(sessionId)).toBe('check');
-      return { id: 'synthetic', type: 'synthetic' };
+      return { id: 'prompt', type: 'prompt' };
     });
     const wait = vi.fn(async () => {});
     const ctx = {
       session: {
         get: vi.fn(async () => ({ agent: 'plan' })),
         switchAgent,
-        synthetic,
+        prompt,
         wait,
       },
     } as never;
@@ -292,10 +293,9 @@ describe('native governance lifecycle commands', () => {
       ) => action({ runtime, scope: { sessionId, root: { sessionId } } }),
     } as never;
     await executeCheckCommand(ctx, deps, sessionId);
-    expect(synthetic).toHaveBeenCalledWith(
+    expect(prompt).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionID: sessionId,
-        resume: true,
         text: expect.stringContaining('flowguard_run_check'),
       }),
     );
@@ -318,7 +318,7 @@ describe('native governance lifecycle commands', () => {
       session: {
         get: vi.fn(async () => ({ agent: 'plan' })),
         switchAgent,
-        synthetic: vi.fn(async () => ({ id: 'synthetic', type: 'synthetic' })),
+        prompt: vi.fn(async () => ({ id: 'prompt', type: 'prompt' })),
         wait: vi.fn(async () => {}),
       },
     } as never;
@@ -359,7 +359,7 @@ describe('native governance lifecycle commands', () => {
     ).rejects.toThrow('A delegated child cannot run the root /check command.');
     expect(h.scopes.size).toBe(0);
     expect(h.ctx.session.get).not.toHaveBeenCalled();
-    expect(h.ctx.session.synthetic).not.toHaveBeenCalled();
+    expect(h.ctx.session.prompt).not.toHaveBeenCalled();
   });
 
   it('requires ACTIVE callback admission before touching the agent or check scope', async () => {
@@ -373,10 +373,10 @@ describe('native governance lifecycle commands', () => {
     expect(h.deps.invoke).toHaveBeenCalledWith('check-session', expect.any(Function), true);
     expect(h.scopes.size).toBe(0);
     expect(h.ctx.session.get).not.toHaveBeenCalled();
-    expect(h.ctx.session.synthetic).not.toHaveBeenCalled();
+    expect(h.ctx.session.prompt).not.toHaveBeenCalled();
   });
 
-  it.each(['synthetic', 'wait'] as const)(
+  it.each(['prompt', 'wait'] as const)(
     'cleans check scope and restores the agent if %s fails',
     async (operation) => {
       const h = checkHarness();

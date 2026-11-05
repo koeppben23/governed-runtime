@@ -317,7 +317,10 @@ async function presentLifecycle(
   step: string,
 ): Promise<void> {
   try {
-    await ctx.session.synthetic({ sessionID, text, resume: false });
+    await ctx.session.prompt({
+      sessionID,
+      text: `${text}\n\nThis is a FlowGuard host status report. Do not continue automatically; wait for the user's explicit command.`,
+    });
   } catch (error) {
     console.warn(`[FlowGuard] ${step} presentation failed after the durable transition.`, error);
   }

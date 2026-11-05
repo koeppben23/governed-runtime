@@ -148,13 +148,15 @@ function directiveCommands(result: Record<string, unknown>): readonly string[] {
 function decisionConfirmation(result: Record<string, unknown>, verdict: ReviewVerdict): string {
   const phase = typeof result.phase === 'string' ? `; current phase \`${result.phase}\`` : '';
   const summary = `**Decision recorded:** ${verdictLabel(verdict)}${phase}.`;
+  const instruction =
+    "This is a FlowGuard host status report, not a request to continue. Wait for the user's explicit next command.";
   const markdown = presentationMarkdown(result);
-  if (markdown !== null) return `${summary}\n\n${markdown}`;
+  if (markdown !== null) return `${summary}\n\n${markdown}\n\n${instruction}`;
   const commands = directiveCommands(result);
   const next =
     commands.length === 0 ? '' : `\n\n## Next\n\n${commands.map((c) => `- \`${c}\``).join('\n')}`;
   const status = typeof result.status === 'string' ? result.status : 'The decision is durable.';
-  return `${summary}\n\n${status}${next}`;
+  return `${summary}\n\n${status}${next}\n\n${instruction}`;
 }
 
 async function presentDecision(
@@ -175,11 +177,9 @@ async function presentDecision(
       typeof result.message === 'string' ? result.message : output,
     );
   try {
-    await ctx.session.synthetic({
+    await ctx.session.prompt({
       sessionID,
       text: decisionConfirmation(result, verdict),
-      delivery: 'queue',
-      resume: false,
     });
   } catch (error) {
     console.warn(

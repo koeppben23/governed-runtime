@@ -12,21 +12,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Present the canonical READY flow choice immediately after `/start` under an
   explicit `## Next` section with all three executable commands, and clarify that
   `/task` is a default suggestion, not a completed workflow decision or human
-  approval. Represent `/start` as the native activation command in the
-  installed-command catalogue and command documentation; `/hydrate` remains the
-  compatibility refresh surface.
+  approval. Deliver the activation report as a visible prompt turn instead of a
+  synthetic inbox item that the Desktop transcript does not show. Represent
+  `/start` as the native activation
+  command in the installed-command catalogue and command documentation;
+  `/hydrate` remains the compatibility refresh surface.
 
 - Align the Java demo setup with the installer-owned host restart and document
   `flowguard uninstall --install-scope global` as the safe reset instead of
   deleting the entire OpenCode configuration root.
 
-- Present `/approve` and the other decision commands as a readable confirmation
-  card with the recorded verdict and current phase instead of the raw decision
-  envelope, queued for delivery instead of remaining an unshown steer item. The
-  card also renders automatic-validation status and the next command when no
-  canonical presentation is attached. A successful plan approval that
-  auto-validates into `IMPLEMENTATION` is now visibly recorded; a repeated
-  approval remains a non-mutating `COMMAND_NOT_ALLOWED` at the closed gate.
+- Present `/approve`, `/end-governance`, `/recover-capacity`, `/check`, and the
+  other native command results as readable, visible prompt turns instead of
+  synthetic inbox entries the Desktop transcript does not display. Decision
+  cards show the recorded verdict, current phase, automatic-validation status,
+  and next command; they explicitly do not request automatic continuation. A
+  successful plan approval that auto-validates into `IMPLEMENTATION` is now
+  visibly recorded; a repeated approval remains a non-mutating
+  `COMMAND_NOT_ALLOWED` at the closed gate.
 
 - Verify the actual running OpenCode service after an applied installation and
   restart the exact executable of the `serve --service` process even when the

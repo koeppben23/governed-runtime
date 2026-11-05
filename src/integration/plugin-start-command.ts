@@ -213,13 +213,13 @@ async function runStart(
     `FlowGuard governance ${status} for this session: ${workflow.state.policySnapshot.mode} policy, phase ${workflow.state.phase}.`,
     ...workflow.report,
     ...(choice === null ? [] : [choice]),
+    "This is a FlowGuard host status report. Do not select a workflow automatically; wait for the user's explicit command.",
   ].join('\n\n');
   await presentCommittedStart(
     () =>
-      ctx.session.synthetic({
+      ctx.session.prompt({
         sessionID: input.sessionID,
         text,
-        resume: false,
       }),
     'status report',
     input.sessionID,
