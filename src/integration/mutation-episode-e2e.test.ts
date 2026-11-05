@@ -456,14 +456,16 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         [
           'edit',
           {
-            diff: '--- a/example.ts',
-            filediff: {
-              file: '/repo/example.ts',
-              patch: '@@ -1 +1 @@',
-              additions: 1,
-              deletions: 1,
-            },
-            diagnostics: {},
+            files: [
+              {
+                file: '/repo/example.ts',
+                patch: '@@ -1 +1 @@',
+                status: 'modified',
+                additions: 1,
+                deletions: 1,
+              },
+            ],
+            truncated: false,
           },
           'Edit applied successfully.',
         ],
@@ -494,6 +496,22 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         'write',
         { filepath: '/repo/example.ts', exists: false, diagnostics: [] },
         'Wrote file successfully.',
+      ),
+    ).resolves.toBe('unknown');
+    await expect(
+      recordMutationOutcome(
+        'edit',
+        {
+          files: [
+            {
+              file: '/repo/example.ts',
+              status: 'modified',
+              additions: 1,
+              deletions: 1,
+            },
+          ],
+        },
+        'Edit applied successfully.',
       ),
     ).resolves.toBe('unknown');
     await expect(

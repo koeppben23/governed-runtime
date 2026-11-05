@@ -210,9 +210,16 @@ async function governedReapply(session: Session) {
     result: {
       content: 'Edit applied successfully.',
       metadata: {
-        diff: 'reapplied approved patch',
-        filediff: { file: filePath, patch: 'reapplied', additions: 1, deletions: 1 },
-        diagnostics: {},
+        files: [
+          {
+            file: filePath,
+            patch: 'reapplied approved patch',
+            status: 'modified',
+            additions: 1,
+            deletions: 1,
+          },
+        ],
+        truncated: false,
       },
     },
   });

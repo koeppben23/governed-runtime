@@ -38,11 +38,12 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Evidence approval is blocked while {count} host mutation episode(s) are unbound to implementation evidence.',
     recoverySteps: [
-      'Run /request-changes to return to IMPLEMENTATION',
-      'Record a fresh implementation with /implement',
-      'Re-run required checks and obtain a review for the fresh implementation digest',
+      'Inspect /status for each unbound mutation episode and its exact outcome',
+      'For known outcomes, use /request-changes, then /implement to bind a fresh implementation',
+      'Unknown outcomes cannot be cleared by /request-changes: restart the exact host so a later runtime lease generation supersedes the authorizing epoch, then call flowguard_reconcile_mutation_episode({ hostCallId }) for each unknown episode',
+      'Re-run the required checks and obtain a fresh independent review for the new implementation digest',
     ],
-    quickFixCommand: '/request-changes',
+    quickFixCommand: '/status',
   },
   {
     code: 'MUTATION_EPISODE_CONTROL_PLANE_MUTATED',

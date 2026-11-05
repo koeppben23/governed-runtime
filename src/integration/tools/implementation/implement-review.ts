@@ -277,10 +277,23 @@ async function handleApprovedReview(input: {
   // approval even when the current worktree bytes happen to match.
   const unboundMutations = unboundMutationEpisodeCount(gateState);
   if (unboundMutations > 0) {
+    const unknown = gateState.mutationEpisodes.filter(
+      (episode) =>
+        episode.status === 'completed' &&
+        episode.outcome === 'unknown' &&
+        episode.implementationDigest === null &&
+        !gateState.mutationEpisodeResolutions.some(
+          (resolution) => resolution.hostCallId === episode.hostCallId,
+        ),
+    );
+    const recoveryAction =
+      unknown.length === 0
+        ? 'Known outcomes can be bound by /request-changes followed by /implement.'
+        : `Unknown mutation outcomes: ${unknown.map((episode) => episode.hostCallId).join(', ')}. Restart the exact host, then call flowguard_reconcile_mutation_episode({ hostCallId }) for each before /request-changes and /implement.`;
     return formatBlocked(
       'MUTATION_EPISODE_BINDING_REQUIRED',
       { count: String(unboundMutations) },
-      { phase: gateState.phase },
+      { phase: gateState.phase, recoveryAction },
     );
   }
 

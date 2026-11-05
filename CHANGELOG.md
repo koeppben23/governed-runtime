@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command in the installed-command catalogue and command documentation;
   `/hydrate` remains the compatibility refresh surface.
 
+- Recognize successful `edit` host calls from OpenCode's actual
+  `metadata.files` result shape, so completed edits bind to implementation
+  evidence instead of being recorded as unknown and blocking evidence review.
+  Correct the mutation-binding recovery guidance: unknown outcomes require a
+  later runtime lease and `flowguard_reconcile_mutation_episode`, not a
+  `/request-changes` retry loop.
+
 - Align the Java demo setup with the installer-owned host restart and document
   `flowguard uninstall --install-scope global` as the safe reset instead of
   deleting the entire OpenCode configuration root.
