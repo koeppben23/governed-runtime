@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Node 22/npm 10 demo toolchain. No legacy files or duplicate registrations are
   created to satisfy setup.
 
+- Correct doctor's OpenCode activation hint to V2 watched discovery and `/reload`,
+  while retaining the warning that installation does not verify activation.
+
 - Retire the four historical callback-driven execution rails and their five
   suites after purpose-level mapping to executable current owners. Preserved
   plan/implement/validate/continue assertions now run through the canonical

@@ -54,7 +54,7 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
     runtimeVerification:
       'runtime probe required for Governance active; file existence is not proof',
     activation:
-      'configured when local plugin artifacts and import check pass; restart still required',
+      'local plugin artifacts and import check configure discovery only; V2 watches plugin/config changes, /reload forces rediscovery; governance activation remains NOT_VERIFIED',
     hookSemantics: 'in-process plugin can synchronously block through FlowGuard runtime decisions',
     approvalPrimitive: 'FlowGuard /review-decision with validated obligation-bound ReviewFindings',
     reviewerTransport:

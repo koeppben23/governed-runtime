@@ -101,6 +101,11 @@ describe('cli/doctor', () => {
       );
       const allOk = fileChecks.every((c) => c.status === 'ok');
       expect(allOk).toBe(true);
+      const activation = checks.find((c) => c.file === 'trust://opencode/activation');
+      expect(activation?.status).toBe('warn');
+      expect(activation?.detail).toContain('/reload forces rediscovery');
+      expect(activation?.detail).toContain('activation remains NOT_VERIFIED');
+      expect(activation?.detail).not.toContain('restart still required');
     });
 
     it('reports Claude Code trust and capability projection without claiming runtime activation', async () => {
