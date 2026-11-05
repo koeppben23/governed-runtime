@@ -55,7 +55,9 @@ class FakeAdapter implements HostLifecycleAdapter {
   processes = new Map<number, HostProcessInfo | null>();
   probes: HostProbe[];
   restartError: Error | undefined;
+  scheduleError: Error | undefined;
   restarts: string[] = [];
+  scheduled: string[] = [];
   probeCalls = 0;
   onRestart: (() => void) | undefined;
   clock = 0;
@@ -86,6 +88,11 @@ class FakeAdapter implements HostLifecycleAdapter {
     this.restarts.push(executable);
     if (this.restartError) throw this.restartError;
     this.onRestart?.();
+  }
+
+  async scheduleRestart(executable: string): Promise<void> {
+    this.scheduled.push(executable);
+    if (this.scheduleError) throw this.scheduleError;
   }
 
   async sleep(ms: number): Promise<void> {
@@ -175,7 +182,18 @@ describe('OpenCode host lifecycle', () => {
       expect(adapter.restarts).toEqual([]);
     });
 
-    it('requires a restart when the plugin failed and the installer is inside the service', async () => {
+    it('restarts an active plugin when an applied install requires fresh code', async () => {
+      const adapter = new FakeAdapter(SERVICE, [ACTIVE]);
+      adapter.onRestart = () => {
+        adapter.records.unshift(REPLACEMENT);
+        adapter.probes = [ACTIVE];
+      };
+      const result = await run(adapter, { forceRestart: true });
+      expect(result.status).toBe('restarted');
+      expect(adapter.restarts).toEqual([SERVICE_INFO.executable]);
+    });
+
+    it('schedules a restart when the installer is inside the service', async () => {
       const adapter = new FakeAdapter(SERVICE, [probe()]);
       adapter.processes.set(process.pid, {
         ...SERVICE_INFO,
@@ -183,9 +201,36 @@ describe('OpenCode host lifecycle', () => {
         parentPid: SERVICE.pid,
       });
       const result = await run(adapter);
-      expect(result.status).toBe('restart-required');
+      expect(result.status).toBe('restart-scheduled');
+      expect(result.errors).toEqual([]);
+      expect(adapter.scheduled).toEqual([SERVICE_INFO.executable]);
       expect(adapter.restarts).toEqual([]);
-      expect(result.errors.join('\n')).toContain(`'${SERVICE_INFO.executable}' service restart`);
+    });
+
+    it('reports restart-required inside the service when automatic restart is disabled', async () => {
+      const adapter = new FakeAdapter(SERVICE, [probe()]);
+      adapter.processes.set(process.pid, {
+        ...SERVICE_INFO,
+        executable: '/bin/node',
+        parentPid: SERVICE.pid,
+      });
+      const result = await run(adapter, { allowRestart: false });
+      expect(result.status).toBe('restart-required');
+      expect(adapter.scheduled).toEqual([]);
+    });
+
+    it('reports a scheduling failure without claiming a restart', async () => {
+      const adapter = new FakeAdapter(SERVICE, [probe()]);
+      adapter.processes.set(process.pid, {
+        ...SERVICE_INFO,
+        executable: '/bin/node',
+        parentPid: SERVICE.pid,
+      });
+      adapter.scheduleError = new Error('spawn refused');
+      const result = await run(adapter);
+      expect(result.status).toBe('restart-failed');
+      expect(result.errorDetails.map((detail) => detail.code)).toContain('HOST_RESTART_FAILED');
+      expect(adapter.scheduled).toEqual([SERVICE_INFO.executable]);
     });
 
     it('requires a restart when automatic restart is disabled', async () => {

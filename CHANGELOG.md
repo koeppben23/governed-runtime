@@ -25,12 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   approval remains a non-mutating `COMMAND_NOT_ALLOWED` at the closed gate.
 
 - Verify the actual running OpenCode service after an applied installation and
-  restart the exact executable of the `serve --service` process when the native
-  plugin failed to load and the installer is outside that service. The installer reads
-  only a loopback service record, checks location-scoped `/api/plugin` and
-  `/api/command`, refuses to kill its own host ancestor, and reports typed
-  failures instead of claiming activation. Add `--restart-host` and
-  `--no-restart-host`; a restart failure leaves installed artifacts committed.
+  restart the exact executable of the `serve --service` process even when the
+  previously loaded plugin still reports active; active modules can be stale
+  after package files change. Restart is the non-interactive default; when the
+  installer runs inside the service it schedules a detached restart after the
+  installer exits, and `--no-restart-host` is the explicit read-only opt-out.
+  The installer reads only a loopback service record, checks location-scoped
+  `/api/plugin` and `/api/command`, and reports typed failures instead of
+  claiming activation. A restart failure leaves installed artifacts committed.
 
 - Reserve Java ISO report publication with Node's non-recursive filesystem
   operation instead of shell `mkdir`, whose Ubuntu uutils implementation can

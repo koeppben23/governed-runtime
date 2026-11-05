@@ -31,7 +31,13 @@ import {
 } from './opencode-host-service.js';
 
 export type HostLifecycleStatus =
-  'no-service' | 'active' | 'restarted' | 'restart-required' | 'restart-failed' | 'unverified';
+  | 'no-service'
+  | 'active'
+  | 'restarted'
+  | 'restart-scheduled'
+  | 'restart-required'
+  | 'restart-failed'
+  | 'unverified';
 
 export interface HostLifecycleResult {
   status: HostLifecycleStatus;
@@ -45,6 +51,8 @@ export interface HostLifecycleInput {
   readonly target: string;
   readonly scope: InstallScope;
   readonly allowRestart: boolean;
+  /** Restart after an applied install even when the old plugin is still active. */
+  readonly forceRestart?: boolean;
   readonly serviceRecordPath?: string;
   readonly probeTimeoutMs?: number;
   readonly restartTimeoutMs?: number;
@@ -201,6 +209,11 @@ async function loadService(
   return { service, processRecord };
 }
 
+function isCurrentActivePlugin(input: HostLifecycleInput, probe: HostProbe | null): boolean {
+  if (probe === null || input.forceRestart === true) return false;
+  return activeProbe(probe, input.target);
+}
+
 /** Returns the probe when a restart decision is still needed, null when terminal. */
 function evaluateProbe(
   input: HostLifecycleInput,
@@ -226,7 +239,7 @@ function evaluateProbe(
     );
     return null;
   }
-  if (probe !== null && activeProbe(probe, input.target)) {
+  if (isCurrentActivePlugin(input, probe)) {
     outcome.status = 'active';
     outcome.notices.push({
       kind: 'status',
@@ -259,10 +272,12 @@ function requireRestart(
 ): boolean {
   if (inside === false && input.allowRestart) return false;
   outcome.status = 'restart-required';
-  const failedPlugin = probe.pluginStatus === 'failed' || probe.pluginPath !== null;
-  const reason = failedPlugin
-    ? `the plugin is ${probe.pluginStatus}${probe.pluginRef ? ` (${probe.pluginRef})` : ''}`
-    : 'the plugin was not discovered';
+  const reason =
+    probe.pluginStatus === 'failed'
+      ? `the plugin is failed${probe.pluginRef ? ` (${probe.pluginRef})` : ''}`
+      : probe.pluginStatus === 'active'
+        ? 'the loaded plugin must be refreshed after the applied install'
+        : 'the plugin was not discovered';
   const why =
     inside === null
       ? 'the installer could not prove it is outside the running service'
@@ -276,6 +291,30 @@ function requireRestart(
     { target: processRecord.executable },
   );
   return true;
+}
+
+async function scheduleRestartAndReport(
+  adapter: HostLifecycleAdapter,
+  loaded: LoadedService,
+  outcome: HostLifecycleResult,
+): Promise<void> {
+  try {
+    await adapter.scheduleRestart(loaded.processRecord.executable);
+    outcome.status = 'restart-scheduled';
+    outcome.notices.push({
+      kind: 'next',
+      message:
+        'Scheduled the exact OpenCode service restart after this installer exits. The current host session will be interrupted; after the service returns, verify native /start. Installation does not activate governance.',
+    });
+  } catch (scheduleError) {
+    outcome.status = 'restart-failed';
+    error(
+      outcome,
+      'HOST_RESTART_FAILED',
+      `The OpenCode service restart could not be scheduled: ${scheduleError instanceof Error ? scheduleError.message : String(scheduleError)}. Installed artifacts remain committed.`,
+      { target: loaded.processRecord.executable },
+    );
+  }
 }
 
 async function pollProbe(
@@ -421,6 +460,14 @@ export async function runOpenCodeHostLifecycle(
     outcome,
   );
   if (probe === null) return outcome;
+  if (inside === true) {
+    if (input.allowRestart) {
+      await scheduleRestartAndReport(adapter, loaded, outcome);
+    } else {
+      requireRestart(input, probe, loaded.processRecord, inside, outcome);
+    }
+    return outcome;
+  }
   if (requireRestart(input, probe, loaded.processRecord, inside, outcome)) return outcome;
   await restartAndVerify(input, adapter, loaded, outcome);
   return outcome;

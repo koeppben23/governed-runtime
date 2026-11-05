@@ -75,7 +75,8 @@ async function executeInstallAction(args: CliArgs, cliLog: FlowGuardLogger): Pro
       const lifecycle = await runOpenCodeHostLifecycle({
         target,
         scope: args.installScope,
-        allowRestart: args.restartHost ?? process.stdout.isTTY === true,
+        allowRestart: args.restartHost ?? true,
+        forceRestart: true,
         ...(serviceRecordPath !== undefined ? { serviceRecordPath } : {}),
       });
       applyHostLifecycle(result, lifecycle);

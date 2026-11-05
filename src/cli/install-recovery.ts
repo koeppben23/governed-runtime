@@ -63,7 +63,7 @@ const RECOVERY_MAP: Partial<Record<CliErrorCode, string | ((detail: CliError) =>
   HOST_SERVICE_STALE:
     'Start OpenCode or remove the stale service record; no process was signalled.',
   HOST_RESTART_REQUIRED:
-    'Finish active work, then restart the exact service shown above. Installed artifacts remain committed.',
+    'Automatic restart is disabled or the installer cannot prove it is outside the service; rerun without --no-restart-host or restart the exact service shown above. Installed artifacts remain committed.',
   HOST_RESTART_FAILED:
     'Check the OpenCode host log, then retry the exact restart command shown above. Installed artifacts remain committed.',
   HOST_PLUGIN_MISMATCH:

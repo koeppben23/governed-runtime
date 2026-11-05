@@ -13,7 +13,7 @@
  *   instruction.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { readlinkSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -61,6 +61,7 @@ export interface HostLifecycleAdapter {
   probe(service: OpenCodeService, target: string): Promise<HostProbe>;
   processInfo(pid: number): Promise<HostProcessInfo | null>;
   restart(executable: string): Promise<void>;
+  scheduleRestart(executable: string): Promise<void>;
   sleep(ms: number): Promise<void>;
   now(): number;
 }
@@ -252,6 +253,24 @@ export function createDefaultAdapter(): HostLifecycleAdapter {
         timeout: 60_000,
         stdio: ['ignore', 'pipe', 'pipe'],
         encoding: 'utf8',
+      });
+    },
+    async scheduleRestart(executable) {
+      // The installer may be running inside the host service. A detached
+      // helper in its own process group waits for the installer to exit, then
+      // restarts the exact service executable without being killed with the
+      // current host process tree.
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(
+          '/bin/sh',
+          ['-c', 'sleep 2; exec "$1" service restart', 'flowguard-restart', executable],
+          { detached: true, stdio: 'ignore' },
+        );
+        child.once('error', reject);
+        child.once('spawn', () => {
+          child.unref();
+          resolve();
+        });
       });
     },
     async sleep(ms) {

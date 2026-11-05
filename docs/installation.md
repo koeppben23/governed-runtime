@@ -85,16 +85,18 @@ it reads the loopback service record at `~/.local/state/opencode/service.json`,
 checks the installed target's location-scoped `/api/plugin` state and
 `/api/command` for native `/start`.
 
-- If the plugin is `active` and `/start` is present, installation reports that
-  state and does not restart the host.
-- If the plugin is `failed` or not discovered and the installer is outside the
-  service, an interactive install restarts the exact service executable and
-  verifies the replacement. Non-interactive installs need `--restart-host` to
-  perform that restart automatically; `--no-restart-host` keeps verification
-  read-only.
+- After an applied install, the installer restarts the exact running service
+  and verifies the replacement even when the previously loaded plugin still
+  reports `active`; an active module can be stale after package files change.
+  Non-interactive installs restart by default. `--no-restart-host` opts out and
+  keeps verification read-only.
 - If the installer runs inside the service (for example an agent-hosted
-  terminal), it never kills its own host. It reports `HOST_RESTART_REQUIRED` with
-  the exact `'<service-executable>' service restart` command.
+  terminal), it schedules a detached restart of the exact service executable
+  after the installer exits. The current host session is interrupted; a failed
+  schedule is reported as `HOST_RESTART_FAILED`.
+- If automatic restart is disabled (`--no-restart-host`) or the installer cannot
+  prove it is outside the service, it reports `HOST_RESTART_REQUIRED` with the
+  exact `'<service-executable>' service restart` command.
 - Only a loopback `http(s)` service URL, a live `opencode`/`opencode-cli`
   process whose command is `serve --service`, and the PID from the service
   record are accepted. Malformed, stale or non-loopback records never authorize
@@ -227,7 +229,7 @@ npm run flowguard:doctor
 | `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`                               |
 | `--checksums-file <path>`                      | Optional explicit checksum file. Defaults to `checksums.sha256` next to tarball    |
 | `--allow-unverified-tarball`                   | Explicit supply-chain opt-out; not recommended and logged                          |
-| `--restart-host`                               | Verify and, if the plugin failed, restart the exact running OpenCode service       |
+| `--restart-host`                               | Restart the exact running OpenCode service after an applied install (default)      |
 | `--no-restart-host`                            | Verify read-only; never restart the host automatically                             |
 
 ## Malformed JSON Recovery

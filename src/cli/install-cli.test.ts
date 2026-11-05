@@ -199,6 +199,25 @@ describe('cli/main', () => {
       const tarball = await createMockTarball();
       const code = await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
       expect(code).toBe(0);
+      expect(hostLifecycleMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ allowRestart: true, forceRestart: true }),
+      );
+    });
+
+    it('keeps host restart explicitly disabled with --no-restart-host', async () => {
+      const tarball = await createMockTarball();
+      const code = await main([
+        'install',
+        '--install-scope',
+        'repo',
+        '--core-tarball',
+        tarball,
+        '--no-restart-host',
+      ]);
+      expect(code).toBe(0);
+      expect(hostLifecycleMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ allowRestart: false, forceRestart: true }),
+      );
     });
   });
 

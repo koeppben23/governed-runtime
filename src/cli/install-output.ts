@@ -187,7 +187,7 @@ Options:
   --checksums-file Path to checksums.sha256 (defaults to tarball-adjacent checksums.sha256)
   --allow-unverified-tarball
                    Supply-chain opt-out: install without tarball integrity verification (not recommended)
-  --restart-host   Verify the running OpenCode service and restart it if the native plugin failed to load
+  --restart-host   Restart the exact running OpenCode service after an applied install (default)
   --no-restart-host
                    Verify the host read-only; never restart it automatically
 
