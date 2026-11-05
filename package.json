@@ -76,6 +76,8 @@
     "test:review-modeb-contract": "vitest run --project integration src/integration/review-modeb-contract.test.ts",
     "test:e2e-contract": "vitest run --project integration src/integration/runtime-flow-e2e-contract.test.ts",
     "test:unit": "vitest run --project unit",
+    "test:unit:no-perf": "vitest run --project unit --testNamePattern '^(?!.*\\bPERF\\b)'",
+    "test:unit:perf": "vitest run --project unit --testNamePattern '\\bPERF\\b' --maxWorkers=1",
     "test:scripts": "vitest run --project scripts",
     "test:architecture": "vitest run --project unit src/architecture/",
     "test:evals": "vitest run --project evals",

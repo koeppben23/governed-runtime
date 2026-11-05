@@ -640,6 +640,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Run marked unit PERF contracts in a dedicated single-worker CI phase and
+  exclude them from the parallel unit phase. This preserves every test and the
+  unchanged budgets while preventing cross-file CPU contention from deciding a
+  wall-clock p99 assertion; a 6 µs p99 operation produced a 4.199 ms CI sample
+  under concurrent unit files. The test name now reports the actual CI-aware
+  budget.
+
 - Reconcile current Windows CLI/server acceptance in Quick Start and the P0-00
   remaining-gates section with the executed 65/65 result. Bound OpenCode's
   synchronous enforcement claim to intercepted governed paths, explicitly

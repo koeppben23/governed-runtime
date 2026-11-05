@@ -120,7 +120,7 @@ Each test and check job maps to its npm script(s) for clear diagnosis:
 
 | CI Job                   | npm Script                                                                            | Scope                                                                                                                      | Requires Build |
 | ------------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| **unit**                 | `npm run test:unit`                                                                   | All `*.test.ts` outside `integration/`, including T1 and T2                                                                | No             |
+| **unit**                 | `npm run test:unit:no-perf` + `npm run test:unit:perf`                                | All `*.test.ts` outside `integration/`; marked PERF contracts run in a second single-worker phase                          | No             |
 | **unit (scripts)**       | `npm run test:scripts`                                                                | Repository-internal script tests (`scripts/**/*.test.ts`), run as a second step of the `unit` CI job                       | No             |
 | **doc-drift**            | `npm run check:pr-documentation -- <base-sha> <head-sha>` + `npm run check:doc-drift` | Committed Unreleased entry changes against the PR merge base and generated documentation; merge-blocking through `ci-gate` | Yes            |
 | **scripts-windows**      | `npm run test:scripts`                                                                | Same script suite on `windows-latest`; merge-blocking through the `ci-gate` aggregator                                     | No             |
@@ -236,6 +236,13 @@ The `critical-windows` unit invocation uses one worker, retaining its full test
 set and unchanged p99 performance budgets. This bounds worker competition;
 it does not establish the cause of a Windows latency spike or waive a failed
 performance assertion. Its real-Git integration invocation is unchanged.
+
+The `unit` CI job likewise partitions test names carrying the `PERF` marker
+into a second single-worker phase. The parallel phase excludes exactly that selection,
+so every test still runs once in CI with the same source, thresholds and
+timeouts. This isolates wall-clock p99 assertions from concurrent unit files;
+it does not establish a prior miss's cause or permit a budget increase. Local
+`npm run test:unit` retains its single-invocation convenience.
 
 The independent-review verifier retains both mandatory positive release/capture
 titles and runs them against the real native host and product, alongside the

@@ -22,9 +22,14 @@ jobs:
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
       - name: Run unit tests
-        run: npm run test:unit
+        run: npm run test:unit:no-perf
         env:
           FORCE_COLOR: 0
+      - name: Run unit PERF tests
+        run: npm run test:unit:perf
+        env:
+          FORCE_COLOR: 0
+          FLOWGUARD_PERF: '1'
       - name: Run scripts tests
         run: npm run test:scripts
         env:

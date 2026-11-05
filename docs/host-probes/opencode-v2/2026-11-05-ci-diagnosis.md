@@ -130,3 +130,43 @@ for what it actually measures; it is not proof of side-effect-free module import
 **NOT_VERIFIED:** the exact scheduling/JIT contribution to the failed hosted
 timings. A passing local comparison is not a flake designation or final hosted
 certification. Current-source hosted verification remains required.
+
+## Unit PERF isolation after `16d62be6`
+
+Hosted CI `42011082769` on `16d62be6` passed 35/37 jobs: the ISO unit failure,
+coverage, integration-perf, smoke, installation and all Windows jobs passed. The
+remaining `unit` failure was a different timing assertion:
+`audit-completeness.test.ts > PERF > evaluateCompleteness` measured **4.199 ms**
+against the unchanged CI budget **4 ms** (2 ms × 2 for CI).
+
+A diagnostic run of 2,000 warm calls measured `evaluateCompleteness` at p50
+**~2 µs** and p99 **~6 µs**, with one 1.38 ms scheduler outlier. The function is
+synchronous and pure; it performs no I/O. In the same failed CI log, an unrelated
+hook measured 4,035 ms against a 4,000 ms budget. The 4.199 ms sample is
+therefore not explained by the function's compute cost; it is consistent with
+worker descheduling or a GC pause, whose exact source is not established. This
+is not a "flake" designation.
+
+The unit CI job runs 455 files concurrently, so any marked PERF contract can be
+preempted. The correction partitions test names carrying the word-boundary
+`PERF` marker into a second `--maxWorkers=1` invocation and excludes exactly
+that selection from the parallel invocation. `vitest list` confirmed the two
+selections are disjoint and cover all 7,582 collected unit test names
+(7,527 + 55); the documentation test that merely names `PERF_BUDGETS` stays in
+the parallel phase. Every test still runs in CI; no budget, timeout or assertion
+changed. The `evaluateCompleteness` test name
+now reports the effective CI-aware budget instead of a hardcoded local value.
+A local PERF-subset run while the Linux reproduction competed for CPU failed a
+different timing test (`executeReview` 36 ms against 5 ms), showing that these
+wall-clock assertions are contention-sensitive. A CI-equivalent Ubuntu container
+run of all 455 unit files on the same source passed, but did not reproduce the
+transient hosted sample; that is not proof of a specific trigger. The split was
+then verified in Ubuntu 26.04 / Node 22.22.2 with four CPUs: the single-worker
+PERF phase passed **55 tests in 42 files** (48.79 s), and the parallel phase
+passed **8,454 tests with 57 skips** in 455 files (40.56 s). Together they cover
+all 8,511 discovered unit tests, including the two platform skips. A pass still
+does not explain the hosted miss.
+
+**NOT_VERIFIED:** current-source hosted CI after this split. The aggregate
+`ci-gate` failure on `42011082769` is expected while `unit` is red; it is not an
+independent product finding.
