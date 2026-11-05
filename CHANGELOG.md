@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Present the canonical READY flow choice immediately after `/start` with all
+  three executable commands, and clarify that `/task` is a default suggestion,
+  not a completed workflow decision or human approval. Represent `/start` as the
+  native activation command in the installed-command catalogue and command
+  documentation; `/hydrate` remains the compatibility refresh surface.
+
 - Verify the actual running OpenCode service after an applied installation and
   restart the exact executable of the `serve --service` process when the native
   plugin failed to load and the installer is outside that service. The installer reads
@@ -655,7 +661,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovery only after the dispatch, attempt and capacity lineage are proven.
   Add bounded call-ID, tool, shape and digest diagnostics to the native
   tool-result integrity mismatch without logging content or weakening the
-  comparison.
+  comparison. Match the canonical error envelope
+  `{type:"error", value:{error, content}}` used by both OpenCode 2.2.4 and
+  2.2.5, while still rejecting changed error text or content.
 
 - Run marked unit PERF contracts in a dedicated single-worker CI phase and
   exclude them from the parallel unit phase. This preserves every test and the

@@ -341,4 +341,43 @@ describe('R4 tool-result integrity', () => {
     expect(missing).toContain('stored=missing');
     expect(toolResultMismatch([{ content: [{ type: 'text', text: 'no tools' }] }], [])).toBeNull();
   });
+
+  it('accepts the canonical error envelope and rejects changed error content', () => {
+    const error = { type: 'tool.execution', message: 'File not found: missing.txt' };
+    const history = [
+      user,
+      assistant({
+        id: 'msg_error',
+        finish: 'tool-calls',
+        content: [
+          { type: 'tool', id: 'tool-error', name: 'read', state: { status: 'error', error } },
+        ],
+      }),
+    ];
+    const message = (result: unknown) => [
+      { role: 'tool', content: [{ type: 'tool-result', id: 'tool-error', name: 'read', result }] },
+    ];
+    expect(
+      toolResultMismatch(message({ type: 'error', value: { error, content: [] } }), history),
+    ).toBeNull();
+    expect(toolResultMismatch(message({ error, content: [] }), history)).toContain('differs');
+    expect(
+      toolResultMismatch(
+        message({
+          type: 'error',
+          value: { error: { ...error, message: 'Changed' }, content: [] },
+        }),
+        history,
+      ),
+    ).toContain('differs');
+    expect(
+      toolResultMismatch(
+        message({
+          type: 'error',
+          value: { error, content: [{ type: 'text', text: 'injected' }] },
+        }),
+        history,
+      ),
+    ).toContain('differs');
+  });
 });

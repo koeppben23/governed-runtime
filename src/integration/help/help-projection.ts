@@ -36,6 +36,7 @@ import {
   TOOL_FLOWGUARD_CONTINUE,
 } from '../tool-names.js';
 import { IntegrationInvariantError } from '../errors.js';
+import { NATIVE_START_COMMAND } from '../../shared/flowguard-identifiers.js';
 
 export type HelpVisibility =
   'recommended' | 'available' | 'upcoming' | 'blocked_recoverable' | 'not_applicable' | 'hidden';
@@ -216,6 +217,8 @@ function preflight(
   definition: InstalledCommandDefinition,
   state: SessionState | null,
 ): CommandPreflight {
+  if (definition.target.nativeCommand === NATIVE_START_COMMAND)
+    return { status: 'available', guarantee: 'eligible_to_attempt' };
   if (definition.target.toolName === TOOL_FLOWGUARD_ARCHIVE) return evaluateArchivePreflight(state);
   if (
     definition.target.toolName === TOOL_FLOWGUARD_STATUS ||
@@ -223,8 +226,9 @@ function preflight(
   ) {
     return { status: 'available', guarantee: 'read_only_available' };
   }
-  // /hydrate (and its /start alias) is the bootstrap entrypoint when no session
-  // exists. With a session present it follows the same command policy as every
+  // /hydrate is the compatibility bootstrap tool when no session exists; the
+  // native /start command is activation authority and is projected separately.
+  // With a session present hydrate follows the same command policy as every
   // other command; there is no second admissibility interpretation here.
   if (definition.target.toolName === TOOL_FLOWGUARD_HYDRATE && !state) {
     return { status: 'available', guarantee: 'eligible_to_attempt' };
@@ -465,14 +469,11 @@ function buildCommandDetail(state: SessionState | null, requestedInvocation: str
 }
 
 function buildNoSessionResult(): HelpResult {
-  const start = INSTALLED_COMMANDS.find(
-    (definition) =>
-      definition.target.toolName === TOOL_FLOWGUARD_HYDRATE && definition.visibility === 'primary',
-  );
+  const start = INSTALLED_COMMANDS.find((definition) => definition.invocation === '/start');
   if (start === undefined) {
     throw new IntegrationInvariantError(
-      'HELP_HYDRATE_COMMAND_METADATA_MISSING',
-      'buildNoSessionResult: no installed command metadata for the primary hydrate command.',
+      'HELP_START_COMMAND_METADATA_MISSING',
+      'buildNoSessionResult: no installed command metadata for the native /start command.',
     );
   }
   const status = INSTALLED_COMMANDS.find((definition) => definition.id === 'operational.status');

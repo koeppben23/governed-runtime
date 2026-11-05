@@ -126,6 +126,13 @@ describe('native /start command', () => {
         text: expect.stringContaining('governance is ACTIVE'),
       }),
     );
+    expect(host.synthetic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining(
+          'Choose one workflow: `/task`, `/architecture`, or `/review`.',
+        ),
+      }),
+    );
     const events = await audit.readAuditTrail(authority.sessDir);
     const activated = events.filter((event) => event.event === 'governance:activated');
     expect(activated).toHaveLength(1);

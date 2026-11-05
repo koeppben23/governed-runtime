@@ -11,7 +11,7 @@
  */
 
 import { Command } from '../machine/commands.js';
-import { NATIVE_CHECK_COMMAND } from '../shared/flowguard-identifiers.js';
+import { NATIVE_CHECK_COMMAND, NATIVE_START_COMMAND } from '../shared/flowguard-identifiers.js';
 import {
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHITECTURE,
@@ -48,7 +48,7 @@ export type InstalledCommandId =
   | 'workflow.architecture'
   | 'workflow.abort'
   | 'operational.archive'
-  | 'alias.start'
+  | 'operational.start'
   | 'alias.task'
   | 'variant.approve'
   | 'variant.override-approve'
@@ -98,7 +98,7 @@ export interface InstalledCommandDefinition {
         nativeCommand?: never;
       }
     | {
-        nativeCommand: typeof NATIVE_CHECK_COMMAND;
+        nativeCommand: typeof NATIVE_START_COMMAND | typeof NATIVE_CHECK_COMMAND;
         toolName?: never;
         fixedArgs?: never;
         workflowCommand?: never;
@@ -255,15 +255,14 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     intent: 'export_result',
   },
   {
-    id: 'alias.start',
+    id: 'operational.start',
     templateFile: null,
     invocation: '/start',
     kind: 'preferred_name',
-    target: { toolName: TOOL_FLOWGUARD_HYDRATE, workflowCommand: Command.HYDRATE },
+    target: { nativeCommand: NATIVE_START_COMMAND },
     visibility: 'primary',
     presentationGroup: 'start',
-    description: 'Prepare or restore a governed session.',
-    intent: 'refresh_repository',
+    description: 'Activate or resume FlowGuard governance for this root session.',
   },
   {
     id: 'alias.task',

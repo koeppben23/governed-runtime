@@ -299,7 +299,13 @@ function completionDigest(event: InitialToolCompletion): string {
 /** Model-input projection of one stored native tool part (host to-llm-message mapping). */
 function modelToolResult(tool: Row): unknown {
   const state = row(tool.state);
-  if (state.status === 'error') return { error: state.error, content: state.content ?? [] };
+  // OpenCode 2.2.4 and 2.2.5 both normalize error results to the same
+  // canonical ToolResultValue envelope at the model-input boundary.
+  if (state.status === 'error')
+    return {
+      type: 'error',
+      value: { error: state.error, content: state.content ?? [] },
+    };
   if (state.status !== 'completed' || !Array.isArray(state.content)) return undefined;
   const [single] = state.content;
   return state.content.length === 1 && row(single).type === 'text'

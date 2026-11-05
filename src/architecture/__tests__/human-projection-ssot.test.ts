@@ -563,7 +563,7 @@ describe('ActionIntent SSOT', () => {
     };
 
     expect(hasIntent('/hydrate', 'refresh_repository')).toBe(true);
-    expect(hasIntent('/start', 'refresh_repository')).toBe(true);
+    expect(noIntent('/start')).toBe(true);
     expect(hasIntent('/status', 'inspect_status')).toBe(true);
     expect(hasIntent('/why', 'inspect_blocker')).toBe(true);
     expect(hasIntent('/validate', 'run_validation')).toBe(true);

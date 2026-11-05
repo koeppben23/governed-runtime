@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   INSTALLED_COMMANDS,
   INSTALLED_TEMPLATE_FILES,
+  getInstalledCommand,
   preferredInvocationForTool,
   visibleAliasesForDefinition,
 } from './installed-commands.js';
@@ -14,6 +15,7 @@ import {
 import {
   NATIVE_CATALOGUED_COMMANDS,
   NATIVE_CHECK_COMMAND,
+  NATIVE_START_COMMAND,
 } from '../shared/flowguard-identifiers.js';
 
 describe('installed command catalogue', () => {
@@ -74,7 +76,6 @@ describe('installed command catalogue', () => {
       ).map((definition) => [definition.id, definition.kind]),
     );
     expect(kinds).toEqual({
-      'alias.start': 'preferred_name',
       'alias.task': 'preferred_name',
       'alias.why': 'convenience',
       'variant.approve': 'action_variant',
@@ -173,13 +174,20 @@ describe('installed command catalogue', () => {
     expect(archiveAliases).toEqual([]);
   });
 
-  it('has exactly one primary invocation for hydration', () => {
+  it('keeps /hydrate compatibility-only after /start becomes a native command', () => {
     const primaries = INSTALLED_COMMANDS.filter(
       (definition) =>
         definition.target.toolName === TOOL_FLOWGUARD_HYDRATE &&
         definition.visibility === 'primary',
     ).map((definition) => definition.invocation);
-    expect(primaries).toEqual(['/start']);
+    expect(primaries).toEqual([]);
+    expect(getInstalledCommand('/start')).toMatchObject({
+      id: 'operational.start',
+      kind: 'preferred_name',
+      templateFile: null,
+      target: { nativeCommand: NATIVE_START_COMMAND },
+    });
+    expect(getInstalledCommand('/hydrate')?.visibility).toBe('compatibility');
   });
 
   it('archive remains an operational visible interface', () => {
@@ -209,7 +217,6 @@ describe('installed command catalogue', () => {
     );
     // No preferred_name target may expose more than one primary invocation.
     expect(primariesByTarget).toEqual({
-      flowguard_hydrate: ['/start'],
       flowguard_ticket: ['/task'],
     });
   });

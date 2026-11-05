@@ -163,13 +163,27 @@ cause was lost, and the artifacts do not contain the persisted
 `retry_transport` recovery could not be confirmed from the supplied files.
 
 The child session reports host version **2.2.5**, not the pinned 2.2.4 used by
-the earlier R4 probes. The 2.2.5 `to-llm-message.ts` error projection is
-`{ error: tool.state.error, content: tool.state.content ?? [] }` with
-`resultType: "error"`, which is the shape FlowGuard's comparison expects. The
-actual model-input representation at the failing hook is not persisted in the
-supplied artifacts, so a host/provider transformation versus a pre-observed
-mutation cannot yet be distinguished. The failed `read` result is the bounded
-focus for the next isolated reproduction; no assertion is relaxed.
+the earlier R4 probes. An isolated host probe with a missing `read` was run
+against the real **2.2.4** and **2.2.5** binaries (the 2.2.5 diagnostic used a
+version shim solely to pass the old pin check; the executed binary was 2.2.5).
+Both produced the same model-input error envelope:
+
+```json
+{
+  "type": "error",
+  "value": {
+    "error": { "type": "tool.execution", "message": "File not found: ..." },
+    "content": []
+  }
+}
+```
+
+FlowGuard's `modelToolResult` expected the unwrapped `{ error, content }`,
+so every legitimate failed tool result was rejected. The canonical expectation
+is corrected to the observed envelope; changing the error text or content is
+still rejected by the same exact comparison. A real pinned 2.2.4 smoke test now
+exercises the failed-read projection; the 2.2.5 shim observation is diagnostic
+evidence, not a committed pin change.
 
 Bounded corrections in this change:
 
@@ -186,10 +200,12 @@ Bounded corrections in this change:
   dispatch `outcome_unknown`, stale attempt, capacity lock, parent cause detail
   and the `unknownOutcomeTarget` recovery predicate.
 
-Exact root cause of the 2.2.5 model-input deviation remains **NOT_VERIFIED**
-until an isolated 2.2.5 reviewer run with a failed read reaches the instrumented
-comparison. No full Java workflow should be rerun before that. P1 `/start`
-selection and help metadata remain separate open findings.
+The isolated failed-read reproduction explains the real reviewer abort: the
+final missing `read` produced a legitimate error envelope that the old
+comparison rejected. The child cause is preserved and the dispatch closure is
+now durable; the terminal integrity cause does not silently become a retryable
+transport failure. P1 `/start` selection and help metadata remain separate open
+findings; no full Java workflow is claimed by this component evidence.
 
 ## Earlier bounded correction and counterexamples
 

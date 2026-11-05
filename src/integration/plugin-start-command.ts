@@ -11,6 +11,7 @@
  */
 import type { Plugin } from '@opencode/plugin';
 import * as path from 'node:path';
+import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { readConfig } from '../adapters/persistence-config.js';
 import { isAssuranceAtLeast } from '../shared/actor-assurance.js';
 import { hashText } from '../shared/hashing.js';
@@ -197,9 +198,15 @@ async function runStart(
       : result.resumed
         ? 'is ACTIVE (an interrupted Start was completed)'
         : 'is ACTIVE';
+  const directive = resolveWorkflowDirective(workflow.state);
+  const choice =
+    directive.code === 'CHOOSE_FLOW'
+      ? 'Choose one workflow: `/task`, `/architecture`, or `/review`. `/task` is the default suggestion, not a completed workflow decision. This selection is not a human plan or evidence approval.'
+      : null;
   const text = [
     `FlowGuard governance ${status} for this session: ${workflow.state.policySnapshot.mode} policy, phase ${workflow.state.phase}.`,
     ...workflow.report,
+    ...(choice === null ? [] : [choice]),
   ].join('\n\n');
   await presentCommittedStart(
     () =>

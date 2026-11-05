@@ -11,7 +11,7 @@ Workflow complete.
 
   - `/status` — Show the current phase and next action.
   - `/abort` — End the current workflow without presenting it as completed.
-  - `/start` — Prepare or restore a governed session.
+  - `/start` — Activate or resume FlowGuard governance for this root session.
   - `/why` — Explain the current runtime blocker.
   - `/finish` — Show completion readiness without changing the workflow.
 

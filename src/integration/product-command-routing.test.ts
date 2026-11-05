@@ -28,8 +28,8 @@ function isAliasAllowed(phase: Phase, aliasInput: string): boolean {
 
 describe('alias → command policy integration', () => {
   describe('HAPPY — aliases pass through command policy', () => {
-    it('/start is allowed in READY (maps to hydrate, allowed in all phases)', () => {
-      expect(isAliasAllowed('READY', 'start')).toBe(true);
+    it('/hydrate is allowed in READY (canonical hydrate, allowed in all phases)', () => {
+      expect(isAliasAllowed('READY', 'hydrate')).toBe(true);
     });
 
     it('/task is allowed in READY (maps to ticket)', () => {

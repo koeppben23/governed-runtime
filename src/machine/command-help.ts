@@ -17,9 +17,9 @@ export interface CommandHelpEntry {
 
 export const COMMAND_HELP: Record<Command, CommandHelpEntry> = {
   [Command.HYDRATE]: {
-    label: 'Start session',
-    description: 'Prepare or restore a governed session.',
-    does: ['Creates or refreshes the session context.'],
+    label: 'Hydrate session',
+    description: 'Refresh or restore an existing governed session.',
+    does: ['Refreshes the bound session context.'],
     doesNot: [
       'Select a workflow.',
       'Reset an existing session; a terminal session reload is read-only.',
