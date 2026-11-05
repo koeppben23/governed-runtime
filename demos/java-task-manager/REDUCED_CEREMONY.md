@@ -67,7 +67,8 @@ after `/start` in each fresh workspace.
 
 The default install scope is global (`~/.config/opencode`); the explicit
 `--install-scope repo` above keeps both A/B workspaces self-contained. With a
-global install, V2 watches plugin/config changes (`/reload` forces rediscovery).
+global install, V2 watches plugin/config changes; the OpenCode V2 host command `/reload`
+forces rediscovery.
 Installation does not activate governance. Keep the workspace configs below as
 the authoritative per-workspace policy.
 

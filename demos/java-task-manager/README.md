@@ -71,7 +71,8 @@ Follow the live-evidence checklist below before claiming a demo was executed.
 
 The install scope defaults to `--install-scope global` (`~/.config/opencode`,
 commands available in every OpenCode project, but governance stays inactive).
-OpenCode V2 watches plugin/config changes; `/reload` forces rediscovery if needed.
+OpenCode V2 watches plugin/config changes; the OpenCode V2 host command `/reload`
+forces rediscovery if needed.
 The runbooks below pass `--install-scope repo` explicitly: it
 keeps FlowGuard isolated inside each demo workspace, so no global state is
 touched.

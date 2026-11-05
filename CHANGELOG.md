@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Distinguish explicitly labelled OpenCode host `/reload` guidance from installed
+  FlowGuard commands in the demo documentation guard, retaining negative tests
+  for unknown commands. Keep running-install smoke resources local to each case
+  and count cleanup within its existing test budget, preventing a timed-out
+  cleanup hook from corrupting the following case.
+
 - Publish OpenCode's native FlowGuard entrypoint only after the dependency tree
   is live, so an already-running Desktop/server cannot discover the fresh plugin
   before `@flowguard/core` exists. Keep late publication inside rollback coverage
