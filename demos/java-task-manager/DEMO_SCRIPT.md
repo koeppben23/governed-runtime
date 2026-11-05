@@ -23,8 +23,9 @@ working tree — it operates independently of Development changes on `main`.
 ../../run-demo-setup.sh --install --install-scope repo --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 # Open /tmp/flowguard-demos/java-task-manager in OpenCode Desktop
 # Alternative: omit --install-scope repo to install globally (~/.config/opencode,
-# commands in every project). V2 watches plugin/config changes; use /reload
-# to force rediscovery if needed. Installation does not activate governance.
+# commands in every project). The installer verifies and restarts the exact
+# OpenCode service after the applied install; use /reload only if it reports
+# HOST_RESTART_REQUIRED. Installation does not activate governance.
 ```
 
 ---

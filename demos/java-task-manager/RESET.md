@@ -15,6 +15,16 @@ rm -rf /tmp/flowguard-java-demo
 # /start
 ```
 
+If you intentionally use a **global** install, do not delete
+`~/.config/opencode` to reset. Remove only FlowGuard's proven managed files:
+
+```bash
+npx --package /path/to/flowguard-core-*.tgz flowguard uninstall --install-scope global
+```
+
+The uninstaller preserves foreign OpenCode configuration, nonempty shared
+`node_modules`, workspace evidence and host state. Then rerun the setup command.
+
 ```bash
 # Option B: Prepare-only, then install manually
 rm -rf /tmp/flowguard-java-demo

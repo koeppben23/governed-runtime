@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installed-command catalogue and command documentation; `/hydrate` remains the
   compatibility refresh surface.
 
+- Align the Java demo setup with the installer-owned host restart and document
+  `flowguard uninstall --install-scope global` as the safe reset instead of
+  deleting the entire OpenCode configuration root.
+
 - Present `/approve` and the other decision commands as a readable confirmation
   card with the recorded verdict and current phase instead of the raw decision
   envelope, queued for delivery instead of remaining an unshown steer item. The

@@ -164,7 +164,8 @@ if [[ "$MODE" == "install" ]]; then
         echo "        available to every OpenCode project; it does not activate governance."
         echo "        The global policy default becomes 'team';"
         echo "        a repository config can only restrict it."
-        echo "        OpenCode V2 watches plugin/config changes; /reload forces rediscovery."
+        echo "        The installer verifies/restarts the exact OpenCode service after the"
+        echo "        applied install; use /reload only if it reports HOST_RESTART_REQUIRED."
     fi
     flowguard_install "$TARBALL" "$INSTALL_SCOPE"
 

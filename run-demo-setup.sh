@@ -216,8 +216,9 @@ echo "  ./demos/run-proofgraph-variants.sh"
 echo ""
 if [[ "$MODE" == "install" && "$INSTALL_SCOPE" == "global" ]]; then
     echo "No FlowGuard session has been started and no demo flow has run."
-    echo "FlowGuard is installed globally (~/.config/opencode) — restart OpenCode Desktop,"
-    echo "then open a prepared workspace and follow its runbook before claiming live evidence."
+    echo "FlowGuard is installed globally (~/.config/opencode). The installer verifies the exact"
+    echo "running service and restarts it after the applied install; if it reported HOST_RESTART_REQUIRED,"
+    echo "follow that command. Then open a prepared workspace and follow its runbook."
 else
     echo "No FlowGuard session has been started and no demo flow has run."
     echo "Open a prepared workspace and follow its runbook before claiming live evidence."
