@@ -679,6 +679,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reopen an author-resolved implementation review from the current
+  **unsuperseded** stale attempt rather than failing when an earlier retry left a
+  second historical stale attempt. The recovery refuses to run while an
+  authorized dispatch is live, requires exactly one `outcome_unknown` dispatch
+  for the selected attempt, keeps the frozen re-arm budget, and emits a durable
+  `review:obligation_reopened` semantic audit intent with the predecessor
+  lineage. Add a regression with a retryable A→`dispatch_rearm` B chain followed
+  by B's unresolved-challenge block.
+
 - Report `SUBAGENT_UNABLE_TO_REVIEW` instead of the misleading
   `SUBAGENT_EVIDENCE_REUSED` when a standalone peer reviewer honestly declares
   the supplied content unreviewable. The native capture consumes that

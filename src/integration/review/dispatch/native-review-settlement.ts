@@ -73,7 +73,10 @@ function lockedObligation(
 }
 
 /** Stale, evidence-free attempts of the obligation that no re-arm has superseded. */
-function unsupersededStaleAttempts(assurance: Assurance, obligationId: string): ReviewAttempt[] {
+export function unsupersededStaleAttempts(
+  assurance: Assurance,
+  obligationId: string,
+): ReviewAttempt[] {
   return assurance.attempts.filter(
     (attempt) =>
       attempt.obligationId === obligationId &&

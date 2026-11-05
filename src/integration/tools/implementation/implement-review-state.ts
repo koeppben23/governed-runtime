@@ -22,6 +22,7 @@ import {
 } from '../../review/obligations/assurance.js';
 import { updateObligation } from '../../review/obligations/obligation-state.js';
 import { buildInterruptedDispatchRearm } from '../../review/dispatch/durable-dispatch.js';
+import { unsupersededStaleAttempts } from '../../review/dispatch/native-review-settlement.js';
 import { ensureReviewAssurance, isOpenReviewObligation } from '../../../state/review-dispatch.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
@@ -84,17 +85,25 @@ export function reopenReviewAfterAuthorResolution(state: SessionState, now: stri
   if (!obligation || obligation.obligationType !== 'implement' || obligation.status !== 'blocked')
     return state;
   if (computeUnaddressedPriorFailIds(state).length > 0) return state;
-  const spent = assurance.attempts.filter(
-    (attempt) =>
-      attempt.obligationId === obligation.obligationId &&
-      attempt.status === 'stale' &&
-      assurance.dispatches.some(
-        (dispatch) =>
-          dispatch.attemptId === attempt.attemptId &&
-          dispatch.obligationId === obligation.obligationId &&
-          dispatch.dispatchStatus === 'outcome_unknown',
-      ),
-  );
+  // An earlier retryable capture/rearm may have left historical stale attempts.
+  // Only the one not superseded by a dispatch_rearm successor is the current
+  // recovery candidate; counting history would dead-end the common A→B lineage.
+  if (
+    assurance.dispatches.some(
+      (dispatch) =>
+        dispatch.obligationId === obligation.obligationId &&
+        dispatch.dispatchStatus === 'authorized',
+    )
+  )
+    return state;
+  const spent = unsupersededStaleAttempts(assurance, obligation.obligationId).filter((attempt) => {
+    const dispatches = assurance.dispatches.filter(
+      (dispatch) =>
+        dispatch.attemptId === attempt.attemptId &&
+        dispatch.obligationId === obligation.obligationId,
+    );
+    return dispatches.length === 1 && dispatches[0]?.dispatchStatus === 'outcome_unknown';
+  });
   if (spent.length !== 1) return state;
   const spentAttempt = spent[0];
   if (!spentAttempt) return state;
