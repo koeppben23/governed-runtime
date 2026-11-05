@@ -1,7 +1,7 @@
 # ADR-011: Post-cutover diagnostics and human-decision UX contract
 
-- **Status:** Accepted as architecture by the operator; implementation and
-  installed-host acceptance **NOT_VERIFIED**
+- **Status:** Accepted as architecture by the operator; portable diagnostic
+  export implemented; installed-host and native-UI acceptance **NOT_VERIFIED**
 - **Date:** 2026-11-05
 - **Deciders:** FlowGuard operator
 - **Landing gate:** [PR #1197](https://github.com/koeppben23/governed-runtime/pull/1197)
@@ -214,6 +214,35 @@ portable Markdown/file path remains complete and must not depend on a GUI.
 #1191 may provide the projection type and contract. #1196 implements the
 interaction surfaces and chooser. Neither issue may introduce a rival command
 catalogue or persisted view state.
+
+## Implementation status (2026-11-05)
+
+Implemented in this repository state:
+
+- `flowguard debug-export` and native `/debug-export` produce a bounded,
+  write-once snapshot of the root session and known reviewer children.
+- Root and child resolution uses the canonical session authority. A known child
+  that cannot be resolved remains in the graph and completeness denominator.
+- The snapshot verifies the canonical audit chain, preserves native session,
+  message and part IDs, captures optional host transcripts through the installed
+  OpenCode CLI or the native plugin context, and redacts before persistence.
+- The manifest records per-file SHA-256/size, capture boundaries, redaction mode,
+  host-history status and explicit `COMPLETE`/`PARTIAL`/`NOT_VERIFIED` status.
+- The diagnostic entry works before ACTIVE governance and never starts,
+  hydrates, reconciles, approves or repairs.
+- Doctor reports the native diagnostic command as available in this build and
+  explicitly keeps native Desktop delivery `NOT_VERIFIED`; it does not execute
+  the command.
+
+Still not implemented or not verified:
+
+- Session Explorer, review-gate UI, Next Action and notification surfaces.
+- Installed Desktop/TUI panel visibility and notification delivery.
+- Exact capture limits calibrated against representative large workflows.
+- Complete PII detection coverage.
+
+Focused verification for this slice is recorded in the owning PR. It does not
+constitute installed Desktop acceptance or cutover approval.
 
 ## Options considered
 

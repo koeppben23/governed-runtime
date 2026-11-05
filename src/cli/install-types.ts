@@ -19,7 +19,8 @@ export { PACKAGE_VERSION, resolvePackageRoot } from '../shared/package-version.j
 
 export type InstallScope = 'global' | 'repo';
 export type InstallPlatform = HostId;
-export type CliAction = 'install' | 'uninstall' | 'doctor' | 'run' | 'serve' | 'inspect';
+export type CliAction =
+  'install' | 'uninstall' | 'doctor' | 'run' | 'serve' | 'inspect' | 'debug-export';
 export type ScopeSource = 'default' | 'cli';
 
 export interface CliArgs {

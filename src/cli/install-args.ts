@@ -32,6 +32,7 @@ const VALID_ACTIONS: readonly CliAction[] = [
   'run',
   'serve',
   'inspect',
+  'debug-export',
 ] as const;
 
 interface ParseState {
@@ -249,7 +250,7 @@ export function parseArgs(argv: string[]): CliParseResult<CliArgs> {
     };
   }
 
-  if (action === 'run' || action === 'serve' || action === 'inspect') {
+  if (action === 'run' || action === 'serve' || action === 'inspect' || action === 'debug-export') {
     return makeDelegatedResult(action);
   }
 

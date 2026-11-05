@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without claiming verified human authorship, and splits ownership between
   #1191 and #1196.
 
+- Add the first portable post-cutover diagnostic slice: `flowguard debug-export`
+  and native `/debug-export` create a bounded, write-once snapshot of the root
+  session and known reviewer children. The snapshot preserves native IDs,
+  verifies the audit chain, captures optional host transcripts, redacts before
+  persistence, records per-file SHA-256/size and reports
+  `COMPLETE`/`PARTIAL`/`NOT_VERIFIED` with known-but-unreachable sessions kept in
+  the denominator. It works before ACTIVE governance and never starts,
+  hydrates, reconciles, approves or repairs. Doctor reports the native
+  diagnostic command as available in this build and keeps native Desktop
+  delivery explicitly `NOT_VERIFIED`; the
+  Session Explorer, review UI and notifications remain follow-up work.
+
 - Announce automatic plan-approval validation before it starts. The
   `/approve` host command now presents a visible `Validation started` turn
   naming the active checks (for example `build` and `test`) while the checks

@@ -13,7 +13,9 @@ command sections below define their exact routing and phase behavior.
 Use `/status`, `/finish`, `/help`, and `/commands` to inspect the current
 session without changing it. `flowguard_status` provides that session view to
 scripts; `flowguard inspect` instead reports workspace sessions and their
-audit/compliance data.
+audit/compliance data. `/debug-export` and `flowguard debug-export` create a
+bounded, redacted diagnostic snapshot for incident analysis; they are not
+governance evidence or a replacement for the governed `/export`.
 
 ## Recovery Summary
 
@@ -51,6 +53,7 @@ Template commands invoke their corresponding tools; native callbacks such as
 | `/review-decision` (compatibility)                             | `flowguard_decision`      | Native verdict-routing surface kept for scripts; the product variants above are the recommended interface                                                                              |
 | `/recover-capacity`                                            | native review-assurance   | Explicitly releases a proven terminal reviewer capacity lock; not a model tool and not an automatic unlock                                                                             |
 | `/end-governance`                                              | native activation         | Ends opt-in governance after safe closure; distinct from `/finish` and `/abort`                                                                                                        |
+| `/debug-export`                                                | native diagnostics        | Read-only diagnostic snapshot for the current session and known reviewer children; works before ACTIVE governance and never authorizes or repairs                                      |
 | `/validate`                                                    | `flowguard_run_check`     | Explicit baseline validation through the same evidence path as automatic validation                                                                                                    |
 | `/check`                                                       | native scoped command     | Runs the canonical verification/review turn under the build agent, then clears scope and restores the prior agent; not a VALIDATE alias                                                |
 | `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                                                                                              |
@@ -638,3 +641,31 @@ support it.
 | Unreadable trail   | `Cannot read audit trail: <error>` (exit 1)           |
 
 **Non-Goals:** No state mutation, no schema changes, no new audit capabilities, no OpenCode slash command — CLI-only projection of existing audit data.
+
+### `flowguard debug-export` — Read-only diagnostic snapshot
+
+Creates a bounded, versioned snapshot of the root session and every known
+reviewer/continuation child. It reads canonical session state, audit, review
+assurance and optional host transcripts; it never starts, hydrates, reconciles,
+unlocks, approves or repairs governance.
+
+```bash
+flowguard debug-export --session <id>              # redacted snapshot with host history
+flowguard debug-export --session <id> --no-host    # FlowGuard state/audit only
+flowguard debug-export --session <id> --out <dir>  # explicit write-once directory
+flowguard debug-export --session <id> --raw        # explicit no-redaction consent
+```
+
+The same operation is available as native `/debug-export` in OpenCode. It uses
+the current session and writes under `.opencode/diagnostics/`. Native Desktop
+notification and panel behavior remains `NOT_VERIFIED` until installed-host
+evidence exists; file output is the reliable contract.
+
+The snapshot contains `manifest.json`, `session-graph.json`, `timeline.json`,
+per-session redacted state/audit/review files and optional redacted host
+transcripts. The manifest reports `COMPLETE`, `PARTIAL` or `NOT_VERIFIED`,
+per-file SHA-256/size, capture boundaries, warnings and redaction limitations.
+Known-but-unreachable sessions remain in the denominator and prevent `COMPLETE`.
+
+A diagnostic snapshot is not an authorization certificate and never replaces
+the governed `/export`.

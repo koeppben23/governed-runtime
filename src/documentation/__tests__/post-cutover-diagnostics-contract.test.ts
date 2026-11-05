@@ -36,7 +36,7 @@ describe('documentation/post-cutover-diagnostics-contract', () => {
       const adr = readDoc(ADR_011);
 
       expect(adr).toContain('Post-cutover diagnostics and human-decision UX contract');
-      expect(adr).toContain('implementation and installed-host acceptance **NOT_VERIFIED**');
+      expect(adr).toContain('installed-host and native-UI acceptance **NOT_VERIFIED**');
       expect(adr).toContain('#1191');
       expect(adr).toContain('#1196');
     });

@@ -41,6 +41,7 @@ import {
   recordEndAudit,
 } from './plugin-governance-lifecycle-command.js';
 import { addCheckCommand } from './plugin-check-command.js';
+import { addDebugExportCommand } from './plugin-debug-export-command.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import {
   appendAuditEventAlreadyLocked,
@@ -116,6 +117,7 @@ function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Prom
     addDecisionCommands(ctx, deps, editor);
     addGovernanceLifecycleCommands(ctx, deps, editor);
     addCheckCommand(ctx, deps, editor);
+    addDebugExportCommand(ctx, editor);
   });
 }
 
