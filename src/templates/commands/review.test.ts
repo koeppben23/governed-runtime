@@ -33,6 +33,15 @@ describe('templates/commands/review (#401 Discovery context)', () => {
     });
   });
 
+  describe('HAPPY — risk classification evidence', () => {
+    it('requires targetPaths for manual text/URL reviews without auto-resolved paths', () => {
+      expect(REVIEW_COMMAND).toContain('targetPaths');
+      expect(REVIEW_COMMAND).toMatch(/manual `text` or `url`/);
+      expect(REVIEW_COMMAND).toContain('never invent them');
+      expect(REVIEW_COMMAND).toContain('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+    });
+  });
+
   // BAD — NOT_VERIFIED when content cannot be correlated to local Discovery
   describe('BAD — NOT_VERIFIED correlation rule', () => {
     it('marks Discovery-dependent claims NOT_VERIFIED when correlation fails', () => {

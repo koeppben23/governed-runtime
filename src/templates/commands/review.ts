@@ -42,10 +42,16 @@ Start the peer review flow for the current FlowGuard session.
     Always preserve the original URL/reference. If FlowGuard blocks source resolution, report its recovery and stop; do not pre-load or reinterpret the source.
 
 3. **Create the review obligation** (content-aware only):
-    If content was provided, the FIRST \`flowguard_review\` call MUST carry ONLY the matching
+    If content was provided, the FIRST \`flowguard_review\` call MUST carry the matching
     content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`), optional \`inputOrigin\`,
-    and optional \`references\`. Do not include reviewer findings in this first call: FlowGuard
-     requires a visible native subagent review before the peer review can complete.
+    optional \`references\`, and \`targetPaths\` whenever the content does not auto-resolve
+    changed paths (manual \`text\` or \`url\`). \`targetPaths\` is the canonical
+    risk-classification evidence: collect the actual touched paths from the user or the
+    supplied content; never invent them. If the touched paths cannot be established, report
+    the \`RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE\` blocker instead of fabricating a review.
+    Branch and PR reviews resolve their changed paths automatically. Do not include reviewer
+    findings in this first call: FlowGuard requires a visible native subagent review before
+    the peer review can complete.
 
 4. **Independent Review** (content-aware only):
    - For a reviewer subagent response that is terminal BLOCKED or \`error: true\`: report its

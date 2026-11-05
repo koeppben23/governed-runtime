@@ -679,6 +679,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Make standalone `/review` usable for manual text and URL content by requiring
+  `targetPaths` on the first `flowguard_review` call when changed paths do not
+  auto-resolve. The command previously allowed only the content field, so a
+  valid text review dead-ended at `RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE`;
+  the risk blocker now names the actionable recovery instead of suggesting a
+  fresh session.
+
 - Restore implementation-review authority after the author records the last
   missing resolution for a prior failing challenge. A reviewer acceptance that
   arrived before that resolution is correctly rejected with
