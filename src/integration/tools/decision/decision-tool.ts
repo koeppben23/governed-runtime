@@ -303,7 +303,11 @@ export const decision: ToolDefinition = {
           phase: finalResult.state.phase,
         });
         if (autoValidation.kind === 'run') {
-          const autoValidationResponse = await runActiveChecksAutomatically(context);
+          const autoValidationResponse = await runActiveChecksAutomatically(
+            context,
+            undefined,
+            context.autoValidationProgress,
+          );
           if (autoValidationResponse !== null) return autoValidationResponse;
         }
       }

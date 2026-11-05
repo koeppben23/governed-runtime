@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
 // State & Machine
-import { SessionState, type PendingAuditOperation } from '../../state/schema.js';
+import { SessionState, type PendingAuditOperation, type Phase } from '../../state/schema.js';
 import { hashText } from '../../shared/hashing.js';
 // Adapters
 import {
@@ -34,6 +34,13 @@ const lockedSessionDir = new AsyncLocalStorage<string>();
  * signal/progress and resolve canonical worktree authority in plugin.ts;
  * this application contract is not a native SDK ToolContext.
  */
+export interface AutoValidationProgressEvent {
+  readonly phase: Phase;
+  readonly checks: readonly string[];
+}
+
+export type AutoValidationProgress = (event: AutoValidationProgressEvent) => void | Promise<void>;
+
 export interface ToolContext {
   sessionID: string;
   messageID: string;
@@ -43,6 +50,8 @@ export interface ToolContext {
   workspaceFingerprint?: string;
   abort: AbortSignal | undefined;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
+  /** Host-command hook for a visible in-flight validation update. */
+  autoValidationProgress?: AutoValidationProgress;
 }
 
 /**

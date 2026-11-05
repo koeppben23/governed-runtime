@@ -96,6 +96,7 @@ export interface TestToolContext {
   workspaceFingerprint?: string;
   abort: AbortSignal;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
+  autoValidationProgress?: import('./tools/helpers.js').AutoValidationProgress;
 }
 
 /**

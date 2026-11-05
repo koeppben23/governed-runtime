@@ -122,6 +122,31 @@ describe('native decision commands', () => {
     ).rejects.toThrow();
     expect(decisions(await readAuditTrail(before.sessDir))).toHaveLength(1);
   });
+  it('presents an in-flight validation progress turn before the decision report', async () => {
+    await gate();
+    const execute = vi.spyOn(decision, 'execute').mockImplementation(async (_args, context) => {
+      await context.autoValidationProgress?.({
+        phase: 'VALIDATION',
+        checks: ['build', 'test'],
+      });
+      return JSON.stringify({
+        phase: 'ARCH_COMPLETE',
+        status: 'Progress presentation fixture.',
+        directive: { kind: 'terminal', code: 'ARCHITECTURE_COMPLETE', commands: [] },
+      });
+    });
+    try {
+      await host.command('approve', sessionID, 'Approved');
+    } finally {
+      execute.mockRestore();
+    }
+    expect(host.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: '**Validation started** — running `build`, `test`. Results will follow automatically.',
+      }),
+    );
+  });
+
   it('does not turn activation into permission for a model decision at a human gate', async () => {
     await gate();
     const output = await host.definitions.get('flowguard_decision')!.execute(

@@ -303,8 +303,13 @@ describe('automatic validation', () => {
     it('team plan approval runs every active check automatically and persists the evidence', async () => {
       await reachTeamPlanReview();
       vi.mocked(executorMock.executeCheck).mockClear();
+      const progress = vi.fn();
 
-      const result = await callOk(decision, { verdict: 'approve', rationale: 'Approved' });
+      const result = await callOk(
+        decision,
+        { verdict: 'approve', rationale: 'Approved' },
+        { ...ctx, autoValidationProgress: progress },
+      );
 
       // The decision response is superseded by the final automatic run_check
       // response: the approval crossed VALIDATION into IMPLEMENTATION.
@@ -320,6 +325,11 @@ describe('automatic validation', () => {
       expect(vi.mocked(executorMock.executeCheck).mock.calls).toHaveLength(
         state!.activeChecks.length,
       );
+      expect(progress).toHaveBeenCalledTimes(1);
+      expect(progress).toHaveBeenCalledWith({
+        phase: 'VALIDATION',
+        checks: state!.activeChecks,
+      });
     });
 
     it('team /implement runs the post-implementation checks automatically and activates the review obligation', async () => {

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Announce automatic plan-approval validation before it starts. The
+  `/approve` host command now presents a visible `Validation started` turn
+  naming the active checks (for example `build` and `test`) while the checks
+  run, then presents the existing decision report with their results.
+
 - Present the canonical READY flow choice immediately after `/start` under an
   explicit `## Next` section with all three executable commands, and clarify that
   `/task` is a default suggestion, not a completed workflow decision or human
