@@ -36,6 +36,7 @@ import {
   validateTarball,
   writeArtifacts,
   writeConfigFiles,
+  publishOpencodePlugin,
 } from './install-steps.js';
 import {
   commitDependencyTransaction,
@@ -362,6 +363,7 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
     tx = await createDependencyTransaction(snapshot, snapshot.vendorTarballPath);
     await executeDependencyTransaction(tx);
     await persistOwnership(ctx, snapshot, ownership);
+    if (ctx.installPlatform === 'opencode') await publishOpencodePlugin(ctx, snapshot);
     await commitDependencyTransaction(tx, ctx);
 
     emitPostInstallWarnings(ctx);

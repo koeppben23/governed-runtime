@@ -84,6 +84,12 @@ config, unresolved dependencies or obsolete/duplicate registrations block setup.
 Doctor's runtime/activation warnings are not installed ACTIVE or Desktop
 acceptance; do not start `/start` until setup verification succeeds.
 
+If Desktop still cannot find `/start`, inspect its own server's plugin status.
+A retained `Cannot find package '@flowguard/core'` error from an earlier live
+install is not repaired by creating V1 files or invoking `/hydrate`. After
+safely stopping active work, follow the [native load recovery procedure](../../docs/installation.md#native-v2-layout-and-fresh-install-boundary)
+using the CLI matching Desktop, then verify `/start` in that same server.
+
 ```bash
 # From demos/java-task-manager/: prepare every live demo workspace (repo-scoped)
 ../../run-demo-setup.sh --install --install-scope repo --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos

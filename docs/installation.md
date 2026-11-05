@@ -74,9 +74,29 @@ selection and permissions are preserved byte-for-byte. An absent config remains
 absent. `flowguard-mandates.md` is a passive managed artifact, **not** registered
 in `instructions[]`; installing files does not activate a session.
 
-OpenCode watches configuration/plugin changes; use `/reload` to force a reload,
-not a service restart. Doctor distinguishes file/import checks from actual native
-load, lifecycle, INACTIVE parity, operator provenance and reviewer proof.
+The installer publishes the watched native plugin entrypoint only after its
+dependency tree is live. This prevents a running host from importing the fresh
+entrypoint before `@flowguard/core` is available; publication failures still
+restore the previous dependency tree and managed artifacts.
+
+OpenCode watches configuration/plugin changes; use `/reload` for normal
+rediscovery. Doctor distinguishes file/import checks from actual native load,
+lifecycle, INACTIVE parity, operator provenance and reviewer proof.
+
+**Recovery for an already-failed live installation:** an older installer could
+publish the entrypoint during dependency staging. The running host can then
+retain `Cannot find package '@flowguard/core'` after installation succeeds, even
+across `/reload`. Check the **actual Desktop server's** version, location-scoped
+`GET /api/plugin` and `GET /api/command`, and its matching error-reference log.
+Do not infer Desktop health from a separate `opencode serve` process: Desktop
+may use a different bundled binary and an already-running service. Finish or
+safely stop active work before restarting the affected service with that same
+Desktop release's CLI (`opencode service restart`); a fresh server process is
+required for this observed retained-import failure. Do not delete configuration,
+databases or governance evidence. Verify plugin status `active` and native
+`/start` availability afterwards. Do not create `start.md` or use `/hydrate` as
+an activation substitute. See the official [plugin reload caveat](https://opencode.ai/v2/docs/plugins/#reload)
+for changes to unwatched local dependencies.
 
 Old FlowGuard wrappers, global mandate registrations, duplicate configured
 FlowGuard plugins and obsolete installer ownership manifests are rejected before

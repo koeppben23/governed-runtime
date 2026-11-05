@@ -92,6 +92,23 @@ failure semantics and limits. Documentation and static booleans are not proof.
 | P0-09 Build/docs/distribution             | New truthful current proof contract, package/install/doctor/docs agreement; historical bytes preserved                                                                                                                                                                                                                             | Current-build tarball/checksum, cross-platform install and Linux/macOS/Windows CLI-server parity pass. Desktop/whole-product workflow remain NOT_VERIFIED. Historical bytes/evidence are preserved; CI is not by itself installed Desktop acceptance.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | P0-10 Portability/simplification          | Host SDK/mechanics at adapter boundary; same host-neutral conformance suite with minimal independent test adapter; V1/duplicate layers removed                                                                                                                                                                                     | **PASS for implementation cleanup/code evidence; final docs-HEAD closure open.** Type facade, unused provenance, host classifier, old settlement and four callback-driven rails are removed. Their nine/seven/purpose-level cases were mapped to executable current owners, with obsolete callback contracts explicitly retired and guarded against reintroduction. Historical V1 JSON is unchanged; no second runtime or test-only executor remains. Only deliberate `shared/product-inventory.ts` stays outside the combined shipped graph. Hosted CI passed 37/37 on `31341f1f` (after a disclosed perf rerun); default mutation passed with score 81.10 against the unchanged 80 break threshold on the identical production tree. The later docs-only HEAD `9b91385d` has twice missed only `integration-perf` with unchanged budgets, so formal full-green closure remains open; no code regression is established. The ISO concurrent-publication cause remains a separate open diagnosis; installed ACTIVE/Desktop acceptance and R4 remain separate V2 blockers. This PASS does not authorize merge and claims no net-complexity reduction. See [ownership decisions](./p0-10-ownership-decisions.md). |
 
+**P0-01 live-install discovery defect (2026-11-05):** the actual Desktop 2.2.5
+service reported FlowGuard `failed` with `Cannot find package '@flowguard/core'`;
+its native `/start` was absent while installed Markdown commands remained.
+A controlled real-package reproduction confirms that publishing the native
+entrypoint before dependency staging completes leaves a running host failed even
+after installation succeeds and location reload returns 204. Fresh-process
+success alone did not diagnose this defect. The installer now publishes the
+entrypoint after the dependency swap, inside the existing rollback boundary.
+`opencode-running-install.smoke.test.ts` installs checksum-bound package bytes
+into an already-running pinned 2.2.4 host for both scopes, holds real npm at the
+staging boundary, checks no premature plugin publication, and executes native
+`/start` to resolve persisted authority and observe its ACTIVE report. This is
+bounded installed CLI/server evidence, not Desktop UI, autonomous/human-source
+or complete workflow acceptance. Existing failed Desktop processes require the
+[documented recovery](../../installation.md#native-v2-layout-and-fresh-install-boundary);
+P0-01 and merge remain unaccepted.
+
 **P0-00/P0-07 reconciliation follow-up (2026-11-04):** the
 [same-artifact rerun](./p0-00-inactive-parity.md#counterprobe-reconciliation-and-live-publication-follow-up)
 passes 65 native contracts locally: the original seven assertions plus the

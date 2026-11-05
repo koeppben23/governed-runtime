@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Publish OpenCode's native FlowGuard entrypoint only after the dependency tree
+  is live, so an already-running Desktop/server cannot discover the fresh plugin
+  before `@flowguard/core` exists. Keep late publication inside rollback coverage
+  and remove the unused non-transactional dependency installer. Add installed-host
+  coverage for native `/start` after installation into a running host and document
+  recovery for processes that already retained a failed package import.
+
 - Verify Java demo installs with the canonical V2 doctor from the same tarball,
   retaining the mandatory reviewer check for both scopes. Remove V1-only file
   requirements, correct V2 reload/activation guidance and document the pinned

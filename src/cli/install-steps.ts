@@ -8,7 +8,6 @@
  * @version v1
  */
 
-import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -37,7 +36,7 @@ import {
   writeIfAbsent,
 } from './install-helpers.js';
 import { verifyTarballChecksum } from './install-helpers-integrity.js';
-import { detectPackageManager, snapshotForRollback } from './install-helpers-rollback.js';
+import { snapshotForRollback } from './install-helpers-rollback.js';
 import {
   FLOWGUARD_TARBALL_PATTERN,
   PACKAGE_VERSION,
@@ -63,8 +62,6 @@ import {
   PLUGIN_RELATIVE_PATH,
   buildMandatesContent,
 } from './templates.js';
-
-const DEPENDENCY_INSTALL_TIMEOUT_MS = 300_000;
 
 // ─── Install context ─────────────────────────────────────────────────────────
 
@@ -301,7 +298,7 @@ export async function buildRollbackSnapshot(
   };
 }
 
-// ─── Step: Write artifacts (tarball + mandates + platform plugins) ────────────
+// ─── Step: Prepare artifacts (native OpenCode entrypoint is published later) ──
 
 function createInstallMutationSink(
   journal: MutationJournal,
@@ -354,16 +351,6 @@ async function writeOpencodeArtifacts(
   const reviewerDefinition = reviewerDefinitionForPlatform(ctx.installPlatform);
   const reviewerPath = join(target, reviewerDefinition.relativePath);
 
-  const pluginOp = await writeIfAbsent(
-    join(target, PLUGIN_RELATIVE_PATH),
-    PLUGIN_WRAPPER,
-    args.force,
-  );
-  ctx.ops.push(pluginOp);
-  if (pluginOp.action !== 'skipped') {
-    journal.record(findPreState(snapshot.preStateEntries, join(target, PLUGIN_RELATIVE_PATH)));
-  }
-
   for (const [name, content] of Object.entries(COMMANDS)) {
     const cmdOp = await writeIfAbsent(join(target, 'commands', name), content, args.force);
     ctx.ops.push(cmdOp);
@@ -376,6 +363,20 @@ async function writeOpencodeArtifacts(
   ctx.ops.push(revOp);
   if (revOp.action !== 'skipped')
     journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
+}
+
+/** The watched entrypoint must never precede its installed dependency tree.
+ * A running host can retain an unresolved package import even across /reload. */
+export async function publishOpencodePlugin(
+  ctx: InstallContext,
+  snapshot: SnapshotResult,
+): Promise<void> {
+  const journal = snapshot.mutationJournal;
+  await ensureDirTracked(join(ctx.target, 'plugins', 'flowguard'), journal);
+  const pluginPath = join(ctx.target, PLUGIN_RELATIVE_PATH);
+  const op = await writeIfAbsent(pluginPath, PLUGIN_WRAPPER, ctx.args.force);
+  ctx.ops.push(op);
+  if (op.action !== 'skipped') journal.record(findPreState(snapshot.preStateEntries, pluginPath));
 }
 
 export async function writeArtifacts(
@@ -398,7 +399,6 @@ export async function writeArtifacts(
 
   if (installPlatform !== 'claude-code' && installPlatform !== 'codex') {
     await ensureDirTracked(join(target, 'plugins'), journal);
-    await ensureDirTracked(join(target, 'plugins', 'flowguard'), journal);
     await ensureDirTracked(join(target, 'commands'), journal);
     await ensureDirTracked(join(target, 'agents'), journal);
   }
@@ -547,44 +547,6 @@ async function mergeExistingOpencodeConfig(
     reason: 'policy mode updated via --force',
   });
   snapshot.mutationJournal.record(findPreState(snapshot.preStateEntries, snapshot.cfgPath));
-}
-
-// ─── Step: Install dependencies ──────────────────────────────────────────────
-
-export async function installDependencies(
-  ctx: InstallContext,
-  snapshot: SnapshotResult,
-): Promise<void> {
-  const pm = detectPackageManager();
-  if (pm === null) {
-    throw new CliInstallError(
-      'PACKAGE_MANAGER_UNAVAILABLE',
-      'Neither bun nor npm found in PATH. Install bun (https://bun.sh) or Node.js/npm.',
-    );
-  }
-
-  try {
-    execSync(pm === 'npm' ? 'npm install --no-audit --no-fund' : 'bun install', {
-      cwd: snapshot.configTargetDir,
-      stdio: 'pipe',
-      timeout: DEPENDENCY_INSTALL_TIMEOUT_MS,
-    });
-    ctx.ops.push({ path: join(snapshot.configTargetDir, 'node_modules'), action: 'written' });
-
-    const corePath = join(snapshot.configTargetDir, 'node_modules', '@flowguard', 'core');
-    if (!existsSync(corePath)) {
-      throw new CliInstallError(
-        'DEPENDENCY_CORE_MISSING',
-        'Dependencies installed but @flowguard/core not found.',
-      );
-    }
-  } catch (err) {
-    throw new CliInstallError(
-      'DEPENDENCY_INSTALL_FAILED',
-      `Dependency install failed: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err },
-    );
-  }
 }
 
 // ─── Step: Post-install notices ──────────────────────────────────────────────
