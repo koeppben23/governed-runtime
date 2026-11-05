@@ -128,8 +128,8 @@ describe('native /start command', () => {
     );
     expect(host.synthetic).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: expect.stringContaining(
-          'Choose one workflow: `/task`, `/architecture`, or `/review`.',
+        text: expect.stringMatching(
+          /## Next[\s\S]*Choose one workflow: `\/task`, `\/architecture`, or `\/review`\.[\s\S]*`\/task` is the default suggestion, not a completed workflow decision or human approval\./,
         ),
       }),
     );

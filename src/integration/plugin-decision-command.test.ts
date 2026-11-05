@@ -352,7 +352,15 @@ describe('native decision commands', () => {
       const output = JSON.stringify({ phase: 'ARCH_COMPLETE' });
       vi.spyOn(decision, 'execute').mockResolvedValue({ output });
       await executeDecisionCommand(f.ctx, f.deps, request);
-      expect(f.synthetic).toHaveBeenCalledWith({ sessionID: 'root', text: output, resume: false });
+      expect(f.synthetic).toHaveBeenCalledWith({
+        sessionID: 'root',
+        text: expect.stringContaining(
+          '**Decision recorded:** approved; current phase `ARCH_COMPLETE`.',
+        ),
+        resume: false,
+      });
+      const calls = f.synthetic.mock.calls as unknown as Array<[{ text: string }]>;
+      expect(calls[0]?.[0].text).toContain(output);
       vi.mocked(decision.execute).mockResolvedValue('not-json');
       await expect(executeDecisionCommand(f.ctx, f.deps, request)).rejects.toThrow(
         'PLUGIN_ENFORCEMENT_UNAVAILABLE',
@@ -361,6 +369,20 @@ describe('native decision commands', () => {
       await expect(executeDecisionCommand(f.ctx, f.deps, request)).rejects.toThrow(
         'GOVERNANCE_AUTHORITY_BLOCKED',
       );
+    });
+    it('presents the canonical result card instead of the raw decision envelope', async () => {
+      const f = await unitCommandFixture();
+      const output = JSON.stringify({
+        phase: 'IMPLEMENTATION',
+        presentation: { markdown: '## Validation\n\nAll active checks passed.' },
+      });
+      vi.spyOn(decision, 'execute').mockResolvedValue({ output });
+      await executeDecisionCommand(f.ctx, f.deps, request);
+      const calls = f.synthetic.mock.calls as unknown as Array<[{ text: string }]>;
+      const text = calls[0]?.[0].text ?? '';
+      expect(text).toContain('**Decision recorded:** approved; current phase `IMPLEMENTATION`.');
+      expect(text).toContain('## Validation\n\nAll active checks passed.');
+      expect(text).not.toContain('"presentation"');
     });
   });
 });

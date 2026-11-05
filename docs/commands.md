@@ -311,6 +311,13 @@ registered as `flowguard_decision`.
 - `changes_requested` → return to previous phase for revision
 - `reject` → terminal `REJECTED`; the reviewed evidence and decision remain available for audit
 
+The decision is durable immediately. At `PLAN_REVIEW`, `approve` advances to
+`VALIDATION` and runs the active checks in-flow; when they pass, the session
+advances to `IMPLEMENTATION` before the command returns. The closed plan gate is
+not approvable again: a repeated decision is rejected with
+`COMMAND_NOT_ALLOWED`. Use `/status` to confirm the recorded decision and current
+phase instead of retrying the decision.
+
 The verdict must match the gate type derived from persisted state: a plain
 `approve` at an exhausted gate is blocked with `GOVERNANCE_OVERRIDE_REQUIRED`,
 and a governance override at a reviewer-accepted gate is blocked with

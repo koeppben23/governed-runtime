@@ -117,16 +117,42 @@ export async function executeDecisionCommand(
         metadata: {},
       };
       await toolAfter(runtime, event, audited);
-      await presentDecision(ctx, sessionID, audited.output);
+      await presentDecision(ctx, sessionID, audited.output, args.verdict);
     },
     true,
   );
+}
+
+function decisionConfirmation(
+  output: string,
+  result: Record<string, unknown>,
+  verdict: ReviewVerdict,
+): string {
+  const label =
+    verdict === 'approve'
+      ? 'approved'
+      : verdict === 'approve_with_governance_override'
+        ? 'approved with governance override'
+        : verdict === 'changes_requested'
+          ? 'changes requested'
+          : 'rejected';
+  const phase = typeof result.phase === 'string' ? `; current phase \`${result.phase}\`` : '';
+  const summary = `**Decision recorded:** ${label}${phase}.`;
+  const presentation = result.presentation;
+  const markdown =
+    presentation !== null &&
+    typeof presentation === 'object' &&
+    typeof (presentation as { markdown?: unknown }).markdown === 'string'
+      ? (presentation as { markdown: string }).markdown
+      : null;
+  return markdown === null ? `${summary}\n\n${output}` : `${summary}\n\n${markdown}`;
 }
 
 async function presentDecision(
   ctx: Plugin.Context,
   sessionID: string,
   output: string,
+  verdict: ReviewVerdict,
 ): Promise<void> {
   const result = parseToolResult(output);
   if (result === null)
@@ -140,7 +166,11 @@ async function presentDecision(
       typeof result.message === 'string' ? result.message : output,
     );
   try {
-    await ctx.session.synthetic({ sessionID, text: output, resume: false });
+    await ctx.session.synthetic({
+      sessionID,
+      text: decisionConfirmation(output, result, verdict),
+      resume: false,
+    });
   } catch (error) {
     console.warn(
       '[FlowGuard] Decision is committed and audited; status presentation failed.',

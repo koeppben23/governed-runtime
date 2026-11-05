@@ -201,7 +201,13 @@ async function runStart(
   const directive = resolveWorkflowDirective(workflow.state);
   const choice =
     directive.code === 'CHOOSE_FLOW'
-      ? 'Choose one workflow: `/task`, `/architecture`, or `/review`. `/task` is the default suggestion, not a completed workflow decision. This selection is not a human plan or evidence approval.'
+      ? [
+          '## Next',
+          '',
+          'Choose one workflow: `/task`, `/architecture`, or `/review`.',
+          '',
+          '`/task` is the default suggestion, not a completed workflow decision or human approval.',
+        ].join('\n')
       : null;
   const text = [
     `FlowGuard governance ${status} for this session: ${workflow.state.policySnapshot.mode} policy, phase ${workflow.state.phase}.`,
