@@ -81,7 +81,7 @@
     "test:evals": "vitest run --project evals",
     "test:demo-contract": "vitest run --project unit src/documentation/__tests__/demo-contract.test.ts",
     "test:integration": "vitest run --project integration",
-    "test:integration:perf": "vitest run --project integration --testNamePattern 'PERF'",
+    "test:integration:perf": "vitest run --project integration --testNamePattern 'PERF' --maxWorkers=1",
     "test:sdk-contract": "vitest run --project integration src/integration/sdk-contract.test.ts",
     "test:sdk-contract:hooks": "vitest run --project integration src/integration/sdk-contract-hooks.test.ts",
     "test:sdk-contract:mcp": "vitest run --project integration src/integration/sdk-contract-mcp.test.ts",

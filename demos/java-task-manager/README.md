@@ -201,7 +201,11 @@ checklist, not the internal FlowGuard session ID. The wrapper writes:
 Exit `0` means the reports were produced; individual controls may still be
 `EVIDENCE_MISSING` or `NOT_VERIFIED`. Exit `1` is a usage/mapping/output error;
 exit `2` means the export is missing or not verifiable. Existing report
-directories are never overwritten.
+directories are never overwritten. The final directory is reserved with Node's
+non-recursive filesystem operation, not the shell `mkdir` exit status (affected
+Ubuntu uutils versions can report success after `EEXIST`). Concurrent publishers
+have one winner. The two validated companion files are moved after reservation;
+this is not crash-atomic publication of the pair.
 
 The demo mapping relates the verified technical evidence to A.8.15, A.8.25,
 A.8.29, and A.8.32. A.8.29 is explicitly a functional regression assertion

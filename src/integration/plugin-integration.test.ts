@@ -11,7 +11,7 @@ import {
   type TestWorkspace,
 } from './test-helpers.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
-import { PERF_ENABLED } from '../test-policy.js';
+import { benchmarkAsync, PERF_ENABLED } from '../test-policy.js';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
@@ -491,13 +491,12 @@ describe('native V2 plugin audit integration', () => {
 
   describe.skipIf(!PERF_ENABLED)('PERF', () => {
     it('1000 non-mutating non-FlowGuard tool calls stay on the near-instant path', async () => {
-      const callOnce = async () => {
-        const start = performance.now();
+      const result = await benchmarkAsync(async () => {
         for (let i = 0; i < 1000; i++) await host.after(completion('read', ''));
-        return performance.now() - start;
-      };
-      await callOnce();
-      expect(Math.min(await callOnce(), await callOnce(), await callOnce())).toBeLessThan(150);
+      }, 3);
+      // Preserve every native callback and authority check; gate the warm p99,
+      // not the fastest of three measured batches.
+      expect(result.p99Ms).toBeLessThan(150);
     });
 
     it('10 FlowGuard tool calls with persistence complete reasonably', async () => {

@@ -10,23 +10,26 @@ smoke, install-verify and all Windows jobs. Full local tests and coverage were
 executed on the same production tree; a later documentation-only commit may
 contain this status without changing the verified code. The settlement
 follow-up labels the inherited duplicate assertion; it proves no separate
-governance rejection class.
+governance rejection class. Those green runs are historical: CI `42005224804`
+on `0c064dd3` failed ISO publication and separate PERF budgets. The ISO mechanism
+is now reproduced and corrected; final-HEAD hosted closure remains required.
+See [current CI diagnosis](./2026-11-05-ci-diagnosis.md).
 
-| Surface                                      | Current disposition / evidence scope                                                                                                                                                                                                          |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Host classifier                              | Removed in `3c210bae`; nine purposes mapped to exact current-candidate selection, not installed-product certification.                                                                                                                        |
-| Generic settlement                           | Removed in `6dd00388`; seven purposes run on both artifact routes (14 component cases with real persistence).                                                                                                                                 |
-| Lifecycle artwork                            | V2-corrected SVG in `f048acc0`; diagram/transition checks are documentation evidence, not product acceptance.                                                                                                                                 |
-| Four historical rails                        | Removed after purpose-level current-owner mapping (see completed retirement below); no callback executor is reactivated. Current owners are executable.                                                                                       |
-| Latest full local tests / coverage           | Rail-retirement working tree: 12,907 passed / 2 skipped in 703 files; coverage 12,898 passed / 11 skipped (91.03% statements, 84.33% branches, 95.49% functions, 92.51% lines).                                                               |
-| Hosted CI on `b0c37879`                      | PASS, run `41913750055`, **37/37 jobs**, including perf and all Windows jobs.                                                                                                                                                                 |
-| Hosted CI on evidence HEAD `31341f1f`        | PASS, run `41915340060`, **37/37 jobs** after rerunning the two failed perf jobs. The first attempt failed two different timing assertions (171.39 ms and 10.38 ms); no budget was changed. A green run is not proof of perf stability.       |
-| Hosted CI on later docs-only HEAD `9b91385d` | **NOT GREEN.** Two attempts failed only `integration-perf` (177.37 ms and 10.23 ms, different timing tests); the unchanged budgets were not modified. No P0-10 code regression is established, but the docs-only HEAD lacks a full green run. |
-| Default mutation                             | PASS: **81.10** final score vs break threshold **80** (171 min 41 s). Executed on `4af77944`; production bytes are identical through `31341f1f` (later commits are tests/docs only).                                                          |
-| Import/call-path/package                     | 717 production / 246 integration files, 3,813 internal imports, zero unresolved; combined shipped closure 716; only deliberate `shared/product-inventory.ts` outside. Package dry-run has 2,873 files and no retired artifacts.               |
-| ISO publication exclusivity                  | OPEN as a publication-race diagnosis: earlier Hosted-CI `[0, 0]` observations remain unexplained. The instrumented test reproduced the shape once and passed on later runs; no fix or flake is established.                                   |
-| Installed acceptance                         | NOT_VERIFIED: final SHA/artifact-bound CLI/Desktop ACTIVE workflow and product E2E remain required. This is separate from P0-10 implementation cleanup.                                                                                       |
-| R4                                           | Separate external host-security dependency; BLOCKED / NOT_SUPPORTED under the unchanged untrusted-plugin threat model.                                                                                                                        |
+| Surface                                      | Current disposition / evidence scope                                                                                                                                                                                                                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host classifier                              | Removed in `3c210bae`; nine purposes mapped to exact current-candidate selection, not installed-product certification.                                                                                                                                                                |
+| Generic settlement                           | Removed in `6dd00388`; seven purposes run on both artifact routes (14 component cases with real persistence).                                                                                                                                                                         |
+| Lifecycle artwork                            | V2-corrected SVG in `f048acc0`; diagram/transition checks are documentation evidence, not product acceptance.                                                                                                                                                                         |
+| Four historical rails                        | Removed after purpose-level current-owner mapping (see completed retirement below); no callback executor is reactivated. Current owners are executable.                                                                                                                               |
+| Historical rail-retirement tests / coverage  | Rail-retirement working tree: 12,907 passed / 2 skipped in 703 files; coverage 12,898 passed / 11 skipped (91.03% statements, 84.33% branches, 95.49% functions, 92.51% lines).                                                                                                       |
+| Hosted CI on `b0c37879`                      | PASS, run `41913750055`, **37/37 jobs**, including perf and all Windows jobs.                                                                                                                                                                                                         |
+| Hosted CI on evidence HEAD `31341f1f`        | PASS, run `41915340060`, **37/37 jobs** after rerunning the two failed perf jobs. The first attempt failed two different timing assertions (171.39 ms and 10.38 ms); no budget was changed. A green run is not proof of perf stability.                                               |
+| Hosted CI on later docs-only HEAD `9b91385d` | **NOT GREEN.** Two attempts failed only `integration-perf` (177.37 ms and 10.23 ms, different timing tests); the unchanged budgets were not modified. No P0-10 code regression is established, but the docs-only HEAD lacks a full green run.                                         |
+| Default mutation                             | PASS: **81.10** final score vs break threshold **80** (171 min 41 s). Executed on `4af77944`; production bytes are identical through `31341f1f` (later commits are tests/docs only).                                                                                                  |
+| Import/call-path/package                     | 717 production / 246 integration files, 3,813 internal imports, zero unresolved; combined shipped closure 716; only deliberate `shared/product-inventory.ts` outside. Package dry-run has 2,873 files and no retired artifacts.                                                       |
+| ISO publication exclusivity                  | Ubuntu/uutils mechanism reproduced (`EEXIST` then utility exit 0) on exact `0c064dd3` source. Node non-recursive reservation now passes 14 ISO cases; old-owner negative control fails with two successful publishers. Current hosted closure remains required; no flake designation. |
+| Installed acceptance                         | NOT_VERIFIED: final SHA/artifact-bound CLI/Desktop ACTIVE workflow and product E2E remain required. This is separate from P0-10 implementation cleanup.                                                                                                                               |
+| R4                                           | Separate external host-security dependency; BLOCKED / NOT_SUPPORTED under the unchanged untrusted-plugin threat model.                                                                                                                                                                |
 
 The historical checkpoints below retain their original identities and scopes.
 This status is not a P0-10 completion claim or final call-path certification.
@@ -286,17 +289,21 @@ statements **91.03%**, branches **84.33%**, functions **95.49%**, lines **92.51%
 Type checks, strict lint, format, build/doc-drift, unused dependencies,
 unused-export and PR-base documentation checks passed.
 
-ISO trace evidence is deliberately separated from the original defect: the
-instrumented case reproduced the `[0, 0]` shape once on `4af77944` (both mkdir
-claims status 0, same inode, both publishers successful). It then passed on
-`32d21e3b` and `b0c37879`, so the observation is intermittent. After the first
-reproduction the test was tightened to resolve only `/bin/mkdir` or
-`/usr/bin/mkdir`, eliminating a possible PATH-inherited fake; production wrapper,
-assertion and budgets remain unchanged. This does not explain the earlier
-`[0, 0]` failures of the original, uninstrumented test, and a later green run
-does not establish a fix or a flake. **NOT_VERIFIED:** default mutation
-(`npm run mutation`) and installed CLI/Desktop ACTIVE acceptance; no specialized
-profile substitutes.
+ISO trace history: the instrumented case reproduced `[0, 0]` on `4af77944`
+(both mkdir claims status 0, same inode, both publishers successful), then passed
+on `32d21e3b` and `b0c37879`. Resolving only `/bin/mkdir` or `/usr/bin/mkdir`
+excluded a PATH fake but did not fix the product: CI `42005224804` on `0c064dd3`
+again observed two successful native claims. A later Ubuntu 26.04/uutils 0.10.0
+container reproduction of that exact source captured kernel `EEXIST` followed by
+utility exit 0, including failure of the original uninstrumented case. This is
+the independently reported [Ubuntu #2171333](https://bugs.launchpad.net/ubuntu/+source/rust-coreutils/+bug/2171333)
+defect, not evidence of two successful kernel reservations. The final reservation
+now uses Node's non-recursive filesystem primitive; the trace follows that real
+owner and retains publisher/inode/report-consistency assertions. See
+[CI diagnosis](./2026-11-05-ci-diagnosis.md) for evidence and scope limitations.
+Earlier green reruns do not establish a fix or a flake. **NOT_VERIFIED:** current
+default mutation (`npm run mutation`) and installed CLI/Desktop ACTIVE acceptance;
+no specialized profile substitutes.
 
 ## Six explicitly callable command surfaces
 
@@ -386,6 +393,7 @@ product-inventory authority outside the combined shipped graph and the package
 dry-run excludes retired artifacts. The subsequent docs-only HEAD `9b91385d`
 has twice missed only `integration-perf` with unchanged budgets, so its formal
 full-green closure remains open; no P0-10 code regression is established. The
-ISO publication race remains a separate open diagnosis; R4 and installed
-ACTIVE/Desktop product acceptance remain separate V2 blockers. This PASS does
-not authorize merge.
+ISO publication diagnosis was still open at that checkpoint; the later
+[CI diagnosis](./2026-11-05-ci-diagnosis.md) records the reproduced utility defect
+and bounded correction. R4 and installed ACTIVE/Desktop product acceptance
+remain separate V2 blockers. This PASS does not authorize merge.

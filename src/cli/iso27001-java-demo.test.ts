@@ -326,34 +326,73 @@ describe.skipIf(!POSIX)('java demo ISO wrapper', () => {
     }
   });
 
-  it('traces concurrent native mkdir claims and the winning publication independently of exit observation', async () => {
+  it('fails closed and cleans staging when the Node reservation is denied', async () => {
     const workspace = await createWorkspace();
     try {
-      const final = path.join(await realpath(workspace.root), 'reports', SESSION);
-      const bin = path.join(workspace.root, 'bin');
-      const barrier = path.join(workspace.root, 'barrier');
-      const trace = path.join(workspace.root, 'mkdir-claims.jsonl');
-      await mkdir(bin);
-      await mkdir(barrier);
-      // Resolve only real system binaries. A PATH lookup could inherit a fake
-      // mkdir from another test and turn this trace into a false positive.
-      const nativeMkdir = ['/bin/mkdir', '/usr/bin/mkdir'].find((candidate) =>
-        existsSync(candidate),
-      );
-      expect(nativeMkdir, 'a native POSIX mkdir binary must exist').toBeDefined();
-      if (!nativeMkdir) throw new Error('native mkdir is unavailable');
-      const tracer = path.join(workspace.root, 'trace-mkdir.cjs');
-      // Test-only scheduling: both publishers reach the reservation before
-      // either calls the REAL mkdir. No production hook, retry or lock substitute.
+      const preload = path.join(workspace.root, 'deny-claim.cjs');
       await writeFile(
-        tracer,
-        String.raw`
+        preload,
+        `
+const fs = require('node:fs');
+const original = fs.mkdirSync;
+fs.mkdirSync = function(target) {
+  if (target === process.env.CLAIM_TARGET) {
+    const error = new Error('reservation denied by test');
+    error.code = 'EACCES';
+    throw error;
+  }
+  return original.apply(this, arguments);
+};
+`,
+      );
+      const result = runWrapper(
+        workspace,
+        ['--session', SESSION, '--output-root', workspace.outputRoot],
+        {
+          CLAIM_TARGET: path.join(await realpath(workspace.root), 'reports', SESSION),
+          NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require ${JSON.stringify(preload)}`]
+            .filter(Boolean)
+            .join(' '),
+        },
+      );
+      expect(result.status, result.stderr).toBe(1);
+      expect(result.stderr).toContain('EACCES');
+      expect(result.stderr).toContain('cannot reserve report directory');
+      expect(await readdir(workspace.outputRoot)).toEqual([]);
+    } finally {
+      await rm(workspace.root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([false, true])(
+    'traces exclusive Node claims with a broken external mkdir: %s',
+    async (brokenMkdir) => {
+      const workspace = await createWorkspace();
+      try {
+        const final = path.join(await realpath(workspace.root), 'reports', SESSION);
+        const bin = path.join(workspace.root, 'bin');
+        const barrier = path.join(workspace.root, 'barrier');
+        const trace = path.join(workspace.root, 'mkdir-claims.jsonl');
+        const externalClaim = path.join(workspace.root, 'external-claim');
+        await mkdir(bin);
+        await mkdir(barrier);
+        // Shell mkdir is still used for staging/output setup, never final ownership.
+        const nativeMkdir = ['/bin/mkdir', '/usr/bin/mkdir'].find((candidate) =>
+          existsSync(candidate),
+        );
+        expect(nativeMkdir, 'a native POSIX mkdir binary must exist').toBeDefined();
+        if (!nativeMkdir) throw new Error('native mkdir is unavailable');
+        const tracer = path.join(workspace.root, 'trace-mkdir.cjs');
+        // Test-only scheduling: call the original Node filesystem primitive after
+        // both publishers arrive. No production hook, retry or lock substitute.
+        await writeFile(
+          tracer,
+          String.raw`
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2);
-const isClaim = args.length === 1 && args[0] === process.env.CLAIM_TARGET;
-if (isClaim) {
+const nativeMkdir = fs.mkdirSync;
+fs.mkdirSync = function(target, options) {
+  if (target !== process.env.CLAIM_TARGET) return nativeMkdir.apply(this, arguments);
   fs.writeFileSync(path.join(process.env.CLAIM_BARRIER, process.env.FAKE_PUBLISHER), 'ready');
   const deadline = Date.now() + 4000;
   const wait = new Int32Array(new SharedArrayBuffer(4));
@@ -361,85 +400,106 @@ if (isClaim) {
     if (Date.now() >= deadline) { process.stderr.write('claim rendezvous expired'); process.exit(99); }
     Atomics.wait(wait, 0, 0, 5);
   }
-}
-const existedBefore = fs.existsSync(args[0]);
-const result = spawnSync(process.env.NATIVE_MKDIR, args, { encoding: 'utf8' });
-if (isClaim) fs.appendFileSync(process.env.CLAIM_TRACE, JSON.stringify({
-  publisher: process.env.FAKE_PUBLISHER, target: args[0],
-  realParent: fs.realpathSync(path.dirname(args[0])),
-  nativeMkdir: process.env.NATIVE_MKDIR, existedBefore,
-  status: result.status, signal: result.signal, error: result.error?.message,
-  nativeStderr: result.stderr?.trim() || null,
-  inode: fs.existsSync(args[0]) ? fs.statSync(args[0]).ino : null,
-}) + '\n');
-if (result.stdout) process.stdout.write(result.stdout);
-if (result.stderr) process.stderr.write(result.stderr);
-process.exit(result.status ?? 99);
+  const existedBefore = fs.existsSync(target);
+  let errorCode = null;
+  try {
+    return nativeMkdir.apply(this, arguments);
+  } catch (error) {
+    errorCode = error.code;
+    throw error;
+  } finally {
+    fs.appendFileSync(process.env.CLAIM_TRACE, JSON.stringify({
+      publisher: process.env.FAKE_PUBLISHER, target,
+      realParent: fs.realpathSync(path.dirname(target)),
+      primitive: 'node:fs.mkdirSync', recursive: options?.recursive === true,
+      existedBefore, status: errorCode === null ? 0 : 1, errorCode,
+      inode: fs.existsSync(target) ? fs.statSync(target).ino : null,
+    }) + '\n');
+  }
+};
 `,
-        'utf8',
-      );
-      await writeFile(
-        path.join(bin, 'mkdir'),
-        '#!/usr/bin/env bash\nexec "$NODE" "$CLAIM_TRACER" "$@"\n',
-      );
-      await chmod(path.join(bin, 'mkdir'), 0o755);
-      const publishers = ['publisher-a', 'publisher-b'];
-      const results = await Promise.all(
-        publishers.map((publisher) =>
-          runWrapperAsync(
-            workspace,
-            ['--session', SESSION, '--output-root', workspace.outputRoot],
-            {
-              PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`,
-              FAKE_PUBLISHER: publisher,
-              NATIVE_MKDIR: nativeMkdir,
-              CLAIM_TARGET: final,
-              CLAIM_BARRIER: barrier,
-              CLAIM_TRACE: trace,
-              CLAIM_TRACER: tracer,
-            },
+          'utf8',
+        );
+        await writeFile(
+          path.join(bin, 'mkdir'),
+          brokenMkdir
+            ? `#!/usr/bin/env bash
+if [ "$#" -eq 1 ] && [ "$1" = "$CLAIM_TARGET" ]; then
+  printf 'used\\n' >> "$EXTERNAL_CLAIM"
+  exec "$NODE" -e 'require("node:fs").mkdirSync(process.argv[1], {recursive:true})' "$1"
+fi
+exec "$NATIVE_MKDIR" "$@"
+`
+            : '#!/usr/bin/env bash\nexec "$NATIVE_MKDIR" "$@"\n',
+        );
+        await chmod(path.join(bin, 'mkdir'), 0o755);
+        const publishers = ['publisher-a', 'publisher-b'];
+        const results = await Promise.all(
+          publishers.map((publisher) =>
+            runWrapperAsync(
+              workspace,
+              ['--session', SESSION, '--output-root', workspace.outputRoot],
+              {
+                PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`,
+                FAKE_PUBLISHER: publisher,
+                NATIVE_MKDIR: nativeMkdir,
+                CLAIM_TARGET: final,
+                CLAIM_BARRIER: barrier,
+                CLAIM_TRACE: trace,
+                EXTERNAL_CLAIM: externalClaim,
+                NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require ${JSON.stringify(tracer)}`]
+                  .filter(Boolean)
+                  .join(' '),
+              },
+            ),
           ),
-        ),
-      );
-      const observations = JSON.stringify({ final, publishers, results });
-      expect(existsSync(trace), observations).toBe(true);
-      const claims = (await readFile(trace, 'utf8'))
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line)) as {
-        publisher: string;
-        target: string;
-        realParent: string;
-        nativeMkdir: string;
-        existedBefore: boolean;
-        status: number;
-        signal: string | null;
-        error: string | null;
-        nativeStderr: string | null;
-        inode: number;
-      }[];
-      const diagnostic = JSON.stringify({ final, publishers, results, claims });
-      expect(results.map((result) => result.status).sort(), diagnostic).toEqual([0, 1]);
-      expect(claims.map((claim) => claim.status).sort(), diagnostic).toEqual([0, 1]);
-      expect(claims).toHaveLength(2);
-      expect(new Set(claims.map((claim) => claim.target))).toEqual(new Set([final]));
-      expect(new Set(claims.map((claim) => claim.realParent)).size).toBe(1);
-      expect(new Set(claims.map((claim) => claim.inode))).toEqual(
-        new Set([(await stat(final)).ino]),
-      );
-      const winner = claims.find((claim) => claim.status === 0)!.publisher;
-      expect(publishers[results.findIndex((result) => result.status === 0)]).toBe(winner);
-      const json = JSON.parse(await readFile(path.join(final, 'iso27001-report.json'), 'utf8'));
-      expect(json.publisher, diagnostic).toBe(winner);
-      expect(await readFile(path.join(final, 'iso27001-report.md'), 'utf8')).toContain(
-        `Publisher: ${winner}\n`,
-      );
-      expect(results.find((result) => result.status === 1)!.stderr).toContain(
-        'refusing to overwrite',
-      );
-      expect(await readdir(workspace.outputRoot)).toEqual([SESSION]);
-    } finally {
-      await rm(workspace.root, { recursive: true, force: true });
-    }
-  });
+        );
+        const observations = JSON.stringify({ final, publishers, results });
+        expect(existsSync(trace), observations).toBe(true);
+        const claims = (await readFile(trace, 'utf8'))
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line)) as {
+          publisher: string;
+          target: string;
+          realParent: string;
+          primitive: string;
+          recursive: boolean;
+          existedBefore: boolean;
+          status: number;
+          errorCode: string | null;
+          inode: number;
+        }[];
+        const diagnostic = JSON.stringify({ final, publishers, results, claims });
+        expect(results.map((result) => result.status).sort(), diagnostic).toEqual([0, 1]);
+        expect(claims.map((claim) => claim.status).sort(), diagnostic).toEqual([0, 1]);
+        expect(claims).toHaveLength(2);
+        expect(claims.map((claim) => claim.primitive)).toEqual([
+          'node:fs.mkdirSync',
+          'node:fs.mkdirSync',
+        ]);
+        expect(claims.every((claim) => !claim.recursive)).toBe(true);
+        expect(claims.find((claim) => claim.status === 1)!.errorCode).toBe('EEXIST');
+        expect(existsSync(externalClaim), diagnostic).toBe(false);
+        expect(new Set(claims.map((claim) => claim.target))).toEqual(new Set([final]));
+        expect(new Set(claims.map((claim) => claim.realParent)).size).toBe(1);
+        expect(new Set(claims.map((claim) => claim.inode))).toEqual(
+          new Set([(await stat(final)).ino]),
+        );
+        const winner = claims.find((claim) => claim.status === 0)!.publisher;
+        expect(publishers[results.findIndex((result) => result.status === 0)]).toBe(winner);
+        const json = JSON.parse(await readFile(path.join(final, 'iso27001-report.json'), 'utf8'));
+        expect(json.publisher, diagnostic).toBe(winner);
+        expect(await readFile(path.join(final, 'iso27001-report.md'), 'utf8')).toContain(
+          `Publisher: ${winner}\n`,
+        );
+        expect(results.find((result) => result.status === 1)!.stderr).toContain(
+          'refusing to overwrite',
+        );
+        expect(await readdir(workspace.outputRoot)).toEqual([SESSION]);
+      } finally {
+        await rm(workspace.root, { recursive: true, force: true });
+      }
+    },
+  );
 });

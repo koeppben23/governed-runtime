@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Reserve Java ISO report publication with Node's non-recursive filesystem
+  operation instead of shell `mkdir`, whose Ubuntu uutils implementation can
+  report success after `EEXIST`. Retain exclusive winner/report checks and add
+  broken-utility and denied-reservation regressions; reservation errors leave
+  no published report or staging output. Align the demo documentation contract
+  with this exclusive primitive and reject the old shell claim.
+
+- Measure the tool-access and native-completion performance contracts with the
+  canonical warm p99 helpers, retaining the complete workloads and `<10 ms` /
+  `<150 ms` budgets. Run the entire integration PERF selection with one file
+  worker; correct the property-access test's misleading module-import claim.
+
 - Distinguish explicitly labelled OpenCode host `/reload` guidance from installed
   FlowGuard commands in the demo documentation guard, retaining negative tests
   for unknown commands. Keep running-install smoke resources local to each case

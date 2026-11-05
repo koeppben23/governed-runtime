@@ -91,7 +91,9 @@ describe('java demo ISO/IEC 27001 evidence projection contract', () => {
       'reportDigest',
       'mappingDigest',
       'packageSha256',
-      'mkdir "$FINAL"',
+      '"$NODE_BIN" - "$FINAL" <<\'NODE\'',
+      'fs.mkdirSync(process.argv[2]);',
+      'Report reservation failed:',
       'OUTPUT_ROOT="/tmp/flowguard-iso-reports"',
       'Not an ISO conformity assessment.',
     ]) {
@@ -101,6 +103,9 @@ describe('java demo ISO/IEC 27001 evidence projection contract', () => {
     expect(wrapper).not.toContain('curl');
     expect(wrapper).not.toContain('wget');
     expect(wrapper).not.toContain('--latest');
+    // Final ownership must not trust utility success or recursive mkdir.
+    expect(wrapper).not.toContain('mkdir "$FINAL"');
+    expect(wrapper).not.toMatch(/fs\.mkdirSync\(process\.argv\[2\],/);
     if (POSIX) {
       expect(statSync(WRAPPER_PATH).mode & 0o111).toBeGreaterThan(0);
       expect(() => execFileSync('bash', ['-n', WRAPPER_PATH])).not.toThrow();

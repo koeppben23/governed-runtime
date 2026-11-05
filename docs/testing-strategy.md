@@ -223,6 +223,15 @@ the complete unit/integration projects with the same 80% gates and 15-second tes
 budget, including the actual production TypeScript program-graph guard. Local
 coverage retains Vitest's default concurrency.
 
+The integration PERF invocation uses one file worker while retaining the entire
+`PERF` selection and unchanged budgets. The tool-description access benchmark
+measures 1,000 loops over every exported tool (not module import), using warm p99
+with the existing `<10 ms` budget. The native completion benchmark retains all
+1,000 callbacks and fresh authority verification per batch, now gating warm p99
+over three measured batches instead of their minimum, at the same `<150 ms`.
+These measurement corrections do not prove the cause of a prior hosted miss or
+permit skipping its runtime/governance work.
+
 The `critical-windows` unit invocation uses one worker, retaining its full test
 set and unchanged p99 performance budgets. This bounds worker competition;
 it does not establish the cause of a Windows latency spike or waive a failed
