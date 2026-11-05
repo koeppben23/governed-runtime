@@ -1,7 +1,6 @@
 /**
  * @module cli/install-helpers-rollback
- * @description Package-manager detection and pre-install snapshot/rollback
- * helpers for the FlowGuard CLI installer.
+ * @description Pre-install snapshot/rollback helpers for the FlowGuard CLI installer.
  *
  * Split from install-helpers.ts following the file-size budget; behavior is
  * unchanged.
@@ -9,7 +8,6 @@
  * @version v1
  */
 
-import { execSync } from 'node:child_process';
 import { constants as fsConstants } from 'node:fs';
 import type { Stats } from 'node:fs';
 import { lstat, open, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
@@ -19,24 +17,6 @@ import { CliInstallError } from './errors.js';
 import type { CliError, FileOp } from './install-types.js';
 
 // ─── Rollback utilities ───────────────────────────────────────────────────────
-
-/** Detect available package manager. Prefers bun (OpenCode runtime), falls back to npm. */
-export function detectPackageManager(): 'bun' | 'npm' | null {
-  const opts = { stdio: 'ignore' as const, timeout: 5_000 };
-  try {
-    execSync('bun --version', opts);
-    return 'bun';
-  } catch {
-    // bun not available
-  }
-  try {
-    execSync('npm --version', opts);
-    return 'npm';
-  } catch {
-    // npm not available
-  }
-  return null;
-}
 
 /** Pre-install snapshot for transactional rollback. */
 export interface RollbackEntry {
