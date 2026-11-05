@@ -224,7 +224,11 @@ describe.skipIf(!LIVE)('packed installed INACTIVE native parity', () => {
             { signal: AbortSignal.timeout(120_000) },
           );
           checkpoint('native-start-completed');
-          expect(requestBodies(active.id, beforeStart), probe.output()).toHaveLength(0);
+          const activeStart = requestBodies(active.id, beforeStart);
+          expect(activeStart, probe.output()).toHaveLength(1);
+          expect(JSON.stringify(activeStart[0]!.messages)).toContain(
+            'FlowGuard governance is ACTIVE',
+          );
           expect(requestBodies(inactive.id, beforeStart)).toHaveLength(1);
           for (const body of requestBodies(inactive.id, beforeStart)) inactiveView(body);
 

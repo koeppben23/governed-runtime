@@ -60,9 +60,8 @@ describe.skipIf(!LIVE)('native /start command on the pinned host', () => {
       { sessionID: governed.id },
       { signal: AbortSignal.timeout(120_000) },
     );
-    // The activation report is deliberately a normal prompt turn so the
-    // Desktop transcript displays it immediately; synthetic inbox delivery is
-    // not visible in the transcript.
+    // The activation report is a visible user turn; the previous synthetic
+    // inbox delivery was not rendered in the Desktop transcript.
     expect(probe.requests.length, probe.output()).toBe(before + 1);
     const authority = await resolveSessionAuthority({
       root: await realpath(probe.project),
