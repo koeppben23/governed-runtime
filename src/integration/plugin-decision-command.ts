@@ -123,29 +123,38 @@ export async function executeDecisionCommand(
   );
 }
 
-function decisionConfirmation(
-  output: string,
-  result: Record<string, unknown>,
-  verdict: ReviewVerdict,
-): string {
-  const label =
-    verdict === 'approve'
-      ? 'approved'
-      : verdict === 'approve_with_governance_override'
-        ? 'approved with governance override'
-        : verdict === 'changes_requested'
-          ? 'changes requested'
-          : 'rejected';
-  const phase = typeof result.phase === 'string' ? `; current phase \`${result.phase}\`` : '';
-  const summary = `**Decision recorded:** ${label}${phase}.`;
+function verdictLabel(verdict: ReviewVerdict): string {
+  if (verdict === 'approve') return 'approved';
+  if (verdict === 'approve_with_governance_override') return 'approved with governance override';
+  if (verdict === 'changes_requested') return 'changes requested';
+  return 'rejected';
+}
+
+function presentationMarkdown(result: Record<string, unknown>): string | null {
   const presentation = result.presentation;
-  const markdown =
-    presentation !== null &&
-    typeof presentation === 'object' &&
-    typeof (presentation as { markdown?: unknown }).markdown === 'string'
-      ? (presentation as { markdown: string }).markdown
-      : null;
-  return markdown === null ? `${summary}\n\n${output}` : `${summary}\n\n${markdown}`;
+  if (presentation === null || typeof presentation !== 'object') return null;
+  const markdown = (presentation as { markdown?: unknown }).markdown;
+  return typeof markdown === 'string' ? markdown : null;
+}
+
+function directiveCommands(result: Record<string, unknown>): readonly string[] {
+  const directive = result.directive;
+  if (directive === null || typeof directive !== 'object') return [];
+  const commands = (directive as { commands?: unknown }).commands;
+  if (!Array.isArray(commands)) return [];
+  return commands.filter((command): command is string => typeof command === 'string');
+}
+
+function decisionConfirmation(result: Record<string, unknown>, verdict: ReviewVerdict): string {
+  const phase = typeof result.phase === 'string' ? `; current phase \`${result.phase}\`` : '';
+  const summary = `**Decision recorded:** ${verdictLabel(verdict)}${phase}.`;
+  const markdown = presentationMarkdown(result);
+  if (markdown !== null) return `${summary}\n\n${markdown}`;
+  const commands = directiveCommands(result);
+  const next =
+    commands.length === 0 ? '' : `\n\n## Next\n\n${commands.map((c) => `- \`${c}\``).join('\n')}`;
+  const status = typeof result.status === 'string' ? result.status : 'The decision is durable.';
+  return `${summary}\n\n${status}${next}`;
 }
 
 async function presentDecision(
@@ -168,7 +177,7 @@ async function presentDecision(
   try {
     await ctx.session.synthetic({
       sessionID,
-      text: decisionConfirmation(output, result, verdict),
+      text: decisionConfirmation(result, verdict),
       delivery: 'queue',
       resume: false,
     });

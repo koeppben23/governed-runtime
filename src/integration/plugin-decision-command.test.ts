@@ -361,7 +361,8 @@ describe('native decision commands', () => {
         resume: false,
       });
       const calls = f.synthetic.mock.calls as unknown as Array<[{ text: string }]>;
-      expect(calls[0]?.[0].text).toContain(output);
+      expect(calls[0]?.[0].text).toContain('The decision is durable.');
+      expect(calls[0]?.[0].text).not.toContain(output);
       vi.mocked(decision.execute).mockResolvedValue('not-json');
       await expect(executeDecisionCommand(f.ctx, f.deps, request)).rejects.toThrow(
         'PLUGIN_ENFORCEMENT_UNAVAILABLE',
@@ -384,6 +385,26 @@ describe('native decision commands', () => {
       expect(text).toContain('**Decision recorded:** approved; current phase `IMPLEMENTATION`.');
       expect(text).toContain('## Validation\n\nAll active checks passed.');
       expect(text).not.toContain('"presentation"');
+    });
+    it('renders an automatic validation result with its next command', async () => {
+      const f = await unitCommandFixture();
+      const output = JSON.stringify({
+        phase: 'IMPLEMENTATION',
+        status: "Check 'test' passed with 1 skipped assertion(s).",
+        directive: {
+          kind: 'user_action',
+          code: 'IMPLEMENTATION_REQUIRED',
+          commands: ['/implement'],
+        },
+      });
+      vi.spyOn(decision, 'execute').mockResolvedValue({ output });
+      await executeDecisionCommand(f.ctx, f.deps, request);
+      const calls = f.synthetic.mock.calls as unknown as Array<[{ text: string }]>;
+      const text = calls[0]?.[0].text ?? '';
+      expect(text).toContain('**Decision recorded:** approved; current phase `IMPLEMENTATION`.');
+      expect(text).toContain("Check 'test' passed with 1 skipped assertion(s).");
+      expect(text).toContain('## Next\n\n- `/implement`');
+      expect(text).not.toContain('"directive"');
     });
   });
 });
