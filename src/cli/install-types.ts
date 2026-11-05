@@ -32,6 +32,7 @@ export interface CliArgs {
   coreTarball?: string;
   checksumsFile?: string;
   allowUnverifiedTarball?: boolean;
+  restartHost?: boolean;
   logMode?: 'file' | 'console' | 'file+console';
 }
 
@@ -126,6 +127,14 @@ export type InstallErrorCode =
   | 'INSTALL_OWNERSHIP_UNAVAILABLE'
   | 'DEPENDENCY_INSTALL_FAILED'
   | 'INSTALL_LOCK_CONFLICT'
+  | 'HOST_SERVICE_RECORD_INVALID'
+  | 'HOST_SERVICE_UNSAFE_URL'
+  | 'HOST_SERVICE_STALE'
+  | 'HOST_RESTART_REQUIRED'
+  | 'HOST_RESTART_FAILED'
+  | 'HOST_PLUGIN_MISMATCH'
+  | 'HOST_COMMAND_MISSING'
+  | 'HOST_VERIFICATION_UNAVAILABLE'
   | 'REVIEWER_CONFIG_REJECTED'
   | 'REVIEWER_CONFIG_INVALID'
   | 'REVIEWER_TUNING_UNSUPPORTED';

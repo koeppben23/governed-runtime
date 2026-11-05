@@ -110,12 +110,14 @@ describe('validateTarball', () => {
 });
 
 describe('emitPostInstallWarnings', () => {
-  it('adds native reload notice without claiming activation for opencode', () => {
+  it('adds native host verification notice without claiming activation for opencode', () => {
     const ctx = initInstallContext(repoArgs({ installPlatform: 'opencode' }));
     emitPostInstallWarnings(ctx);
     expect(
       ctx.notices.some(
-        (n) => n.message.includes('/reload') && n.message.includes('does not activate'),
+        (n) =>
+          n.message.includes('verifies the running host') &&
+          n.message.includes('does not activate'),
       ),
     ).toBe(true);
   });

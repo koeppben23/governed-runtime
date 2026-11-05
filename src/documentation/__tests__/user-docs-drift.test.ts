@@ -280,7 +280,7 @@ describe('documentation/user-docs-drift', () => {
       expect(section).toContain('installer persists `--policy-mode`');
     });
 
-    it('host-selection matrix documents enforcement levels and native reload without claiming activation', () => {
+    it('host-selection matrix documents enforcement levels and host lifecycle without claiming activation', () => {
       const content = readDoc('docs/installation.md');
       expect(content).toContain('## Host Selection Matrix');
 
@@ -293,8 +293,10 @@ describe('documentation/user-docs-drift', () => {
       expect(content).toContain('`synchronous`');
       expect(content).toContain('`hook_gated`');
 
-      // Each host requires restart for activation
-      expect(content).toMatch(/Native reload; not governance activation/);
+      // Each host documents its activation boundary, not governance activation
+      expect(content).toMatch(
+        /Installer verifies\/restarts the running host; not governance activation/,
+      );
       expect(content).toContain('Installed INACTIVE parity');
       expect(content).toMatch(/Restart Claude/);
       expect(content).toMatch(/Restart Codex/);

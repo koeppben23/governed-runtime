@@ -187,6 +187,9 @@ Options:
   --checksums-file Path to checksums.sha256 (defaults to tarball-adjacent checksums.sha256)
   --allow-unverified-tarball
                    Supply-chain opt-out: install without tarball integrity verification (not recommended)
+  --restart-host   Verify the running OpenCode service and restart it if the native plugin failed to load
+  --no-restart-host
+                   Verify the host read-only; never restart it automatically
 
 Examples:
   npx --package ./flowguard-core-${v}.tgz flowguard install --core-tarball ./flowguard-core-${v}.tgz

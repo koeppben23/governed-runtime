@@ -56,6 +56,22 @@ const RECOVERY_MAP: Partial<Record<CliErrorCode, string | ((detail: CliError) =>
       return 'Remove the stale FlowGuard installation lock and retry';
     return `Remove stale lock file: rm -f ${detail.recoveryContext.path}`;
   },
+  HOST_SERVICE_RECORD_INVALID:
+    'Inspect the OpenCode service record; the installer will not kill an unverified PID.',
+  HOST_SERVICE_UNSAFE_URL:
+    'Inspect the OpenCode service record; only loopback URLs are accepted for credentials.',
+  HOST_SERVICE_STALE:
+    'Start OpenCode or remove the stale service record; no process was signalled.',
+  HOST_RESTART_REQUIRED:
+    'Finish active work, then restart the exact service shown above. Installed artifacts remain committed.',
+  HOST_RESTART_FAILED:
+    'Check the OpenCode host log, then retry the exact restart command shown above. Installed artifacts remain committed.',
+  HOST_PLUGIN_MISMATCH:
+    'Preserve the reported installation, remove or archive the foreign FlowGuard plugin, then reinstall the intended scope. No process was signalled.',
+  HOST_COMMAND_MISSING:
+    'Verify the plugin status and /start after restart; inspect the OpenCode host log.',
+  HOST_VERIFICATION_UNAVAILABLE:
+    'Check the OpenCode host log and run flowguard doctor; no restart was attempted.',
 };
 
 export function formatRecoveryLines(errorDetails: CliError[]): string[] {

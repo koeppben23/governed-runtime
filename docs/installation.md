@@ -46,11 +46,11 @@ operator has verified the artifact through another controlled channel.
 Before installing, choose the host platform. Enforcement and activation guarantees
 differ per host.
 
-| Host        | Enforcement   | Global Target                 | Repo Target            | Activation                               | Key Limitation                    |
-| ----------- | ------------- | ----------------------------- | ---------------------- | ---------------------------------------- | --------------------------------- |
-| OpenCode V2 | `synchronous` | `~/.config/opencode/`         | `./.opencode/`         | Native reload; not governance activation | Installed acceptance NOT_VERIFIED |
-| Claude Code | `hook_gated`  | `~/.claude/`                  | `./.claude/`           | Restart Claude                           | Hook timeout = tool proceeds      |
-| Codex       | `hook_gated`  | `~/.codex/plugins/flowguard/` | `./plugins/flowguard/` | Restart Codex                            | `NOT_VERIFIED_NATIVE_LOAD`        |
+| Host        | Enforcement   | Global Target                 | Repo Target            | Activation                                                              | Key Limitation                    |
+| ----------- | ------------- | ----------------------------- | ---------------------- | ----------------------------------------------------------------------- | --------------------------------- |
+| OpenCode V2 | `synchronous` | `~/.config/opencode/`         | `./.opencode/`         | Installer verifies/restarts the running host; not governance activation | Installed acceptance NOT_VERIFIED |
+| Claude Code | `hook_gated`  | `~/.claude/`                  | `./.claude/`           | Restart Claude                                                          | Hook timeout = tool proceeds      |
+| Codex       | `hook_gated`  | `~/.codex/plugins/flowguard/` | `./plugins/flowguard/` | Restart Codex                                                           | `NOT_VERIFIED_NATIVE_LOAD`        |
 
 OpenCode provides the strongest enforcement path through its synchronous plugin.
 Claude Code and Codex are supported through MCP, hooks, and native packaging with
@@ -80,22 +80,41 @@ entrypoint before `@flowguard/core` is available; publication failures still
 restore the previous dependency tree and managed artifacts.
 
 OpenCode watches configuration/plugin changes; use `/reload` for normal
-rediscovery. Doctor distinguishes file/import checks from actual native load,
-lifecycle, INACTIVE parity, operator provenance and reviewer proof.
+rediscovery. Installation additionally verifies the **actual running service**:
+it reads the loopback service record at `~/.local/state/opencode/service.json`,
+checks the installed target's location-scoped `/api/plugin` state and
+`/api/command` for native `/start`.
 
-**Recovery for an already-failed live installation:** an older installer could
-publish the entrypoint during dependency staging. The running host can then
-retain `Cannot find package '@flowguard/core'` after installation succeeds, even
-across `/reload`. Check the **actual Desktop server's** version, location-scoped
-`GET /api/plugin` and `GET /api/command`, and its matching error-reference log.
-Do not infer Desktop health from a separate `opencode serve` process: Desktop
-may use a different bundled binary and an already-running service. Finish or
-safely stop active work before restarting the affected service with that same
-Desktop release's CLI (`opencode service restart`); a fresh server process is
-required for this observed retained-import failure. Do not delete configuration,
-databases or governance evidence. Verify plugin status `active` and native
-`/start` availability afterwards. Do not create `start.md` or use `/hydrate` as
-an activation substitute. See the official [plugin reload caveat](https://opencode.ai/v2/docs/plugins/#reload)
+- If the plugin is `active` and `/start` is present, installation reports that
+  state and does not restart the host.
+- If the plugin is `failed` or not discovered and the installer is outside the
+  service, an interactive install restarts the exact service executable and
+  verifies the replacement. Non-interactive installs need `--restart-host` to
+  perform that restart automatically; `--no-restart-host` keeps verification
+  read-only.
+- If the installer runs inside the service (for example an agent-hosted
+  terminal), it never kills its own host. It reports `HOST_RESTART_REQUIRED` with
+  the exact `'<service-executable>' service restart` command.
+- Only a loopback `http(s)` service URL, a live `opencode`/`opencode-cli`
+  process whose command is `serve --service`, and the PID from the service
+  record are accepted. Malformed, stale or non-loopback records never authorize
+  a process kill or receive the service password.
+- If no service is running or its loopback API is unreachable, artifacts remain
+  installed and host verification is `NOT_VERIFIED`; no restart is guessed. A
+  restart failure does not roll back installed artifacts.
+- Host lifecycle verification and restart are implemented for macOS and Linux
+  when the service runs a native `opencode`/`opencode-cli` executable. A
+  Node-launched service is reported stale and is never signalled because the
+  exact restart target cannot be proven. Windows reports that automatic host
+  lifecycle verification is unsupported and leaves the restart to the operator.
+
+The retained-import failure in older installations is thus handled by the
+installer when it can safely identify and replace the service process. If the
+installer is hosted by that process, finish active work and run the reported
+command from an external terminal. Do not delete configuration, databases or
+governance evidence. Verify plugin status `active` and native `/start`
+availability afterwards. Do not create `start.md` or use `/hydrate` as an
+activation substitute. See the official [plugin reload caveat](https://opencode.ai/v2/docs/plugins/#reload)
 for changes to unwatched local dependencies.
 
 Old FlowGuard wrappers, global mandate registrations, duplicate configured
@@ -208,6 +227,8 @@ npm run flowguard:doctor
 | `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`                               |
 | `--checksums-file <path>`                      | Optional explicit checksum file. Defaults to `checksums.sha256` next to tarball    |
 | `--allow-unverified-tarball`                   | Explicit supply-chain opt-out; not recommended and logged                          |
+| `--restart-host`                               | Verify and, if the plugin failed, restart the exact running OpenCode service       |
+| `--no-restart-host`                            | Verify read-only; never restart the host automatically                             |
 
 ## Malformed JSON Recovery
 

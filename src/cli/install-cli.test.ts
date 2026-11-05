@@ -4,7 +4,7 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
 
-import { describe, it, expect, vi, afterAll } from 'vitest';
+import { describe, it, expect, vi, afterAll, beforeEach } from 'vitest';
 import * as path from 'node:path';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,6 +18,13 @@ import {
 } from './install.js';
 import type { CliResult, DoctorCheck } from './install-types.js';
 import { createMockTarball, setupCliTestEnvironment } from './install-test-helpers.test.js';
+
+const { hostLifecycleMock } = vi.hoisted(() => ({ hostLifecycleMock: vi.fn() }));
+
+vi.mock('./opencode-host-lifecycle.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./opencode-host-lifecycle.js')>();
+  return { ...actual, runOpenCodeHostLifecycle: hostLifecycleMock };
+});
 
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>();
@@ -177,6 +184,16 @@ describe('cli/formatResult', () => {
 });
 
 describe('cli/main', () => {
+  beforeEach(() => {
+    hostLifecycleMock.mockResolvedValue({
+      status: 'no-service',
+      notices: [],
+      warnings: [],
+      errors: [],
+      errorDetails: [],
+    });
+  });
+
   describe('HAPPY', () => {
     it('returns 0 for successful install (repo scope)', async () => {
       const tarball = await createMockTarball();
@@ -196,6 +213,19 @@ describe('cli/main', () => {
 
     it('returns 1 when install is called without --core-tarball', async () => {
       await expect(main(['install', '--install-scope', 'repo'])).resolves.toBe(1);
+    });
+
+    it('returns 1 when the running host requires a restart', async () => {
+      const tarball = await createMockTarball();
+      hostLifecycleMock.mockResolvedValueOnce({
+        status: 'restart-required',
+        notices: [],
+        warnings: [],
+        errors: ['restart required'],
+        errorDetails: [{ code: 'HOST_RESTART_REQUIRED', message: 'restart required' }],
+      });
+      const code = await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
+      expect(code).toBe(1);
     });
 
     it.each([['--mode', 'team'], ['--global'], ['--project']])(

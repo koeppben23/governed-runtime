@@ -576,11 +576,11 @@ describe('cli/install', () => {
       expect(existsSync(corePath)).toBe(true);
     });
 
-    it('HAPPY: emits native reload notice on success', async () => {
+    it('HAPPY: emits native host verification notice on success', async () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
       expect(result.errors).toEqual([]);
-      expect(result.notices!.some((n) => n.message.includes('/reload'))).toBe(true);
+      expect(result.notices!.some((n) => n.message.includes('running host'))).toBe(true);
     });
 
     it('BAD: reports error when package manager install fails', async () => {
@@ -1184,7 +1184,7 @@ describe('cli/install', () => {
       const checksumsFile = await createChecksumsFile(path.basename(tarball), expectedHash);
       const result = await install(repoArgs({ coreTarball: tarball, checksumsFile }));
       expect(result.errors).toEqual([]);
-      expect(result.notices!.some((n) => n.message.includes('/reload'))).toBe(true);
+      expect(result.notices!.some((n) => n.message.includes('running host'))).toBe(true);
       expect(existsSync(path.join(tmpDir, '.opencode', MANDATES_FILENAME))).toBe(true);
     });
 

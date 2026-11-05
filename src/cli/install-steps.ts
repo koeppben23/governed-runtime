@@ -580,7 +580,7 @@ export function emitPostInstallWarnings(ctx: InstallContext): void {
     ctx.notices.push({
       kind: 'next',
       message:
-        'OpenCode V2 reloads plugins after configuration changes; use /reload to force reload.' +
+        'OpenCode V2 watches plugin changes; the install CLI verifies the running host after installation.' +
         ' Installation does not activate governance. Operator UI and reviewer assurance remain NOT_VERIFIED.',
     });
   }
