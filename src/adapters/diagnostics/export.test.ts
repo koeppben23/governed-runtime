@@ -148,13 +148,19 @@ describe('diagnostic export', () => {
       await rootState(rootLinkedAssurance());
       const outputDir = path.join(ws.tmpDir, 'diag-host');
 
+      const hostTimeouts: number[] = [];
       const result = await writeDiagnosticExport(
         request(outputDir, {
           includeHost: true,
-          hostReader: async (sessionId) => hostTranscript(sessionId),
+          hostReader: async (sessionId, timeoutMs) => {
+            hostTimeouts.push(timeoutMs);
+            return hostTranscript(sessionId);
+          },
         }),
       );
 
+      expect(hostTimeouts.length).toBe(2);
+      expect(hostTimeouts.every((timeout) => timeout <= 1_000)).toBe(true);
       expect(result.manifest.boundary.sessionsKnown).toBe(2);
       expect(result.manifest.boundary.sessionsWithoutState).toBe(1);
       expect(result.manifest.counts.hostMessages).toBe(2);
