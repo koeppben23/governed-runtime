@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add ADR-011 defining the post-cutover diagnostics and human-decision UX
+  contract. It establishes one read-only diagnostic projection over existing
+  authorities, scope-limited session collection with honest
+  `COMPLETE`/`PARTIAL`/`NOT_VERIFIED` reporting, schema-aware redaction before
+  persistence, and server-side revision binding for native decisions. It also
+  records that OpenCode decisions use the canonical `host_command` channel
+  without claiming verified human authorship, and splits ownership between
+  #1191 and #1196.
+
 - Announce automatic plan-approval validation before it starts. The
   `/approve` host command now presents a visible `Validation started` turn
   naming the active checks (for example `build` and `test`) while the checks
