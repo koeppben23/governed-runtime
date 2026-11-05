@@ -1574,6 +1574,13 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Workflow choice card (#1190).** `/start` and `/hydrate` now render one
+  compact decision card instead of repeating the workflow list in `## Workflows`,
+  `## Next`, and a recommendation line. The card lists `/task` (recommended),
+  `/architecture`, and `/review` with action-oriented descriptions and states
+  that nothing runs until the user sends a command. Already-active `/start`
+  renders the same card when no hydrate card is present.
+
 - **Reviewer evidence binds the model of every step (#1190, ADR-010 D5, #1169
   WS4).** The initial review accepted a different effective model or variant on a
   later step and bound only the last one. A mid-review switch now invalidates the

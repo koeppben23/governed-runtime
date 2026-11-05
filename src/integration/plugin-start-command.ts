@@ -49,6 +49,9 @@ import {
 } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
 import { buildGateNotice } from '../presentation/gate-notice.js';
+import { renderMarkdown } from '../presentation/markdown.js';
+import { buildWorkflowChoiceConclusion } from '../presentation/workflow-choice.js';
+import type { CompactCardDocument } from '../presentation/model.js';
 
 type Registration = { dispose(): Promise<void> };
 type CommandInvocation = {
@@ -60,6 +63,8 @@ type StartWorkflow = {
   readonly worktreeRoot: string;
   readonly state: SessionState;
   readonly report: readonly string[];
+  /** The hydrate card already ends with the canonical workflow-choice card. */
+  readonly hasWorkflowChoice: boolean;
   readonly hydration: { readonly args: Record<string, unknown>; readonly output: string } | null;
 };
 
@@ -199,15 +204,16 @@ async function runStart(
         ? 'is ACTIVE (an interrupted Start was completed)'
         : 'is ACTIVE';
   const directive = resolveWorkflowDirective(workflow.state);
+  const choiceDocument: CompactCardDocument = {
+    kind: 'compact_card',
+    density: 'compact',
+    form: 'decision',
+    sections: [],
+    conclusion: buildWorkflowChoiceConclusion(),
+  };
   const choice =
-    directive.code === 'CHOOSE_FLOW'
-      ? [
-          '## Next',
-          '',
-          'Choose one workflow: `/task`, `/architecture`, or `/review`.',
-          '',
-          '`/task` is the default suggestion, not a completed workflow decision or human approval.',
-        ].join('\n')
+    directive.code === 'CHOOSE_FLOW' && !workflow.hasWorkflowChoice
+      ? renderMarkdown(choiceDocument)
       : null;
   const text = [
     `FlowGuard governance ${status} for this session: ${workflow.state.policySnapshot.mode} policy, phase ${workflow.state.phase}.`,
@@ -322,6 +328,7 @@ async function readBoundWorkflow(
     worktreeRoot: resolution.worktreeRoot,
     state: resolution.state,
     report: notice === null ? [] : [notice],
+    hasWorkflowChoice: false,
     hydration: null,
   };
 }
@@ -524,6 +531,7 @@ async function hydrateWorkflow(
     worktreeRoot,
     state: after.state,
     report: hydrateReport(text, after.state),
+    hasWorkflowChoice: true,
     hydration: { args, output: text },
   };
 }

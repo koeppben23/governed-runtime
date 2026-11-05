@@ -128,10 +128,14 @@ describe('native /start command', () => {
     expect(host.prompt).toHaveBeenCalledWith(
       expect.objectContaining({
         text: expect.stringMatching(
-          /## Next[\s\S]*Choose one workflow: `\/task`, `\/architecture`, or `\/review`\.[\s\S]*`\/task` is the default suggestion, not a completed workflow decision or human approval\./,
+          /## Decision required[\s\S]*Choose one workflow to start\. Nothing runs until you send a command\.[\s\S]*- `\/task` — Capture the task and start the standard governed flow \(recommended\)[\s\S]*- `\/architecture` — Create or revise an ADR without starting a task flow[\s\S]*- `\/review` — Review a diff, branch, PR, or pasted text/,
         ),
       }),
     );
+    const startText =
+      (host.prompt.mock.calls.at(-1)?.[0] as { text?: string } | undefined)?.text ?? '';
+    expect(startText).not.toContain('## Workflows');
+    expect(startText).not.toContain('## Next');
     const events = await audit.readAuditTrail(authority.sessDir);
     const activated = events.filter((event) => event.event === 'governance:activated');
     expect(activated).toHaveLength(1);
