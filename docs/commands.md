@@ -654,6 +654,8 @@ flowguard debug-export --session <id>              # redacted snapshot with host
 flowguard debug-export --session <id> --no-host    # FlowGuard state/audit only
 flowguard debug-export --session <id> --out <dir>  # explicit write-once directory
 flowguard debug-export --session <id> --raw        # explicit no-redaction consent
+flowguard debug-export --session <id> --max-file-bytes 8000000 --max-total-bytes 32000000
+flowguard debug-export --session <id> --max-duration-ms 60000
 ```
 
 The same operation is available as native `/debug-export` in OpenCode. It uses
@@ -666,6 +668,12 @@ per-session redacted state/audit/review files and optional redacted host
 transcripts. The manifest reports `COMPLETE`, `PARTIAL` or `NOT_VERIFIED`,
 per-file SHA-256/size, capture boundaries, warnings and redaction limitations.
 Known-but-unreachable sessions remain in the denominator and prevent `COMPLETE`.
+A reviewer child without its own FlowGuard state is reported with
+`canonicalState: partial`; a child whose invocation does not name the requested
+root is retained as `lineage: not_verified` and its state/transcript is not read.
+Per-file and total byte limits plus a total duration budget are enforced;
+oversized artifacts are skipped with an explicit warning and `PARTIAL`, never
+silently truncated.
 
 A diagnostic snapshot is not an authorization certificate and never replaces
 the governed `/export`.

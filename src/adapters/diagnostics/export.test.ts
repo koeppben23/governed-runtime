@@ -6,12 +6,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { createTestWorkspace, type TestWorkspace } from '../../integration/test-helpers.js';
 import { initWorkspace } from '../workspace/index.js';
 import { writeState } from '../persistence.js';
+import { appendAuditEvent } from '../persistence-audit.js';
 import { BINDING, PLAN_REVIEW_ASSURANCE, makeState } from '../../fixtures.js';
 import { writeDiagnosticExport, type DiagnosticExportRequest } from './export.js';
 import type { HostTranscript } from './host-transcript.js';
@@ -79,20 +81,36 @@ function request(
     includeHost: false,
     now: FIXED_NOW,
     captureId: CAPTURE_ID,
-    limits: { maxSessions: 10, maxFileBytes: 1_000_000, hostTimeoutMs: 1_000 },
+    limits: {
+      maxSessions: 10,
+      maxFileBytes: 1_000_000,
+      maxTotalBytes: 10_000_000,
+      hostTimeoutMs: 1_000,
+      maxDurationMs: 60_000,
+    },
     ...overrides,
   };
 }
 
+function rootLinkedAssurance(): typeof PLAN_REVIEW_ASSURANCE {
+  return {
+    ...PLAN_REVIEW_ASSURANCE,
+    invocations: PLAN_REVIEW_ASSURANCE.invocations.map((invocation) => ({
+      ...invocation,
+      parentSessionId: ROOT_ID,
+    })),
+  };
+}
+
 async function rootState(
-  withAssurance = false,
+  assurance?: typeof PLAN_REVIEW_ASSURANCE,
 ): Promise<{ sessionDir: string; fingerprint: string }> {
   const { sessionDir, fingerprint } = await initWorkspace(ws.tmpDir, ROOT_ID);
   const state = boundState(
     ROOT_STATE_ID,
     ROOT_ID,
     fingerprint,
-    withAssurance ? { reviewAssurance: PLAN_REVIEW_ASSURANCE } : {},
+    assurance === undefined ? {} : { reviewAssurance: assurance },
   );
   await writeState(sessionDir, state);
   return { sessionDir, fingerprint };
@@ -127,7 +145,7 @@ describe('diagnostic export', () => {
     });
 
     it('captures a known reviewer child and preserves technical IDs while masking host text', async () => {
-      await rootState(true);
+      await rootState(rootLinkedAssurance());
       const outputDir = path.join(ws.tmpDir, 'diag-host');
 
       const result = await writeDiagnosticExport(
@@ -140,14 +158,20 @@ describe('diagnostic export', () => {
       expect(result.manifest.boundary.sessionsKnown).toBe(2);
       expect(result.manifest.boundary.sessionsWithoutState).toBe(1);
       expect(result.manifest.counts.hostMessages).toBe(2);
-      expect(result.manifest.status).toBe('COMPLETE');
+      expect(result.manifest.status).toBe('PARTIAL');
+      expect(result.manifest.completeness).toEqual({
+        lineage: 'complete',
+        canonicalState: 'partial',
+        hostHistory: 'complete',
+      });
       const graph = JSON.parse(await readFile(path.join(outputDir, 'session-graph.json'), 'utf8'));
       expect(graph.sessions).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             sessionId: CHILD_ID,
-            parentSessionId: 'parent-session-1',
+            parentSessionId: ROOT_ID,
             role: 'reviewer',
+            lineage: 'verified',
             state: 'absent',
             hostHistory: 'captured',
           }),
@@ -164,9 +188,48 @@ describe('diagnostic export', () => {
     });
   });
 
+  it('does not read a child whose invocation parent is not the requested root', async () => {
+    await rootState(PLAN_REVIEW_ASSURANCE);
+    const outputDir = path.join(ws.tmpDir, 'diag-foreign-parent');
+
+    const result = await writeDiagnosticExport(
+      request(outputDir, {
+        includeHost: true,
+        hostReader: async (sessionId) => hostTranscript(sessionId),
+      }),
+    );
+
+    expect(result.manifest.status).toBe('PARTIAL');
+    expect(result.manifest.boundary.sessionsLineageUnverified).toBe(1);
+    expect(result.manifest.completeness.lineage).toBe('partial');
+    expect(result.manifest.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SESSION_LINEAGE_NOT_VERIFIED',
+          sessionId: CHILD_ID,
+        }),
+      ]),
+    );
+    const graph = JSON.parse(await readFile(path.join(outputDir, 'session-graph.json'), 'utf8'));
+    expect(graph.sessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sessionId: CHILD_ID,
+          lineage: 'not_verified',
+          state: 'unavailable',
+          binding: 'unknown',
+          hostHistory: 'not_requested',
+        }),
+      ]),
+    );
+    await expect(
+      readFile(path.join(outputDir, 'sessions', CHILD_ID, 'host.transcript.redacted.json'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   describe('BAD — known unavailable sessions are never dropped', () => {
     it('reports PARTIAL when a known child has a mismatched binding', async () => {
-      const { fingerprint } = await rootState(true);
+      const { fingerprint } = await rootState(rootLinkedAssurance());
       const { sessionDir: childDir } = await initWorkspace(ws.tmpDir, CHILD_ID);
       await writeState(
         childDir,
@@ -202,6 +265,93 @@ describe('diagnostic export', () => {
     });
   });
 
+  describe('RESOURCE — every source is bounded', () => {
+    it('does not read an audit trail above the per-file budget', async () => {
+      const { sessionDir } = await rootState();
+      await appendAuditEvent(sessionDir, {
+        id: randomUUID(),
+        flowguardSessionId: ROOT_STATE_ID,
+        hostSessionId: ROOT_ID,
+        phase: 'READY',
+        event: 'test:padding',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+        actor: 'machine',
+        detail: { padding: 'x'.repeat(30_000) },
+      });
+      const outputDir = path.join(ws.tmpDir, 'diag-audit-limit');
+
+      const result = await writeDiagnosticExport(
+        request(outputDir, {
+          limits: {
+            maxSessions: 10,
+            maxFileBytes: 20_000,
+            maxTotalBytes: 10_000_000,
+            hostTimeoutMs: 1_000,
+            maxDurationMs: 60_000,
+          },
+        }),
+      );
+
+      expect(result.manifest.status).toBe('PARTIAL');
+      expect(result.manifest.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: 'AUDIT_TOO_LARGE' })]),
+      );
+    });
+
+    it('does not persist a host transcript above the per-file budget', async () => {
+      await rootState();
+      const outputDir = path.join(ws.tmpDir, 'diag-host-limit');
+
+      const result = await writeDiagnosticExport(
+        request(outputDir, {
+          includeHost: true,
+          limits: {
+            maxSessions: 10,
+            maxFileBytes: 20_000,
+            maxTotalBytes: 10_000_000,
+            hostTimeoutMs: 1_000,
+            maxDurationMs: 60_000,
+          },
+          hostReader: async (sessionId) => ({ ...hostTranscript(sessionId), bytes: 30_000 }),
+        }),
+      );
+
+      expect(result.manifest.status).toBe('PARTIAL');
+      expect(result.manifest.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: 'HOST_HISTORY_TOO_LARGE' })]),
+      );
+      await expect(
+        readFile(
+          path.join(outputDir, 'sessions', ROOT_ID, 'host.transcript.redacted.json'),
+          'utf8',
+        ),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('reports an explicit artifact-limit warning instead of silently truncating', async () => {
+      await rootState();
+      const outputDir = path.join(ws.tmpDir, 'diag-total-limit');
+
+      const result = await writeDiagnosticExport(
+        request(outputDir, {
+          limits: {
+            maxSessions: 10,
+            maxFileBytes: 20_000,
+            maxTotalBytes: 500,
+            hostTimeoutMs: 1_000,
+            maxDurationMs: 60_000,
+          },
+        }),
+      );
+
+      expect(result.manifest.status).toBe('PARTIAL');
+      expect(result.manifest.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: 'ARTIFACT_TOO_LARGE' })]),
+      );
+      expect(result.manifest.completeness.canonicalState).toBe('complete');
+    });
+  });
+
   describe('CORNER — output is write-once and host failures are explicit', () => {
     it('refuses to overwrite an existing diagnostic directory', async () => {
       await rootState();
@@ -214,7 +364,7 @@ describe('diagnostic export', () => {
     });
 
     it('records a host capture failure instead of fabricating a transcript', async () => {
-      await rootState(true);
+      await rootState(rootLinkedAssurance());
       const outputDir = path.join(ws.tmpDir, 'diag-host-failure');
 
       const result = await writeDiagnosticExport(

@@ -9,40 +9,38 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { verifyChain } from '../../audit/integrity.js';
 import { readAuditTrail } from '../persistence-audit.js';
-import { resolveSessionAuthority, type SessionAuthorityResolution } from '../session-authority.js';
+import { auditPath } from '../persistence.js';
+import { resolveSessionAuthority } from '../session-authority.js';
 import { validateSessionId } from '../workspace/types.js';
-import { hashBuffer } from '../../shared/hashing.js';
-import { sanitizeDiagnosticString } from '../../logging/redact.js';
 import {
-  redactAuditEvent,
-  redactDiagnosticPayload,
-  redactSessionState,
-  type RedactionMode,
-} from '../../redaction/export-redaction.js';
-import {
-  DIAGNOSTIC_EXPORT_SCHEMA_VERSION,
   DEFAULT_DIAGNOSTIC_LIMITS,
-  DiagnosticManifest,
+  DIAGNOSTIC_EXPORT_SCHEMA_VERSION,
   DiagnosticSessionGraph,
   DiagnosticTimeline,
-  type DiagnosticCaptureStatus,
   type DiagnosticExportLimits,
-  type DiagnosticManifest as DiagnosticManifestType,
-  type DiagnosticSessionGraph as DiagnosticSessionGraphType,
-  type DiagnosticTimeline as DiagnosticTimelineType,
-  type DiagnosticWarning,
 } from './export-schema.js';
+import { DiagnosticExportError } from './errors.js';
+import { manifestFor } from './manifest.js';
+import { writeAllSessionArtifacts, writeArtifact } from './artifact-writer.js';
+import {
+  warning,
+  type CaptureAccumulator,
+  type DiagnosticHostReader,
+  type DiscoverySource,
+  type SessionCapture,
+  type SessionDiscovery,
+} from './types.js';
 import type { HostTranscript } from './host-transcript.js';
 import type { AuditEvent } from '../../state/evidence-audit.js';
 import type { SessionState } from '../../state/schema.js';
-import { projectReviewAssurance } from './review-projection.js';
+import type { RedactionMode } from '../../redaction/export-redaction.js';
 
-type DiagnosticHostReader = (sessionId: string) => Promise<HostTranscript>;
+export { DiagnosticExportError } from './errors.js';
 
 export interface DiagnosticExportRequest {
   readonly root: string;
@@ -59,68 +57,28 @@ export interface DiagnosticExportRequest {
 
 export interface DiagnosticExportResult {
   readonly outputDir: string;
-  readonly manifest: DiagnosticManifestType;
+  readonly manifest: import('./export-schema.js').DiagnosticManifest;
 }
 
-export type DiagnosticExportErrorCode =
-  'OUTPUT_EXISTS' | 'OUTPUT_INVALID' | 'WRITE_FAILED' | 'INVALID_SESSION_ID';
-
-export class DiagnosticExportError extends Error {
-  readonly code: DiagnosticExportErrorCode;
-
-  constructor(code: DiagnosticExportErrorCode, message: string, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = 'DiagnosticExportError';
-    this.code = code;
-  }
+function mergeLineage(
+  existing: 'verified' | 'not_verified' | undefined,
+  next: 'verified' | 'not_verified' | null,
+): 'verified' | 'not_verified' {
+  if (existing === 'not_verified' || next === 'not_verified') return 'not_verified';
+  return existing ?? next ?? 'not_verified';
 }
 
-interface SessionCapture {
-  readonly sessionId: string;
-  readonly parentSessionId: string | null;
-  readonly role: 'root' | 'reviewer' | 'continuation';
-  readonly discoveredBy: readonly DiscoverySource[];
-  readonly authority: SessionAuthorityResolution;
-  readonly state: SessionState | null;
-  readonly audit: readonly AuditEvent[];
-  readonly auditValid: boolean | null;
-  readonly host: HostTranscript | null;
-  readonly hostRequested: boolean;
-}
-
-interface CaptureAccumulator {
-  readonly sessions: SessionCapture[];
-  readonly warnings: DiagnosticWarning[];
-  readonly receipts: Array<{ path: string; sha256: string; bytes: number }>;
-  auditEvents: number;
-  hostMessages: number;
-  truncated: boolean;
-}
-
-function warning(
-  code: string,
-  message: string,
-  sessionId: string | null,
-  source: DiagnosticWarning['source'],
-): DiagnosticWarning {
-  return { code, message, sessionId, source };
-}
-
-type DiscoverySource =
-  'root' | 'review_invocation' | 'review_attempt' | 'review_observation' | 'host_parent';
-
-interface SessionDiscovery {
-  readonly sources: DiscoverySource[];
-  readonly parentSessionId: string | null;
-}
-
-function discoveredSessionIds(state: SessionState | null): Map<string, SessionDiscovery> {
+function discoveredSessionIds(
+  state: SessionState | null,
+  rootSessionId: string,
+): Map<string, SessionDiscovery> {
   const found = new Map<string, SessionDiscovery>();
   if (!state?.reviewAssurance) return found;
   const add = (
     sessionId: string | undefined,
     source: DiscoverySource,
     parentSessionId: string | null,
+    lineage: 'verified' | 'not_verified' | null,
   ) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0) return;
     const existing = found.get(sessionId);
@@ -129,21 +87,53 @@ function discoveredSessionIds(state: SessionState | null): Map<string, SessionDi
     found.set(sessionId, {
       sources,
       parentSessionId: existing?.parentSessionId ?? parentSessionId,
+      lineage: mergeLineage(existing?.lineage, lineage),
     });
   };
   for (const invocation of state.reviewAssurance.invocations) {
-    add(invocation.childSessionId, 'review_invocation', invocation.parentSessionId);
+    add(
+      invocation.childSessionId,
+      'review_invocation',
+      invocation.parentSessionId,
+      invocation.parentSessionId === rootSessionId ? 'verified' : 'not_verified',
+    );
   }
   for (const attempt of state.reviewAssurance.attempts) {
-    add(attempt.childSessionId, 'review_attempt', null);
+    add(attempt.childSessionId, 'review_attempt', null, null);
     for (const observation of attempt.observations) {
-      add(observation.observedBySessionId, 'review_observation', null);
+      add(observation.observedBySessionId, 'review_observation', null, null);
     }
   }
   return found;
 }
 
-async function readAudit(sessionId: string, sessDir: string, acc: CaptureAccumulator) {
+async function auditWithinLimit(sessDir: string, maxBytes: number): Promise<boolean> {
+  try {
+    const info = await stat(auditPath(sessDir));
+    return info.size <= maxBytes;
+  } catch {
+    // A missing audit file is an empty trail; other read failures surface in
+    // readAuditTrail with their typed persistence error.
+    return true;
+  }
+}
+
+async function readAudit(
+  sessionId: string,
+  sessDir: string,
+  acc: CaptureAccumulator,
+): Promise<{ audit: AuditEvent[]; valid: boolean | null }> {
+  if (!(await auditWithinLimit(sessDir, acc.maxFileBytes))) {
+    acc.warnings.push(
+      warning(
+        'AUDIT_TOO_LARGE',
+        `Audit trail exceeds the ${acc.maxFileBytes}-byte capture limit; audit content was not read.`,
+        sessionId,
+        'audit',
+      ),
+    );
+    return { audit: [], valid: null };
+  }
   try {
     const audit = await readAuditTrail(sessDir);
     const chain = verifyChain(audit);
@@ -158,7 +148,7 @@ async function readAudit(sessionId: string, sessDir: string, acc: CaptureAccumul
         ),
       );
     }
-    return { audit, valid: chain.valid as boolean | null };
+    return { audit, valid: chain.valid };
   } catch (error) {
     acc.warnings.push(
       warning(
@@ -168,7 +158,7 @@ async function readAudit(sessionId: string, sessDir: string, acc: CaptureAccumul
         'audit',
       ),
     );
-    return { audit: [] as AuditEvent[], valid: null };
+    return { audit: [], valid: null };
   }
 }
 
@@ -178,8 +168,34 @@ async function readHost(
   acc: CaptureAccumulator,
 ): Promise<HostTranscript | null> {
   if (!request.includeHost || request.hostReader === undefined) return null;
+  const remaining = acc.deadlineAt - Date.now();
+  if (remaining <= 0) {
+    acc.warnings.push(
+      warning(
+        'CAPTURE_TIME_BUDGET_EXCEEDED',
+        'Host history was not captured because the total capture time budget was exhausted.',
+        sessionId,
+        'host',
+      ),
+    );
+    return null;
+  }
   try {
-    const transcript = await request.hostReader(sessionId);
+    const transcript = await request.hostReader(
+      sessionId,
+      Math.min(request.limits?.hostTimeoutMs ?? DEFAULT_DIAGNOSTIC_LIMITS.hostTimeoutMs, remaining),
+    );
+    if (transcript.bytes > acc.maxFileBytes) {
+      acc.warnings.push(
+        warning(
+          'HOST_HISTORY_TOO_LARGE',
+          `Host transcript exceeds the ${acc.maxFileBytes}-byte capture limit.`,
+          sessionId,
+          'host',
+        ),
+      );
+      return null;
+    }
     acc.hostMessages += transcript.messageCount;
     return transcript;
   } catch (error) {
@@ -204,6 +220,7 @@ async function captureOne(
     role: SessionCapture['role'];
     discoveredBy: readonly DiscoverySource[];
     parentSessionId: string | null;
+    lineage: SessionCapture['lineage'];
   },
 ): Promise<SessionCapture> {
   const authority = await resolveSessionAuthority({ root, sessionId });
@@ -228,6 +245,7 @@ async function captureOne(
     parentSessionId: meta.parentSessionId,
     role: meta.role,
     discoveredBy: meta.discoveredBy,
+    lineage: meta.lineage,
     authority,
     state,
     audit: auditResult.audit,
@@ -237,15 +255,38 @@ async function captureOne(
   };
 }
 
-function statusFor(acc: CaptureAccumulator, root: SessionCapture): DiagnosticCaptureStatus {
-  if (root.authority.status !== 'resolved') return 'NOT_VERIFIED';
-  const unavailable = acc.sessions.some((item) => item.authority.status === 'unavailable');
-  const hostFailed = acc.warnings.some((item) => item.code === 'HOST_HISTORY_UNAVAILABLE');
-  if (acc.truncated || unavailable || hostFailed || acc.warnings.length > 0) return 'PARTIAL';
-  return 'COMPLETE';
+function uncapturedSession(
+  sessionId: string,
+  discovery: SessionDiscovery,
+  acc: CaptureAccumulator,
+): SessionCapture {
+  acc.warnings.push(
+    warning(
+      'SESSION_LINEAGE_NOT_VERIFIED',
+      'Known session was retained in the graph but not read because its lineage to the requested root is not positively established.',
+      sessionId,
+      'review',
+    ),
+  );
+  return {
+    sessionId,
+    parentSessionId: discovery.parentSessionId,
+    role: 'reviewer',
+    discoveredBy: discovery.sources,
+    lineage: 'not_verified',
+    authority: null,
+    state: null,
+    audit: [],
+    auditValid: null,
+    host: null,
+    hostRequested: false,
+  };
 }
 
-function graphFor(root: SessionCapture, acc: CaptureAccumulator): DiagnosticSessionGraphType {
+function graphFor(
+  root: SessionCapture,
+  acc: CaptureAccumulator,
+): import('./export-schema.js').DiagnosticSessionGraph {
   return {
     schemaVersion: DIAGNOSTIC_EXPORT_SCHEMA_VERSION,
     rootSessionId: root.sessionId,
@@ -255,13 +296,16 @@ function graphFor(root: SessionCapture, acc: CaptureAccumulator): DiagnosticSess
       role: item.role,
       discoveredBy: [...item.discoveredBy],
       state:
-        item.authority.status === 'resolved'
-          ? 'captured'
-          : item.authority.status === 'absent'
-            ? 'absent'
-            : 'unavailable',
+        item.authority === null
+          ? 'unavailable'
+          : item.authority.status === 'resolved'
+            ? 'captured'
+            : item.authority.status === 'absent'
+              ? 'absent'
+              : 'unavailable',
+      lineage: item.lineage,
       phase: item.state?.phase ?? null,
-      binding: item.authority.status === 'resolved' ? 'verified' : 'unknown',
+      binding: item.authority?.status === 'resolved' ? 'verified' : 'unknown',
       hostHistory: item.host ? 'captured' : item.hostRequested ? 'unavailable' : 'not_requested',
       warningCodes: acc.warnings
         .filter((entry) => entry.sessionId === item.sessionId)
@@ -270,7 +314,10 @@ function graphFor(root: SessionCapture, acc: CaptureAccumulator): DiagnosticSess
   };
 }
 
-function timelineFor(acc: CaptureAccumulator, createdAt: string): DiagnosticTimelineType {
+function timelineFor(
+  acc: CaptureAccumulator,
+  createdAt: string,
+): import('./export-schema.js').DiagnosticTimeline {
   const entries: Array<{
     at: string | null;
     source: 'audit' | 'host' | 'capture';
@@ -304,163 +351,6 @@ function timelineFor(acc: CaptureAccumulator, createdAt: string): DiagnosticTime
   };
 }
 
-async function writeArtifact(
-  outputDir: string,
-  relativePath: string,
-  content: string | Buffer,
-  acc: CaptureAccumulator,
-): Promise<void> {
-  const full = path.join(outputDir, relativePath);
-  await mkdir(path.dirname(full), { recursive: true, mode: 0o700 });
-  const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8');
-  try {
-    await writeFile(full, bytes, { flag: 'wx', mode: 0o600 });
-  } catch (error) {
-    throw new DiagnosticExportError(
-      'WRITE_FAILED',
-      `Cannot write diagnostic artifact ${relativePath}: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
-  }
-  acc.receipts.push({
-    path: relativePath.replace(/\\/g, '/'),
-    sha256: hashBuffer(bytes),
-    bytes: bytes.byteLength,
-  });
-}
-
-function artifactName(base: string, extension: string, mode: RedactionMode): string {
-  return `${base}${mode === 'none' ? '' : '.redacted'}${extension}`;
-}
-
-async function writeSessionArtifacts(
-  outputDir: string,
-  session: SessionCapture,
-  mode: RedactionMode,
-  acc: CaptureAccumulator,
-  createdAt: string,
-): Promise<void> {
-  const sessionDir = `sessions/${validateSessionId(session.sessionId)}`;
-  if (session.state !== null) {
-    const redacted = redactSessionState(session.state, mode);
-    await writeArtifact(
-      outputDir,
-      `${sessionDir}/${artifactName('state', '.json', mode)}`,
-      `${JSON.stringify(redacted, null, 2)}\n`,
-      acc,
-    );
-    const review = projectReviewAssurance(session.state);
-    if (review !== null) {
-      await writeArtifact(
-        outputDir,
-        `${sessionDir}/review-assurance.json`,
-        `${JSON.stringify(review, null, 2)}\n`,
-        acc,
-      );
-    }
-  }
-  if (session.audit.length > 0) {
-    const lines = session.audit.map((event) =>
-      JSON.stringify(redactAuditEvent(event as unknown as Record<string, unknown>, mode)),
-    );
-    await writeArtifact(
-      outputDir,
-      `${sessionDir}/${artifactName('audit', '.jsonl', mode)}`,
-      `${lines.join('\n')}\n`,
-      acc,
-    );
-  }
-  if (session.host !== null) {
-    const redacted = redactDiagnosticPayload(session.host.payload, mode);
-    await writeArtifact(
-      outputDir,
-      `${sessionDir}/${artifactName('host.transcript', '.json', mode)}`,
-      `${JSON.stringify(redacted, null, 2)}\n`,
-      acc,
-    );
-  }
-  await writeArtifact(
-    outputDir,
-    `${sessionDir}/session.json`,
-    `${JSON.stringify(
-      {
-        schemaVersion: DIAGNOSTIC_EXPORT_SCHEMA_VERSION,
-        sessionId: session.sessionId,
-        capturedAt: createdAt,
-        authority: session.authority.status,
-        ...(session.authority.status === 'resolved'
-          ? {
-              fingerprint: session.authority.fingerprint,
-              worktreeName: path.basename(session.authority.worktreeRoot),
-            }
-          : {}),
-        auditChain:
-          session.auditValid === null ? 'NOT_VERIFIED' : session.auditValid ? 'valid' : 'invalid',
-        hostHistory: session.hostRequested
-          ? session.host
-            ? 'captured'
-            : 'unavailable'
-          : 'not_requested',
-      },
-      null,
-      2,
-    )}\n`,
-    acc,
-  );
-}
-
-function manifestFor(
-  request: DiagnosticExportRequest,
-  root: SessionCapture,
-  acc: CaptureAccumulator,
-  captureId: string,
-  createdAt: string,
-): DiagnosticManifestType {
-  const limit = request.limits ?? DEFAULT_DIAGNOSTIC_LIMITS;
-  const withState = acc.sessions.filter((item) => item.authority.status === 'resolved').length;
-  const unavailable = acc.sessions.filter((item) => item.authority.status === 'unavailable').length;
-  const hostRequested = request.includeHost && request.hostReader !== undefined;
-  const hostCaptured = acc.sessions.some((item) => item.host !== null);
-  return DiagnosticManifest.parse({
-    schemaVersion: DIAGNOSTIC_EXPORT_SCHEMA_VERSION,
-    captureId,
-    createdAt,
-    status: statusFor(acc, root),
-    redaction: {
-      mode: request.redactionMode,
-      rawIncluded: request.redactionMode === 'none',
-      limitations: [
-        'Redaction is best-effort and cannot guarantee complete anonymization.',
-        'Provider-hidden reasoning is never reconstructed or claimed.',
-      ],
-    },
-    boundary: {
-      workspaceFingerprint:
-        root.authority.status === 'unavailable' ? null : root.authority.fingerprint,
-      worktreeName:
-        root.authority.status === 'unavailable' ? null : path.basename(root.authority.worktreeRoot),
-      sessionsKnown: acc.sessions.length,
-      sessionsWithState: withState,
-      sessionsWithoutState: acc.sessions.length - withState - unavailable,
-      sessionsUnavailable: unavailable,
-      maxSessions: limit.maxSessions,
-      maxFileBytes: limit.maxFileBytes,
-      hostHistory: hostRequested ? (hostCaptured ? 'included' : 'unavailable') : 'not_requested',
-    },
-    counts: {
-      sessions: acc.sessions.length,
-      auditEvents: acc.auditEvents,
-      hostMessages: acc.hostMessages,
-      warnings: acc.warnings.length,
-    },
-    files: acc.receipts,
-    warnings: acc.warnings.map((entry) => ({
-      ...entry,
-      message: sanitizeDiagnosticString(entry.message),
-    })),
-  });
-}
-
 async function createOutputDirectory(outputDir: string): Promise<void> {
   try {
     await mkdir(path.dirname(outputDir), { recursive: true, mode: 0o700 });
@@ -491,10 +381,35 @@ async function collectSessions(
     role: 'root',
     discoveredBy: ['root'],
     parentSessionId: null,
+    lineage: 'verified',
   });
   acc.sessions.push(root);
-  for (const [sessionId, discovery] of discoveredSessionIds(root.state)) {
+  if (Date.now() > acc.deadlineAt) {
+    acc.truncated = true;
+    acc.warnings.push(
+      warning(
+        'CAPTURE_TIME_BUDGET_EXCEEDED',
+        'The root capture consumed the total capture time budget; descendants were not traversed.',
+        request.sessionId,
+        'capture',
+      ),
+    );
+    return root;
+  }
+  for (const [sessionId, discovery] of discoveredSessionIds(root.state, request.sessionId)) {
     if (sessionId === request.sessionId) continue;
+    if (Date.now() > acc.deadlineAt) {
+      acc.truncated = true;
+      acc.warnings.push(
+        warning(
+          'CAPTURE_TIME_BUDGET_EXCEEDED',
+          `Known session ${sessionId} was not captured because the total capture time budget was exhausted.`,
+          sessionId,
+          'capture',
+        ),
+      );
+      break;
+    }
     if (acc.sessions.length >= limit.maxSessions) {
       acc.truncated = true;
       acc.warnings.push(
@@ -507,40 +422,20 @@ async function collectSessions(
       );
       continue;
     }
+    if (discovery.lineage !== 'verified') {
+      acc.sessions.push(uncapturedSession(sessionId, discovery, acc));
+      continue;
+    }
     acc.sessions.push(
       await captureOne(sessionId, request.root, request, acc, {
         role: 'reviewer',
         discoveredBy: discovery.sources,
         parentSessionId: discovery.parentSessionId,
+        lineage: discovery.lineage,
       }),
     );
   }
   return root;
-}
-
-async function writeAllSessionArtifacts(
-  request: DiagnosticExportRequest,
-  acc: CaptureAccumulator,
-  createdAt: string,
-): Promise<void> {
-  for (const session of acc.sessions) {
-    try {
-      await writeSessionArtifacts(
-        request.outputDir,
-        session,
-        request.redactionMode,
-        acc,
-        createdAt,
-      );
-    } catch (error) {
-      if (error instanceof DiagnosticExportError) throw error;
-      throw new DiagnosticExportError(
-        'WRITE_FAILED',
-        `Cannot write session artifacts: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error },
-      );
-    }
-  }
 }
 
 async function writeIndexArtifacts(
@@ -601,6 +496,10 @@ export async function writeDiagnosticExport(
     receipts: [],
     auditEvents: 0,
     hostMessages: 0,
+    totalBytes: 0,
+    maxFileBytes: limit.maxFileBytes,
+    maxTotalBytes: limit.maxTotalBytes,
+    deadlineAt: Date.now() + limit.maxDurationMs,
     truncated: false,
   };
   const root = await collectSessions(request, limit, acc);
@@ -608,11 +507,17 @@ export async function writeDiagnosticExport(
   await writeIndexArtifacts(request, root, acc, createdAt);
 
   const manifest = manifestFor(request, root, acc, request.captureId ?? randomUUID(), createdAt);
-  await writeArtifact(
+  const manifestWritten = await writeArtifact(
     request.outputDir,
     'manifest.json',
     `${JSON.stringify(manifest, null, 2)}\n`,
     acc,
+    { enforceTotal: false },
   );
+  if (!manifestWritten)
+    throw new DiagnosticExportError(
+      'MANIFEST_TOO_LARGE',
+      'The diagnostic manifest exceeds the configured capture budget.',
+    );
   return { outputDir: request.outputDir, manifest };
 }

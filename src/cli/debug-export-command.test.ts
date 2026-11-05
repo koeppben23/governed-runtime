@@ -60,7 +60,9 @@ describe('debug-export CLI', () => {
           limits: {
             maxSessions: 100,
             maxFileBytes: 16 * 1024 * 1024,
+            maxTotalBytes: 64 * 1024 * 1024,
             hostTimeoutMs: 60_000,
+            maxDurationMs: 120_000,
           },
           json: false,
         },
@@ -101,6 +103,21 @@ describe('debug-export CLI', () => {
     it('rejects a non-positive numeric limit', () => {
       const parsed = parseDebugExportArgs(['--session', HOST_SESSION_ID, '--max-sessions', '0']);
       expect(parsed).toMatchObject({ kind: 'error' });
+    });
+
+    it('accepts explicit total-size and duration budgets', () => {
+      const parsed = parseDebugExportArgs([
+        '--session',
+        HOST_SESSION_ID,
+        '--max-total-bytes',
+        '200000',
+        '--max-duration-ms',
+        '5000',
+      ]);
+      expect(parsed).toMatchObject({
+        kind: 'ok',
+        value: { limits: { maxTotalBytes: 200000, maxDurationMs: 5000 } },
+      });
     });
   });
 

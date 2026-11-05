@@ -4,6 +4,8 @@ import path from 'node:path';
 import type { Plugin } from '@opencode/plugin';
 
 import {
+  DEFAULT_DIAGNOSTIC_LIMITS,
+  DiagnosticHostError,
   normalizeHostTranscript,
   writeDiagnosticExport,
   type HostTranscript,
@@ -26,13 +28,36 @@ function messagesFromContext(context: unknown): unknown[] {
 async function nativeHostTranscript(
   ctx: Plugin.Context,
   sessionId: string,
+  timeoutMs: number,
 ): Promise<HostTranscript> {
-  const session = await ctx.session.get({ sessionID: sessionId });
-  const context = await ctx.session.context({ sessionID: sessionId });
-  return normalizeHostTranscript(
-    { info: session, messages: messagesFromContext(context) },
-    sessionId,
-  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new DiagnosticHostError(
+            'HOST_EXPORT_TIMEOUT',
+            `Host transcript capture timed out after ${timeoutMs} ms.`,
+          ),
+        ),
+      timeoutMs,
+    );
+    timer.unref?.();
+  });
+  try {
+    const loaded = (async () => {
+      const session = await ctx.session.get({ sessionID: sessionId });
+      const context = await ctx.session.context({ sessionID: sessionId });
+      return normalizeHostTranscript(
+        { info: session, messages: messagesFromContext(context) },
+        sessionId,
+        DEFAULT_DIAGNOSTIC_LIMITS.maxFileBytes,
+      );
+    })();
+    return await Promise.race([loaded, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 async function runDebugExport(ctx: Plugin.Context, sessionId: string): Promise<string> {
@@ -56,7 +81,7 @@ async function runDebugExport(ctx: Plugin.Context, sessionId: string): Promise<s
     outputDir,
     redactionMode: 'basic',
     includeHost: true,
-    hostReader: (childSessionId) => nativeHostTranscript(ctx, childSessionId),
+    hostReader: (childSessionId, timeoutMs) => nativeHostTranscript(ctx, childSessionId, timeoutMs),
   });
   const warningLines = result.manifest.warnings.map(
     (warning) =>

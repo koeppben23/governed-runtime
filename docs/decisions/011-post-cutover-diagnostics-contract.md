@@ -81,7 +81,12 @@ sessions whose relationship is positively established.
 - Reviewer children may be discovered from canonical attempts, dispatches,
   invocations, observations and verified native relationships.
 - If a relationship is ambiguous, contradictory or unavailable, the projection
-  reports a gap and **does not fetch or merge foreign session content**.
+  reports a gap and **does not fetch or merge foreign session content**. The
+  candidate remains in the graph as `lineage: not_verified`; its state and host
+  transcript are not read.
+- A child is read only when its persisted invocation names the requested root
+  session as its parent. Attempts or observations without that positive link
+  remain `not_verified` rather than being treated as root descendants.
 - A corrupt or unavailable governance state may be read and reported as
   **untrusted**. It must not be trusted for further scope expansion or repaired
   by the diagnostic path.
@@ -96,7 +101,8 @@ re-derive a session directory from a fingerprint and session ID locally.
 ### D3. Completeness is explicit and denominator-preserving
 
 Every diagnostic snapshot and every projected view reports capture completeness
-as `COMPLETE`, `PARTIAL` or `NOT_VERIFIED`.
+as `COMPLETE`, `PARTIAL` or `NOT_VERIFIED`. Completeness is projected on three
+independent axes: `lineage`, `canonicalState` and `hostHistory`.
 
 `COMPLETE` means only that all declared sources and known descendants were
 captured within the declared boundary. It never means:
@@ -111,6 +117,13 @@ denominator. Removing an unreachable known child from the denominator is
 forbidden, because it would manufacture apparent completeness. Missing,
 stale, duplicate, rejected, exhausted, interrupted and `outcome_unknown`
 attempts remain visible as such.
+
+A known reviewer child without its own FlowGuard state is normal in the native
+host model, but it is not fully bound canonical state. The manifest therefore
+reports `canonicalState: partial` and the overall status cannot be `COMPLETE`
+unless the capture contract explicitly records an accepted gap. `COMPLETE`
+requires `lineage: complete`, `canonicalState: complete` and, when requested,
+`hostHistory: complete`.
 
 ### D4. Content, privacy and export integrity
 
@@ -223,11 +236,20 @@ Implemented in this repository state:
   write-once snapshot of the root session and known reviewer children.
 - Root and child resolution uses the canonical session authority. A known child
   that cannot be resolved remains in the graph and completeness denominator.
+- A child is read only after its invocation positively names the requested root.
+  Foreign or unlinked candidates remain `lineage: not_verified` and are not
+  fetched; the manifest reports `PARTIAL`.
 - The snapshot verifies the canonical audit chain, preserves native session,
   message and part IDs, captures optional host transcripts through the installed
   OpenCode CLI or the native plugin context, and redacts before persistence.
 - The manifest records per-file SHA-256/size, capture boundaries, redaction mode,
-  host-history status and explicit `COMPLETE`/`PARTIAL`/`NOT_VERIFIED` status.
+  per-axis completeness (`lineage`, `canonicalState`, `hostHistory`) and explicit
+  `COMPLETE`/`PARTIAL`/`NOT_VERIFIED` status.
+- Per-artifact and total byte budgets, a per-session host timeout and a total
+  capture duration are enforced. Oversized artifacts are skipped with an explicit
+  `ARTIFACT_TOO_LARGE`/`AUDIT_TOO_LARGE`/`HOST_HISTORY_TOO_LARGE` warning and
+  `PARTIAL`, never silently truncated. The manifest itself is bounded by the
+  per-file budget.
 - The diagnostic entry works before ACTIVE governance and never starts,
   hydrates, reconciles, approves or repairs.
 - Doctor reports the native diagnostic command as available in this build and
@@ -238,7 +260,8 @@ Still not implemented or not verified:
 
 - Session Explorer, review-gate UI, Next Action and notification surfaces.
 - Installed Desktop/TUI panel visibility and notification delivery.
-- Exact capture limits calibrated against representative large workflows.
+- Calibration of the default byte/time budgets against representative large
+  workflows.
 - Complete PII detection coverage.
 
 Focused verification for this slice is recorded in the owning PR. It does not
@@ -313,6 +336,12 @@ as product facts:
       authority unchanged; no implicit start or hydration.
 - [ ] Known-but-unreachable children remain in the manifest and prevent
       `COMPLETE`; foreign or ambiguous sessions are never merged.
+- [ ] A child whose invocation names another root is not read; the graph keeps it
+      as `lineage: not_verified` and the manifest is not `COMPLETE`.
+- [ ] A host-only reviewer child reports `canonicalState: partial`, even when its
+      host transcript is complete.
+- [ ] Oversized host transcripts, audit trails, artifacts and total captures
+      produce explicit warnings and `PARTIAL`, not silent truncation.
 - [ ] Partial failure yields a truthful partial artifact with actionable
       diagnostics, not apparent success.
 - [ ] Redacted default output contains no injected secrets or personal data and

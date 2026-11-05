@@ -37,7 +37,9 @@ interface MutableDebugExportArgs {
   rawRequested: boolean;
   maxSessions: number;
   maxFileBytes: number;
+  maxTotalBytes: number;
   hostTimeoutMs: number;
+  maxDurationMs: number;
   json: boolean;
 }
 
@@ -47,8 +49,18 @@ const VALUE_FLAGS = new Set([
   '--redaction',
   '--max-sessions',
   '--max-file-bytes',
+  '--max-total-bytes',
   '--host-timeout-ms',
+  '--max-duration-ms',
 ]);
+
+const NUMERIC_FLAGS = {
+  '--max-sessions': 'maxSessions',
+  '--max-file-bytes': 'maxFileBytes',
+  '--max-total-bytes': 'maxTotalBytes',
+  '--host-timeout-ms': 'hostTimeoutMs',
+  '--max-duration-ms': 'maxDurationMs',
+} as const;
 
 function positiveInteger(value: string): number | null {
   const parsed = Number(value);
@@ -57,6 +69,19 @@ function positiveInteger(value: string): number | null {
 
 function parseRedaction(value: string): RedactionChoice | null {
   return value === 'basic' || value === 'pseudonymous' || value === 'none' ? value : null;
+}
+
+function assignNumericFlag(
+  args: MutableDebugExportArgs,
+  flag: string,
+  value: string,
+): string | null {
+  const key = NUMERIC_FLAGS[flag as keyof typeof NUMERIC_FLAGS];
+  if (key === undefined) return `Unknown option: ${flag}`;
+  const number = positiveInteger(value);
+  if (number === null) return `${flag} requires a positive integer`;
+  args[key] = number;
+  return null;
 }
 
 function assignValueFlag(args: MutableDebugExportArgs, flag: string, value: string): string | null {
@@ -77,12 +102,7 @@ function assignValueFlag(args: MutableDebugExportArgs, flag: string, value: stri
     args.redactionExplicit = true;
     return null;
   }
-  const number = positiveInteger(value);
-  if (number === null) return `${flag} requires a positive integer`;
-  if (flag === '--max-sessions') args.maxSessions = number;
-  if (flag === '--max-file-bytes') args.maxFileBytes = number;
-  if (flag === '--host-timeout-ms') args.hostTimeoutMs = number;
-  return null;
+  return assignNumericFlag(args, flag, value);
 }
 
 const BOOLEAN_FLAGS = new Set(['--no-host', '--raw', '--json']);
@@ -130,7 +150,9 @@ export function parseDebugExportArgs(argv: readonly string[]): CliParseResult<De
     rawRequested: false,
     maxSessions: DEFAULT_DIAGNOSTIC_LIMITS.maxSessions,
     maxFileBytes: DEFAULT_DIAGNOSTIC_LIMITS.maxFileBytes,
+    maxTotalBytes: DEFAULT_DIAGNOSTIC_LIMITS.maxTotalBytes,
     hostTimeoutMs: DEFAULT_DIAGNOSTIC_LIMITS.hostTimeoutMs,
+    maxDurationMs: DEFAULT_DIAGNOSTIC_LIMITS.maxDurationMs,
     json: false,
   };
   let index = 0;
@@ -153,7 +175,9 @@ export function parseDebugExportArgs(argv: readonly string[]): CliParseResult<De
       limits: {
         maxSessions: args.maxSessions,
         maxFileBytes: args.maxFileBytes,
+        maxTotalBytes: args.maxTotalBytes,
         hostTimeoutMs: args.hostTimeoutMs,
+        maxDurationMs: args.maxDurationMs,
       },
       json: args.json,
     },
@@ -174,8 +198,10 @@ Options:
   --redaction <mode>      basic (default), pseudonymous, or none
   --raw                   Shorthand for --redaction none; explicit consent
   --max-sessions <n>      Maximum known sessions to capture (default 100)
-  --max-file-bytes <n>    Maximum host transcript bytes per session
+  --max-file-bytes <n>    Maximum bytes per written artifact / host transcript
+  --max-total-bytes <n>   Maximum bytes for the complete snapshot
   --host-timeout-ms <n>   Host export timeout per session
+  --max-duration-ms <n>   Maximum total capture duration
   --json                  Print the manifest as JSON
   -h, --help              Show this help
 
@@ -237,11 +263,11 @@ export async function debugExportMain(argv: readonly string[]): Promise<number> 
   );
   const { sessionId, includeHost, redaction, limits, json } = parsed.value;
   const hostReader = includeHost
-    ? (childSessionId: string) =>
+    ? (childSessionId: string, timeoutMs: number) =>
         readHostTranscript(childSessionId, {
           workspace: worktreeRoot,
           maxBytes: limits.maxFileBytes,
-          timeoutMs: limits.hostTimeoutMs,
+          timeoutMs,
         })
     : undefined;
 

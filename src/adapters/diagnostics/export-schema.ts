@@ -57,8 +57,11 @@ export const DiagnosticManifest = z
         sessionsWithState: z.number().int().nonnegative(),
         sessionsWithoutState: z.number().int().nonnegative(),
         sessionsUnavailable: z.number().int().nonnegative(),
+        sessionsLineageUnverified: z.number().int().nonnegative(),
         maxSessions: z.number().int().positive(),
         maxFileBytes: z.number().int().positive(),
+        maxTotalBytes: z.number().int().positive(),
+        maxDurationMs: z.number().int().positive(),
         hostHistory: z.enum(['included', 'unavailable', 'not_requested']),
       })
       .strict()
@@ -69,6 +72,14 @@ export const DiagnosticManifest = z
         auditEvents: z.number().int().nonnegative(),
         hostMessages: z.number().int().nonnegative(),
         warnings: z.number().int().nonnegative(),
+      })
+      .strict()
+      .readonly(),
+    completeness: z
+      .object({
+        lineage: z.enum(['complete', 'partial', 'not_verified']),
+        canonicalState: z.enum(['complete', 'partial', 'not_verified']),
+        hostHistory: z.enum(['complete', 'partial', 'not_requested', 'not_verified']),
       })
       .strict()
       .readonly(),
@@ -93,6 +104,7 @@ const DiagnosticSessionNode = z
       z.enum(['root', 'review_invocation', 'review_attempt', 'review_observation', 'host_parent']),
     ),
     state: DiagnosticSessionState,
+    lineage: z.enum(['verified', 'not_verified']),
     phase: z.string().min(1).nullable(),
     binding: z.enum(['verified', 'mismatch', 'unknown']),
     hostHistory: DiagnosticHostHistory,
@@ -140,11 +152,15 @@ export type DiagnosticTimeline = z.infer<typeof DiagnosticTimeline>;
 export interface DiagnosticExportLimits {
   readonly maxSessions: number;
   readonly maxFileBytes: number;
+  readonly maxTotalBytes: number;
   readonly hostTimeoutMs: number;
+  readonly maxDurationMs: number;
 }
 
 export const DEFAULT_DIAGNOSTIC_LIMITS: DiagnosticExportLimits = Object.freeze({
   maxSessions: 100,
   maxFileBytes: 16 * 1024 * 1024,
+  maxTotalBytes: 64 * 1024 * 1024,
   hostTimeoutMs: 60_000,
+  maxDurationMs: 120_000,
 });

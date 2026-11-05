@@ -7,7 +7,8 @@
  * before redaction and persistence.
  */
 
-export type DiagnosticHostErrorCode = 'HOST_EXPORT_INVALID';
+export type DiagnosticHostErrorCode =
+  'HOST_EXPORT_INVALID' | 'HOST_EXPORT_TIMEOUT' | 'HOST_EXPORT_TOO_LARGE';
 
 export class DiagnosticHostError extends Error {
   readonly code: DiagnosticHostErrorCode;
@@ -132,10 +133,13 @@ export function validateHostTranscript(
 export function normalizeHostTranscript(
   payload: unknown,
   expectedSessionId: string,
+  maxBytes?: number,
 ): HostTranscript {
-  return validateHostTranscript(
-    payload,
-    expectedSessionId,
-    Buffer.byteLength(JSON.stringify(payload)),
-  );
+  const bytes = Buffer.byteLength(JSON.stringify(payload));
+  if (maxBytes !== undefined && bytes > maxBytes)
+    throw new DiagnosticHostError(
+      'HOST_EXPORT_TOO_LARGE',
+      `Host transcript exceeds the ${maxBytes}-byte capture limit.`,
+    );
+  return validateHostTranscript(payload, expectedSessionId, bytes);
 }
