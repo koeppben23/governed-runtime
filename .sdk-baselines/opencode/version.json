@@ -1,9 +1,9 @@
 {
   "platform": "opencode",
-  "updated": "2026-10-31T20:16:46.387Z",
+  "updated": "2026-11-06T18:45:37.751Z",
   "packages": {
-    "@opencode/plugin": "2.2.4",
-    "@opencode/client": "2.2.4"
+    "@opencode/plugin": "2.2.5",
+    "@opencode/client": "2.2.5"
   },
   "files": [
     {
