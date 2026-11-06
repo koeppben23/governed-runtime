@@ -23,13 +23,13 @@ import {
   projectStatusActionFromCommand,
   projectStatusConclusion,
   projectDirectiveBlock,
+  projectWorkflowChoiceConclusion,
   type StatusConclusionProjection,
 } from './status-conclusion.js';
 import { projectEvidenceApprovalBlock } from './status-detail-projections.js';
 import { directiveLabel, type PresentationAction } from '../../presentation/index.js';
 import type { BlockedProjection, FinishCard } from './status-types.js';
 import { projectProofStatusForState } from '../proofgraph/proof-summary-projectors.js';
-import { IntegrationInvariantError } from '../errors.js';
 
 // ─── /why Projection Types ─────────────────────────────────────────────────────
 
@@ -55,6 +55,11 @@ export type FinishConclusionProjection =
   | {
       readonly kind: 'next_action';
       readonly action: PresentationAction;
+    }
+  | {
+      readonly kind: 'decision_required';
+      readonly question: string;
+      readonly actions: readonly PresentationAction[];
     }
   | {
       /** The approval preflight refuses approval: its canonical recovery, never /approve. */
@@ -107,49 +112,10 @@ function buildWhyConclusion(
   evalResult: ReturnType<typeof evaluate>,
   directive: WorkflowDirective,
 ): WhyConclusionProjection {
-  if (directive.kind === 'blocked') return projectStatusConclusion(evalResult, directive);
-  if (directive.kind === 'system_work') {
-    return { kind: 'review_pending', message: directiveLabel(directive.code) };
-  }
   // The same preflight full status uses: never offer an approval it refuses.
   const approvalBlock = projectEvidenceApprovalBlock(state);
   if (approvalBlock) return projectApprovalBlockedConclusion(approvalBlock, directive);
-  const command = directive.commands[0];
-
-  switch (evalResult.kind) {
-    case 'waiting': {
-      const actions = directive.commands.map((c) => projectStatusActionFromCommand(c, 'available'));
-      if (actions.length === 0) {
-        throw new IntegrationInvariantError(
-          'WHY_DECISION_PROJECTION_EMPTY',
-          `WhyProjection: waiting gate has no canonical decision actions: ${evalResult.reason}`,
-        );
-      }
-      return { kind: 'decision_required', question: evalResult.reason, actions };
-    }
-
-    case 'pending':
-    case 'transition': {
-      if (!command) {
-        return { kind: 'terminal', message: directiveLabel(directive.code) };
-      }
-      return {
-        kind: 'next_action',
-        action: projectStatusActionFromCommand(command, 'recommended'),
-      };
-    }
-
-    case 'terminal': {
-      const nextCmd = directive.commands[0];
-      if (!nextCmd) {
-        return { kind: 'terminal', message: directiveLabel(directive.code) };
-      }
-      return {
-        kind: 'next_action',
-        action: projectStatusActionFromCommand(nextCmd, 'recommended'),
-      };
-    }
-  }
+  return projectStatusConclusion(evalResult, directive);
 }
 
 // ─── /finish Builder ───────────────────────────────────────────────────────────
@@ -175,6 +141,7 @@ function buildFinishConclusion(state: SessionState): FinishConclusionProjection 
   if (approvalBlock) {
     return { kind: 'recovery', message: approvalBlock.reason, steps: [...approvalBlock.recovery] };
   }
+  if (directive.code === 'CHOOSE_FLOW') return projectWorkflowChoiceConclusion();
   const command = directive.commands[0];
 
   if (command !== undefined) {

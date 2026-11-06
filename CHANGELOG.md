@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Unify the portable `CHOOSE_FLOW` presentation: when the canonical directive
+  is `CHOOSE_FLOW`, `/status`, `/why`, `/finish` and `/help` now show the same
+  three workflow choices as `/start` (`/task` recommended, `/architecture` and
+  `/review` available) as one explicit decision. Canonical blockers still take
+  precedence, and no workflow is preselected, auto-executed or promoted to a new
+  decision authority.
+
 - Add ADR-011 defining the post-cutover diagnostics and human-decision UX
   contract. It establishes one read-only diagnostic projection over existing
   authorities, scope-limited session collection with honest

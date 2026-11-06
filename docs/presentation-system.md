@@ -285,7 +285,10 @@ Default `/status` uses `detail: 'summary'`:
   incompleteness causes `NOT_VERIFIED`.
 - ProofGraph summary counts only; no per-claim list unless diagnostic mode.
 - The phase-admissible command list is hidden (use `/why` for explanation).
-- One primary next action in the conclusion.
+- One primary next action in the conclusion, or one explicit decision with all
+  canonical choices when the directive is `CHOOSE_FLOW`. The `CHOOSE_FLOW`
+  decision uses the same three options as `/start`; `/task` is described as
+  recommended but is never preselected or executed automatically.
 
 At `detail: 'explanation'` and higher, the full Evidence section and
 the "Commands allowed by phase (prerequisites still apply)" list return.

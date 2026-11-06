@@ -18,6 +18,10 @@ import { evaluate } from '../../machine/evaluate.js';
 import type { WorkflowDirective } from '../../machine/workflow-directive.js';
 import { getInstalledCommand } from '../installed-commands.js';
 import { directiveLabel, type PresentationAction } from '../../presentation/index.js';
+import {
+  WORKFLOW_CHOICE_ACTIONS,
+  WORKFLOW_CHOICE_QUESTION,
+} from '../../presentation/workflow-choice.js';
 import { IntegrationInvariantError } from '../errors.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import type { FormattedBlock } from '../../config/reasons-types.js';
@@ -46,6 +50,18 @@ export type StatusConclusionProjection =
 
 // ─── Conclusion Builder ────────────────────────────────────────────────────────
 
+/** The canonical READY choice set, shared by /status, /why, /finish and /start. */
+export function projectWorkflowChoiceConclusion(): Extract<
+  StatusConclusionProjection,
+  { kind: 'decision_required' }
+> {
+  return {
+    kind: 'decision_required',
+    question: WORKFLOW_CHOICE_QUESTION,
+    actions: WORKFLOW_CHOICE_ACTIONS,
+  };
+}
+
 /**
  * Project the canonical status conclusion from evalResult and directive.
  *
@@ -60,6 +76,10 @@ export function projectStatusConclusion(
 ): StatusConclusionProjection {
   const block = projectDirectiveBlock(directive);
   if (block) return { kind: 'recovery', message: block.reason, steps: block.recovery };
+  // READY is command-driven: the canonical directive names an explicit chooser,
+  // never an automatic workflow choice. Keep the same copy and order as
+  // `/start`; the blocker check above retains precedence.
+  if (directive.code === 'CHOOSE_FLOW') return projectWorkflowChoiceConclusion();
   if (evalResult.kind === 'waiting') {
     const actions = directive.commands.map((invocation) =>
       projectStatusActionFromCommand(invocation, 'available'),

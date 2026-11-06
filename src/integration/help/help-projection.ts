@@ -548,6 +548,30 @@ interface SessionHelpOpts {
   readonly includeArtifactContent: boolean;
 }
 
+function projectHelpNext(
+  status: ReturnType<typeof buildStatusProjection>,
+  state: SessionState,
+  recommended: InstalledCommandDefinition | undefined,
+): Pick<HelpResult, 'directive' | 'nextActionSummary'> {
+  const chooseFlow = status.directive.code === 'CHOOSE_FLOW';
+  const candidateNext = recommended ? projectCommand(recommended, state, 'recommended') : null;
+  if (chooseFlow && status.conclusion.kind === 'decision_required') {
+    const choices = status.conclusion.actions.map((action) =>
+      action.description.toLowerCase().includes('recommended')
+        ? `${action.invocation} (recommended)`
+        : action.invocation,
+    );
+    return {
+      directive: null,
+      nextActionSummary: `${status.conclusion.question} ${choices.join(', ')}`,
+    };
+  }
+  return {
+    directive: candidateNext?.preflight.status === 'available' ? candidateNext : null,
+    nextActionSummary: status.blocker?.reasonText ?? directiveLabel(status.directive.code),
+  };
+}
+
 function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
   const { state, policy, view, scope, reportResolution, includeArtifactContent } = opts;
   const currentReport = reportResolution?.status === 'current' ? reportResolution.report : null;
@@ -556,11 +580,8 @@ function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
   const finish = buildFinishCard(state, policy, currentReport);
   const readiness = finishToReadiness(finish.overallStatus);
   const recommendationQuality = projectRecommendationQuality(reportResolution);
-
   const recommended = findRecommendation(status.directive.commands[0] ?? null);
-  const candidateNext = recommended ? projectCommand(recommended, state, 'recommended') : null;
-  const directive =
-    candidateNext && candidateNext.preflight.status === 'available' ? candidateNext : null;
+  const next = projectHelpNext(status, state, recommended);
 
   const commands = INSTALLED_COMMANDS.map((definition) =>
     projectActiveCommand(definition, state, recommended, scope),
@@ -573,10 +594,10 @@ function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
     readiness,
     recommendationQuality,
     reviewReportStatus: reportResolution?.status ?? 'not_available',
-    nextActionSummary: status.blocker?.reasonText ?? directiveLabel(status.directive.code),
+    nextActionSummary: next.nextActionSummary,
     evidenceCompleteness: buildEvidenceCompleteness(state),
     archiveVerification: buildArchiveVerification(state),
-    directive,
+    directive: next.directive,
     commands: contextCommands,
     artifacts: buildArtifacts(state, includeArtifactContent, directiveLabel(status.directive.code)),
     blocker: buildBlocker(state, policy),
