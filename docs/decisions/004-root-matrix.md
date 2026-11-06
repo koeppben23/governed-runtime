@@ -8,14 +8,14 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-11-04):
+(counts updated 2026-11-05):
 
-- `root-composition`: 32 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 33 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 7 named files (`host-mutation-observation.ts`,
   `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 54 root production files
+- total: 55 root production files
 
 The bounded P0-10 audit removes `plugin-orchestrator.ts`, which only forwarded
 the `OrchestratorDeps` type to one production caller. That caller now imports
@@ -78,6 +78,12 @@ activation-journal authorities and add no parallel state machine.
 WS3 `/check` scope and mandate injection add `plugin-check-command.ts` and
 `plugin-mandates.ts`; both consume the existing command-scope and mandates
 renderer authorities.
+
+The post-cutover diagnostics slice adds `plugin-debug-export-command.ts` at the
+composition boundary. It registers native `/debug-export` and delegates to the
+read-only diagnostic collector; it adds no governance, activation, approval,
+evidence or recovery authority. Composition grows by one and the total root
+matrix grows to 55.
 
 MUT4 (#1172) adds `plugin-mutation-reconciliation.ts` at the composition boundary
 to connect asynchronous host notifications and the synchronous pre-implement

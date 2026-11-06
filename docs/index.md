@@ -125,7 +125,7 @@ Trace human approval, export, regulated completion, audit processing, and recove
 
 ### [Architecture Decisions](./decisions/README.md)
 
-Repository-level architecture decision records (review zone budgets, root matrix, facades, ranking helpers, persistence consolidation).
+Repository-level architecture decision records (review zone budgets, root matrix, facades, governance boundaries, review transport, post-cutover diagnostics).
 
 ## Additional Resources
 

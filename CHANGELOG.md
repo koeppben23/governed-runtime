@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add ADR-011 defining the post-cutover diagnostics and human-decision UX
+  contract. It establishes one read-only diagnostic projection over existing
+  authorities, scope-limited session collection with honest
+  `COMPLETE`/`PARTIAL`/`NOT_VERIFIED` reporting, schema-aware redaction before
+  persistence, and server-side revision binding for native decisions. It also
+  records that OpenCode decisions use the canonical `host_command` channel
+  without claiming verified human authorship, and splits ownership between
+  #1191 and #1196.
+
+- Add the first portable post-cutover diagnostic slice: `flowguard debug-export`
+  and native `/debug-export` create a bounded, write-once snapshot of the root
+  session and known reviewer children. The snapshot preserves native IDs,
+  verifies the audit chain, captures optional host transcripts, redacts before
+  persistence, records per-file SHA-256/size and reports separate lineage,
+  canonical-state and host-history completeness plus an overall
+  `COMPLETE`/`PARTIAL`/`NOT_VERIFIED` status. Known-but-unreachable sessions stay
+  in the denominator; children without a positive root invocation remain
+  unread, and host-only reviewer children cannot make the snapshot `COMPLETE`.
+  Per-file, total-byte and total-duration budgets are enforced with explicit
+  warnings instead of silent truncation. It works before ACTIVE governance and never starts,
+  hydrates, reconciles, approves or repairs. Doctor reports the native
+  diagnostic command as available in this build and keeps native Desktop
+  delivery explicitly `NOT_VERIFIED`; the
+  Session Explorer, review UI and notifications remain follow-up work.
+
 - Announce automatic plan-approval validation before it starts. The
   `/approve` host command now presents a visible `Validation started` turn
   naming the active checks (for example `build` and `test`) while the checks

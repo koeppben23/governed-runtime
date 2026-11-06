@@ -174,6 +174,8 @@ Commands:
   uninstall   Remove FlowGuard files
   doctor      Verify installation is correct and complete
   inspect     Show session compliance status (read-only)
+  debug-export
+              Create a bounded, read-only diagnostic snapshot
   run         Execute FlowGuard commands in headless mode
   serve       Start a supported host server for headless operation
 

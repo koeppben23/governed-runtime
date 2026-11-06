@@ -281,6 +281,7 @@ describe('native V2 phase and integrity gates', () => {
       'recover-capacity',
       'end-governance',
       'check',
+      'debug-export',
     ]);
     await expect(
       h.host.before(

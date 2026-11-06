@@ -183,5 +183,9 @@ export async function executeAction(
       const { inspectMain } = await import('./inspect-command.js');
       return inspectMain(argv.slice(1));
     }
+    case 'debug-export': {
+      const { debugExportMain } = await import('./debug-export-command.js');
+      return debugExportMain(argv.slice(1));
+    }
   }
 }

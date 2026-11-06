@@ -30,6 +30,7 @@ const NATIVE_DECISION_COMMANDS = [
 ] as const;
 export const NATIVE_RECOVER_CAPACITY_COMMAND = 'recover-capacity';
 export const NATIVE_END_GOVERNANCE_COMMAND = 'end-governance';
+export const NATIVE_DEBUG_EXPORT_COMMAND = 'debug-export';
 
 /** Native commands represented in the installed-command catalogue. */
 export const NATIVE_CATALOGUED_COMMANDS = [
@@ -38,11 +39,15 @@ export const NATIVE_CATALOGUED_COMMANDS = [
   ...NATIVE_DECISION_COMMANDS,
 ] as const;
 
-/** Every command registered natively by the plugin; installer collision authority. */
+/**
+ * Every command registered natively by the plugin; installer collision authority.
+ * Includes operational lifecycle commands that are not installed-command templates.
+ */
 export const NATIVE_PLUGIN_COMMANDS = [
   ...NATIVE_CATALOGUED_COMMANDS,
   NATIVE_RECOVER_CAPACITY_COMMAND,
   NATIVE_END_GOVERNANCE_COMMAND,
+  NATIVE_DEBUG_EXPORT_COMMAND,
 ] as const;
 
 /**

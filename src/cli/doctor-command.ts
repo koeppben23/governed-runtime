@@ -42,6 +42,7 @@ import { checkShippedExecutables } from './doctor-executables.js';
 import { checkBuildInfo } from './doctor-build-info.js';
 import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
+import { checkDiagnosticCapabilities } from './doctor-diagnostics.js';
 
 async function checkedRead(filePath: string, checks: DoctorCheck[]): Promise<string | null> {
   try {
@@ -373,6 +374,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   checks.push(...(await checkWorkspaceConfig(args.installScope, installPlatform, target)));
   if (installPlatform === 'opencode') {
     checks.push(...(await checkPluginActivation(target)));
+    checks.push(...checkDiagnosticCapabilities());
     checks.push(...(await checkLastSessionHandshake(args.installScope)));
   }
   checks.push(...(await checkBrokenInstall(target)));
