@@ -528,6 +528,17 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     ],
   },
 
+  {
+    code: 'DECISION_BINDING_STALE',
+    category: 'precondition',
+    messageTemplate: 'The displayed review decision no longer matches canonical state: {reason}',
+    recoverySteps: [
+      'Reopen the FlowGuard review view to read the current subject and allowed actions',
+      'Run /status before deciding again',
+      'Do not retry the stale action; it was deliberately refused',
+    ],
+  },
+
   ...BOUNDARY_INFRA_REASONS,
 
   ...PREFLIGHT_INFRA_REASONS,

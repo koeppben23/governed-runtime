@@ -12,6 +12,7 @@ import { v2ToolEvent } from './opencode-v2-test-helpers.js';
 import { verifyChain } from '../audit/integrity.js';
 import { resolveGovernanceActivation } from '../adapters/governance-activation.js';
 import { executeDecisionCommand } from './plugin-decision-command.js';
+import { projectDecisionBinding } from './status/decision-binding.js';
 import { decision } from './tools/index.js';
 import * as beforehooks from './plugin-beforehooks.js';
 import * as afterhooks from './plugin-afterhooks.js';
@@ -145,6 +146,51 @@ describe('native decision commands', () => {
         text: '**Validation started** — running `build`, `test`. Results will follow automatically.',
       }),
     );
+  });
+
+  it('submits a revision-bound native decision through the RPC projection', async () => {
+    const before = await gate();
+    const activation = await resolveGovernanceActivation(host.ctx.storage, sessionID);
+    if (activation.kind !== 'active') throw new Error('Expected active governance');
+    const expected = projectDecisionBinding(before.state, activation.record);
+    if (expected === null) throw new Error('Expected a decision binding');
+
+    const result = await host.rpcMethods.get('SubmitDecision')!({
+      sessionID,
+      invocation: '/approve',
+      rationale: 'The displayed ADR revision was reviewed.',
+      expected,
+    });
+
+    expect(result).toEqual({ kind: 'applied', invocation: '/approve' });
+    expect((await workflow()).state.phase).toBe('ARCH_COMPLETE');
+    expect(decisions(await readAuditTrail(before.sessDir))).toMatchObject([
+      {
+        detail: {
+          verdict: 'approve',
+          operation: { source: 'host_command', activationId: activation.record.activationId },
+        },
+      },
+    ]);
+  });
+
+  it('refuses a stale displayed review binding before committing a decision', async () => {
+    const before = await gate();
+    const activation = await resolveGovernanceActivation(host.ctx.storage, sessionID);
+    if (activation.kind !== 'active') throw new Error('Expected active governance');
+    const expected = projectDecisionBinding(before.state, activation.record);
+    if (expected === null) throw new Error('Expected a decision binding');
+
+    const result = await host.rpcMethods.get('SubmitDecision')!({
+      sessionID,
+      invocation: '/approve',
+      rationale: 'Stale view must not decide.',
+      expected: { ...expected, subjectDigest: 'f'.repeat(64) },
+    });
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'DECISION_BINDING_STALE' });
+    expect((await workflow()).state.phase).toBe('ARCH_REVIEW');
+    expect(decisions(await readAuditTrail(before.sessDir))).toHaveLength(0);
   });
 
   it('does not turn activation into permission for a model decision at a human gate', async () => {

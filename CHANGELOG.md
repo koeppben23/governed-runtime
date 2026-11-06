@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add revision-bound native review decisions for #1196. The read-only
+  `GetNextAction` projection now carries the current review obligation, subject
+  digest, activation identity/generation, policy digest, state digest and phase
+  at PLAN/ARCHITECTURE/IMPLEMENTATION review gates. A new `SubmitDecision` RPC
+  accepts only canonical native decision commands, re-reads every binding
+  immediately before commit, refuses stale or mismatched views with
+  `DECISION_BINDING_STALE`, and requires an explicit non-empty rationale for a
+  governance override. TUI decision dialogs use this path; the channel remains
+  `host_command` and never claims verified human authorship.
+
 - Add the optional TUI workflow chooser for #1196. The installer writes
   `plugins/flowguard/tui.ts`; the TUI plugin opens the canonical three-choice
   dialog (or `/choose-workflow` on demand), cancels without executing anything,

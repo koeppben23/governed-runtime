@@ -5,6 +5,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
+import type { DecisionBinding } from './status/decision-binding.js';
 import type { NextActionResult } from './status/next-action-projection.js';
 import plugin, { chooseWorkflow, type WorkflowChooserDeps } from './tui-plugin.js';
 
@@ -18,6 +19,7 @@ function choiceView(overrides: Partial<NextActionResult> = {}): NextActionResult
     policyDigest: 'b'.repeat(64),
     activationId: '11111111-1111-4111-8111-111111111111',
     activationGeneration: 1,
+    decisionBinding: null,
     title: 'Choose a workflow',
     question: 'Choose one workflow to start. Nothing runs until you send a command.',
     actions: [
@@ -34,6 +36,33 @@ function choiceView(overrides: Partial<NextActionResult> = {}): NextActionResult
   };
 }
 
+function decisionView(overrides: Partial<NextActionResult> = {}): NextActionResult {
+  return choiceView({
+    kind: 'decision_required',
+    title: 'Plan decision required',
+    question: 'The plan review is complete. Choose one decision.',
+    decisionBinding: {
+      sessionID: 'ses_root',
+      activationId: '11111111-1111-4111-8111-111111111111',
+      activationGeneration: 1,
+      policyDigest: 'b'.repeat(64),
+      stateDigest: 'a'.repeat(64),
+      phase: 'PLAN_REVIEW',
+      obligationId: '22222222-2222-4222-8222-222222222222',
+      subjectDigest: 'c'.repeat(64),
+      reviewType: 'plan',
+      reviewCycle: 1,
+      iteration: 1,
+    },
+    actions: [
+      { invocation: '/approve', description: 'Accept the plan.', visibility: 'available' },
+      { invocation: '/request-changes', description: 'Request changes.', visibility: 'available' },
+      { invocation: '/reject', description: 'Reject the plan.', visibility: 'available' },
+    ],
+    ...overrides,
+  });
+}
+
 function deps(
   overrides: Partial<WorkflowChooserDeps> & {
     readonly view?: NextActionResult;
@@ -41,6 +70,8 @@ function deps(
   } = {},
 ): WorkflowChooserDeps & {
   readonly command: ReturnType<typeof vi.fn>;
+  readonly submitDecision: ReturnType<typeof vi.fn>;
+  readonly promptRationale: ReturnType<typeof vi.fn>;
   readonly notify: ReturnType<typeof vi.fn>;
 } {
   const view = overrides.view ?? choiceView();
@@ -51,17 +82,23 @@ function deps(
     return calls === 1 ? view : latest;
   });
   const command = vi.fn(async () => {});
+  const submitDecision = vi.fn(async () => ({ kind: 'applied' as const, invocation: '/approve' }));
+  const promptRationale = vi.fn(async () => 'Documented override rationale.');
   const notify = vi.fn();
   return {
     getView,
     currentSessionID: () => 'ses_root',
     select: vi.fn(async () => '/task'),
     command,
+    submitDecision,
+    promptRationale,
     notify,
     isAlive: () => true,
     ...overrides,
   } as WorkflowChooserDeps & {
     readonly command: ReturnType<typeof vi.fn>;
+    readonly submitDecision: ReturnType<typeof vi.fn>;
+    readonly promptRationale: ReturnType<typeof vi.fn>;
     readonly notify: ReturnType<typeof vi.fn>;
   };
 }
@@ -176,6 +213,138 @@ describe('TUI workflow chooser', () => {
     expect(outcome.status).toBe('stale');
     expect(d.command).not.toHaveBeenCalled();
     expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('Session changed'), 'warning');
+  });
+
+  it('submits a review decision with the displayed obligation binding', async () => {
+    const view = decisionView();
+    const d = deps({
+      view,
+      select: vi.fn(async () => '/approve'),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome).toEqual({ status: 'selected', stateDigest: 'a'.repeat(64) });
+    expect(d.command).not.toHaveBeenCalled();
+    expect(d.submitDecision).toHaveBeenCalledWith('ses_root', '/approve', view.decisionBinding, '');
+  });
+
+  it('refuses a decision when the subject binding changed after selection', async () => {
+    const view = decisionView();
+    const d = deps({
+      view,
+      latest: decisionView({
+        decisionBinding: { ...view.decisionBinding!, subjectDigest: 'd'.repeat(64) },
+      }),
+      select: vi.fn(async () => '/approve'),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('stale');
+    expect(d.submitDecision).not.toHaveBeenCalled();
+    expect(d.command).not.toHaveBeenCalled();
+  });
+
+  it('does not offer a decision when no canonical obligation binding exists', async () => {
+    const d = deps({
+      view: decisionView({ decisionBinding: null }),
+      select: vi.fn(async () => '/approve'),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('unavailable');
+    expect(d.select).not.toHaveBeenCalled();
+    expect(d.submitDecision).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-open a review decision from the background idle path', async () => {
+    const d = deps({
+      view: decisionView(),
+      select: vi.fn(async () => '/approve'),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root', { allowDecision: false });
+
+    expect(outcome.status).toBe('unavailable');
+    expect(d.select).not.toHaveBeenCalled();
+    expect(d.submitDecision).not.toHaveBeenCalled();
+  });
+
+  it('requires a non-empty rationale for a governance override', async () => {
+    const view = decisionView({
+      actions: [
+        {
+          invocation: '/override-approve',
+          description: 'Accept with governance override.',
+          visibility: 'available',
+        },
+      ],
+    });
+    const d = deps({
+      view,
+      select: vi.fn(async () => '/override-approve'),
+      promptRationale: vi.fn(async () => '  '),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('cancelled');
+    expect(d.submitDecision).not.toHaveBeenCalled();
+    expect(d.notify).toHaveBeenCalledWith(
+      expect.stringContaining('non-empty rationale'),
+      'warning',
+    );
+  });
+
+  it('submits an override with its explicit rationale', async () => {
+    const view = decisionView({
+      actions: [
+        {
+          invocation: '/override-approve',
+          description: 'Accept with governance override.',
+          visibility: 'available',
+        },
+      ],
+    });
+    const d = deps({
+      view,
+      select: vi.fn(async () => '/override-approve'),
+      promptRationale: vi.fn(async () => 'Compensating verification is documented.'),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('selected');
+    expect(d.submitDecision).toHaveBeenCalledWith(
+      'ses_root',
+      '/override-approve',
+      view.decisionBinding,
+      'Compensating verification is documented.',
+    );
+  });
+
+  it('treats a blocked native decision as failure without executing a command', async () => {
+    const view = decisionView();
+    const d = deps({
+      view,
+      select: vi.fn(async () => '/approve'),
+      submitDecision: vi.fn(async () => ({
+        kind: 'blocked' as const,
+        code: 'DECISION_BINDING_STALE',
+        reason: 'The reviewed subject changed.',
+      })),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('stale');
+    expect(d.command).not.toHaveBeenCalled();
+    expect(d.notify).toHaveBeenCalledWith(
+      expect.stringContaining('The reviewed subject changed.'),
+      'warning',
+    );
   });
 
   it('does not open a chooser for a non-choose-flow projection', async () => {

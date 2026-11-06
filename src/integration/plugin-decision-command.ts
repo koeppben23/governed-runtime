@@ -8,6 +8,8 @@ import { TOOL_FLOWGUARD_DECISION } from './tool-names.js';
 import { decision } from './tools/index.js';
 import type { AutoValidationProgressEvent } from './tools/helpers.js';
 import { ReviewVerdict } from '../state/evidence.js';
+import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
+import { checkDecisionBinding, type DecisionBinding } from './status/decision-binding.js';
 import {
   createDecisionOperation,
   DecisionArgsSchema,
@@ -19,7 +21,7 @@ import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { toolBefore } from './plugin-beforehooks.js';
 import { toolAfter } from './plugin-afterhooks.js';
 
-interface DecisionCommandDeps {
+export interface DecisionCommandDeps {
   readonly governance: Pick<
     OpenCodeGovernance,
     'assertScopeCurrent' | 'assertActivationAuditConfirmed'
@@ -68,7 +70,13 @@ export function addDecisionCommands(
 export async function executeDecisionCommand(
   ctx: Plugin.Context,
   deps: DecisionCommandDeps,
-  request: { readonly sessionID: string; readonly command: string; readonly args: DecisionArgs },
+  request: {
+    readonly sessionID: string;
+    readonly command: string;
+    readonly args: DecisionArgs;
+    /** Present for native UI controls; absent for the canonical slash-command path. */
+    readonly expectedBinding?: DecisionBinding;
+  },
 ): Promise<void> {
   const { sessionID, args } = request;
   await deps.invoke(
@@ -79,14 +87,23 @@ export async function executeDecisionCommand(
           'GOVERNANCE_AUTHORITY_BLOCKED',
           'A delegated child cannot decide its root workflow.',
         );
-      const event = { tool: TOOL_FLOWGUARD_DECISION, sessionID, callID: randomUUID(), args };
-      await toolBefore(runtime, event, { args });
       const authority = await runtime.ws.resolveSessionAuthority(sessionID);
       if (authority.status !== 'resolved')
         throw buildEnforcementError(
           'GOVERNANCE_AUTHORITY_BLOCKED',
           'Decision workflow authority is unavailable.',
         );
+      if (request.expectedBinding !== undefined) {
+        const binding = checkDecisionBinding(request.expectedBinding, authority.state, scope.root);
+        if (binding.kind === 'blocked') throw buildEnforcementError(binding.code, binding.reason);
+        if (!resolveWorkflowDirective(authority.state).commands.includes(request.command))
+          throw buildEnforcementError(
+            'COMMAND_NOT_ALLOWED',
+            'The selected decision is not an allowed action at the current gate.',
+          );
+      }
+      const event = { tool: TOOL_FLOWGUARD_DECISION, sessionID, callID: randomUUID(), args };
+      await toolBefore(runtime, event, { args });
       const operation = createDecisionOperation(scope.root, authority.state, args, 'host_command');
       const reconciliation = await reconcilePendingAuditOperations(
         runtime.auditDeps,

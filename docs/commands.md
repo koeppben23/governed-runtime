@@ -759,3 +759,21 @@ workflow chooser. It is not a server, headless or decision command.
   interaction contract.
 - Desktop GUI support is `NOT_VERIFIED` without an installed pinned-host proof.
   The portable Markdown chooser from `/start` and `/status` remains complete.
+
+### Native review decisions
+
+At `PLAN_REVIEW`, `ARCH_REVIEW` and `EVIDENCE_REVIEW`, `/choose-workflow` opens
+the canonical decision set instead of the workflow chooser. The dialog shows
+only the commands from the current directive. Selection is submitted through
+the read-only `GetNextAction` binding: activation identity and generation,
+policy digest, state digest, phase, review obligation and subject digest. The
+server re-reads that binding immediately before the existing canonical
+decision path and rejects a stale or mismatched view with
+`DECISION_BINDING_STALE`; no background approval is performed.
+
+A governance override (`/override-approve`) requires a non-empty rationale
+entered in the dialog. The rationale is durable decision evidence. The native
+channel remains `host_command`; a UI click never raises actor assurance or
+claims verified human authorship. The automatic idle chooser handles only
+`CHOOSE_FLOW`; review decisions are opened explicitly or from the persistent
+Next Action surface.

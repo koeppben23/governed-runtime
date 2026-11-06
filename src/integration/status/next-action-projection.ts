@@ -12,6 +12,7 @@ import type { FlowGuardPolicy } from '../../config/policy.js';
 import { directiveLabel } from '../../presentation/directive-copy.js';
 import type { SessionState } from '../../state/schema.js';
 import { computeStateDigest } from '../audit-outbox.js';
+import { DecisionBinding, projectDecisionBinding } from './decision-binding.js';
 import { buildStatusProjection } from './status.js';
 
 export const NextActionRequest = z
@@ -60,6 +61,7 @@ export const NextActionResult = z
     phase: z.string().min(1).nullable(),
     stateDigest: z.string().min(1).nullable(),
     policyDigest: z.string().min(1).nullable(),
+    decisionBinding: DecisionBinding.nullable(),
     title: z.string().min(1),
     question: z.string().nullable(),
     actions: z.array(NextActionAction),
@@ -159,6 +161,10 @@ export function projectNextActionResult(
   const status = buildStatusProjection(state, policy);
   const conclusion = status.conclusion;
   const kind = kindFor(status.directive.code, conclusion);
+  const decisionBinding =
+    conclusion.kind === 'decision_required' && status.directive.code !== 'CHOOSE_FLOW'
+      ? projectDecisionBinding(state, activation)
+      : null;
   return {
     schemaVersion: 'next-action.v1',
     kind,
@@ -168,6 +174,7 @@ export function projectNextActionResult(
     phase: state.phase,
     stateDigest: computeStateDigest(state),
     policyDigest: state.policySnapshot?.hash ?? null,
+    decisionBinding,
     title: kind === 'choose_flow' ? 'Choose a workflow' : directiveLabel(status.directive.code),
     question: conclusion.kind === 'decision_required' ? conclusion.question : null,
     actions: actionsFor(conclusion),

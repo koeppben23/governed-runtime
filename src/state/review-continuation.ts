@@ -393,7 +393,8 @@ export type ReviewContinuation =
     }
   | { readonly kind: 'none' };
 
-function latestObligationOfType(
+/** Latest durable obligation of a type, regardless of its lifecycle status. */
+export function findLatestReviewObligation(
   obligations: readonly ReviewObligation[],
   obligationType: ReviewObligationType,
 ): ReviewObligation | undefined {
@@ -409,7 +410,7 @@ export function resolveReviewContinuation(
   obligationType: ReviewObligationType,
 ): ReviewContinuation {
   const assurance = ensureReviewAssurance(reviewAssurance);
-  const obligation = latestObligationOfType(assurance.obligations, obligationType);
+  const obligation = findLatestReviewObligation(assurance.obligations, obligationType);
   if (!obligation) return { kind: 'none' };
 
   if (obligation.status === 'blocked') return { kind: 'blocked', obligation };

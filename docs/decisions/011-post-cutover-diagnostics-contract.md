@@ -272,6 +272,13 @@ Implemented in this repository state:
   artifact and creates no second store, logger or authority.
 - Cross-surface tests keep the exported `session-graph.json`, the explorer
   projection and the rendered Markdown facts aligned.
+- Revision-bound native review decisions now use the `GetNextAction` binding:
+  at a review gate the projection carries the current obligation, subject
+  digest, activation identity/generation, policy digest, state digest and
+  phase. `SubmitDecision` accepts only canonical native decision commands,
+  re-reads that binding immediately before the existing decision boundary and
+  refuses stale or mismatched views with `DECISION_BINDING_STALE`. TUI
+  decision dialogs require an explicit rationale for governance overrides.
 - The optional TUI companion now provides the #1196 workflow chooser. It reads a
   read-only `GetNextAction` RPC projection with session, phase, policy,
   state-digest and canonical activation identity/generation binding, opens the
