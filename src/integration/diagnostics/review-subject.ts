@@ -1,266 +1,50 @@
 /**
- * @module integration/diagnostics/review-subject
- * @description Exact review-subject projection for the diagnostic review view.
+ * @module integration/diagnostics/review-subject-builders
+ * @description Exact plan, architecture, implementation and content subject projections.
  *
- * The subject projection copies persisted revision identity, frozen material
- * and reviewer output. It never implies approval authority.
+ * Builders copy persisted revision identity, frozen material and reviewer
+ * output. They never imply approval authority.
  */
 
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { DiagnosticWarning } from '../../adapters/diagnostics/export-schema.js';
-import { warning } from '../../adapters/diagnostics/types.js';
-import { sanitizeDiagnosticString } from '../../logging/redact.js';
 import { hashText } from '../../shared/hashing.js';
 import { hashCanonicalReviewContent } from '../../shared/review-subject.js';
 import type { SessionState } from '../../state/schema.js';
-import type { ReviewFindings, ReviewObligation } from '../../state/evidence.js';
-import type { ReviewFindingView, ReviewSubjectView } from './types.js';
+import {
+  addContentDigestWarning,
+  addFindingsWarnings,
+  addImplementationVerdictWarnings,
+  addSubjectBindingWarning,
+  addUnboundWarning,
+  addVerdictGapWarnings,
+  bindFindings,
+  boundContent,
+  capturedForDisplay,
+  contentLabel,
+  contentUnboundCause,
+  currentFindingsView,
+  digestUnboundCause,
+  findingDetails,
+  findingsVersionOf,
+  implementationCompletion,
+  implementationReviewedAt,
+  latestFindings,
+  obligationFor,
+  obligationViewFields,
+  planUnboundCause,
+  reviewCompletionOf,
+  reviewedAtForDisplay,
+  sanitizedWarning,
+  subjectBinding,
+  verdictOf,
+  verifiedDigest,
+} from './review-subject-support.js';
+import type { ReviewSubjectView } from './types.js';
 
-export const DEFAULT_MAX_SUBJECT_BYTES = 32 * 1024;
-const MAX_FINDINGS = 100;
-
-export function sanitizedWarning(
-  code: string,
-  message: string,
-  sessionId: string | null,
-  source: DiagnosticWarning['source'],
-): DiagnosticWarning {
-  return warning(code, sanitizeDiagnosticString(message), sessionId, source);
-}
-
-function latestFindings(findings: readonly ReviewFindings[]): ReviewFindings | undefined {
-  return findings.at(-1);
-}
-
-function findingsForFindings(findings: ReviewFindings | undefined): {
-  items: readonly ReviewFindingView[];
-  truncated: boolean;
-} {
-  const source = findings
-    ? [...findings.blockingIssues, ...findings.majorRisks].map((item) => ({
-        severity: item.severity,
-        category: item.category,
-        message: item.message,
-        findingId: item.findingId ?? null,
-      }))
-    : [];
-  return {
-    items: source.slice(0, MAX_FINDINGS),
-    truncated: source.length > MAX_FINDINGS,
-  };
-}
-
-function findingDetails(findings: ReviewFindings | undefined): {
-  missingVerification: readonly string[];
-  scopeCreep: readonly string[];
-  unknowns: readonly string[];
-} {
-  return {
-    missingVerification: findings?.missingVerification ?? [],
-    scopeCreep: findings?.scopeCreep ?? [],
-    unknowns: findings?.unknowns ?? [],
-  };
-}
-
-function obligationFor(
-  findings: ReviewFindings | undefined,
-  obligations: readonly ReviewObligation[],
-  obligationType: ReviewObligation['obligationType'],
-  subjectDigest: string,
-): ReviewObligation | undefined {
-  const attestedId = findings?.attestation?.toolObligationId;
-  if (attestedId !== undefined) {
-    const attested = obligations.find((item) => item.obligationId === attestedId);
-    if (attested) return attested;
-  }
-  const exact = obligations
-    .filter(
-      (item) => item.obligationType === obligationType && item.subjectDigest === subjectDigest,
-    )
-    .at(-1);
-  if (exact) return exact;
-  return obligations.filter((item) => item.obligationType === obligationType).at(-1);
-}
-
-function capturedVerdict(
-  state: SessionState,
-  obligation: ReviewObligation | undefined,
-): string | null {
-  if (!obligation) return null;
-  return (
-    state.reviewAssurance?.invocations
-      .filter((item) => item.obligationId === obligation.obligationId)
-      .at(-1)?.capturedVerdict ?? null
-  );
-}
-
-function subjectBinding(
-  obligation: ReviewObligation | undefined,
-  subjectDigest: string,
-): ReviewSubjectView['subjectBinding'] {
-  if (!obligation) return 'not_verified';
-  return obligation.subjectDigest === subjectDigest ? 'matched' : 'mismatch';
-}
-
-function addSubjectBindingWarning(
-  warnings: DiagnosticWarning[],
-  binding: ReviewSubjectView['subjectBinding'],
-  message: string,
-): void {
-  if (binding !== 'mismatch') return;
-  warnings.push(sanitizedWarning('REVIEW_SUBJECT_MISMATCH', message, null, 'review'));
-}
-
-function addVerdictGapWarnings(
-  warnings: DiagnosticWarning[],
-  findings: ReviewFindings | undefined,
-  obligation: ReviewObligation | undefined,
-  captured: string | null,
-  subjectLabel: string,
-): void {
-  if (!findings && captured === null) {
-    warnings.push(
-      sanitizedWarning(
-        'REVIEW_VERDICT_NOT_RECORDED',
-        `No reviewer verdict or findings are recorded for the displayed ${subjectLabel}.`,
-        null,
-        'review',
-      ),
-    );
-  }
-  if (obligation === undefined) {
-    warnings.push(
-      sanitizedWarning(
-        'REVIEW_OBLIGATION_NOT_VERIFIED',
-        `No exact review obligation is recorded for the displayed ${subjectLabel}.`,
-        null,
-        'review',
-      ),
-    );
-  }
-}
-
-function addFindingsWarnings(
-  warnings: DiagnosticWarning[],
-  findingsView: { readonly truncated: boolean },
-): void {
-  if (!findingsView.truncated) return;
-  warnings.push(
-    sanitizedWarning(
-      'REVIEW_FINDINGS_TRUNCATED',
-      `Only the first ${MAX_FINDINGS} findings are shown.`,
-      null,
-      'review',
-    ),
-  );
-}
-
-function addContentDigestWarning(
-  warnings: DiagnosticWarning[],
-  verified: ReviewSubjectView['contentVerified'],
-  message: string,
-): void {
-  if (verified !== 'mismatch') return;
-  warnings.push(sanitizedWarning('REVIEW_CONTENT_DIGEST_MISMATCH', message, null, 'state'));
-}
-
-function addImplementationVerdictWarnings(
-  warnings: DiagnosticWarning[],
-  findings: ReviewFindings | undefined,
-  implReview: SessionState['implReview'],
-  obligation: ReviewObligation | undefined,
-  captured: string | null,
-): void {
-  if (!findings && implReview === null && captured === null) {
-    warnings.push(
-      sanitizedWarning(
-        'REVIEW_VERDICT_NOT_RECORDED',
-        'No reviewer verdict or findings are recorded for the displayed implementation.',
-        null,
-        'review',
-      ),
-    );
-  }
-  if (obligation === undefined) {
-    warnings.push(
-      sanitizedWarning(
-        'REVIEW_OBLIGATION_NOT_VERIFIED',
-        'No exact review obligation is recorded for the displayed implementation.',
-        null,
-        'review',
-      ),
-    );
-  }
-}
-
-function firstDefined(...values: Array<string | null | undefined>): string | null {
-  return values.find((value): value is string => typeof value === 'string') ?? null;
-}
-
-function verdictOf(
-  findings: ReviewFindings | undefined,
-  ...fallbacks: Array<string | null | undefined>
-): string | null {
-  return findings?.overallVerdict ?? firstDefined(...fallbacks);
-}
-
-function reviewedAtOf(
-  findings: ReviewFindings | undefined,
-  ...fallbacks: Array<string | null | undefined>
-): string | null {
-  return findings?.reviewedAt ?? firstDefined(...fallbacks);
-}
-
-function materialDigestOf(obligation: ReviewObligation | undefined): string | null {
-  return obligation?.reviewMaterial.materialDigest ?? null;
-}
-
-function findingsVersionOf(findings: ReviewFindings | undefined, label: string): string | null {
-  if (!findings) return null;
-  return label === 'plan' ? `plan v${findings.planVersion}` : `${label} ${findings.iteration}`;
-}
-
-function contentLabel(obligation: ReviewObligation): string {
-  if (obligation.reviewSubject?.kind === 'repository_change') return 'Repository change';
-  if (obligation.reviewSubject?.kind === 'content') return 'Review content';
-  return 'Review subject';
-}
-
-function implementationCompletion(state: SessionState): string | null {
-  return state.implReview
-    ? `iteration ${state.implReview.iteration}; ${state.implReview.verdict}`
-    : null;
-}
-
-function reviewCompletionOf(findings: ReviewFindings | undefined): string | null {
-  return findings ? 'review report recorded' : null;
-}
-
-function boundContent(
-  content: string,
-  maxBytes: number,
-): { content: string; bytes: number; truncated: boolean } {
-  const bytes = Buffer.byteLength(content, 'utf8');
-  if (bytes <= maxBytes) return { content, bytes, truncated: false };
-  return {
-    content: Buffer.from(content, 'utf8').subarray(0, maxBytes).toString('utf8'),
-    bytes,
-    truncated: true,
-  };
-}
-
-function verifiedDigest(
-  content: string | null,
-  expected: string | null,
-  hash: (value: string) => string,
-): ReviewSubjectView['contentVerified'] {
-  if (content === null || expected === null) return 'not_available';
-  return hash(content) === expected ? 'verified' : 'mismatch';
-}
-
-function planSubject(
+export function planSubject(
   state: SessionState,
   warnings: DiagnosticWarning[],
   maxSubjectBytes: number,
@@ -276,13 +60,24 @@ function planSubject(
   );
   const bounded = boundContent(plan.current.body, maxSubjectBytes);
   const binding = subjectBinding(obligation, plan.current.digest);
-  const captured = capturedVerdict(state, obligation);
+  const obligationMatches = binding === 'matched';
+  const revisionMatches =
+    findings === undefined || findings.planVersion === plan.current.planVersion;
+  const unboundCause = planUnboundCause(
+    findings,
+    obligation !== undefined,
+    revisionMatches,
+    obligationMatches,
+  );
+  const bound = bindFindings(findings, unboundCause, 'plan');
+  const captured = capturedForDisplay(findings, obligationMatches, state, obligation);
+  const obligationFields = obligationViewFields(obligation, obligationMatches);
   addSubjectBindingWarning(
     warnings,
     binding,
     'The latest plan review obligation is bound to a different subject digest than the displayed plan revision.',
   );
-  if (findings && findings.planVersion !== plan.current.planVersion) {
+  if (findings && !revisionMatches) {
     warnings.push(
       sanitizedWarning(
         'REVIEW_FINDINGS_STALE',
@@ -292,34 +87,34 @@ function planSubject(
       ),
     );
   }
-  addVerdictGapWarnings(warnings, findings, obligation, captured, 'plan revision');
-  const findingsView = findingsForFindings(findings);
+  addUnboundWarning(warnings, bound.unbound);
+  addVerdictGapWarnings(warnings, bound.current, obligation, captured, 'plan revision');
+  const findingsView = currentFindingsView(bound);
   addFindingsWarnings(warnings, findingsView);
   return {
     kind: 'plan',
     label: `Plan v${plan.current.planVersion}`,
     revision: `v${plan.current.planVersion}`,
     digest: plan.current.digest,
-    materialDigest: materialDigestOf(obligation),
+    ...obligationFields,
     content: bounded.content,
     contentBytes: bounded.bytes,
     contentTruncated: bounded.truncated,
     contentVerified: verifiedDigest(plan.current.body, plan.current.digest, hashText),
     paths: [],
     reviewCompletion: plan.reviewCompletion,
-    reviewerVerdict: verdictOf(findings, captured),
-    reviewedAt: reviewedAtOf(findings, obligation?.fulfilledAt),
-    reviewedObligationId: obligation?.obligationId ?? null,
-    reviewedSubjectDigest: obligation?.subjectDigest ?? null,
+    reviewerVerdict: verdictOf(bound.current, captured),
+    reviewedAt: reviewedAtForDisplay(bound.current, captured, obligation),
     subjectBinding: binding,
-    findingsVersion: findingsVersionOf(findings, 'plan'),
+    findingsVersion: findingsVersionOf(bound.current, 'plan'),
     findings: findingsView.items,
     findingsTruncated: findingsView.truncated,
-    ...findingDetails(findings),
+    ...findingDetails(bound.current),
+    unboundReview: bound.unbound,
   };
 }
 
-function architectureSubject(
+export function architectureSubject(
   state: SessionState,
   warnings: DiagnosticWarning[],
   maxSubjectBytes: number,
@@ -335,36 +130,40 @@ function architectureSubject(
   );
   const bounded = boundContent(architecture.adrText, maxSubjectBytes);
   const binding = subjectBinding(obligation, architecture.digest);
-  const captured = capturedVerdict(state, obligation);
+  const obligationMatches = binding === 'matched';
+  const unboundCause = digestUnboundCause(findings, obligation !== undefined, obligationMatches);
+  const bound = bindFindings(findings, unboundCause, 'review iteration');
+  const captured = capturedForDisplay(findings, obligationMatches, state, obligation);
+  const obligationFields = obligationViewFields(obligation, obligationMatches);
   addSubjectBindingWarning(
     warnings,
     binding,
     'The latest architecture review obligation is bound to a different subject digest than the displayed ADR.',
   );
-  addVerdictGapWarnings(warnings, findings, obligation, captured, 'ADR');
-  const findingsView = findingsForFindings(findings);
+  addUnboundWarning(warnings, bound.unbound);
+  addVerdictGapWarnings(warnings, bound.current, obligation, captured, 'ADR');
+  const findingsView = currentFindingsView(bound);
   addFindingsWarnings(warnings, findingsView);
   return {
     kind: 'architecture',
     label: `${architecture.id}: ${architecture.title}`,
     revision: architecture.id,
     digest: architecture.digest,
-    materialDigest: materialDigestOf(obligation),
+    ...obligationFields,
     content: bounded.content,
     contentBytes: bounded.bytes,
     contentTruncated: bounded.truncated,
     contentVerified: verifiedDigest(architecture.adrText, architecture.digest, hashText),
     paths: [],
     reviewCompletion: architecture.reviewCompletion,
-    reviewerVerdict: verdictOf(findings, captured),
-    reviewedAt: reviewedAtOf(findings, obligation?.fulfilledAt),
-    reviewedObligationId: obligation?.obligationId ?? null,
-    reviewedSubjectDigest: obligation?.subjectDigest ?? null,
+    reviewerVerdict: verdictOf(bound.current, captured),
+    reviewedAt: reviewedAtForDisplay(bound.current, captured, obligation),
     subjectBinding: binding,
-    findingsVersion: findingsVersionOf(findings, 'review iteration'),
+    findingsVersion: findingsVersionOf(bound.current, 'review iteration'),
     findings: findingsView.items,
     findingsTruncated: findingsView.truncated,
-    ...findingDetails(findings),
+    ...findingDetails(bound.current),
+    unboundReview: bound.unbound,
   };
 }
 
@@ -429,7 +228,7 @@ async function readImplementationDiff(
   }
 }
 
-async function implementationSubject(
+export async function implementationSubject(
   sessDir: string,
   state: SessionState,
   warnings: DiagnosticWarning[],
@@ -446,14 +245,19 @@ async function implementationSubject(
   );
   const diff = await readImplementationDiff(sessDir, state, warnings, maxSubjectBytes);
   const binding = subjectBinding(obligation, implementation.digest);
-  const captured = capturedVerdict(state, obligation);
+  const obligationMatches = binding === 'matched';
+  const unboundCause = digestUnboundCause(findings, obligation !== undefined, obligationMatches);
+  const bound = bindFindings(findings, unboundCause, 'review iteration');
+  const captured = capturedForDisplay(findings, obligationMatches, state, obligation);
+  const obligationFields = obligationViewFields(obligation, obligationMatches);
   addSubjectBindingWarning(
     warnings,
     binding,
     'The latest implementation review obligation is bound to a different subject digest than the displayed implementation.',
   );
-  addImplementationVerdictWarnings(warnings, findings, state.implReview, obligation, captured);
-  const findingsView = findingsForFindings(findings);
+  addUnboundWarning(warnings, bound.unbound);
+  addImplementationVerdictWarnings(warnings, bound.current, state.implReview, obligation, captured);
+  const findingsView = currentFindingsView(bound);
   addFindingsWarnings(warnings, findingsView);
   addContentDigestWarning(
     warnings,
@@ -465,26 +269,25 @@ async function implementationSubject(
     label: `Implementation ${implementation.implementationId}`,
     revision: implementation.implementationId,
     digest: implementation.digest,
-    materialDigest: materialDigestOf(obligation),
+    ...obligationFields,
     content: diff.content,
     contentBytes: diff.bytes,
     contentTruncated: diff.truncated,
     contentVerified: diff.verified,
     paths: [...implementation.changedFiles],
     reviewCompletion: implementationCompletion(state),
-    reviewerVerdict: verdictOf(findings, state.implReview?.verdict, captured),
-    reviewedAt: reviewedAtOf(findings, state.implReview?.executedAt, obligation?.fulfilledAt),
-    reviewedObligationId: obligation?.obligationId ?? null,
-    reviewedSubjectDigest: obligation?.subjectDigest ?? null,
+    reviewerVerdict: verdictOf(bound.current, state.implReview?.verdict, captured),
+    reviewedAt: implementationReviewedAt(bound.current, captured, state.implReview, obligation),
     subjectBinding: binding,
-    findingsVersion: findingsVersionOf(findings, 'review iteration'),
+    findingsVersion: findingsVersionOf(bound.current, 'review iteration'),
     findings: findingsView.items,
     findingsTruncated: findingsView.truncated,
-    ...findingDetails(findings),
+    ...findingDetails(bound.current),
+    unboundReview: bound.unbound,
   };
 }
 
-function contentSubject(
+export function contentSubject(
   state: SessionState,
   warnings: DiagnosticWarning[],
   maxSubjectBytes: number,
@@ -498,19 +301,23 @@ function contentSubject(
   const bounded = boundContent(obligation.reviewMaterial.content, maxSubjectBytes);
   const digest = obligation.reviewSubject?.subjectDigest ?? obligation.subjectDigest;
   const binding = subjectBinding(obligation, digest);
+  const attestedId = findings?.attestation?.toolObligationId;
+  const unboundCause = contentUnboundCause(findings, attestedId, obligation.obligationId);
+  const bound = bindFindings(findings, unboundCause, 'review iteration');
   const verified = verifiedDigest(
     obligation.reviewMaterial.content,
     obligation.reviewMaterial.materialDigest,
     hashCanonicalReviewContent,
   );
-  const captured = capturedVerdict(state, obligation);
+  const captured = capturedForDisplay(findings, true, state, obligation);
   addContentDigestWarning(
     warnings,
     verified,
     'The displayed review material does not match its recorded material digest.',
   );
-  addVerdictGapWarnings(warnings, findings, obligation, captured, 'review subject');
-  const findingsView = findingsForFindings(findings);
+  addUnboundWarning(warnings, bound.unbound);
+  addVerdictGapWarnings(warnings, bound.current, obligation, captured, 'review subject');
+  const findingsView = currentFindingsView(bound);
   addFindingsWarnings(warnings, findingsView);
   return {
     kind: 'content',
@@ -523,110 +330,16 @@ function contentSubject(
     contentTruncated: bounded.truncated,
     contentVerified: verified,
     paths: [],
-    reviewCompletion: reviewCompletionOf(findings),
-    reviewerVerdict: verdictOf(findings, captured),
-    reviewedAt: reviewedAtOf(findings, obligation.fulfilledAt),
+    reviewCompletion: reviewCompletionOf(bound.current),
+    reviewerVerdict: verdictOf(bound.current, captured),
+    reviewedAt: reviewedAtForDisplay(bound.current, captured, obligation),
     reviewedObligationId: obligation.obligationId,
     reviewedSubjectDigest: obligation.subjectDigest,
     subjectBinding: binding,
-    findingsVersion: findingsVersionOf(findings, 'review iteration'),
+    findingsVersion: findingsVersionOf(bound.current, 'review iteration'),
     findings: findingsView.items,
     findingsTruncated: findingsView.truncated,
-    ...findingDetails(findings),
-  };
-}
-
-function implementationPhases(phase: SessionState['phase']): boolean {
-  return (
-    phase === 'IMPLEMENTATION' ||
-    phase === 'IMPL_VALIDATION' ||
-    phase === 'IMPL_REVIEW' ||
-    phase === 'EVIDENCE_REVIEW' ||
-    phase === 'EXPORT_READY' ||
-    phase === 'COMPLETE'
-  );
-}
-
-function reviewPhases(phase: SessionState['phase']): boolean {
-  return phase === 'PEER_REVIEW' || phase === 'PEER_REVIEW_COMPLETE';
-}
-
-function architecturePhases(phase: SessionState['phase']): boolean {
-  return phase === 'ARCHITECTURE' || phase === 'ARCH_REVIEW' || phase === 'ARCH_COMPLETE';
-}
-
-function planPhases(phase: SessionState['phase']): boolean {
-  return (
-    phase === 'TICKET' || phase === 'PLAN' || phase === 'PLAN_REVIEW' || phase === 'VALIDATION'
-  );
-}
-
-async function phaseSubject(
-  state: SessionState,
-  sessDir: string,
-  warnings: DiagnosticWarning[],
-  maxSubjectBytes: number,
-): Promise<ReviewSubjectView | null> {
-  if (reviewPhases(state.phase)) return contentSubject(state, warnings, maxSubjectBytes);
-  if (architecturePhases(state.phase)) {
-    return architectureSubject(state, warnings, maxSubjectBytes);
-  }
-  if (implementationPhases(state.phase)) {
-    return implementationSubject(sessDir, state, warnings, maxSubjectBytes);
-  }
-  if (planPhases(state.phase)) return planSubject(state, warnings, maxSubjectBytes);
-  return null;
-}
-
-async function fallbackSubject(
-  state: SessionState,
-  sessDir: string,
-  warnings: DiagnosticWarning[],
-  maxSubjectBytes: number,
-): Promise<ReviewSubjectView | null> {
-  return (
-    (await implementationSubject(sessDir, state, warnings, maxSubjectBytes)) ??
-    planSubject(state, warnings, maxSubjectBytes) ??
-    architectureSubject(state, warnings, maxSubjectBytes) ??
-    contentSubject(state, warnings, maxSubjectBytes)
-  );
-}
-
-export async function selectSubject(
-  state: SessionState,
-  sessDir: string,
-  warnings: DiagnosticWarning[],
-  maxSubjectBytes: number,
-): Promise<ReviewSubjectView | null> {
-  return (
-    (await phaseSubject(state, sessDir, warnings, maxSubjectBytes)) ??
-    fallbackSubject(state, sessDir, warnings, maxSubjectBytes)
-  );
-}
-
-export function unavailableSubject(): ReviewSubjectView {
-  return {
-    kind: 'unavailable',
-    label: 'No reviewable subject recorded',
-    revision: null,
-    digest: null,
-    materialDigest: null,
-    content: null,
-    contentBytes: 0,
-    contentTruncated: false,
-    contentVerified: 'not_applicable',
-    paths: [],
-    reviewCompletion: null,
-    reviewerVerdict: null,
-    reviewedAt: null,
-    reviewedObligationId: null,
-    reviewedSubjectDigest: null,
-    subjectBinding: 'not_applicable',
-    findingsVersion: null,
-    findings: [],
-    findingsTruncated: false,
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
+    ...findingDetails(bound.current),
+    unboundReview: bound.unbound,
   };
 }

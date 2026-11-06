@@ -81,6 +81,25 @@ async function writeRoot(overrides: Record<string, unknown> = {}) {
   return { sessionDir, fingerprint, workspaceDir };
 }
 
+async function writeProgressed(
+  phase: NonNullable<Parameters<typeof makeState>[0]>,
+  overrides: Record<string, unknown> = {},
+) {
+  const { sessionDir, fingerprint } = await initWorkspace(ws.tmpDir, ROOT_ID);
+  const progressed = makeProgressedState(phase);
+  await writeState(
+    sessionDir,
+    makeState(phase, {
+      ...progressed,
+      id: ROOT_STATE_ID,
+      flowguardSessionId: ROOT_STATE_ID,
+      binding: { ...BINDING, hostSessionId: ROOT_ID, worktree: ws.tmpDir, fingerprint },
+      ...overrides,
+    }),
+  );
+  return { sessionDir, fingerprint };
+}
+
 async function writeChild(fingerprint: string, phase: Parameters<typeof makeState>[0] = 'READY') {
   const { sessionDir } = await initWorkspace(ws.tmpDir, CHILD_ID);
   await writeState(sessionDir, boundState(CHILD_STATE_ID, CHILD_ID, fingerprint, phase));
@@ -281,9 +300,58 @@ describe('diagnostic review view', () => {
 
     expect(view.status).toBe('PARTIAL');
     expect(view.warnings).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: 'REVIEW_FINDINGS_STALE' })]),
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'REVIEW_FINDINGS_STALE' }),
+        expect.objectContaining({ code: 'REVIEW_FINDINGS_UNBOUND' }),
+      ]),
     );
-    expect(view.subject.findingsVersion).toBe('plan v2');
+    expect(view.subject.reviewerVerdict).toBeNull();
+    expect(view.subject.findingsVersion).toBeNull();
+    expect(view.subject.unboundReview).toMatchObject({
+      verdict: 'accept',
+      findingsVersion: 'plan v2',
+      reason: 'stale_revision',
+    });
+    expect(renderReviewView(view)).toContain('Historical / unassigned reviewer output');
+  });
+
+  it('BAD — does not apply stale architecture findings to the displayed ADR', async () => {
+    const state = makeProgressedState('ARCH_REVIEW');
+    await writeProgressed('ARCH_REVIEW', {
+      architecture: {
+        ...state.architecture!,
+        digest: 'different-adr-digest',
+        reviewFindings: [findings()],
+      },
+    });
+
+    const view = await buildReviewView({ root: ws.tmpDir, sessionId: ROOT_ID, now: FIXED_NOW });
+
+    expect(view.subject.kind).toBe('architecture');
+    expect(view.subject.reviewerVerdict).toBeNull();
+    expect(view.subject.unboundReview).toMatchObject({
+      verdict: 'accept',
+      reason: 'subject_mismatch',
+    });
+    expect(view.warnings.map((entry) => entry.code)).toEqual(
+      expect.arrayContaining(['REVIEW_FINDINGS_UNBOUND', 'REVIEW_SUBJECT_MISMATCH']),
+    );
+  });
+
+  it('BAD — does not apply unbound implementation findings to the displayed implementation', async () => {
+    await writeProgressed('IMPL_REVIEW', { implReviewFindings: [findings()] });
+
+    const view = await buildReviewView({ root: ws.tmpDir, sessionId: ROOT_ID, now: FIXED_NOW });
+
+    expect(view.subject.kind).toBe('implementation');
+    expect(view.subject.reviewerVerdict).toBeNull();
+    expect(view.subject.unboundReview).toMatchObject({
+      verdict: 'accept',
+      reason: 'subject_not_verified',
+    });
+    expect(view.warnings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'REVIEW_FINDINGS_UNBOUND' })]),
+    );
   });
 
   it('BAD — reports a subject mismatch instead of implying approval', async () => {
@@ -475,6 +543,22 @@ describe('diagnostic log view', () => {
     expect(view.entries).toHaveLength(0);
     expect(view.correlation.missingFilteredSessionId).toBe(1);
     expect(view.correlation.withoutSessionId).toBe(1);
+  });
+
+  it('BAD — reports PARTIAL when some JSONL lines are malformed', async () => {
+    const dir = await logDir();
+    await writeFile(
+      path.join(dir, 'flowguard-2026-01-01.log'),
+      line({ ts: '2026-01-01T00:00:00.000Z', level: 'info', service: 'x', message: 'valid' }) +
+        '{ not valid json\n',
+    );
+
+    const view = await readLogView({ directory: dir });
+
+    expect(view.parseErrors).toBe(1);
+    expect(view.entries).toHaveLength(1);
+    expect(view.status).toBe('PARTIAL');
+    expect(renderLogView(view)).toContain('Malformed JSONL entries: 1');
   });
 
   it('CORNER — makes byte truncation explicit', async () => {

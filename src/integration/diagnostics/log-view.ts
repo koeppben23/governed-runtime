@@ -18,9 +18,9 @@ const LOG_FILE_PATTERN = /^flowguard-\d{4}-\d{2}-\d{2}(?:\.\d+)?\.log$/;
 const LOG_LEVELS: readonly LogViewLevel[] = ['debug', 'info', 'warn', 'error'];
 const SENSITIVE_FIELD = /password|passwd|secret|token|api[_-]?key|authorization|cookie/i;
 
-export const DEFAULT_LOG_MAX_BYTES = 1_000_000;
-export const DEFAULT_LOG_MAX_LINES = 500;
-export const DEFAULT_LOG_MAX_FILES = 7;
+const DEFAULT_LOG_MAX_BYTES = 1_000_000;
+const DEFAULT_LOG_MAX_LINES = 500;
+const DEFAULT_LOG_MAX_FILES = 7;
 
 export interface LogViewRequest {
   /** Existing `.opencode/logs` directory, or null when the workspace is unavailable. */
@@ -405,7 +405,7 @@ export async function readLogView(request: LogViewRequest): Promise<LogView> {
   const truncated = truncationReasons.length > 0;
   return {
     ...base,
-    status: truncated ? 'PARTIAL' : 'COMPLETE',
+    status: truncated || read.parseErrors > 0 ? 'PARTIAL' : 'COMPLETE',
     directory: request.directory,
     entries: limited.map((entry) => entry.view),
     files: read.files,

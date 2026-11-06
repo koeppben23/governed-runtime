@@ -231,6 +231,45 @@ function reviewFindingsSection(subject: ReviewSubjectView): string {
   return lines.join('\n');
 }
 
+function unboundReviewSection(subject: ReviewSubjectView): string | null {
+  const unbound = subject.unboundReview;
+  if (unbound === null) return null;
+  const lines = [
+    '## Historical / unassigned reviewer output',
+    '',
+    'This reviewer output is not bound to the displayed revision and is not a verdict on it.',
+    '',
+    `- Reason: ${cell(unbound.reason)}`,
+    `- Verdict: ${cell(unbound.verdict)}`,
+    `- Reviewed at: ${cell(unbound.reviewedAt)}`,
+    `- Findings version: ${cell(unbound.findingsVersion)}`,
+  ];
+  if (unbound.findings.length > 0) {
+    lines.push(
+      '',
+      '### Findings',
+      '',
+      ...unbound.findings.map(
+        (finding) =>
+          `- **${cell(finding.severity)} / ${cell(finding.category)}** ${cell(finding.message, 500)}`,
+      ),
+    );
+  }
+  if (unbound.findingsTruncated) {
+    lines.push('', 'Historical findings are explicitly truncated to the first 100 entries.');
+  }
+  if (unbound.missingVerification.length > 0) {
+    lines.push('', '### Missing verification', '', listOrNone(unbound.missingVerification, '—'));
+  }
+  if (unbound.scopeCreep.length > 0) {
+    lines.push('', '### Scope creep', '', listOrNone(unbound.scopeCreep, '—'));
+  }
+  if (unbound.unknowns.length > 0) {
+    lines.push('', '### Unknowns', '', listOrNone(unbound.unknowns, '—'));
+  }
+  return lines.join('\n');
+}
+
 function proofSection(view: ReviewView): string {
   const proof = view.proof;
   if (proof === null) {
@@ -280,6 +319,7 @@ function proofSection(view: ReviewView): string {
 
 /** Render the review-view content shell. */
 export function renderReviewView(view: ReviewView): string {
+  const unbound = unboundReviewSection(view.subject);
   return [
     '# FlowGuard Diagnostic Review View',
     '',
@@ -299,6 +339,7 @@ export function renderReviewView(view: ReviewView): string {
     '',
     reviewFindingsSection(view.subject),
     '',
+    ...(unbound !== null ? [unbound, ''] : []),
     proofSection(view),
     '',
     renderReviewLinks(view.reviewLinks),

@@ -171,7 +171,7 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     id: 'diagnostics',
     dir: 'integration/diagnostics',
     description: 'Read-only diagnostic view projection and rendering',
-    targetProductionFiles: 10,
+    targetProductionFiles: 12,
   },
   {
     id: 'artifacts',
@@ -355,6 +355,8 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/diagnostics/notification-view.ts', owner: 'diagnostics' },
   { file: 'integration/diagnostics/render.ts', owner: 'diagnostics' },
   { file: 'integration/diagnostics/review-links.ts', owner: 'diagnostics' },
+  { file: 'integration/diagnostics/review-subject-selection.ts', owner: 'diagnostics' },
+  { file: 'integration/diagnostics/review-subject-support.ts', owner: 'diagnostics' },
   { file: 'integration/diagnostics/review-subject.ts', owner: 'diagnostics' },
   { file: 'integration/diagnostics/review-view.ts', owner: 'diagnostics' },
   { file: 'integration/diagnostics/types.ts', owner: 'diagnostics' },

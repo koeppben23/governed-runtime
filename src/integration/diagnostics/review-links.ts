@@ -19,7 +19,7 @@ import type {
 } from './types.js';
 
 /** Per-array cap keeps command output bounded without hiding the cap. */
-export const MAX_REVIEW_LINKS = 200;
+const MAX_REVIEW_LINKS = 200;
 
 function take<T>(items: readonly T[], warnings: DiagnosticWarning[]): readonly T[] {
   if (items.length <= MAX_REVIEW_LINKS) return items;

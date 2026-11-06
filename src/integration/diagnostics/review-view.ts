@@ -11,12 +11,8 @@ import type { DiagnosticWarning } from '../../adapters/diagnostics/export-schema
 import { resolveSessionAuthority } from '../../adapters/session-authority.js';
 import { buildProofApprovalProjection } from '../proofgraph/approval-projection.js';
 import { projectReviewLinks } from './review-links.js';
-import {
-  DEFAULT_MAX_SUBJECT_BYTES,
-  sanitizedWarning,
-  selectSubject,
-  unavailableSubject,
-} from './review-subject.js';
+import { DEFAULT_MAX_SUBJECT_BYTES, sanitizedWarning } from './review-subject-support.js';
+import { selectSubject, unavailableSubject } from './review-subject-selection.js';
 import type { ReviewSubjectView, ReviewView } from './types.js';
 
 export interface ReviewViewRequest {

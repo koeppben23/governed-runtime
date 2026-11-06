@@ -106,6 +106,18 @@ export interface ReviewFindingView {
   readonly findingId: string | null;
 }
 
+export interface UnboundReviewView {
+  readonly verdict: string | null;
+  readonly reviewedAt: string | null;
+  readonly findingsVersion: string | null;
+  readonly findings: readonly ReviewFindingView[];
+  readonly findingsTruncated: boolean;
+  readonly missingVerification: readonly string[];
+  readonly scopeCreep: readonly string[];
+  readonly unknowns: readonly string[];
+  readonly reason: 'stale_revision' | 'subject_mismatch' | 'subject_not_verified';
+}
+
 export interface ReviewSubjectView {
   readonly kind: ReviewSubjectKind;
   readonly label: string;
@@ -129,6 +141,11 @@ export interface ReviewSubjectView {
   readonly missingVerification: readonly string[];
   readonly scopeCreep: readonly string[];
   readonly unknowns: readonly string[];
+  /**
+   * Reviewer output that is not bound to the displayed revision. It is shown
+   * separately and never used as the current verdict.
+   */
+  readonly unboundReview: UnboundReviewView | null;
 }
 
 export interface ReviewView {

@@ -702,15 +702,19 @@ nothing, and is never evidence, approval or authorization.
 - **review** shows the displayed subject kind, revision and exact content or
   record digest, the verbatim plan/ADR/implementation-diff material within a
   byte budget, reviewer verdict and findings, and ProofGraph declarations versus
-  evaluation and certificate binding. A stale findings version or mismatched
-  subject digest is reported as `PARTIAL`, not smoothed over. Decision authority
-  is explicitly `NOT GRANTED`; decision controls remain owned by the
-  revision-bound interaction contract in
+  evaluation and certificate binding. Only reviewer output positively bound to
+  the displayed revision becomes the current verdict; stale or unassigned
+  findings are shown separately as historical material. A stale findings version
+  or mismatched subject digest is reported as `PARTIAL`, not smoothed over.
+  Decision authority is explicitly `NOT GRANTED`; decision controls remain owned
+  by the revision-bound interaction contract in
   [ADR-011](./decisions/011-post-cutover-diagnostics-contract.md) and #1196.
 - **logs** reads only the newest tail of the existing
   `.opencode/logs/flowguard-*.log` JSONL files. Level, session, trace and time
   filters are applied after bounded reading; byte, file and line truncation plus
   missing session/trace correlation and malformed lines are reported explicitly.
+  Malformed lines or truncation force `PARTIAL`; they never disappear behind a
+  `COMPLETE` status.
   Sensitive field names are masked and central diagnostic redaction is applied.
   No second logger or persistent view state is created.
 - **notifications** reports delivery as `NOT_VERIFIED`/`unsupported`, names the

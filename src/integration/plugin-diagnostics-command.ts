@@ -120,7 +120,7 @@ function parseLogOption(
 }
 
 /** Parse `/diagnostics [explorer|review|logs|notifications] [key=value...]`. */
-export function parseDiagnosticsArguments(text: string): ParsedDiagnosticsArgs {
+function parseDiagnosticsArguments(text: string): ParsedDiagnosticsArgs {
   const tokens = text.trim().length === 0 ? [] : text.trim().split(/\s+/);
   const mode = parseMode(tokens[0]);
   if (mode !== 'logs') {

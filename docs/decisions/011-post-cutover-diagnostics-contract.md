@@ -260,9 +260,12 @@ Implemented in this repository state:
   gaps with obligation/attempt/dispatch/invocation IDs; `review` displays the
   exact subject revision/digest, verbatim material, reviewer verdict, findings
   and ProofGraph declarations versus evaluation while declaring decision
-  authority `NOT GRANTED`; `logs` reads a bounded tail of the existing JSONL sink
-  with level/session/trace/time filters, sensitive-field masking and explicit
-  truncation/missing-correlation states; `notifications` reports unsupported
+  authority `NOT GRANTED`. Only reviewer output positively bound to the displayed
+  revision is used as the current verdict; stale or unassigned output remains
+  visible as historical material. `logs` reads a bounded tail of the existing
+  JSONL sink with level/session/trace/time filters, sensitive-field masking and
+  explicit truncation, malformed-line and missing-correlation states;
+  `notifications` reports unsupported
   delivery and keeps file logs as the complete fallback. The command writes no
   artifact and creates no second store, logger or authority.
 - Cross-surface tests keep the exported `session-graph.json`, the explorer
