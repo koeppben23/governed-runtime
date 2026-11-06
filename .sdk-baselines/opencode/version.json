@@ -1,23 +1,46 @@
 {
   "platform": "opencode",
-  "updated": "2026-10-30T14:15:16.009Z",
-  "version": "1.19.5",
+  "updated": "2026-10-31T20:16:46.387Z",
+  "packages": {
+    "@opencode/plugin": "2.2.4",
+    "@opencode/client": "2.2.4"
+  },
   "files": [
     {
-      "label": "plugin/dist/index.d.ts",
-      "hash": "f3ec1a150d1354be3c9d93928fa130edc118c63fb468533ebb01eb3d6ed77f92"
+      "label": "@opencode/plugin/dist/promise/index.d.ts",
+      "hash": "786a6383b72bbccb17bd55b61c90427a4d9051b418c7818304654c5a024f3252"
     },
     {
-      "label": "plugin/dist/tool.d.ts",
-      "hash": "5237b30a9b5a9a814f93327ce446e73b726da139fe2eba8edf88c4a45b4b8b2d"
+      "label": "@opencode/plugin/dist/promise/plugin.d.ts",
+      "hash": "3066ef33f55fd0fcbb6b845960ddab230d79a51135ef511227b29bd85a699cc4"
     },
     {
-      "label": "sdk/gen/types.gen.d.ts#Event",
-      "hash": "bbf632c72d2484a5fdc39c9259606fe69ed45078cba64e9445e497688d1e804a"
+      "label": "@opencode/plugin/dist/promise/tool.d.ts",
+      "hash": "14ead93a2c03136af9768f9f02447c5fb357d1bce12a4b38a5e9fe31a0e91eff"
     },
     {
-      "label": "sdk/gen/types.gen.d.ts#ToolPart",
-      "hash": "1a2b5c8edbdc74475c297e0691354bba5703bb9e33ca611c15e3880b28d004e3"
+      "label": "@opencode/plugin/dist/promise/session.d.ts",
+      "hash": "b33ad2554c28b1b7213a18a0502782467338a096203635e27137310cc6d48048"
+    },
+    {
+      "label": "@opencode/plugin/dist/promise/event.d.ts",
+      "hash": "0f8229f59b5e7528ea625af3f277f64869a981808bbfd6bc7589b0aa5144e556"
+    },
+    {
+      "label": "@opencode/plugin/dist/promise/registration.d.ts",
+      "hash": "16436600a035f85d035e3baebb8412084119f620ee4eafc9feba1c7438f6f5ff"
+    },
+    {
+      "label": "@opencode/client#EventSubscribeOutput/V2Event",
+      "hash": "a05d4d1024d06cc93c369cdeb7d2e49af411f5c14ee9852cc47016c7790f6e7d"
+    },
+    {
+      "label": "@opencode/client#SessionMessageInfo/ToolContent",
+      "hash": "eb1feef9c989e46eabb651e72caedee88acd853e275fb125f44bfb8519e97652"
+    },
+    {
+      "label": "@opencode/schema/dist/tool.d.ts",
+      "hash": "d2f905f306d3e04be9a743e16ef326ee93130c7fa9436e75874a492cea51d020"
     }
   ]
 }

@@ -22,9 +22,14 @@ jobs:
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
       - name: Run unit tests
-        run: npm run test:unit
+        run: npm run test:unit:no-perf
         env:
           FORCE_COLOR: 0
+      - name: Run unit PERF tests
+        run: npm run test:unit:perf
+        env:
+          FORCE_COLOR: 0
+          FLOWGUARD_PERF: '1'
       - name: Run scripts tests
         run: npm run test:scripts
         env:
@@ -59,7 +64,9 @@ jobs:
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
       - name: Verify critical state and hook boundaries
-        run: npx vitest run --project unit src/hooks src/state src/audit/proofgraph src/adapters/git-porcelain.test.ts src/verification/implementation-subject.test.ts
+        # Preserve the full critical set and its p99 budgets; avoid concurrent
+        # Vitest workers competing with the warm state-serialization benchmark.
+        run: npx vitest run --maxWorkers=1 --project unit src/hooks src/state src/audit/proofgraph src/adapters/git-porcelain.test.ts src/verification/implementation-subject.test.ts
       - name: Verify real-Git approval and recovery paths
         run: npx vitest run --project integration src/integration/proofgraph-replan-recovery.test.ts src/integration/evidence-approval-persistence.test.ts src/integration/reduced-ceremony-subject-artifacts-e2e.test.ts
 
@@ -92,11 +99,21 @@ jobs:
   test:
     name: ci-gate
     runs-on: ubuntu-latest
-    needs: [unit, scripts-windows, critical-windows, coverage, integration_perf, provider-conformance, regulated_e2e]
+    needs:
+      [
+        unit,
+        scripts-windows,
+        critical-windows,
+        coverage,
+        integration_perf,
+        provider-conformance,
+        regulated_e2e,
+        doc-drift,
+      ]
     if: always()
     timeout-minutes: 1
     steps:
-      - name: Confirm test, Windows, coverage, PERF, regulated e2e, and provider conformance jobs passed
+      - name: Confirm tests and documentation checks passed
         run: |
           echo "unit: ${{ needs.unit.result }}"
           echo "scripts-windows: ${{ needs.scripts-windows.result }}"
@@ -105,8 +122,9 @@ jobs:
           echo "integration-perf: ${{ needs.integration_perf.result }}"
           echo "provider-conformance: ${{ needs.provider-conformance.result }}"
           echo "regulated-e2e: ${{ needs.regulated_e2e.result }}"
-          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.scripts-windows.result }}" != "success" ] || [ "${{ needs.critical-windows.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.regulated_e2e.result }}" != "success" ]; then
-            echo "Blocked: unit, scripts-windows, critical-windows, coverage, integration-perf, provider-conformance, or regulated-e2e job failed"
+          echo "doc-drift: ${{ needs.doc-drift.result }}"
+          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.scripts-windows.result }}" != "success" ] || [ "${{ needs.critical-windows.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.regulated_e2e.result }}" != "success" ] || [ "${{ needs.doc-drift.result }}" != "success" ]; then
+            echo "Blocked: a required test or documentation job did not succeed"
             exit 1
           fi
 
@@ -335,8 +353,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          baseline_version=$(node -p "JSON.parse(require('fs').readFileSync('.sdk-baselines/opencode/version.json','utf8')).version")
-          installed_version=$(node -p "JSON.parse(require('fs').readFileSync('node_modules/@opencode-ai/plugin/package.json','utf8')).version")
+          baseline_version=$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('.sdk-baselines/opencode/version.json','utf8')).packages)")
+          installed_version=$(node -p "JSON.stringify(Object.fromEntries(['plugin','client'].map(n=>['@opencode/'+n,JSON.parse(require('fs').readFileSync('node_modules/@opencode/'+n+'/package.json','utf8')).version])))")
           if [ "$baseline_version" != "$installed_version" ]; then
             echo "SDK version mismatch: baseline=$baseline_version installed=$installed_version"
             gh workflow run opencode-sdk-update.yml
@@ -389,12 +407,16 @@ jobs:
   doc-drift:
     name: doc-drift
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          fetch-depth: 0
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
+      - name: Require changelog update for every PR
+        run: npm run check:pr-documentation -- "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
       - name: Check documentation inventory drift
         run: npm run check:doc-drift
         env:
@@ -577,8 +599,8 @@ jobs:
 
       - name: Install OpenCode CLI
         run: |
-          OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
-          npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          OPENCODE_SPEC=$(node -p "const c = require('./.sdk-baselines/opencode/cli-candidate.json'); c.package + '@' + c.version")
+          npm install -g --prefer-offline --no-audit --no-fund "$OPENCODE_SPEC"
           # npm may link global bins into a prefix that is not on PATH yet.
           GLOBAL_BIN="$(npm prefix -g)/bin"
           if [ -d "$GLOBAL_BIN" ]; then
@@ -591,17 +613,16 @@ jobs:
             echo "::error::opencode CLI not found on runner. Smoke tests require it."
             exit 1
           fi
-          opencode --version
-        env:
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
+          EXPECTED_VERSION=$(node -p "'opencode v' + require('./.sdk-baselines/opencode/cli-candidate.json').version")
+          ACTUAL_VERSION=$(opencode --version)
+          test "$ACTUAL_VERSION" = "$EXPECTED_VERSION"
 
       - name: Run smoke tests
         run: npm run test:smoke
         env:
           FORCE_COLOR: 0
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
-          # The pinned host is installed above; prove the frozen structured
-          # reviewer wire contract (child session + json_schema + info.structured).
+          # The native candidate host is installed above. Positive reviewer and
+          # recovery contracts remain mandatory; installing V2 does not prove them.
           FLOWGUARD_OPENCODE_HOST_E2E: '1'
           RUN_OPENCODE_ACP_TESTS: '1'
 
@@ -646,8 +667,8 @@ jobs:
 
       - name: Install OpenCode CLI
         run: |
-          OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
-          npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          OPENCODE_SPEC=$(node -p "const c = require('./.sdk-baselines/opencode/cli-candidate.json'); c.package + '@' + c.version")
+          npm install -g --prefer-offline --no-audit --no-fund "$OPENCODE_SPEC"
           # npm may link global bins into a prefix that is not on PATH yet.
           GLOBAL_BIN="$(npm prefix -g)/bin"
           if [ -d "$GLOBAL_BIN" ]; then
@@ -660,15 +681,14 @@ jobs:
             echo "::error::opencode CLI not found on runner. Independent-review runtime e2e is mandatory."
             exit 1
           fi
-          opencode --version
-        env:
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
+          EXPECTED_VERSION=$(node -p "'opencode v' + require('./.sdk-baselines/opencode/cli-candidate.json').version")
+          ACTUAL_VERSION=$(opencode --version)
+          test "$ACTUAL_VERSION" = "$EXPECTED_VERSION"
 
       - name: Run independent-review e2e verifier
         run: npm run test:independent-review-e2e
         env:
           FORCE_COLOR: 0
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
 
   actionlint:
     name: actionlint

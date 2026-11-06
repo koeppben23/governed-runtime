@@ -46,7 +46,10 @@ describe('product inventory vs integration tools authority', () => {
   it('count matches tools/index.ts barrel exports', async () => {
     const mod = await import('../../integration/tools/index.js');
     const count = Object.keys(mod).filter(
-      (k) => k !== 'attachGovernanceFooter' && k !== 'REVIEWER_SUBAGENT_TYPE',
+      (k) =>
+        k !== 'attachGovernanceFooter' &&
+        k !== 'REVIEWER_SUBAGENT_TYPE' &&
+        k !== 'resolveHydratePolicy',
     ).length;
     expect(count).toBe(PRODUCT_INVENTORY.integrationTools);
   });

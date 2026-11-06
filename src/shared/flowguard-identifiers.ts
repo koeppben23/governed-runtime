@@ -14,6 +14,38 @@
 export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
 
 /**
+ * Native plugin commands registered by the FlowGuard plugin. They are never
+ * installed as command templates; an installed template of the same name would
+ * collide with the native registration. This list is a parity-tested projection
+ * of the canonical installed-command catalogue.
+ */
+export const NATIVE_START_COMMAND = 'start';
+export const NATIVE_CHECK_COMMAND = 'check';
+const NATIVE_DECISION_COMMANDS = [
+  'review-decision',
+  'approve',
+  'override-approve',
+  'request-changes',
+  'reject',
+] as const;
+export const NATIVE_RECOVER_CAPACITY_COMMAND = 'recover-capacity';
+export const NATIVE_END_GOVERNANCE_COMMAND = 'end-governance';
+
+/** Native commands represented in the installed-command catalogue. */
+export const NATIVE_CATALOGUED_COMMANDS = [
+  NATIVE_START_COMMAND,
+  NATIVE_CHECK_COMMAND,
+  ...NATIVE_DECISION_COMMANDS,
+] as const;
+
+/** Every command registered natively by the plugin; installer collision authority. */
+export const NATIVE_PLUGIN_COMMANDS = [
+  ...NATIVE_CATALOGUED_COMMANDS,
+  NATIVE_RECOVER_CAPACITY_COMMAND,
+  NATIVE_END_GOVERNANCE_COMMAND,
+] as const;
+
+/**
  * Block code when the session write lock could not be acquired before timeout
  * because a concurrent operation held it (#429). Hydrate maps a
  * PersistenceError(LOCK_TIMEOUT) to this registered reason so contention fails

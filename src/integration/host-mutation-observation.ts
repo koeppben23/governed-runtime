@@ -1,102 +1,79 @@
-/** Pinned OpenCode terminal-part boundary. Only real-host-proven edit failures are admitted. */
+/** Exact native edit-error observation, not a message-format migration or a
+ * general process/descendant-quiescence assertion. */
 import { z } from 'zod';
 import type { MutationEpisode } from '../state/evidence-mutation-episode.js';
-
-const metadata = z.record(z.string(), z.unknown());
-const timestamp = z.number().int().nonnegative().max(8_640_000_000_000_000);
-const EditFailurePart = z.object({
-  id: z.string().min(1),
-  sessionID: z.string().min(1),
-  messageID: z.string().min(1),
-  type: z.literal('tool'),
-  callID: z.string().min(1),
-  tool: z.literal('edit'),
-  metadata: metadata.optional(),
-  state: z.object({
-    status: z.literal('error'),
-    input: metadata,
-    error: z.string().min(1),
-    metadata: metadata.optional(),
-    time: z.object({ start: timestamp, end: timestamp }),
-  }),
-});
-
-const History = z.array(
-  z.object({
-    info: z.object({
-      id: z.string().min(1),
-      sessionID: z.string().min(1),
-      role: z.enum(['user', 'assistant']),
-    }),
-    parts: z.array(z.unknown()),
-  }),
-);
+import { readHostCallIdentity } from '../state/host-identity.js';
 
 export type MutationObservation =
   | { readonly kind: 'observed'; readonly completedAt: string }
   | { readonly kind: 'unobserved'; readonly reason: string };
 
-/** Events are wakeups only. A unique, freshly host-read part is the observation authority. */
+const Time = z.number().int().nonnegative().max(8_640_000_000_000_000);
+const FailedLocalEdit = z.object({
+  type: z.literal('tool'),
+  id: z.string().min(1),
+  name: z.literal('edit'),
+  // In V2 this flag means provider-executed, NOT whether the local tool ran.
+  executed: z.literal(false),
+  state: z.object({
+    status: z.literal('error'),
+    input: z.record(z.string(), z.unknown()),
+    error: z.object({ type: z.literal('tool.execution'), message: z.string() }),
+  }),
+  time: z.object({ created: Time, ran: Time, completed: Time }),
+});
+
+/** Pinned 2.2.4: local typed execution failure settles the tool fiber before
+ * Tool.Failed is published; cleanup/interruption publishes `aborted` instead.
+ * See docs/host-probes/opencode-v2/edit-error-terminality.md for source and
+ * real-host proof. Notifications/metadata/idle alone are never completion. */
 export function observeEditFailure(
   history: unknown,
   sessionId: string,
   episode: MutationEpisode,
 ): MutationObservation {
-  if (episode.toolName !== 'edit')
-    return unobserved('Tool class has no admitted terminal-part contract.');
-  const parsed = History.safeParse(history);
-  if (!parsed.success) return unobserved('Host message history is unavailable or malformed.');
-  const candidates = parsed.data.flatMap((message) =>
-    message.parts.flatMap((part) => {
-      if (
-        typeof part !== 'object' ||
-        part === null ||
-        !('callID' in part) ||
-        part.callID !== episode.hostCallId
-      )
-        return [];
-      return [{ message, part }];
-    }),
+  if (!sessionId || episode.toolName !== 'edit' || episode.status !== 'dispatch_authorized')
+    return unobserved('No unresolved edit dispatch.');
+  if (!Array.isArray(history)) return unobserved('Native history is unavailable.');
+  const identity = readHostCallIdentity(episode.hostCallId);
+  if (identity === null || identity.sessionId !== sessionId)
+    return unobserved('No exact current native call identity.');
+  const parsed = FailedLocalEdit.safeParse(
+    findExactToolPart(history, identity.messageId, identity.callId),
   );
-  if (candidates.length !== 1) return unobserved('Host call identity is missing or ambiguous.');
-  const candidate = candidates[0];
-  if (!candidate) return unobserved('No host part matched.');
-  const result = EditFailurePart.safeParse(candidate.part);
-  if (!result.success) return unobserved('The matching host part is not a regular edit failure.');
-  const part = result.data;
-  return validateTerminalPart(part, candidate.message.info, sessionId, episode);
+  if (!parsed.success) return unobserved('No unique regular local edit execution failure.');
+  const { created, ran, completed } = parsed.data.time;
+  const authorized = Date.parse(episode.authorizedAt);
+  if (!Number.isFinite(authorized) || created > ran || ran > completed || completed < authorized)
+    return unobserved('Invalid or pre-authorization native completion time.');
+  return { kind: 'observed', completedAt: new Date(completed).toISOString() };
 }
 
-function validateTerminalPart(
-  part: z.infer<typeof EditFailurePart>,
-  message: { id: string; sessionID: string; role: 'user' | 'assistant' },
-  sessionId: string,
-  episode: MutationEpisode,
-): MutationObservation {
+function findExactToolPart(
+  history: readonly unknown[],
+  messageId: string,
+  callId: string,
+): unknown {
+  const messages = history.filter((value) => record(value) && value.id === messageId);
+  const message: unknown = messages[0];
   if (
-    message.role !== 'assistant' ||
-    part.sessionID !== sessionId ||
-    message.sessionID !== sessionId ||
-    part.messageID !== message.id
+    messages.length !== 1 ||
+    !record(message) ||
+    message.type !== 'assistant' ||
+    !Array.isArray(message.content)
   )
-    return unobserved('Host message/session binding mismatch.');
-  if (!isAbsentOrFalse(part.metadata?.providerExecuted))
-    return unobserved('Provider-executed parts are not governed host dispatches.');
-  const interrupted = part.state.metadata?.interrupted;
-  if (!isAbsentOrFalse(interrupted))
-    return unobserved('Cleanup/interrupted parts never prove regular completion.');
-  if (
-    part.state.time.end < part.state.time.start ||
-    part.state.time.end < Date.parse(episode.authorizedAt)
-  )
-    return unobserved('Host completion predates its dispatch or execution.');
-  return { kind: 'observed', completedAt: new Date(part.state.time.end).toISOString() };
+    return null;
+  const matches = message.content.filter((part: unknown) => record(part) && part.id === callId);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function unobserved(reason: string): MutationObservation {
-  return { kind: 'unobserved', reason };
-}
-
-function isAbsentOrFalse(value: unknown): boolean {
-  return value === undefined || value === false;
+  return {
+    kind: 'unobserved',
+    reason,
+  };
 }

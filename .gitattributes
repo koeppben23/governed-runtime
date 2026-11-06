@@ -1,0 +1,4 @@
+# Probe evidence binds exact source bytes; Windows must not rewrite them to CRLF.
+scripts/opencode-v2-probe/lib/*.mjs text eol=lf
+scripts/opencode-v2-probe/plugin/*.js text eol=lf
+scripts/opencode-v2-probe/probes/*.mjs text eol=lf

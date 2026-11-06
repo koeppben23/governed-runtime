@@ -67,10 +67,7 @@ import {
 } from '../../review/evidence/reviewed-digest.js';
 import { buildHeuristicRiskWarning } from '../../proofgraph/claim-contract.js';
 import { assessMinimumTaskClass, declaredTaskClassFor } from '../../phase-tool-gate.js';
-import {
-  resolveRuntimeReviewPlatform,
-  resolveReviewOrchestrationMode,
-} from '../../review/dispatch/orchestration-mode.js';
+import { resolveReviewOrchestrationMode } from '../../review/dispatch/orchestration-mode.js';
 import { resolvePreImplementationChallengeClassification } from '../challenge/pre-implementation-challenge.js';
 import { projectPlanProofStatus } from '../../proofgraph/proof-summary-projectors.js';
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
@@ -265,14 +262,9 @@ export function buildPlanReviewInstruction(input: {
   /** State whose declarations/graph the reviewer prompt must reflect (#762). */
   state: SessionState;
 }) {
-  const platform = resolveRuntimeReviewPlatform();
-  const mode = resolveReviewOrchestrationMode({
-    platform,
-    nativeReviewerAvailable: platform === 'unknown' ? false : true,
-  });
+  const mode = resolveReviewOrchestrationMode({ nativeStructuredReview: true });
   return buildChildSessionReviewInstruction({
     mode,
-    platform,
     authority: input.authority,
     iteration: input.iteration,
     planVersion: input.planVersion,
@@ -360,7 +352,7 @@ async function convergedPlanReviewCardResponse(
   const reviewCardInput = convergedReviewCardInput(input, taskTitle, reviewedIdentity);
   const reviewCard = buildPlanReviewCard(reviewCardInput);
   const presentationMarkdown = buildPlanReviewCard(reviewCardInput, {
-    glyphProfile: (await readConfig(scope.worktree)).presentation.opencode.glyphProfile,
+    glyphProfile: (await readConfig(scope.worktree)).presentation.glyphProfile,
   });
   const serializedState = JSON.stringify(finalState, null, 2) + '\n';
   const artifactErr = await materializeReviewCardArtifact(

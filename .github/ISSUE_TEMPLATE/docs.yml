@@ -34,7 +34,7 @@ body:
         - [ ] Clean conventional branch created according to CONTRIBUTING.md.
         - [ ] Docs reflect current behavior and do not invent unsupported behavior.
         - [ ] Docs drift tests updated where relevant.
-        - [ ] CHANGELOG.md updated or explicitly marked not needed with reason.
+        - [ ] CHANGELOG.md updated under [Unreleased] (mandatory for every PR).
         - [ ] Verification commands recorded in PR.
         - [ ] PR links/closes this issue.
     validations:

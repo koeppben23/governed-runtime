@@ -323,7 +323,7 @@ export async function ensureMissingAnalysisObligation(
 
 /**
  * Re-invocation of a still-pending review obligation re-emits its current
- * authority or durably re-arms an interrupted native Task release on the same
+ * authority or durably re-arms an interrupted native reviewer subagent release on the same
  * frozen obligation. No other missing or malformed attempt state is repaired.
  */
 async function continuePendingReviewObligation(

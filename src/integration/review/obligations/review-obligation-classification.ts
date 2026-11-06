@@ -55,6 +55,7 @@ export async function resolveChallengeClassificationEvidence(
   return {
     kind: 'unavailable',
     reason:
-      'No canonical target-path evidence is available for this pre-implementation review obligation.',
+      'No canonical target-path evidence is available for this pre-implementation review obligation. ' +
+      'Provide targetPaths for manual text or URL reviews, or use a branch/PR review whose changed paths resolve automatically.',
   };
 }

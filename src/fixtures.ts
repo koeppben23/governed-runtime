@@ -56,7 +56,10 @@ import {
 import type { DeclaredClaim } from './state/proofgraph.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
 import { hashText } from './shared/hashing.js';
-import { messageCaptureFixture } from './review-invocation-test-helpers.js';
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from './review-invocation-test-helpers.js';
 
 export {
   IMPL_REVIEW_CONVERGED,
@@ -249,6 +252,20 @@ const PLAN_REVIEW_CAPTURED_FINDINGS = capturedFindingsFor({
   sessionId: 'child-session-1',
 });
 
+const ARCHITECTURE_REVIEW_CAPTURE = messageCaptureFixture({
+  childSessionId: 'child-session-1',
+  obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+  findings: ARCHITECTURE_REVIEW_CAPTURED_FINDINGS,
+});
+
+const PLAN_REVIEW_CAPTURE = messageCaptureFixture({
+  childSessionId: 'child-session-1',
+  obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+  findings: PLAN_REVIEW_CAPTURED_FINDINGS,
+});
+
 /**
  * Canonical bound architecture review evidence for approve-path tests: a
  * consumed architecture obligation for exactly the ARCHITECTURE_DECISION
@@ -303,14 +320,11 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'native_task_message_json',
-      transportVersion: 5,
-      capture: messageCaptureFixture({
-        childSessionId: 'child-session-1',
-        obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-        findings: ARCHITECTURE_REVIEW_CAPTURED_FINDINGS,
-      }),
+      invocationMode: 'native_subagent_message_json',
+      transportVersion: 6,
+      capture: ARCHITECTURE_REVIEW_CAPTURE,
+      // Dispatch hostCallId of attempt eeeeeeee is 'child-session-1'.
+      nativeProvenance: nativeProvenanceFixture(ARCHITECTURE_REVIEW_CAPTURE, 'child-session-1'),
       hostVisible: true,
       transcriptNavigable: true,
       promptHash: 'a'.repeat(64),
@@ -412,14 +426,11 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'native_task_message_json',
-      transportVersion: 5,
-      capture: messageCaptureFixture({
-        childSessionId: 'child-session-1',
-        obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-        attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
-        findings: PLAN_REVIEW_CAPTURED_FINDINGS,
-      }),
+      invocationMode: 'native_subagent_message_json',
+      transportVersion: 6,
+      capture: PLAN_REVIEW_CAPTURE,
+      // Dispatch hostCallId of attempt ffffffff is 'child-session-1'.
+      nativeProvenance: nativeProvenanceFixture(PLAN_REVIEW_CAPTURE, 'child-session-1'),
       hostVisible: true,
       transcriptNavigable: true,
       promptHash: 'b'.repeat(64),

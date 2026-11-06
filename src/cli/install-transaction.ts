@@ -8,8 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, rename, writeFile, lstat } from 'node:fs/promises';
 import { execFileSync, execSync, type ExecSyncOptions } from 'node:child_process';
-import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, join, relative, sep } from 'node:path';
 import { ensureDir } from '../adapters/persistence.js';
 import type { FileOp } from './install-types.js';
 import type { RollbackEntry } from './install-helpers-rollback.js';
@@ -63,6 +62,17 @@ function detectPackageManager(): 'bun' | 'npm' | null {
 }
 
 const INSTALL_TIMEOUT = 5 * 60 * 1000;
+
+/**
+ * npm `file:` dependency spec for the vendored core tarball, relative to the staging
+ * package (the form `PACKAGE_JSON_TEMPLATE` uses). npm resolves `file:` specs as raw
+ * paths and never percent-decodes them, so a `file://` URL breaks any target path
+ * containing `~` (Windows 8.3 short names), spaces or `#`. A tarball on another
+ * Windows drive keeps its absolute path; separators are always forward slashes.
+ */
+export function vendorDependencySpec(stagingRoot: string, vendorTarballPath: string): string {
+  return `file:${relative(stagingRoot, vendorTarballPath).split(sep).join('/')}`;
+}
 
 function doPackageInstall(pm: 'npm' | 'bun', stagingRoot: string): void {
   try {
@@ -136,7 +146,9 @@ export async function executeDependencyTransaction(tx: DependencyTransaction): P
   await writeFile(
     join(tx.stagingRoot, 'package.json'),
     JSON.stringify({
-      dependencies: { '@flowguard/core': pathToFileURL(tx.vendorTarballPath).href },
+      dependencies: {
+        '@flowguard/core': vendorDependencySpec(tx.stagingRoot, tx.vendorTarballPath),
+      },
     }),
     { flag: 'w' },
   );

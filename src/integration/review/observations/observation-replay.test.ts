@@ -309,6 +309,111 @@ describe('replayObservationCaptures', () => {
 });
 
 describe('replayAndPersistObservations - superseded captures', () => {
+  it.each(['stale', 'foreign_child', 'closed_obligation'])(
+    'refuses to persist observations when the serialized lineage becomes %s',
+    async (mode) => {
+      const { replayAndPersistObservations } = await import('./observation-replay-persist.js');
+      await writeCapture();
+      const initial = {
+        ...state,
+        binding: { ...state.binding, worktree: repo },
+        reviewAssurance: {
+          ...state.reviewAssurance!,
+          attempts: state.reviewAssurance!.attempts.map((attempt) => ({
+            ...attempt,
+            childSessionId: CHILD_SESSION,
+          })),
+        },
+      } as SessionState;
+      let current = structuredClone(initial);
+      const logError = vi.fn();
+      const updateReviewAssurance = vi.fn(
+        async (_dir, update: (s: SessionState) => SessionState) => {
+          const assurance = current.reviewAssurance!;
+          current = {
+            ...current,
+            reviewAssurance: {
+              ...assurance,
+              attempts: assurance.attempts.map((attempt) => ({
+                ...attempt,
+                ...(mode === 'stale' ? { status: 'stale' as const } : {}),
+                ...(mode === 'foreign_child' ? { childSessionId: 'foreign-child' } : {}),
+              })),
+              obligations: assurance.obligations.map((obligation) => ({
+                ...obligation,
+                ...(mode === 'closed_obligation' ? { status: 'blocked' as const } : {}),
+              })),
+            },
+          };
+          current = update(current);
+        },
+      );
+      await replayAndPersistObservations(
+        {
+          resolveSessionAuthority: async () =>
+            ({ status: 'resolved', sessDir: '/unused', state: initial }) as never,
+          updateReviewAssurance,
+          log: { info: vi.fn(), warn: vi.fn() },
+          logError,
+        },
+        {
+          sessionId: 'parent',
+          attemptId: initial.reviewAssurance!.attempts[0]!.attemptId,
+          childSessionId: CHILD_SESSION,
+          now: '2026-08-13T10:20:00.000Z',
+        },
+      );
+      expect(updateReviewAssurance).toHaveBeenCalledOnce();
+      expect(current.reviewAssurance!.attempts[0]!.observations).toEqual([]);
+      expect(logError).toHaveBeenCalledWith(
+        'observation persistence failed',
+        expect.objectContaining({ code: 'REVIEW_ATTEMPT_UNAVAILABLE' }),
+      );
+    },
+  );
+
+  it('deduplicates observations inside the serialized mutation when two replays read the same snapshot', async () => {
+    const { replayAndPersistObservations } = await import('./observation-replay-persist.js');
+    await writeCapture();
+    const initial = {
+      ...state,
+      binding: { ...state.binding, worktree: repo },
+      reviewAssurance: {
+        ...state.reviewAssurance!,
+        attempts: state.reviewAssurance!.attempts.map((attempt) => ({
+          ...attempt,
+          childSessionId: CHILD_SESSION,
+        })),
+      },
+    } as SessionState;
+    let current = structuredClone(initial);
+    const logError = vi.fn();
+    const deps = {
+      resolveSessionAuthority: async () =>
+        ({ status: 'resolved', sessDir: '/unused', state: initial }) as never,
+      updateReviewAssurance: vi.fn(
+        async (_dir: string, update: (s: SessionState, now: string) => SessionState) => {
+          current = update(current, '2026-08-13T10:20:00.000Z');
+        },
+      ),
+      log: { info: vi.fn(), warn: vi.fn() },
+      logError,
+    };
+    const input = {
+      sessionId: 'parent',
+      attemptId: initial.reviewAssurance!.attempts[0]!.attemptId,
+      childSessionId: CHILD_SESSION,
+      now: '2026-08-13T10:20:00.000Z',
+    };
+    await Promise.all([
+      replayAndPersistObservations(deps, input),
+      replayAndPersistObservations(deps, input),
+    ]);
+    expect(deps.updateReviewAssurance).toHaveBeenCalledTimes(2);
+    expect(current.reviewAssurance!.attempts[0]!.observations).toHaveLength(1);
+    expect(logError).not.toHaveBeenCalled();
+  });
+
   it('keeps already bound observations unchanged and surfaces the response mismatch', async () => {
     const { replayAndPersistObservations } = await import('./observation-replay-persist.js');
     const attemptId = state.reviewAssurance!.attempts[0]!.attemptId;

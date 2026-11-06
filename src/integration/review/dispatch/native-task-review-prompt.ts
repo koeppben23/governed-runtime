@@ -1,6 +1,6 @@
 /**
  * @module integration/review/native-task-review-prompt
- * @description Canonical reviewer Task prompt construction for the native
+ * @description Canonical reviewer subagent prompt construction for the native
  *              reviewer transport.
  *
  * The prompt is host-owned: it renders the frozen material, the reviewer
@@ -44,7 +44,7 @@ import {
   buildReviewerProofContext,
   type ReviewerProofGraphAuthorities,
 } from '../context/proof-context.js';
-import type { PersistedState } from './native-task-review-types.js';
+import type { PersistedState } from './native-review-types.js';
 
 function resolutionTargetIdsOf(
   contract: ReviewerChallengePromptContract | undefined,

@@ -25,11 +25,9 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   Runner,
-  assertToolchain,
   captureFailureProvenance,
   finalizeControlRecord,
   parseArgs,
-  readPins,
   sha256,
   verifyChecksumSidecar,
   readContractVersion,
@@ -45,6 +43,7 @@ import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '..
 import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { HARNESS_VERSION } from '../lib/harness-version.mjs';
+import { readPins, assertToolchain } from '../lib/toolchain.mjs';
 
 export { assertNoCompletionPackage };
 

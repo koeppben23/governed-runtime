@@ -143,7 +143,7 @@ export async function handleReviewTransportRecovery(
       return formatBlocked(authority.code, { reason: authority.reason });
     }
     return buildResponse(
-      'Reviewer transport retry: the current review attempt remains authorized; dispatch the visible native reviewer Task.',
+      'Reviewer transport retry: the current review attempt remains authorized; dispatch the visible native reviewer subagent.',
       authority.authority,
     );
   }

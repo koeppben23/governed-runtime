@@ -59,10 +59,10 @@ export const PRODUCT_INVENTORY = {
   reviewLoops: 3,
   enforcementLayers: 4,
   auditEventKinds: 7,
-  archiveFindingCodes: 31,
+  archiveFindingCodes: 32,
   archiveVerifyJsdocChecks: 9,
   cliBins: 7,
-  mutationFiles: 138,
+  mutationFiles: 135,
 } as const;
 
 export type ProductInventory = typeof PRODUCT_INVENTORY;

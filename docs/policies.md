@@ -5,6 +5,16 @@ The built-in default is **Team** (human-gated, fail-closed): a session with no
 explicit mode and no configured `policy.defaultMode` requires a human decision
 at the review gates. Choose `solo` or `team-ci` explicitly for auto-approve.
 
+**V2 migration parity:** these existing policy-dependent automatic and human
+paths must be preserved. [ADR-010](./decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02)
+requires interactive and authorized autonomous activation; it does not introduce
+a human gate for every start, change the default mode, or authorize a caller to
+select weaker policy. Actual human decisions retain their source checks where
+required. Independent AI review remains fully automatable with unchanged evidence
+and release guarantees and only existing policy exceptions. No new exception
+may bypass Finding 6. Neither V2 activation path is accepted by this specification
+update; product/installed verification is still required.
+
 ## Policy Modes
 
 | Mode      | Human Gates | Four-Eyes    | Self-Approval   |

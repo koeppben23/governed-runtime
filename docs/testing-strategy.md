@@ -68,6 +68,7 @@ npm run mutation
 
 ```sh
 npm run check:doc-drift
+npm run check:pr-documentation -- origin/develop HEAD
 ```
 
 | Change                   | Minimum additional verification                 |
@@ -117,32 +118,222 @@ enforcement chain (actor resolution, assurance tiers, policy snapshot flow-throu
 
 Each test and check job maps to its npm script(s) for clear diagnosis:
 
-| CI Job                   | npm Script                                                      | Scope                                                                                                            | Requires Build |
-| ------------------------ | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
-| **unit**                 | `npm run test:unit`                                             | All `*.test.ts` outside `integration/`, including T1 and T2                                                      | No             |
-| **unit (scripts)**       | `npm run test:scripts`                                          | Repository-internal script tests (`scripts/**/*.test.ts`), run as a second step of the `unit` CI job             | No             |
-| **scripts-windows**      | `npm run test:scripts`                                          | Same script suite on `windows-latest`; merge-blocking through the `ci-gate` aggregator                           | No             |
-| **critical-windows**     | `npx vitest run` (selected suites)                              | State, hook, ProofGraph, and real-Git approval/recovery suites on `windows-latest`; merge-blocking via `ci-gate` | No             |
-| **unit (assertions)**    | `npm run test:assertion-conformance`                            | Golden assertion-parser conformance, run as a third step of the `unit` CI job                                    | No             |
-| **deterministic-evals**  | `npm run test:evals`                                            | Deterministic eval harness and transport-template contracts; no live provider                                    | No             |
-| **coverage**             | `npm run test:coverage:ci`                                      | Unit + integration under v8 coverage; enforces aggregate 80% threshold                                           | No             |
-| **integration-perf**     | `npm run test:integration:perf`                                 | All integration PERF tests without v8 instrumentation                                                            | No             |
-| **provider-conformance** | `npm run test:provider-conformance`                             | Provider runtime conformance on golden fixtures (vitest, jest, pytest, go); CI installs Java, Python, and Go     | No             |
-| **regulated-e2e**        | `npx vitest run --project integration` (three regulated suites) | Regulated completion gate, regulated recovery, and the audit/archive tamper matrix                               | No             |
-| **smoke**                | `npm run test:smoke`                                            | Built CLI contract smoke, demo evidence-package verifier contract, and ACP smoke                                 | Yes            |
-| **install-verify**       | `npm run test:install-verify`                                   | Tarball pack/install/doctor verification                                                                         | Yes            |
-| **mutation**             | `npm run mutation`                                              | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence                          | No             |
-| **actions-pinning**      | `npm run check:actions-pinned`                                  | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                                      | No             |
+| CI Job                   | npm Script                                                                            | Scope                                                                                                                      | Requires Build |
+| ------------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| **unit**                 | `npm run test:unit:no-perf` + `npm run test:unit:perf`                                | All `*.test.ts` outside `integration/`; marked PERF contracts run in a second single-worker phase                          | No             |
+| **unit (scripts)**       | `npm run test:scripts`                                                                | Repository-internal script tests (`scripts/**/*.test.ts`), run as a second step of the `unit` CI job                       | No             |
+| **doc-drift**            | `npm run check:pr-documentation -- <base-sha> <head-sha>` + `npm run check:doc-drift` | Committed Unreleased entry changes against the PR merge base and generated documentation; merge-blocking through `ci-gate` | Yes            |
+| **scripts-windows**      | `npm run test:scripts`                                                                | Same script suite on `windows-latest`; merge-blocking through the `ci-gate` aggregator                                     | No             |
+| **critical-windows**     | `npx vitest run` (selected suites)                                                    | State, hook, ProofGraph, and real-Git approval/recovery suites on `windows-latest`; merge-blocking via `ci-gate`           | No             |
+| **unit (assertions)**    | `npm run test:assertion-conformance`                                                  | Golden assertion-parser conformance, run as a third step of the `unit` CI job                                              | No             |
+| **deterministic-evals**  | `npm run test:evals`                                                                  | Deterministic eval harness and transport-template contracts; no live provider                                              | No             |
+| **coverage**             | `npm run test:coverage:ci`                                                            | Unit + integration under v8 coverage; enforces aggregate 80% threshold                                                     | No             |
+| **integration-perf**     | `npm run test:integration:perf`                                                       | All integration PERF tests without v8 instrumentation                                                                      | No             |
+| **provider-conformance** | `npm run test:provider-conformance`                                                   | Provider runtime conformance on golden fixtures (vitest, jest, pytest, go); CI installs Java, Python, and Go               | No             |
+| **regulated-e2e**        | `npx vitest run --project integration` (three regulated suites)                       | Regulated completion gate, regulated recovery, and the audit/archive tamper matrix                                         | No             |
+| **smoke**                | `npm run test:smoke`                                                                  | Built CLI contract smoke, demo evidence-package verifier contract, and ACP smoke                                           | Yes            |
+| **install-verify**       | `npm run test:install-verify`                                                         | Tarball pack/install/doctor verification                                                                                   | Yes            |
+| **mutation**             | `npm run mutation`                                                                    | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence                                    | No             |
+| **actions-pinning**      | `npm run check:actions-pinned`                                                        | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                                                | No             |
 
-The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
+The `smoke` and `independent-review-e2e` jobs install the exact native CLI candidate
+from `.sdk-baselines/opencode/cli-candidate.json` (`@opencode/cli`), and reject a
+different `opencode --version`. This is a test target, not V2/Desktop certification;
+the historical host/docs baselines remain historical. Explicit `OPENCODE_CLI`
+overrides must also match exactly. Hosts use private global directories and native
+global `update: "disable"` configuration, not V1 update environment flags.
+The ACP lifecycle probes also use the native pin and private global directories.
+They keep stdin open (EOF shuts down a stdio server), reject premature exits and
+await actual closure after termination. These are process-lifecycle checks, not
+an ACP conversation or governance proof; timeout and a PID alone never pass.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
+The dedicated `opencode-parity.yml` acceptance workflow runs the two existing
+INACTIVE suites on Linux, macOS and Windows. It is manually dispatchable, nightly, or triggered by the
+`run-parity-acceptance` PR label, not a required gate; PR CI keeps the faster unit/
+integration/architecture checks. Its build job packs one product tarball plus
+checksum once; every runner downloads those identical bytes through
+`FLOWGUARD_TARBALL`, installs the exact native candidate and publishes its JSON
+test results. This separates native session/provider-wire parity from
+package-install/doctor checks.
+The original parity suite performs one real packed installation per run and
+copies that installed tree into its cases to avoid repeated Windows `npm install`
+latency; the installed comparison suite still executes the real installer for
+every repo/global and Git/non-Git arm. Workflow relocation preserves test count,
+assertions and the shared artifact; the P0-00 report records the preceding
+setup/cleanup-budget changes separately.
+For the bounded Windows bootstrap diagnosis, the diagnostic runs temporarily
+downloaded the original package from run `41790845872` rather than the new build's
+package. Current-build sourcing is restored: each run now uses the `build` job's
+tarball/checksum for that commit. The diagnostic first ran the seven-case suite
+alone and then both suites jointly;
+one solo npm install completed while both concurrent installs timed out. The job
+therefore now runs both suites serially (`--no-file-parallelism`) and reuses one
+digest-bound bootstrap via `FLOWGUARD_BOOTSTRAP_PREFIX`. The second suite verifies
+the same tarball digest and build identity and skips only the duplicate npm
+install; the real installer, plugin-byte comparison and all assertions still run.
+A stale or different-digest prefix triggers a clean reinstall. The artifact, 65
+cases, assertions, shared npm cache and 300-second bootstrap budgets stay
+unchanged. Bootstrap phases, stdin/stdout/stderr and verbose npm debug logs,
+including per-installer logs, are retained outside disposable installation roots
+and uploaded with `always()`. The pinned-original runs are diagnostic evidence,
+not new-head certification; the restored current-build runs certify the tested
+head. An expired/missing historical artifact must fail, not silently fall back.
+See the
+[bounded diagnostic protocol](./host-probes/opencode-v2/p0-00-inactive-parity.md#bounded-bootstrap-diagnostic-checkpoint).
+Windows parity is split into four **25-minute jobs** (`mixed`, `repo`, `global`,
+`original`) because six real npm installs dominate the runtime. Current-build run
+`41829567943` passes all 65 executed cases across the split jobs, 0 failed.
+Because this is acceptance evidence rather than per-PR feedback, the full matrix
+now lives in the separate manual/nightly/label-triggered workflow and is not a required PR gate.
+Windows test preparation uses `runner.temp` for `TEMP`/`TMP` after the same-VM
+comparison in run `41849104623` localized a large unpack-time difference between
+system-temp and runner-temp fixtures. The completed extra control step is removed.
+This fixture-location correction preserves all 65 cases, real installer calls,
+assertions and current test/hook/coverage budgets; it is not a product fix or an
+antivirus/disk root-cause claim. See the
+[volume-control evidence](./host-probes/opencode-v2/p0-00-inactive-parity.md#executed-volume-control-on-e2b25677).
 
-The reviewer-capability smoke uses the pinned OpenCode host with isolated global
-directories and the repository's installed, locked dependency graph. It checks
+All current Windows test jobs inherit this setting before dependency installation
+and test execution. The existing `.github/actions/prepare-node` action exports
+it through `GITHUB_ENV` only when `runner.os == 'Windows'`. Release smoke retains
+its existing Node setup and exports the same setting in a Windows-only step.
+The seven workflow job definitions covered are:
+
+- `ci.yml`: `scripts-windows`, `critical-windows`, `architecture-windows`,
+  `install-verify` and `install` (the last two have Windows matrix legs).
+- `opencode-parity.yml`: all four `inactive-parity-windows` shards.
+- `release.yml`: the Windows `release-smoke` matrix leg, which runs the same
+  install-verify smoke file as CI.
+
+`install-verify.smoke.test.ts` and the scripts/state/hook/architecture fixtures
+use `os.tmpdir()` or directories derived from it, so changing the CI environment
+does not require rewriting their test helpers. The regular `install` job already
+installs into the checkout; its subprocess temporary files now inherit runner
+temp as well. Explicit isolated directories and negative path fixtures remain
+unchanged. CI-source tests enumerate every Windows-capable job, require setup
+before its commands, and execute the environment export with literal Windows
+paths containing spaces/backslashes. Linux/macOS and local test environments are
+not changed. Only parity has measured before/after runtime evidence: this
+configuration change does not attribute earlier failures or prove speedups in
+the other jobs. Hosted verification of those jobs remains required; no release
+tag or publishing workflow is triggered just to test this change.
+
+Coverage CI bounds competing instrumented Vitest workers to two. It still covers
+the complete unit/integration projects with the same 80% gates and 15-second test
+budget, including the actual production TypeScript program-graph guard. Local
+coverage retains Vitest's default concurrency.
+
+The integration PERF invocation uses one file worker while retaining the entire
+`PERF` selection and unchanged budgets. The tool-description access benchmark
+measures 1,000 loops over every exported tool (not module import), using warm p99
+with the existing `<10 ms` budget. The native completion benchmark retains all
+1,000 callbacks and fresh authority verification per batch, now gating warm p99
+over three measured batches instead of their minimum, at the same `<150 ms`.
+These measurement corrections do not prove the cause of a prior hosted miss or
+permit skipping its runtime/governance work.
+
+The `critical-windows` unit invocation uses one worker, retaining its full test
+set and unchanged p99 performance budgets. This bounds worker competition;
+it does not establish the cause of a Windows latency spike or waive a failed
+performance assertion. Its real-Git integration invocation is unchanged.
+
+The `unit` CI job likewise partitions test names carrying the `PERF` marker
+into a second single-worker phase. The parallel phase excludes exactly that selection,
+so every test still runs once in CI with the same source, thresholds and
+timeouts. This isolates wall-clock p99 assertions from concurrent unit files;
+it does not establish a prior miss's cause or permit a budget increase. Local
+`npm run test:unit` retains its single-invocation convenience.
+
+The independent-review verifier retains both mandatory positive release/capture
+titles and runs them against the real native host and product, alongside the
+domain validation tests. Its packed installation test checks native command/tool
+inventories, reload and uninstall without rewriting customer config. An isolated,
+read-only observer inspects the actual tool registry; it never wraps the product
+or registers FlowGuard tools. Missing, skipped, duplicate or failing required
+results fail the verifier. Catalogue/lifecycle success alone is not review proof.
+The verifier resolves the local Vitest package's declared CLI and starts it with
+`process.execPath` without a shell. The test-name regex is one unchanged argument,
+including on Windows; `npx.cmd` and command-shell quoting are not part of this path.
+
+The documentation gate rejects historical-only, deletion-only and formatting-only
+changelog changes; semantic accuracy still requires review. `scripts/ci-gate.test.ts`
+executes the workflow's gate script and proves every dependency, including
+`doc-drift`, rejects failure, cancellation, skipped and missing results. A green
+documentation job alone does not certify host security or current runtime support.
+
+The reviewer-capability smoke uses the native candidate host with isolated global
+directories and the canonical reviewer template. It checks
 real denials for direct and MCP-prefixed tools and actual execution of the allowed
-observation-tool fixture. Startup failures remain failures under the unchanged
-45-second per-command limit. Tarball-install failures retain the subprocess error,
+observation-tool fixture. The structured-wire probe distinguishes inbox admission
+from completion and never synthesizes a response `parentID`. Native budget tests
+capture explicit provider-body budgets and compare ordinary parent defaults with
+and without the real product; they do not certify a removed V1 65K rewrite or
+reviewer headroom. Startup failures remain failures under a bounded startup deadline.
+
+`src/cli/opencode-reviewer-transport.smoke.test.ts` separately exercises a real
+foreground native reviewer, same-child explicit prompt and terminal history window,
+with foreign-input, unoffered-read, interruption and manual-compaction controls.
+Its provider uses explicit response gates rather than sleep-based completion
+inference. It loads observation/fencing instrumentation, not FlowGuard product
+authority, and writes no review evidence. It must never replace the four required
+`opencode-reviewer-capture-live.smoke.test.ts` product positives or their verifier.
+Those product fixtures explicitly enroll their strict component-only scope and
+derive call identity from the owning native assistant/tool transcript, not a raw
+provider ID or implicit activation from workflow files.
+
+`src/cli/opencode-reviewer-dispatch-live.smoke.test.ts` connects the actual product
+ledger/journal to native reviewer execution. Before its first provider response,
+the exact parent native call, obligation/attempt and observed child must already
+be durably bound. Foreign continuation, background dispatch and caller model
+overrides are denied without accepting evidence. Component dispatch tests cover
+write-order/failure, replay/concurrency and reload quarantine. The capture owner
+uses one exclusive, request-correlated terminal window; component proof covers
+baseline/request/model/tool contamination and V5/V6 schema separation. Three of
+the four required product capture contracts pass; safe recovery remains step 4.
+This is not installed activation acceptance.
+
+R1/R3 adds `opencode-reviewer-initial-live.smoke.test.ts`: a real permitted-read
+multi-step review must still bind evidence, while synthetic input during the
+initial execution must not reach serialization or evidence binding. Component
+sequence tests independently corrupt request snapshots, assistant steps and
+local tool before/after receipts. The R2 component regression injects a
+post-commit projection failure; actual restart/continuation remains step 4 and
+must not be inferred from the component result.
+
+Tarball-install failures retain the subprocess error,
 signal and killed status so an install timeout is distinguishable from npm rejection.
+
+`src/cli/opencode-inactive-parity.smoke.test.ts` retains the original shell/edit
+effect and provider-wire catalogue assertions, now loading actual checksum-verified
+packed installations instead of workspace-built wrappers. Its Git and non-Git
+controls must succeed without FlowGuard. The source change that repaired the old
+counterexamples is `3a274edf`, not the later test-only P0-00 checkpoint.
+`opencode-inactive-installed.smoke.test.ts` also compares repo/global installs,
+permissions, context, model variants and native effects. Its additional mixed
+tests use real `/start`, concurrent A/B requests, catalogue publication, location
+reload and host restart, without fixture activation or disabled model fetching.
+They check ACTIVE A retains productive tools/mandates while INACTIVE B retains
+its native definitions/system context and can execute normally. Neither suite is
+Desktop/operator-UI proof; exact artifacts, controls and remaining gaps are in
+the [P0-00 evidence report](./host-probes/opencode-v2/p0-00-inactive-parity.md).
+`src/integration/plugin-inactive-event-scope.test.ts` injects an event-stream
+fault at the component boundary and requires unrelated unstarted usage to stay
+native. These are required conformance assertions, not expected-failure tests:
+any renewed failure blocks acceptance. The old dated failure reports are retained
+as historical evidence rather than reclassified as passes.
+
+`src/cli/opencode-authority-primitives.smoke.test.ts` is a separate native
+mechanism probe, not installed-product acceptance. It checks private storage
+across reload and owned-server SIGTERM/SIGKILL restarts and shows that storage is
+shared across locations for one plugin ID. Its real TUI arm uses Python 3 and a
+POSIX PTY: actual terminal bytes, local programmatic command dispatch and SDK
+command/prompt attempts are compared without mocked UI callbacks. The pinned
+host synthesizes a `command` event on programmatic dispatch; event presence alone
+is not human-source proof. A synced-only session log with no retained payloads
+is not complete authority history. The fixtures create no activation or accepted
+operator decisions and replace none of the required failing product positives.
+The TUI mechanism has local macOS CLI evidence only, not Desktop, Windows or a
+verified UI-to-server authorization transaction.
 
 The technical sources are the workflow files: `.github/workflows/ci.yml` for the
 main PR-CI jobs, `.github/workflows/agent-instruction-evals-pr.yml` for deterministic
@@ -170,7 +361,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 138 security-critical
+The `mutation` job runs StrykerJS mutation testing against 135 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -179,7 +370,7 @@ config (policy snapshot/resolver/central + reasons + profile), hooks (HTTP hook 
 phase-gate), identity (token-verifier + key-resolver), integration
 (installed-commands, tool-classification, discovery-risk-paths, pre-implementation challenge, architecture submit, review-validation-mode,
 plugin-audit, services/decision-audit-intent, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
-dispatch signal, and agent resolution), logging (error-serialize),
+dispatch signal), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin, mandates),
 shared canonical JSON and hashing, machine (commands, evaluate, guards, workflow-directive, validation-evidence), and
 rails (architecture, hydrate, review, URL review transport, review-decision, review-decision-gates, review-evidence-resolution,
@@ -357,32 +548,32 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-138 files are mutated in the base profile, covering the fail-closed governance
+135 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
-| Area                                                                                                                                                                                              | Files   | Representative score            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------- |
-| Adapters (`binding`, `persistence-lock`, `host-adapter`, `persistence`, `persistence-core`, `persistence-config`, `persistence-audit`, `ip-validation`, implementation base freeze/entry)         | 10      | see `reports/mutation/`         |
-| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain, artifact-binding, audit-chain, checksum, integrity and helper verification)                             | 12      | see `reports/mutation/`         |
-| Audit (`integrity`, `completeness`, `ntp-check`, `event-builders`, timestamp and RFC3161 parse/signer verification)                                                                               | 9       | see `reports/mutation/`         |
-| Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`, mutation report/binder)                                                                                         | 8       | see `reports/mutation/`         |
-| Integration ProofGraph (`claim-contract`, `claim-contract-rules`, `materialize-contract`)                                                                                                         | 3       | see `reports/mutation/`         |
-| Config (`policy-snapshot`, `policy-resolver`, `policy-central`, `reasons`, `profile`)                                                                                                             | 5       | see `reports/mutation/`         |
-| MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                                           | 4       | see `reports/mutation/`         |
-| Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`, `shared/session-resolver`)                                                               | 6       | see `reports/mutation/`         |
-| Identity (`token-verifier`, `key-resolver`)                                                                                                                                                       | 2       | see `reports/mutation/`         |
-| Integration (plugin hooks, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`, integration tools, discovery risk paths, decision-audit intent)                       | 25      | see `reports/mutation/`         |
-| Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal, review validation x2, findings hash, reviewed digest) | 10      | see `reports/mutation/`         |
-| State (`evidence-mutation-episode`)                                                                                                                                                               | 1       | see `reports/mutation/`         |
-| Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                                              | 2       | see `reports/mutation/`         |
-| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                                                  | 2       | see `reports/mutation/`         |
-| Shared (`canonical-json`, `hashing`)                                                                                                                                                              | 2       | see `reports/mutation/`         |
-| Logging (`error-serialize`)                                                                                                                                                                       | 1       | see `reports/mutation/`         |
-| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`, `impl-validation-evidence`)                                                                               | 6       | see `reports/mutation/`         |
-| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                                         | 9       | see `reports/mutation/`         |
-| v11 admission candidates (approval, claims, policy, paths, report isolation)                                                                                                                      | 12      | full-profile admission pending  |
-| **Total**                                                                                                                                                                                         | **138** | uploaded as `reports/mutation/` |
+| Area                                                                                                                                                                                      | Files   | Representative score            |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------- |
+| Adapters (`binding`, `persistence-lock`, `host-adapter`, `persistence`, `persistence-core`, `persistence-config`, `persistence-audit`, `ip-validation`, implementation base freeze/entry) | 10      | see `reports/mutation/`         |
+| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain, artifact-binding, audit-chain, checksum, integrity and helper verification)                     | 12      | see `reports/mutation/`         |
+| Audit (`integrity`, `completeness`, `ntp-check`, `event-builders`, timestamp and RFC3161 parse/signer verification)                                                                       | 9       | see `reports/mutation/`         |
+| Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`, mutation report/binder)                                                                                 | 8       | see `reports/mutation/`         |
+| Integration ProofGraph (`claim-contract`, `claim-contract-rules`, `materialize-contract`)                                                                                                 | 3       | see `reports/mutation/`         |
+| Config (`policy-snapshot`, `policy-resolver`, `policy-central`, `reasons`, `profile`)                                                                                                     | 5       | see `reports/mutation/`         |
+| MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                                   | 4       | see `reports/mutation/`         |
+| Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`, `shared/session-resolver`)                                                       | 6       | see `reports/mutation/`         |
+| Identity (`token-verifier`, `key-resolver`)                                                                                                                                               | 2       | see `reports/mutation/`         |
+| Integration (plugin hooks, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`, integration tools, discovery risk paths, decision-audit intent)               | 25      | see `reports/mutation/`         |
+| Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, dispatch signal, review validation x2, findings hash, reviewed digest)           | 9       | see `reports/mutation/`         |
+| State (`evidence-mutation-episode`)                                                                                                                                                       | 1       | see `reports/mutation/`         |
+| Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                                      | 2       | see `reports/mutation/`         |
+| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                                          | 2       | see `reports/mutation/`         |
+| Shared (`canonical-json`, `hashing`)                                                                                                                                                      | 2       | see `reports/mutation/`         |
+| Logging (`error-serialize`)                                                                                                                                                               | 1       | see `reports/mutation/`         |
+| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`, `impl-validation-evidence`)                                                                       | 6       | see `reports/mutation/`         |
+| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                                 | 9       | see `reports/mutation/`         |
+| v11 admission candidates (approval, claims, policy, paths, report isolation)                                                                                                              | 12      | full-profile admission pending  |
+| **Total**                                                                                                                                                                                 | **135** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -583,17 +774,13 @@ evidence settlement), `src/integration/review/obligations/assurance.ts`
 (blocked-with-invocation settlement),
 `src/integration/tools/implementation-review-activation.ts` (post-validation
 contract materialization entry),
-`src/integration/review/dispatch/native-task-review-bindings.ts` (native
-capture/binding and settlement audit intents),
+`src/integration/review/dispatch/native-review-findings.ts` (native findings
+contract, capture-gate validation and settlement audit intents),
 `src/integration/blocked-result.ts` (bounded unable-review diagnostics) and
 `src/integration/status/status.ts` (blocked-obligation recovery projection).
-The 2026-10-10 Run-10 diagnostics work additionally stages
-`src/integration/review/dispatch/native-task-review.ts` (native reviewer Task
-transport and capture-failure block composition).
-The 2026-10-17 F2 step-budget fix additionally stages
-`src/integration/review/dispatch/structured-followup.ts` (host-evidenced
-reviewer task completion from recorded session messages and same-child findings
-serialization).
+The V1 Task transport candidates staged by Run-10 and the F2 step-budget fix
+(`native-task-review.ts`, `structured-followup.ts`) were removed with the V1
+reviewer transport on 2026-11-02; no V2 replacement is admitted by that removal.
 They carry no provenance until a freeze-commit full run meets the per-target
 threshold; a targeted diagnostic run is not admission evidence.
 
@@ -610,28 +797,23 @@ for a future full base-profile run: `src/audit/proofgraph/evidence-approval-admi
 `src/state/risk-path-classifier.ts` and `src/shared/repo-path.ts`. The
 canonical admission remains the profile full run on the freeze commit.
 
-The 2026-10-30 model-neutral review transport stages six candidates in the
-dedicated `review-capture` profile for a future commit-bound profile full run:
-`src/integration/reviewer-capture.ts` (request correlation, tool fence and
-identity-bound quarantine completion),
-`src/integration/review/dispatch/structured-followup.ts` (serialization, repair
-and unknown SDK outcomes), `src/integration/review/dispatch/provider-error.ts`
-(trusted error classification),
-`src/integration/review/dispatch/reviewer-task-completion.ts` (host completion
-and child-model proof), `src/shared/strict-json-object.ts` (strict,
-resource-bounded JSON decoding) and `src/state/review-message-capture.ts`
-(payload, lineage and semantic evidence binding).
+The 2026-10-30 model-neutral review transport staged six candidates in the
+dedicated `review-capture` profile. The four V1 Task capture candidates
+(`reviewer-capture.ts`, `structured-followup.ts`, `provider-error.ts`,
+`reviewer-task-completion.ts`) were removed with the V1 reviewer transport on
+2026-11-02. `src/shared/strict-json-object.ts` (strict, resource-bounded JSON
+decoding) and `src/state/review-message-capture.ts` (payload, lineage and
+semantic evidence binding) remain. The V2 same-child capture owners
+(`review/dispatch/native-review-{capture,initial,dispatch}.ts`) are **not yet in
+any committed mutation profile**; adding them with per-file thresholds is open
+Finding 6 work and is **NOT_VERIFIED**.
 
 ### Reviewer Capture Security Profile
 
 The registered `review-capture` profile (`stryker.review-capture.conf.json`) measures
-the model-neutral capture boundary independently with the standard 80% break
+the model-neutral capture primitives independently with the standard 80% break
 threshold. Its candidate authorities are:
 
-- `src/integration/reviewer-capture.ts` — request correlation, tool fence and identity-bound quarantine completion.
-- `src/integration/review/dispatch/structured-followup.ts` — serialization, repair and unknown SDK outcomes.
-- `src/integration/review/dispatch/provider-error.ts` — trusted error classification.
-- `src/integration/review/dispatch/reviewer-task-completion.ts` — host completion and child-model proof.
 - `src/shared/strict-json-object.ts` — strict, resource-bounded JSON decoding.
 - `src/state/review-message-capture.ts` — payload, lineage and semantic evidence binding.
 
@@ -652,7 +834,7 @@ native Task binding and a prohibited serialization tool call on the pinned host.
 ### Running Locally
 
 ```bash
-npm run mutation    # Runs scripts/stryker-patch.js pre-flight + base profile
+npm run mutation    # Native Stryker runner + base profile
 node scripts/verify-mutation-admission.mjs --profile base \
   --write-manifest reports/mutation/admission-manifest-base.json
 
@@ -661,19 +843,17 @@ node scripts/verify-mutation-admission.mjs --profile base \
   --manifest reports/mutation/admission-manifest-base.json
 ```
 
-The pre-flight script applies version-guarded workarounds for
-`@stryker-mutator/vitest-runner@10.0.0`: `pool=forks` for `process.chdir()`
-compatibility and Vitest 5's `" > "` nested-test separator so Stryker's per-test
-filter selects the intended tests. This is scoped exclusively to mutation testing.
-It fails if the installed runner, Vitest major, or runner artifact shape is not
-recognized; remove the workaround when upgrading to a Stryker release with the
-upstream Vitest 5 fix.
+`@stryker-mutator/vitest-runner` 10.1.1 handles Vitest 5's `" > "` nested-test
+separator natively. Every profile sets `vitest.pool: "forks"` through the runner's
+supported option for `process.chdir()` tests. No installed package is patched.
+The previous 10.0.0-only preflight has been removed; mutation thresholds, source
+selectors and test selection are unchanged by this tooling correction.
 
 The remote-JWKS profile runs on pull requests that change its source, tests, or
 configuration:
 
 ```bash
-node scripts/stryker-patch.js && npx stryker run stryker.identity-jwks.conf.json
+npx stryker run stryker.identity-jwks.conf.json
 node scripts/verify-mutation-admission.mjs --profile identity-jwks \
   --write-manifest reports/mutation/identity-jwks/admission-manifest.json
 ```
@@ -681,7 +861,7 @@ node scripts/verify-mutation-admission.mjs --profile identity-jwks \
 The mandates profile runs on pull requests that change mandate surfaces:
 
 ```bash
-node scripts/stryker-patch.js && npx stryker run stryker.mandates.conf.json
+npx stryker run stryker.mandates.conf.json
 node scripts/verify-mutation-admission.mjs --profile mandates \
   --write-manifest reports/mutation/mandates/admission-manifest.json
 ```
@@ -693,7 +873,7 @@ selector without an admission record and stays a diagnostic note until it is
 admitted:
 
 ```bash
-node scripts/stryker-patch.js && npx stryker run stryker.human-projection.conf.json
+npx stryker run stryker.human-projection.conf.json
 node scripts/verify-mutation-admission.mjs --profile human-projection \
   --write-manifest reports/mutation/human-projection/admission-manifest.json
 ```

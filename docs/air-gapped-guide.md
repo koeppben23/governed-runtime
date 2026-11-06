@@ -100,13 +100,12 @@ Expected `doctor` output:
 
 ```
   [ok] ~/.config/opencode/flowguard-mandates.md
-  [ok] ~/.config/opencode/tools/flowguard.ts
-  [ok] ~/.config/opencode/plugins/flowguard-audit.ts
+  [ok] ~/.config/opencode/plugins/flowguard/index.ts
   [ok] ~/.config/opencode/commands/hydrate.md
   ... (installed command files)
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
-  [ok] ~/.config/opencode/opencode.json
+  [warn] Native V2 runtime load, INACTIVE parity, operator UI and reviewer assurance NOT_VERIFIED
   [ok] flowguard.json — config valid (defaults only)
 
   N/N checks passed

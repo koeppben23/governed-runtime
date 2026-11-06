@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { OpenCodeSessionId } from './evidence-assurance-internal.js';
+import { HostSessionId } from './host-identity.js';
 import { ActorInfoSchema } from './evidence-identity.js';
 import { TimestampEvidence } from './evidence-timestamp.js';
 
@@ -32,8 +32,8 @@ export const AuditEvent = z
     id: z.string().uuid(),
     /** FlowGuard session identity — the SAME FlowGuard UUID on every event class. */
     flowguardSessionId: z.string().uuid(),
-    /** Host session identity (OpenCode session id), bound where host context exists. */
-    hostSessionId: OpenCodeSessionId.optional(),
+    /** Host session identity, bound where host context exists. */
+    hostSessionId: HostSessionId.optional(),
     phase: z.string(),
     event: z.string(),
     auditFormatVersion: z.literal('audit-chain.v3'),

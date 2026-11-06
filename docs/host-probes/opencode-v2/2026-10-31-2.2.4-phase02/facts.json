@@ -1,0 +1,81 @@
+{
+  "scope": "Phase-02 infrastructure, bounded native-parity fixture and command-origin counterexample; not product certification",
+  "decision": "NO-GO",
+  "host": {
+    "version": "2.2.4",
+    "binarySha256": "03fc30769f28dd346d2279baae77ef71308175cd49eb7a5be339d3860ee99ec1",
+    "surface": "macOS private CLI/server; SDK-driven, with model-driven native shell",
+    "clientVersion": "2.2.4",
+    "pluginVersion": "2.2.4"
+  },
+  "backup": {
+    "at": "2026-10-31T09:46:53.313Z",
+    "backupIntegrity": "ok",
+    "restoreIntegrity": "ok",
+    "tables": 31,
+    "observedRowCountsMatch": true,
+    "semanticRestore": "NOT_VERIFIED"
+  },
+  "nativeFixture": {
+    "at": "2026-10-31T10:01:25.791Z",
+    "status": "SUPPORTED",
+    "modelsObserved": 9,
+    "agentsObserved": 7,
+    "comparisons": {
+      "hostArtifactUnchanged": true,
+      "nativeToolsUnchanged": true,
+      "modelUnchanged": true,
+      "reasoningUnchanged": true,
+      "absentJournalEmpty": true,
+      "passiveSetupObserved": true,
+      "passivePluginActive": true,
+      "absentPluginAbsent": true,
+      "modelCatalogueUnchanged": true,
+      "agentPermissionsUnchanged": true
+    },
+    "bothNativeShellEffectsObserved": true,
+    "bothNormalAnswersObserved": true,
+    "effectiveMockReasoning": "high",
+    "normalization": "Only exact disposable-root paths; raw data retained privately",
+    "productP000": "NOT_VERIFIED",
+    "desktop": "NOT_VERIFIED",
+    "tui": "NOT_VERIFIED"
+  },
+  "commandOrigin": {
+    "at": "2026-10-31T10:01:23.206Z",
+    "candidate": "SDK session.command and plugin callback alone as proof of human origin",
+    "candidateStatus": "NOT_SUPPORTED",
+    "sdkCallbackObserved": true,
+    "modelDrivenShellCallbackObserved": true,
+    "modelDrivenShellCompleted": true,
+    "callbackKeys": ["delivery", "prompt", "sessionID"],
+    "credentialScope": "Deliberately agent-accessible fixture password, not an independent operator credential",
+    "operatorChannel": "NOT_VERIFIED",
+    "p001": "BLOCKED"
+  },
+  "notVerified": [
+    "P0-02-H exact scope, child lineage, lifecycle/restart and adversarial races",
+    "Fresh MCP, provider-hosted, native-command interpolation and reviewer-lineage probes",
+    "Installed FlowGuard INACTIVE behavior and setup-failure native parity",
+    "Real human TUI/Desktop origin and an independent operator channel",
+    "Product mutation, G-04/G-05 and final current-develop merge-candidate acceptance"
+  ],
+  "probeSourceSha256": {
+    "lib/host.mjs": "7b60e6d87a279dcb643032b9fd90b24a897e92712562a3217e653fa5d0426bb4",
+    "lib/isolation.mjs": "b10f5afa1be60bd5c5796235878ddf7cb77a936e969982e392de8c3c1b391ff1",
+    "lib/provider.mjs": "188afd6c49c89092fea994daa62297da8c4f92a19259513b4cbb67aae3a13600",
+    "lib/native-parity.mjs": "2adbb3a148ba37f7d0c779bf1dd5099004f6cdef2dbb62692420d1563a09f9a0",
+    "plugin/passive.js": "d1f905578cd579fdb68fbe0a2166abe8310c5db0dbfba9e7495d749e2cee29b7",
+    "plugin/flowguard-probe.js": "2dc71f49f38217fd3260750ee0cd5cf0923ba212b80012127d01475bd0c1246e",
+    "probes/p0-native-parity.mjs": "64d92effa7d86bd4c822eac121adf1b26d8d2b7c3e1d060461f5df8ae46eaf7f",
+    "probes/p0-command-origin.mjs": "92c145c286e8a3ac44cb93296dd47c69e01553ce6b4deaa53aceaf3ab51d0a7e"
+  },
+  "privateEvidenceSha256": {
+    "backup/report.json": "6edbc5aaab06d05b3d7851d523d4c0392828723539e2708d6d2ad4f82d3cf4ac",
+    "p0-00-final/absent.json": "0de0dc379d1d00c9a6a402c8d74d421fcdfea4a28601586ccdb52c73ac9af56a",
+    "p0-00-final/passive.json": "bb7c3e26f8cdd2aaa6c31f4ea0849bbd75bcf68d4b16bed969a80c46ad125d01",
+    "p0-00-final/report.json": "da3f040c9a8c6825305695e49a11d3b45965a8c682110b1a9a4eb6e992f0c8b6",
+    "p0-01-final/raw.json": "892e2ad83313435cb76f5405440c261ea0bd1fff0722549dddee6e15a09014e0",
+    "p0-01-final/report.json": "a27128facfbc68c69aa55b5c24f24da4a1ebcdda3c2e1a7cf6cb12eae89c678d"
+  }
+}

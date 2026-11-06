@@ -15,11 +15,29 @@
  */
 
 export {
-  isMutatingHostTool,
-  isHostToolAllowedInPhase,
   hostMutationIntegrityGate,
   type PhaseGateResult,
 } from '../../integration/phase-tool-gate.js';
+import {
+  isMutatingHostTool as canonicalMutatingHostTool,
+  isHostToolAllowedInPhase as canonicalHostPhaseGate,
+  NATIVE_SUBAGENT_TOOL,
+} from '../../integration/phase-tool-gate.js';
+import type { Phase } from '../../state/schema.js';
+
+/** Claude Code's supported Task hook payload is a current host API, not an
+ * OpenCode V1 alias. Translate only at this host boundary. */
+function hookApplicationTool(tool: string): string {
+  return tool === 'task' ? NATIVE_SUBAGENT_TOOL : tool;
+}
+
+export function isMutatingHostTool(tool: string): boolean {
+  return canonicalMutatingHostTool(hookApplicationTool(tool));
+}
+
+export function isHostToolAllowedInPhase(tool: string, phase: Phase) {
+  return canonicalHostPhaseGate(hookApplicationTool(tool), phase);
+}
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { GateDecision } from '../../shared/gate-decision.js';

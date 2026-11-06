@@ -42,14 +42,36 @@ const RECOVERY_MAP: Partial<Record<CliErrorCode, string | ((detail: CliError) =>
     'Re-run with --force to update the existing FlowGuard config, or run uninstall first.',
   NON_OPENCODE_CONFIG_INVALID:
     'Inspect the reported config path, fix or remove the file, then retry; a backup may be required before re-running with --force.',
-  LEGACY_INSTRUCTION_AMBIGUOUS:
-    'Inspect the existing OpenCode instructions. Remove AGENTS.md only if it is the obsolete FlowGuard reference; otherwise keep it and resolve the authority conflict explicitly before reinstalling.',
+  OPENCODE_FRESH_INSTALL_REQUIRED:
+    'Archive old FlowGuard installation and evidence byte-for-byte. Confirm ownership before removing obsolete registrations, then perform a fresh V2 installation; --force does not migrate old formats.',
+  OPENCODE_CONFIG_INVALID:
+    'Preserve and repair the reported OpenCode configuration before installing; the installer does not rewrite it.',
+  OWNERSHIP_MANIFEST_INVALID:
+    'Archive the old installation/configuration and evidence byte-for-byte, verify the archive, then perform a fresh install. --force does not migrate ownership formats.',
+  OWNERSHIP_MANIFEST_SCOPE_MISMATCH:
+    'Use the matching host/scope or resolve the provenance conflict without deleting evidence; the installer does not overwrite another scope.',
   DEPENDENCY_INSTALL_FAILED: 'Run npm install or bun install manually in the target directory',
   INSTALL_LOCK_CONFLICT: (detail) => {
     if (!detail.recoveryContext?.path)
       return 'Remove the stale FlowGuard installation lock and retry';
     return `Remove stale lock file: rm -f ${detail.recoveryContext.path}`;
   },
+  HOST_SERVICE_RECORD_INVALID:
+    'Inspect the OpenCode service record; the installer will not kill an unverified PID.',
+  HOST_SERVICE_UNSAFE_URL:
+    'Inspect the OpenCode service record; only loopback URLs are accepted for credentials.',
+  HOST_SERVICE_STALE:
+    'Start OpenCode or remove the stale service record; no process was signalled.',
+  HOST_RESTART_REQUIRED:
+    'Automatic restart is disabled or the installer cannot prove it is outside the service; rerun without --no-restart-host or restart the exact service shown above. Installed artifacts remain committed.',
+  HOST_RESTART_FAILED:
+    'Check the OpenCode host log, then retry the exact restart command shown above. Installed artifacts remain committed.',
+  HOST_PLUGIN_MISMATCH:
+    'Preserve the reported installation, remove or archive the foreign FlowGuard plugin, then reinstall the intended scope. No process was signalled.',
+  HOST_COMMAND_MISSING:
+    'Verify the plugin status and /start after restart; inspect the OpenCode host log.',
+  HOST_VERIFICATION_UNAVAILABLE:
+    'Check the OpenCode host log and run flowguard doctor; no restart was attempted.',
 };
 
 export function formatRecoveryLines(errorDetails: CliError[]): string[] {

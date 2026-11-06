@@ -221,24 +221,24 @@ function isWriteSuccess(toolName: string, metadata: Record<string, unknown>): bo
   );
 }
 
-/** OpenCode EditTool success contract: both diffs and diagnostics are emitted. */
+/**
+ * OpenCode 2.2.4/2.2.5 EditTool success contract: `metadata.files` carries the
+ * canonical per-file patch result. The older `diff`/`filediff`/`diagnostics`
+ * shape is not emitted by the pinned host and must not gate evidence.
+ */
 function isEditSuccess(toolName: string, metadata: Record<string, unknown>): boolean {
-  return (
-    toolName === 'edit' &&
-    typeof metadata.diff === 'string' &&
-    isFileDiff(metadata.filediff) &&
-    isRecord(metadata.diagnostics)
-  );
-}
-
-function isFileDiff(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    typeof value.file === 'string' &&
-    typeof value.patch === 'string' &&
-    typeof value.additions === 'number' &&
-    typeof value.deletions === 'number'
-  );
+  if (toolName !== 'edit' || !Array.isArray(metadata.files) || metadata.files.length === 0)
+    return false;
+  return metadata.files.every((file) => {
+    if (!isRecord(file)) return false;
+    if (file.status === 'failed' || file.status === 'error') return false;
+    return (
+      typeof file.file === 'string' &&
+      typeof file.patch === 'string' &&
+      typeof file.additions === 'number' &&
+      typeof file.deletions === 'number'
+    );
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

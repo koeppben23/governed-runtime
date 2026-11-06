@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { commandBefore, toolBefore } from './plugin-beforehooks.js';
+import { toolBefore } from './plugin-beforehooks.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import type { AuditDeps } from './plugin-audit.js';
 import type { PluginWorkspace } from './plugin-workspace.js';
@@ -68,7 +68,6 @@ function makeRuntime(
     discoveryHealthDeps: { resolveSessionAuthority: vi.fn(), getWorkspaceDir: vi.fn() },
     orchestratorDeps: {} as FlowGuardPluginRuntime['orchestratorDeps'],
     auditDeps: makeAuditDeps(null, null),
-    toolTraceIds: new Map<string, string>(),
     toolLatencyStarts: new Map<string, number>(),
     activeCommandScopes: new Map<string, 'check'>(),
     checkReworkContinuations: new Set<string>(),
@@ -129,71 +128,6 @@ function enforcementPayload(error: unknown): EnforcementPayload {
   return JSON.parse(raw.slice(start)) as EnforcementPayload;
 }
 
-describe('commandBefore', () => {
-  it('warns and skips when the command has no sessionID', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(runtime, {}, {});
-    expect(runtime.log.warn).toHaveBeenCalledWith(
-      'decision',
-      'command.execute.before missing sessionID',
-    );
-  });
-
-  it('warns and skips for a null command input', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(runtime, null, null);
-    expect(runtime.log.warn).toHaveBeenCalledWith(
-      'decision',
-      'command.execute.before missing sessionID',
-    );
-  });
-
-  it('records a user decision intent for /approve', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(runtime, { sessionID: SESSION_ID, command: '/approve', arguments: '' }, {});
-    expect(runtime.log.info).toHaveBeenCalledWith(
-      'decision',
-      'recorded user decision command intent',
-      expect.objectContaining({ expectedVerdict: 'approve' }),
-    );
-  });
-
-  it('records a decision intent from /review-decision arguments', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(
-      runtime,
-      { sessionID: SESSION_ID, command: '/review-decision', arguments: 'reject' },
-      {},
-    );
-    expect(runtime.log.info).toHaveBeenCalledWith(
-      'decision',
-      'recorded user decision command intent',
-      expect.objectContaining({ sessionId: SESSION_ID, expectedVerdict: 'reject' }),
-    );
-  });
-
-  it('returns without recording for a non-decision command', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(runtime, { sessionID: SESSION_ID, command: '/plan', arguments: '' }, {});
-    expect(runtime.log.info).not.toHaveBeenCalled();
-  });
-
-  it('returns without recording when command and arguments are missing', async () => {
-    const runtime = makeRuntime();
-    await commandBefore(runtime, { sessionID: SESSION_ID }, {});
-    expect(runtime.log.info).not.toHaveBeenCalled();
-  });
-
-  it('sets the check scope for /check and clears it for other commands', async () => {
-    const runtime = makeRuntime();
-    runtime.activeCommandScopes.set(SESSION_ID, 'check');
-    await commandBefore(runtime, { sessionID: SESSION_ID, command: 'plan', arguments: '' }, {});
-    expect(runtime.activeCommandScopes.has(SESSION_ID)).toBe(false);
-    await commandBefore(runtime, { sessionID: SESSION_ID, command: '/check', arguments: '' }, {});
-    expect(runtime.activeCommandScopes.get(SESSION_ID)).toBe('check');
-  });
-});
-
 describe('toolBefore — host tool fail-closed resolution', () => {
   it('blocks an empty tool identity without a session mapping using the typed authority code', async () => {
     const runtime = makeRuntime();
@@ -243,12 +177,6 @@ describe('toolBefore — host tool fail-closed resolution', () => {
     expect(runtime.toolLatencyStarts.size).toBe(0);
   });
 
-  it('handles a missing callID via the trace fallback registry', async () => {
-    const runtime = makeRuntime();
-    await toolBefore(runtime, { tool: 'read', sessionID: SESSION_ID }, { args: {} });
-    expect(runtime.toolTraceIds.has(`${SESSION_ID}:read`)).toBe(true);
-  });
-
   it('blocks a mutating host tool with the typed authority code when the session mapping is unavailable', async () => {
     const runtime = makeRuntime();
     let caught: unknown;
@@ -287,6 +215,47 @@ describe('toolBefore — host tool fail-closed resolution', () => {
       caught = err;
     }
     expect(enforcementPayload(caught).code).toBe('INTEGRITY_INCIDENT_MUTATION_DENIED');
+  });
+
+  it('checks persisted errors for native delegation before dispatch admission', async () => {
+    const state = makeState('PLAN', {
+      error: {
+        code: 'SESSION_ERROR',
+        message: 'persisted failure',
+        recoveryHint: 'recover',
+        occurredAt: '2026-11-01T00:00:00Z',
+      },
+    });
+    const runtime = makeRuntime({
+      ws: { resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state)) },
+    });
+    await expect(
+      toolBefore(
+        runtime,
+        { tool: 'subagent', sessionID: SESSION_ID, callID: 'child' },
+        { args: { agent: 'general' } },
+      ),
+    ).rejects.toThrow('SESSION_ERROR');
+  });
+
+  it('does not let delegation evade an unresolved review integrity incident', async () => {
+    const state = {
+      ...makeState('PLAN'),
+      reviewAssurance: {
+        obligations: [{ status: 'blocked', blockedCode: 'SUBAGENT_EVIDENCE_REUSED' }],
+      },
+    } as unknown as SessionState;
+    const runtime = makeRuntime({
+      ws: { resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state)) },
+    });
+    await expect(
+      toolBefore(
+        runtime,
+        { tool: 'subagent', sessionID: SESSION_ID, callID: 'child' },
+        { args: { agent: 'general' } },
+      ),
+    ).rejects.toThrow('INTEGRITY_INCIDENT_MUTATION_DENIED');
+    expect(runtime.toolLatencyStarts.size).toBe(0);
   });
 
   it('blocks with SESSION_DIR_NOT_FOUND when the directory is missing', async () => {
@@ -479,11 +448,15 @@ describe('toolBefore — command scope', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('denies a generic task outside IMPL_REVIEW during /check', async () => {
+  it('denies a native subagent outside IMPL_REVIEW during /check', async () => {
     const runtime = makeRuntime();
     runtime.activeCommandScopes.set(SESSION_ID, 'check');
     await expect(
-      toolBefore(runtime, { tool: 'task', sessionID: SESSION_ID }, { args: { subagent_type: '' } }),
+      toolBefore(
+        runtime,
+        { tool: 'subagent', sessionID: SESSION_ID },
+        { args: { agent: 'general' } },
+      ),
     ).rejects.toThrow('COMMAND_SCOPE_DENIED');
   });
 
@@ -1280,20 +1253,12 @@ describe('toolBefore — review implementation tool', () => {
   });
 });
 
-describe('toolBefore — trace registry', () => {
-  it('stores a trace id per before-call', async () => {
-    const runtime = makeRuntime();
-    const input = { tool: 'read', sessionID: SESSION_ID };
-    await toolBefore(runtime, input, { args: {} });
-    expect(runtime.toolTraceIds.has(`${SESSION_ID}:read`)).toBe(true);
-  });
-
+describe('toolBefore — trace ids', () => {
   it('a host retry with the same callID is processed deterministically', async () => {
     const runtime = makeRuntime();
     const input = { tool: 'read', sessionID: SESSION_ID, callID: 'retry-1' };
-    await toolBefore(runtime, input, { args: {} });
-    await toolBefore(runtime, input, { args: {} });
-    expect(runtime.toolTraceIds.size).toBe(0);
+    await expect(toolBefore(runtime, input, { args: {} })).resolves.toBeUndefined();
+    await expect(toolBefore(runtime, input, { args: {} })).resolves.toBeUndefined();
   });
 });
 

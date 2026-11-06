@@ -15,10 +15,13 @@ example.
 
 The `flowguard_decision` tool is implemented in
 [`decision-tool.ts`](../../src/integration/tools/decision/decision-tool.ts).
-It checks the human-decision intent when required by policy, resolves the
-decision actor, and enters `persistHumanDecision` under
-`withMutableSessionTransaction`. The tool delegates the state transition to the
-review-decision rail and finalization service; those authorities determine
+It checks the scoped decision operation when the frozen policy requires an
+explicit command, resolves the decision actor under the session write lock, and
+enters `persistHumanDecision` under `withMutableSessionTransaction`. The operation
+binds the exact session, worktree, policy, activation generation, current state,
+verdict and rationale; it is consumed only after successful persistence, so a
+model call cannot reuse a command decision. The tool delegates the state transition
+to the review-decision rail and finalization service; those authorities determine
 whether the verdict is allowed and what state it produces.
 
 In the regulated ticket-completion path, an approval at `EVIDENCE_REVIEW`

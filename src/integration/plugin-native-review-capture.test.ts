@@ -1,0 +1,875 @@
+/** Product composition + real workflow/outbox persistence, mocked host execution.
+ * These tests do not establish native-host provenance or restart recovery. */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readState, PersistenceError } from '../adapters/persistence.js';
+import { execFileSync } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { verifyChain } from '../audit/integrity.js';
+import { createTestWorkspace, repositoryDiscoveryContext } from './test-helpers.js';
+import { seedStrictPlanSession } from './plugin-host-task-diagnostics-test-helpers.js';
+import { createWorkspace } from './plugin-workspace.js';
+import { createV2Host, v2ToolEvent, createReviewClient } from './opencode-v2-test-helpers.js';
+import { createNativeReviewerAuthority } from './plugin-native-review.js';
+import { OpenCodeGovernance, type NativeBefore } from './opencode-governance.js';
+import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
+import { registerPendingReviewForAttempt } from './review/enforcement/enforcement.js';
+import { resolveReviewContinuation } from '../state/review-continuation.js';
+import { plan, observe_repository } from './tools/index.js';
+import { writeStateWithArtifacts } from './tools/helpers.js';
+import { mintObservationCapability } from './review/obligations/attempt-lifecycle.js';
+import { deriveRepositoryRevisionProvenance } from '../state/evidence-review-authority.js';
+import { unknownOutcomeTarget } from './review/dispatch/native-review-settlement.js';
+import * as observationReplay from './review/observations/observation-replay.js';
+
+const model = { providerID: 'component', id: 'review', variant: 'selected' };
+const idle = { type: 'idle', outcome: 'succeeded' };
+const assistant = (id: string) => ({
+  type: 'assistant',
+  id,
+  agent: 'flowguard-reviewer',
+  model,
+  finish: 'stop',
+  time: { completed: Date.now() },
+  content: [{ type: 'text', text: 'review' }],
+});
+const cleanup: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  vi.restoreAllMocks();
+  for (const close of cleanup.splice(0).reverse()) await close();
+});
+
+async function fixture(observation = false) {
+  const ws = await createTestWorkspace();
+  cleanup.push(() => ws.cleanup());
+  if (observation) {
+    await writeFile(join(ws.tmpDir, 'context.txt'), 'Frozen repository context\n');
+    execFileSync('git', ['add', 'context.txt'], { cwd: ws.tmpDir });
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.name=FlowGuard Test',
+        '-c',
+        'user.email=test@example.invalid',
+        'commit',
+        '--quiet',
+        '-m',
+        'observation fixture',
+      ],
+      { cwd: ws.tmpDir },
+    );
+  }
+  const seeded = await seedStrictPlanSession(ws.tmpDir, 'root');
+  let state = (await readState(seeded.sessDir))!;
+  if (observation) {
+    const repositoryAuthority = {
+      kind: 'context' as const,
+      context: {
+        kind: 'commit' as const,
+        objectSha: execFileSync('git', ['rev-parse', 'HEAD'], {
+          cwd: ws.tmpDir,
+          encoding: 'utf8',
+        }).trim(),
+        repositoryIdentity: {
+          host: 'github.com',
+          owner: 'flowguard-tests',
+          name: 'reviewer-fixture',
+        },
+      },
+    };
+    state = {
+      ...state,
+      reviewAssurance: {
+        ...state.reviewAssurance!,
+        obligations: state.reviewAssurance!.obligations.map((item) => ({
+          ...item,
+          repositoryAuthority,
+          repositoryRevisionProvenance: deriveRepositoryRevisionProvenance({ repositoryAuthority }),
+          repositoryEvidenceFreeze: { kind: 'available' as const },
+        })),
+        attempts: state.reviewAssurance!.attempts.map((item) => ({
+          ...item,
+          observationCapability: mintObservationCapability(),
+          repositoryDiscovery: repositoryDiscoveryContext(),
+        })),
+      },
+    };
+    await writeStateWithArtifacts(seeded.sessDir, state);
+  }
+  const host = createV2Host(ws.tmpDir);
+  await host.seedActive('root', state.policySnapshot.hash);
+  host.sessionGet.mockImplementation(async ({ sessionID }) => ({
+    id: sessionID,
+    location: { directory: ws.tmpDir },
+    ...(sessionID === 'child' ? { parentID: 'root', agent: 'flowguard-reviewer' } : {}),
+  }));
+  const workspace = createWorkspace({ auditWorktree: ws.tmpDir });
+  registerPendingReviewForAttempt(
+    workspace.getEnforcementState('root'),
+    'flowguard_plan',
+    {
+      obligationId: seeded.obligationId,
+      attemptId: state.reviewAssurance!.attempts[0]!.attemptId,
+    },
+    new Date().toISOString(),
+  );
+  const log = { info: vi.fn(), warn: vi.fn() };
+  const runtime = {
+    ws: workspace,
+    orchestratorDeps: {
+      updateReviewAssurance: workspace.updateReviewAssurance,
+      resolveSessionAuthority: workspace.resolveSessionAuthority,
+      blockReviewOutcome: workspace.blockReviewOutcome,
+      getEnforcementState: workspace.getEnforcementState,
+      client: createReviewClient(),
+      log,
+    },
+    log,
+    logError: vi.fn(),
+    reviewerExecutionTimeoutMs: 600000,
+    reviewerOutputCapFailures: new Map(),
+  };
+  const reviewer = createNativeReviewerAuthority(host.ctx, async () => runtime as never);
+  const controller = new AbortController();
+  cleanup.push(async () => controller.abort());
+  const governance = new OpenCodeGovernance(
+    host.ctx,
+    new OpenCodeHostAdapter(host.ctx, controller.signal),
+    controller.signal,
+    reviewer,
+  );
+  const root = await governance.resolve('root');
+  if (root.kind !== 'active') throw new Error('fixture root unavailable');
+  const call = v2ToolEvent({
+    sessionID: 'root',
+    tool: 'subagent',
+    id: 'call',
+    input: { agent: 'flowguard-reviewer', description: 'review', prompt: 'untrusted' },
+  }) as NativeBefore;
+  await governance.authorizeDispatch(root.scope, call);
+  await governance.observeProgress({
+    type: 'session.tool.progress',
+    id: 'receipt',
+    created: 1,
+    data: {
+      sessionID: 'root',
+      assistantMessageID: 'message',
+      id: 'call',
+      metadata: { sessionID: 'child', status: 'running' },
+    },
+  } as never);
+  const child = await governance.resolve('child');
+  if (child.kind !== 'active') throw new Error('fixture child unavailable');
+  const text = `You are a subagent spawned by another session.\n${(call.input as { prompt: string }).prompt}`;
+  const user = { type: 'user', id: 'msg_user', text, files: [] };
+  await reviewer.prompt(child.scope, {
+    sessionID: 'child',
+    messageID: user.id,
+    prompt: { text },
+  } as never);
+  host.sessionContext.mockResolvedValue([user]);
+  await reviewer.context(child.scope, { tools: {} });
+  await reviewer.request(child.scope, {
+    sessionID: 'child',
+    agent: 'flowguard-reviewer',
+    kind: 'primary',
+    model,
+  } as never);
+  let history: unknown[] = [user, assistant('msg_review'), idle];
+  host.sessionContext.mockImplementation(async () => history);
+  const findings = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'subagent',
+    overallVerdict: 'accept',
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    challenges: [],
+    attestation: { toolObligationId: seeded.obligationId },
+  };
+  const controls = {
+    payload: JSON.stringify(findings),
+    tool: false,
+    toolName: 'read',
+    wrongModel: false,
+  };
+  host.prompt.mockImplementation(async (raw) => {
+    const input = raw as { id: string; text: string; sessionID: string };
+    await reviewer.prompt(child.scope, {
+      sessionID: input.sessionID,
+      messageID: input.id,
+      prompt: { text: input.text },
+    } as never);
+    await reviewer.context(child.scope, { tools: {} });
+    await reviewer.request(child.scope, {
+      sessionID: input.sessionID,
+      agent: 'flowguard-reviewer',
+      kind: 'primary',
+      model: controls.wrongModel ? { ...model, id: 'foreign' } : model,
+    } as never);
+    if (controls.tool)
+      await reviewer.beforeTool(child.scope, {
+        agent: 'flowguard-reviewer',
+        tool: controls.toolName,
+        sessionID: child.scope.sessionId,
+        input: {},
+      });
+    history = [
+      ...history,
+      { ...user, id: input.id, text: input.text },
+      { ...assistant('msg_serialized'), content: [{ type: 'text', text: controls.payload }] },
+      idle,
+    ];
+    return { id: input.id, type: 'user' };
+  });
+  const wait = vi.fn(async () => {});
+  Object.assign(host.context.session, { wait });
+  const event = {
+    ...call,
+    status: 'completed',
+    result: {
+      content: 'raw native result',
+      metadata: { sessionID: 'child' } as Record<string, unknown>,
+    },
+  };
+  return {
+    ws,
+    seeded,
+    host,
+    workspace,
+    runtime,
+    reviewer,
+    governance,
+    root: root.scope,
+    child: child.scope,
+    event,
+    controls,
+    wait,
+    setHistory: (value: unknown[]) => {
+      history = value;
+    },
+    history: () => history,
+  };
+}
+
+describe('native capture composition with durable evidence', () => {
+  it.each(['replay', 'persistence'] as const)(
+    're-arms the same frozen obligation when observation %s fails',
+    async (phase) => {
+      const h = await fixture(true);
+      const before = (await readState(h.seeded.sessDir))!;
+      const attempt = before.reviewAssurance!.attempts[0]!;
+      const observation = await observe_repository.execute(
+        {
+          capability: attempt.observationCapability!,
+          revision: 'head',
+          path: 'context.txt',
+        },
+        {
+          sessionID: 'child',
+          messageID: 'msg_observe',
+          agent: 'flowguard-reviewer',
+          directory: h.ws.tmpDir,
+          worktree: h.ws.tmpDir,
+          abort: new AbortController().signal,
+          metadata: () => {},
+        },
+      );
+      expect(observation).toContain('Frozen repository context');
+      // The capture is valid and would yield authority absent the injected fault.
+      const replay = await observationReplay.replayObservationCaptures({
+        state: before,
+        worktree: h.ws.tmpDir,
+        attemptId: attempt.attemptId,
+        childSessionId: 'child',
+        now: new Date().toISOString(),
+      });
+      expect(replay.observations).toHaveLength(1);
+      expect(attempt.observations).toEqual([]);
+      h.controls.payload = JSON.stringify({
+        ...JSON.parse(h.controls.payload),
+        majorRisks: [
+          {
+            severity: 'minor',
+            category: 'quality',
+            message: 'Frozen context supports this plan section.',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'artifact_section',
+                  artifactKind: 'plan',
+                  artifactDigest: 'test-subject-digest',
+                  sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
+                },
+              ],
+              evidenceLocations: [{ path: 'context.txt', revision: 'head', line: 1 }],
+            },
+          },
+        ],
+      });
+      const fault = new PersistenceError(
+        phase === 'replay' ? 'READ_FAILED' : 'WRITE_FAILED',
+        `injected observation ${phase} failure`,
+      );
+      if (phase === 'replay')
+        vi.spyOn(observationReplay, 'replayObservationCaptures').mockRejectedValueOnce(fault);
+      else
+        vi.spyOn(h.runtime.orchestratorDeps, 'updateReviewAssurance').mockRejectedValueOnce(fault);
+      await h.reviewer.capture(h.root, h.event);
+      expect(h.runtime.logError).toHaveBeenCalledWith(`observation ${phase} failed`, fault);
+      const after = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+      expect(after.obligations[0]).toMatchObject({ status: 'pending', blockedCode: null });
+      expect(after.invocations).toEqual([]);
+      expect(after.attempts[0]!.status).toBe('stale');
+      expect(after.attempts).toHaveLength(2);
+      expect(after.attempts[1]).toMatchObject({
+        status: 'created',
+        origin: { kind: 'dispatch_rearm', predecessorAttemptId: attempt.attemptId },
+      });
+      expect(after.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
+      expect(JSON.parse(h.event.result.content)).toMatchObject({
+        reviewDispatch: { required: true, completed: false },
+        reviewRetry: {
+          retryable: true,
+          code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
+          obligationId: h.seeded.obligationId,
+        },
+      });
+      expect(h.host.prompt).toHaveBeenCalledTimes(1);
+      await expect(h.reviewer.capture(h.root, h.event)).rejects.toThrow(
+        'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      );
+      const late = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+      expect(late.attempts).toHaveLength(2);
+      expect(late.invocations).toEqual([]);
+    },
+  );
+
+  it('closes the obligation without a new child when the frozen attempt budget is exhausted', async () => {
+    const h = await fixture(true);
+    const before = (await readState(h.seeded.sessDir))!;
+    await writeStateWithArtifacts(h.seeded.sessDir, {
+      ...before,
+      reviewAssurance: {
+        ...before.reviewAssurance!,
+        obligations: before.reviewAssurance!.obligations.map((obligation) => ({
+          ...obligation,
+          maxReviewerAttempts: 0,
+        })),
+        attempts: before.reviewAssurance!.attempts.map((attempt) => ({ ...attempt, ordinal: 1 })),
+      },
+    });
+    h.controls.payload = JSON.stringify({
+      ...JSON.parse(h.controls.payload),
+      majorRisks: [
+        {
+          severity: 'minor',
+          category: 'quality',
+          message: 'Frozen context supports this plan section.',
+          relation: {
+            subjectAnchors: [
+              {
+                kind: 'artifact_section',
+                artifactKind: 'plan',
+                artifactDigest: 'test-subject-digest',
+                sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
+              },
+            ],
+            evidenceLocations: [{ path: 'context.txt', revision: 'head', line: 1 }],
+          },
+        },
+      ],
+    });
+    vi.spyOn(observationReplay, 'replayObservationCaptures').mockRejectedValueOnce(
+      new PersistenceError('READ_FAILED', 'injected observation failure'),
+    );
+    await h.reviewer.capture(h.root, h.event);
+    const state = (await readState(h.seeded.sessDir))!;
+    const assurance = state.reviewAssurance!;
+    expect(assurance.obligations[0]).toMatchObject({
+      status: 'blocked',
+      blockedCode: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+    });
+    expect(assurance.attempts).toHaveLength(1);
+    expect(assurance.attempts[0]!.status).toBe('stale');
+    expect(assurance.invocations).toEqual([]);
+    expect(h.host.prompt).toHaveBeenCalledTimes(1);
+    expect(h.event.result.content).toContain('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+    const closureAudits = state.pendingAuditOperations.filter(
+      (operation) =>
+        operation.kind === 'semantic' && operation.semantic.event === 'review:obligation_blocked',
+    );
+    expect(closureAudits).toHaveLength(1);
+  });
+
+  it('preserves a terminal child integrity cause and does not offer a retry', async () => {
+    const h = await fixture();
+    h.event.status = 'error';
+    h.event.result = {
+      content: 'raw native result',
+      metadata: { sessionID: 'child', status: 'running' },
+    };
+    h.setHistory([
+      { type: 'user', id: 'msg_user', text: 'review', files: [] },
+      assistant('msg_failed'),
+      {
+        type: 'idle',
+        outcome: 'failed',
+        error: {
+          type: 'unknown',
+          message:
+            '[FlowGuard] {"error":true,"code":"REVIEWER_COMPLETION_UNVERIFIABLE","message":"A reviewer model-input tool result differs from the stored host tool history. callId=call tool=read","detail":{},"recovery":["Report the blocker"]}',
+        },
+      },
+    ]);
+    const failure = await h.reviewer.capture(h.root, h.event).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain('REVIEWER_COMPLETION_UNVERIFIABLE');
+    expect((failure as Error).message).toContain('"causeCode":"REVIEWER_COMPLETION_UNVERIFIABLE"');
+    expect((failure as Error).message).toContain(
+      '"transportCode":"REVIEWER_EXECUTION_OUTCOME_UNKNOWN"',
+    );
+    const state = (await readState(h.seeded.sessDir))!;
+    const assurance = state.reviewAssurance!;
+    expect(assurance.obligations[0]).toMatchObject({
+      status: 'blocked',
+      blockedCode: 'REVIEWER_COMPLETION_UNVERIFIABLE',
+    });
+    expect(assurance.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
+    expect(assurance.attempts[0]!.status).toBe('stale');
+    expect(assurance.capacityLock?.code).toBe('REVIEWER_COMPLETION_UNVERIFIABLE');
+    expect(unknownOutcomeTarget(state, 'plan')).toBeNull();
+    expect(assurance.invocations).toEqual([]);
+  });
+
+  it('keeps retry_transport valid only for a non-terminal child cause', async () => {
+    const h = await fixture();
+    h.event.status = 'error';
+    h.event.result = {
+      content: 'raw native result',
+      metadata: { sessionID: 'child', status: 'running' },
+    };
+    h.setHistory([
+      { type: 'user', id: 'msg_user', text: 'review', files: [] },
+      assistant('msg_failed'),
+      {
+        type: 'idle',
+        outcome: 'failed',
+        error: {
+          type: 'unknown',
+          message:
+            '[FlowGuard] {"error":true,"code":"REVIEW_EVIDENCE_NOT_OBSERVED","message":"No observation was recorded.","detail":{},"recovery":["Retry"]}',
+        },
+      },
+    ]);
+    const failure = await h.reviewer.capture(h.root, h.event).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    expect((failure as Error).message).toContain('"causeCode":"REVIEW_EVIDENCE_NOT_OBSERVED"');
+    const state = (await readState(h.seeded.sessDir))!;
+    const assurance = state.reviewAssurance!;
+    expect(assurance.obligations[0]).toMatchObject({
+      status: 'blocked',
+      blockedCode: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    expect(assurance.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
+    expect(assurance.attempts[0]!.status).toBe('stale');
+    expect(assurance.capacityLock?.code).toBe('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    expect(unknownOutcomeTarget(state, 'plan')).not.toBeNull();
+    expect(assurance.invocations).toEqual([]);
+  });
+
+  it('serializes concurrent capture completions exactly once', async () => {
+    const h = await fixture();
+    const results = await Promise.allSettled([
+      h.reviewer.capture(h.root, h.event),
+      h.reviewer.capture(h.root, h.event),
+    ]);
+    expect(results.some((result) => result.status === 'fulfilled')).toBe(true);
+    const state = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(state.invocations).toHaveLength(1);
+    expect(state.attempts).toHaveLength(1);
+    expect(h.host.prompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the canonical pre-bind closure for an already blocked obligation', async () => {
+    const h = await fixture();
+    await h.workspace.updateReviewAssurance(h.seeded.sessDir, (state) => ({
+      ...state,
+      reviewAssurance: {
+        ...state.reviewAssurance!,
+        obligations: state.reviewAssurance!.obligations.map((obligation) => ({
+          ...obligation,
+          status: 'blocked' as const,
+          blockedCode: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+        })),
+      },
+    }));
+    expect((await readState(h.seeded.sessDir))!.reviewAssurance!.obligations[0]!.status).toBe(
+      'blocked',
+    );
+    await h.reviewer.capture(h.root, h.event);
+    expect(h.host.prompt).toHaveBeenCalledTimes(0);
+    expect(h.event.result.content).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    expect((await readState(h.seeded.sessDir))!.reviewAssurance!.invocations).toEqual([]);
+  });
+
+  it('blocks an incoherent accept-with-blocking-issues capture without re-arming', async () => {
+    const h = await fixture();
+    h.controls.payload = JSON.stringify({
+      ...JSON.parse(h.controls.payload),
+      blockingIssues: [
+        {
+          severity: 'major',
+          category: 'correctness',
+          message: 'The plan contradicts its verification evidence.',
+          relation: {
+            subjectAnchors: [
+              {
+                kind: 'artifact_section',
+                artifactKind: 'plan',
+                artifactDigest: 'test-subject-digest',
+                sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
+              },
+            ],
+            evidenceLocations: [],
+          },
+        },
+      ],
+    });
+    await h.reviewer.capture(h.root, h.event);
+    const state = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(state.obligations[0]).toMatchObject({
+      status: 'blocked',
+      blockedCode: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
+    });
+    expect(state.invocations).toEqual([]);
+    expect(state.attempts).toHaveLength(1);
+    expect(h.event.result.content).toContain('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+  });
+
+  it('reconciles an expired authorized dispatch before authorizing another reviewer', async () => {
+    const h = await fixture();
+    const state = (await readState(h.seeded.sessDir))!;
+    await h.workspace.updateReviewAssurance(h.seeded.sessDir, (current) => ({
+      ...current,
+      reviewAssurance: {
+        ...current.reviewAssurance!,
+        dispatches: current.reviewAssurance!.dispatches.map((dispatch) => ({
+          ...dispatch,
+          dispatchAuthorizedAt: '2000-01-01T00:00:00.000Z',
+        })),
+      },
+    }));
+    await expect(
+      h.reviewer.authorize(h.root, {
+        sessionID: 'root',
+        tool: 'subagent',
+        messageID: 'expired-message',
+        id: 'expired-call',
+        input: { agent: 'flowguard-reviewer', description: 'review', prompt: 'untrusted' },
+      } as never),
+    ).rejects.toThrow('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    const after = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(after.obligations[0]!.status).toBe('blocked');
+    expect(after.invocations).toEqual([]);
+    expect(state.reviewAssurance!.attempts).toHaveLength(1);
+  });
+
+  it('keeps the lease through the durable commit then projects the exact invocation', async () => {
+    const h = await fixture();
+    await h.reviewer.capture(h.root, h.event);
+    const state = (await readState(h.seeded.sessDir))!;
+    expect(state.reviewAssurance!.obligations[0]!.status).toBe('fulfilled');
+    expect(state.reviewAssurance!.dispatches[0]!.dispatchStatus).toBe('completed');
+    expect(state.reviewAssurance!.attempts[0]!.status).toBe('bound');
+    expect(state.reviewAssurance!.invocations).toHaveLength(1);
+    expect(JSON.parse(h.event.result.content)).toMatchObject({
+      reviewDispatch: { completed: true, verdict: 'accept' },
+      reviewExecution: { childSessionId: 'child' },
+    });
+    expect(h.event.result.metadata).toHaveProperty('flowguardReviewExecution');
+    expect(h.host.prompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('R1/R3 refuses an extra completed assistant before serialization or evidence', async () => {
+    const h = await fixture();
+    const original = h.history();
+    h.setHistory([original[0], assistant('msg_foreign'), ...original.slice(1)]);
+    await h.reviewer.capture(h.root, h.event);
+    expect(h.host.prompt).not.toHaveBeenCalled();
+    expect((await readState(h.seeded.sessDir))!.reviewAssurance!.invocations).toEqual([]);
+    expect(h.event.result.content).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+  });
+
+  it.each(['tool', 'wrongModel', 'invalidJson', 'wrongObligation', 'invalidFindings'])(
+    'fails %s closed and never writes invocation evidence',
+    async (mode) => {
+      const h = await fixture();
+      if (mode === 'tool') h.controls.tool = true;
+      if (mode === 'wrongModel') h.controls.wrongModel = true;
+      if (mode === 'invalidJson') h.controls.payload = 'not JSON';
+      if (mode === 'wrongObligation')
+        h.controls.payload = h.controls.payload.replace(
+          h.seeded.obligationId,
+          '22222222-2222-4222-8222-222222222222',
+        );
+      if (mode === 'invalidFindings') h.controls.payload = '{}';
+      await h.reviewer.capture(h.root, h.event);
+      const state = (await readState(h.seeded.sessDir))!;
+      expect(state.reviewAssurance!.invocations).toEqual([]);
+      expect(state.reviewAssurance!.attempts[0]!.status).toBe('rejected');
+      expect(h.event.result.content).toContain('REVIEWER_CAPTURE_PROVENANCE_INVALID');
+    },
+  );
+
+  it.each(['prompt', 'wait', 'history', 'persistence'])(
+    'keeps an unknown %s outcome blocked without invoking a second reviewer',
+    async (phase) => {
+      const h = await fixture();
+      if (phase === 'prompt')
+        h.host.prompt.mockRejectedValueOnce(new Error('injected prompt failure'));
+      if (phase === 'wait') h.wait.mockRejectedValueOnce(new Error('injected wait failure'));
+      if (phase === 'history')
+        h.host.sessionContext.mockRejectedValueOnce(new Error('injected context failure'));
+      if (phase === 'persistence')
+        vi.spyOn(h.runtime.orchestratorDeps, 'updateReviewAssurance').mockRejectedValueOnce(
+          new Error('injected evidence write failure'),
+        );
+      await h.reviewer.capture(h.root, h.event);
+      const state = (await readState(h.seeded.sessDir))!;
+      expect(state.reviewAssurance!.invocations).toEqual([]);
+      expect(state.reviewAssurance!.obligations[0]!.status).toBe('blocked');
+      expect(h.event.result.content).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    },
+  );
+
+  it('does not extend the initial observation permission into serialization', async () => {
+    const h = await fixture();
+    h.controls.tool = true;
+    h.controls.toolName = 'flowguard_observe_repository';
+    await h.reviewer.capture(h.root, h.event);
+    const assurance = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(assurance.invocations).toEqual([]);
+    expect(assurance.obligations[0]?.blockedCode).toBe('REVIEWER_CAPTURE_PROVENANCE_INVALID');
+    expect(assurance.attempts[0]?.observations).toEqual([]);
+  });
+
+  it('R2 retains committed evidence on a projection error without repeating serialization', async () => {
+    const h = await fixture();
+    h.runtime.log.info.mockImplementationOnce(() => {
+      throw new Error('injected projection failure');
+    });
+    await expect(h.reviewer.capture(h.root, h.event as never)).rejects.toThrow(
+      'injected projection',
+    );
+    const state = (await readState(h.seeded.sessDir))!;
+    expect(state.reviewAssurance!.obligations[0]!.status).toBe('fulfilled');
+    expect(resolveReviewContinuation(state.reviewAssurance, 'plan').kind).toBe('awaiting_verdict');
+    await expect(h.reviewer.capture(h.root, h.event as never)).rejects.toHaveProperty(
+      'code',
+      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    );
+    expect(h.host.prompt).toHaveBeenCalledTimes(1);
+    expect((await readState(h.seeded.sessDir))!.reviewAssurance).toEqual(state.reviewAssurance);
+  });
+
+  it('R2 completes the review from committed evidence after a restart without another reviewer', async () => {
+    const h = await fixture();
+    // Like the native smoke seed: materialize the derived artifacts of the seeded state.
+    await writeStateWithArtifacts(h.seeded.sessDir, (await readState(h.seeded.sessDir))!);
+    h.runtime.log.info.mockImplementationOnce(() => {
+      throw new Error('injected projection failure');
+    });
+    await expect(h.reviewer.capture(h.root, h.event as never)).rejects.toThrow(
+      'injected projection',
+    );
+    const committed = (await readState(h.seeded.sessDir))!;
+    const invocation = committed.reviewAssurance!.invocations[0]!;
+    expect(invocation).toMatchObject({ transportVersion: 6, consumedByObligationId: null });
+
+    // Restart: no plugin runtime, capture fence, pending review or reviewer
+    // child survives. Only the persisted state and the canonical tool remain.
+    const result = await plan.execute(
+      { reviewVerdict: 'accept' },
+      {
+        sessionID: 'root',
+        messageID: 'msg_after_restart',
+        agent: 'build',
+        directory: h.ws.tmpDir,
+        worktree: h.ws.tmpDir,
+        abort: new AbortController().signal,
+        metadata: () => {},
+      },
+    );
+    expect(String(result)).not.toContain('"error":true');
+    const completed = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(completed.obligations[0]).toMatchObject({ status: 'consumed' });
+    expect(completed.invocations).toHaveLength(1);
+    expect(completed.invocations[0]).toMatchObject({
+      invocationId: invocation.invocationId,
+      consumedByObligationId: committed.reviewAssurance!.obligations[0]!.obligationId,
+    });
+    expect(h.host.prompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('reopens an unknown outcome only after a later user turn and a settled child', async () => {
+    const h = await fixture();
+    h.wait.mockRejectedValueOnce(new Error('injected wait failure'));
+    await h.reviewer.capture(h.root, h.event);
+    const blocked = (await readState(h.seeded.sessDir))!;
+    expect(blocked.reviewAssurance!.capacityLock?.code).toBe('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    const parent: unknown[] = [
+      { type: 'user', id: 'msg_u1' },
+      { type: 'assistant', id: 'message' },
+    ];
+    h.host.sessionContext.mockImplementation(async (input) =>
+      (input as { sessionID: string }).sessionID === 'root' ? parent : h.history(),
+    );
+    const retry = (input: Record<string, unknown>) => ({
+      agent: 'build',
+      tool: 'flowguard_plan',
+      sessionID: 'root',
+      input,
+    });
+
+    // Caller text or a retry in the same turn never reopens.
+    await h.reviewer.beforeTool(h.root, retry({ recovery: 'settled' }));
+    await expect(
+      h.reviewer.beforeTool(h.root, retry({ reviewRecovery: 'retry_transport' })),
+    ).rejects.toHaveProperty('code', 'REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND');
+    expect((await readState(h.seeded.sessDir))!.reviewAssurance).toEqual(blocked.reviewAssurance);
+    expect(h.host.interrupt).not.toHaveBeenCalled();
+
+    parent.push({ type: 'user', id: 'msg_u2' });
+    await h.reviewer.beforeTool(h.root, retry({ reviewRecovery: 'retry_transport' }));
+    const reopened = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(h.host.interrupt).toHaveBeenCalledWith({ sessionID: 'child', resume: false });
+    expect(reopened.capacityLock).toBeNull();
+    expect(reopened.obligations[0]).toMatchObject({ status: 'pending', blockedCode: null });
+    expect(reopened.attempts).toEqual(blocked.reviewAssurance!.attempts);
+    expect(reopened.dispatches).toEqual(blocked.reviewAssurance!.dispatches);
+    expect(resolveReviewContinuation(reopened, 'plan').kind).toBe('interrupted_dispatch');
+  });
+
+  it.each(['interrupt', 'wait', 'context', 'late_history'])(
+    'preserves the durable lock and audit when settlement fails at %s',
+    async (phase) => {
+      const h = await unknownOutcomeFixture();
+      const before = await readState(h.seeded.sessDir);
+      const audit = await readAuditTrail(h.seeded.sessDir);
+      if (phase === 'interrupt') h.host.interrupt.mockRejectedValueOnce(new Error('interrupt'));
+      if (phase === 'wait') h.wait.mockRejectedValueOnce(new Error('wait'));
+      if (phase === 'context')
+        h.host.sessionContext.mockImplementation(async (input) => {
+          if ((input as { sessionID: string }).sessionID === 'root') return laterUserTurn;
+          throw new Error('context');
+        });
+      if (phase === 'late_history') {
+        let reads = 0;
+        h.host.sessionContext.mockImplementation(async (input) => {
+          if ((input as { sessionID: string }).sessionID === 'root') return laterUserTurn;
+          return reads++ === 0 ? h.history() : [...h.history(), assistant('msg_late')];
+        });
+      }
+      await expect(h.reviewer.beforeTool(h.root, retryEvent)).rejects.toBeDefined();
+      expect((await readState(h.seeded.sessDir))!.reviewAssurance).toEqual(h.blocked);
+      expect(await readState(h.seeded.sessDir)).toEqual(before);
+      expect(await readAuditTrail(h.seeded.sessDir)).toEqual(audit);
+      expect(h.host.prompt).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('serializes competing settlements to one durable reopen intent and rejects the loser', async () => {
+    const h = await unknownOutcomeFixture();
+    let arrivals = 0;
+    let release!: () => void;
+    const bothWaiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    h.wait.mockImplementation(async () => {
+      if (++arrivals === 2) release();
+      await bothWaiting;
+    });
+    const results = await Promise.allSettled([
+      h.reviewer.beforeTool(h.root, retryEvent),
+      h.reviewer.beforeTool(h.root, retryEvent),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({ code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN' }),
+      }),
+    ]);
+    const persisted = (await readState(h.seeded.sessDir))!;
+    const reopened = persisted.reviewAssurance!;
+    expect(reopened.capacityLock).toBeNull();
+    expect(reopened.attempts).toEqual(h.blocked.attempts);
+    expect(reopened.dispatches).toEqual(h.blocked.dispatches);
+    expect(reopened.invocations).toEqual([]);
+    const audit = await readAuditTrail(h.seeded.sessDir);
+    expect(
+      persisted.pendingAuditOperations.filter(
+        (operation) =>
+          operation.kind === 'semantic' &&
+          operation.semantic.event === 'review:obligation_reopened',
+      ),
+    ).toHaveLength(1);
+    expect(verifyChain(audit).valid).toBe(true);
+  });
+
+  it('rejects late completion and old-child execution after settlement with fresh authority', async () => {
+    const h = await unknownOutcomeFixture();
+    await h.reviewer.beforeTool(h.root, retryEvent);
+    const settled = (await readState(h.seeded.sessDir))!;
+    const audit = await readAuditTrail(h.seeded.sessDir);
+    // No initial-run receipt or capture lease survives authority reconstruction.
+    const fresh = createNativeReviewerAuthority(h.host.ctx, async () => h.runtime as never);
+    await expect(fresh.capture(h.root, h.event)).rejects.toHaveProperty(
+      'code',
+      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    );
+    await expect(fresh.validate(h.child)).rejects.toHaveProperty(
+      'code',
+      'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+    );
+    await expect(
+      fresh.prompt(h.child, {
+        sessionID: 'child',
+        messageID: 'msg_late',
+        prompt: { text: 'resume old reviewer' },
+      } as never),
+    ).rejects.toHaveProperty('code', 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+    expect((await readState(h.seeded.sessDir))!.reviewAssurance).toEqual(settled.reviewAssurance);
+    expect(await readAuditTrail(h.seeded.sessDir)).toEqual(audit);
+    expect(h.host.prompt).toHaveBeenCalledTimes(1);
+  });
+});
+
+const laterUserTurn = [
+  { type: 'assistant', id: 'message' },
+  { type: 'user', id: 'msg_later_user' },
+];
+const retryEvent = {
+  agent: 'build',
+  tool: 'flowguard_plan',
+  sessionID: 'root',
+  input: { reviewRecovery: 'retry_transport' },
+};
+
+async function unknownOutcomeFixture() {
+  const h = await fixture();
+  h.wait.mockRejectedValueOnce(new Error('injected wait failure'));
+  await h.reviewer.capture(h.root, h.event);
+  const blocked = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+  expect(blocked.capacityLock?.code).toBe('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+  h.host.sessionContext.mockImplementation(async (input) =>
+    (input as { sessionID: string }).sessionID === 'root' ? laterUserTurn : h.history(),
+  );
+  return { ...h, blocked };
+}

@@ -6,13 +6,13 @@
  *
  * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
  * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. The HOST captures the reviewer's structured findings into
+ * via the reviewer subagent. The HOST captures the reviewer's structured findings into
  * the review assurance evidence; the agent never resubmits findings.
  *
  * Flow:
  * 1. Primary agent drafts plan, submits to FlowGuard
  * 2. FlowGuard returns next-action instructing subagent invocation
- * 3. Primary agent calls flowguard-reviewer subagent via Task tool
+ * 3. Primary agent calls flowguard-reviewer subagent via reviewer subagent
  * 4. Host captures the reviewer's structured findings into invocation evidence
  * 5. Primary agent submits the review verdict ONLY (reviewVerdict)
  * 6. FlowGuard resolves the host-captured findings, validates the binding, and
@@ -370,7 +370,7 @@ export const plan: ToolDefinition = {
       .boolean()
       .optional()
       .describe(
-        'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
+        'Set to true ONLY after a real reviewer-subagent spawn failure (reviewer subagent fails, agent ' +
           'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
           'and recovery guidance. It never enables self-review and never approves the plan.',
       ),
@@ -378,7 +378,7 @@ export const plan: ToolDefinition = {
       .literal('retry_transport')
       .optional()
       .describe(
-        'Typed transport-recovery intent. ONLY when the authorized native reviewer Task release ' +
+        'Typed transport-recovery intent. ONLY when the authorized native reviewer subagent release ' +
           'was technically interrupted or yielded no bindable evidence: re-emits the pending ' +
           'review dispatch for the current attempt, or re-arms a fresh attempt on the SAME frozen ' +
           'plan subject after a released dispatch. Never a verdict, never approval, and never a ' +

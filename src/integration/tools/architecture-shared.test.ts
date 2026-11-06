@@ -6,7 +6,7 @@
  * @test-policy HAPPY, BAD
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   hasText,
   validateArchitectureCallShape,
@@ -15,11 +15,6 @@ import {
 } from './architecture/architecture-shared.js';
 import type { SessionState, Phase } from '../../state/schema.js';
 import type { ReviewDispatchAuthority } from '../review/dispatch/dispatch-authority.js';
-
-vi.mock('../review/dispatch/orchestration-mode.js', () => ({
-  resolveRuntimeReviewPlatform: vi.fn(() => 'opencode'),
-  resolveReviewOrchestrationMode: vi.fn(() => 'host_structured'),
-}));
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 
@@ -216,9 +211,16 @@ describe('buildArchitectureReviewInstruction', () => {
     expect(result).not.toHaveProperty('reviewerTaskPrompt');
     expect(result).toMatchObject({
       mode: 'host_structured',
-      platform: 'opencode',
       status: 'pending_review',
-      reviewerSubagentType: 'flowguard-reviewer',
+      reviewerAgent: 'flowguard-reviewer',
+      action: 'call_subagent',
+      transport: 'native_subagent',
+      subagent: {
+        tool: 'subagent',
+        agent: 'flowguard-reviewer',
+        background: false,
+        findingsAuthority: 'blocked_pending_native_capture',
+      },
       authority: 'review_obligation_evidence_binding',
       obligationId: authority.obligation.obligationId,
       reviewAttemptId: authority.attempt.attemptId,

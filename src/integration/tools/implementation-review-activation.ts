@@ -24,10 +24,7 @@ import {
 import { findBindableAttempt } from '../../state/review-continuation.js';
 import type { ReviewDispatchAuthority } from '../review/dispatch/dispatch-authority.js';
 import { buildChildSessionReviewInstruction } from '../review/dispatch/child-session-instruction.js';
-import {
-  resolveReviewOrchestrationMode,
-  resolveRuntimeReviewPlatform,
-} from '../review/dispatch/orchestration-mode.js';
+import { resolveReviewOrchestrationMode } from '../review/dispatch/orchestration-mode.js';
 import { freezeCandidatePairAuthority } from '../../rails/repository-authority.js';
 import { buildFrozenReviewMaterialContent } from '../review/context/reviewer-context.js';
 import { resolveAttemptDiscoveryOrBlock } from '../review/context/discovery-attempt-context.js';
@@ -54,14 +51,9 @@ export function nextImplementationReviewIteration(state: SessionState): number {
 
 /** Build the native implementation-review dispatch instruction for an exact authority. */
 export function buildImplementationReviewInstruction(authority: ReviewDispatchAuthority) {
-  const platform = resolveRuntimeReviewPlatform();
-  const mode = resolveReviewOrchestrationMode({
-    platform,
-    nativeReviewerAvailable: platform !== 'unknown',
-  });
+  const mode = resolveReviewOrchestrationMode({ nativeStructuredReview: true });
   return buildChildSessionReviewInstruction({
     mode,
-    platform,
     authority,
     iteration: authority.obligation.iteration,
     planVersion: authority.obligation.planVersion,

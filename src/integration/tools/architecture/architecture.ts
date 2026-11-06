@@ -72,7 +72,7 @@ export const architecture: ToolDefinition = {
       .boolean()
       .optional()
       .describe(
-        'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
+        'Set to true ONLY after a real reviewer-subagent spawn failure (reviewer subagent fails, agent ' +
           'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
           'and recovery guidance. It never enables self-review and never approves the ADR.',
       ),
@@ -80,7 +80,7 @@ export const architecture: ToolDefinition = {
       .literal('retry_transport')
       .optional()
       .describe(
-        'Typed transport-recovery intent. ONLY when the authorized native reviewer Task release ' +
+        'Typed transport-recovery intent. ONLY when the authorized native reviewer subagent release ' +
           'was technically interrupted or yielded no bindable evidence: re-emits the pending ' +
           'review dispatch for the current attempt, or re-arms a fresh attempt on the SAME frozen ' +
           'ADR subject after a released dispatch. Never a verdict, never approval, and never a ' +

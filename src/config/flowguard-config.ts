@@ -39,16 +39,58 @@ import {
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
-/** Default maximum output tokens requested from the independent reviewer. */
-export const REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT = 'host' as const;
-/** Default maximum duration of one reviewer tool call. */
-const REVIEWER_TOOL_TIMEOUT_MS_DEFAULT = 30_000;
-/** Default review-phase budget. Tool time is nested inside this budget. */
-const REVIEWER_REVIEW_TIMEOUT_MS_DEFAULT = 480_000;
-/** Default serialization budget, including one optional format correction. */
-const REVIEWER_SERIALIZATION_TIMEOUT_MS_DEFAULT = 60_000;
 /** Absolute reviewer execution deadline from dispatch authorization. */
 const REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT = 600_000;
+
+/**
+ * Host-neutral transient presentation preference. The former
+ * `presentation.opencode` key is user-owned configuration from earlier
+ * installers; it keeps its unchanged meaning and is read compatibly. Supplying
+ * both keys with different values is rejected instead of choosing silently.
+ */
+const PresentationConfig = z
+  .strictObject({
+    glyphProfile: z.enum(['unicode', 'ascii']).optional(),
+    opencode: z.strictObject({ glyphProfile: z.enum(['unicode', 'ascii']).optional() }).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.glyphProfile !== undefined &&
+      value.opencode?.glyphProfile !== undefined &&
+      value.glyphProfile !== value.opencode.glyphProfile
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['opencode', 'glyphProfile'],
+        message:
+          'presentation.opencode.glyphProfile conflicts with presentation.glyphProfile; keep only presentation.glyphProfile.',
+      });
+    }
+  })
+  .transform((value) => ({
+    glyphProfile: value.glyphProfile ?? value.opencode?.glyphProfile ?? 'unicode',
+  }))
+  .default({ glyphProfile: 'unicode' });
+
+/** Retired V1 reviewer keys and the defaults earlier installers wrote for them. */
+const RETIRED_REVIEWER_DEFAULTS = {
+  outputTokenMax: 'host',
+  toolTimeoutMs: 30_000,
+  reviewTimeoutMs: 480_000,
+  serializationTimeoutMs: 60_000,
+} as const;
+type RetiredReviewerKey = keyof typeof RETIRED_REVIEWER_DEFAULTS;
+const RETIRED_REVIEWER_KEYS = Object.keys(RETIRED_REVIEWER_DEFAULTS) as RetiredReviewerKey[];
+const WATCHDOG_RETIRED =
+  'is no longer supported: the native reviewer has no tool/review/serialization watchdog; only reviewer.executionTimeoutMs applies. Remove the key.';
+const RETIRED_REVIEWER_REASONS: Readonly<Record<RetiredReviewerKey, string>> = {
+  outputTokenMax:
+    'reviewer.outputTokenMax is no longer supported: FlowGuard applies no reviewer output cap and the host/model budget applies. Remove the key.',
+  toolTimeoutMs: `reviewer.toolTimeoutMs ${WATCHDOG_RETIRED}`,
+  reviewTimeoutMs: `reviewer.reviewTimeoutMs ${WATCHDOG_RETIRED}`,
+  serializationTimeoutMs: `reviewer.serializationTimeoutMs ${WATCHDOG_RETIRED}`,
+};
 
 export const FlowGuardConfigSchema = z.object({
   /** Schema version for forward compatibility. Always "v1". */
@@ -204,6 +246,20 @@ export const FlowGuardConfigSchema = z.object({
     .strict()
     .default({}),
 
+  /** Explicit root activation permission; installation and prompts never start governance. */
+  governance: z
+    .object({
+      autonomousActivation: z
+        .object({
+          enabled: z.boolean().default(false),
+          minimumActorAssurance: ActorAssuranceSchema.default('idp_verified'),
+        })
+        .strict()
+        .default({ enabled: false, minimumActorAssurance: 'idp_verified' }),
+    })
+    .strict()
+    .default({ autonomousActivation: { enabled: false, minimumActorAssurance: 'idp_verified' } }),
+
   /** Profile configuration. */
   profile: z
     .object({
@@ -215,17 +271,7 @@ export const FlowGuardConfigSchema = z.object({
     .default({}),
 
   /** Transient presentation preferences; never workflow or audit authority. */
-  presentation: z
-    .object({
-      /** OpenCode-only transient Markdown preferences. */
-      opencode: z
-        .object({
-          /** Glyph vocabulary for host-visible Markdown responses. */
-          glyphProfile: z.enum(['unicode', 'ascii']).default('unicode'),
-        })
-        .default({ glyphProfile: 'unicode' }),
-    })
-    .default({ opencode: { glyphProfile: 'unicode' } }),
+  presentation: PresentationConfig,
 
   /** Host execution configuration. Does not affect governance authority. */
   host: z
@@ -235,77 +281,46 @@ export const FlowGuardConfigSchema = z.object({
     })
     .default({}),
 
-  /** Independent-reviewer transport configuration. */
+  /**
+   * Independent-reviewer execution configuration. Model, variant and output
+   * budget stay host-native; FlowGuard sets no reviewer token cap.
+   *
+   * Configuration compatibility (operator decision 2026-11-02, explicit
+   * exception to the no-legacy source rule for persisted user configuration):
+   * earlier installers wrote the retired V1 keys with their defaults into every
+   * flowguard.json. A retired key whose value equals that former default carries
+   * no semantics beyond today's behavior and is dropped at read time. Any other
+   * value requested a function V2 no longer provides and fails with a concrete
+   * message. Unknown keys are rejected.
+   */
   reviewer: z
     .object({
-      /**
-       * Output-token ceiling applied to the OpenCode flowguard-reviewer agent.
-       * The host's model must support at least this value; the plugin fails
-       * closed instead of silently lowering the cap.
-       */
-      outputTokenMax: z
-        .union([z.literal('host'), z.number().int().min(1).max(1_000_000)])
-        .default(REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT),
-      /** Maximum duration of one reviewer tool call. Must fit inside the review budget. */
-      toolTimeoutMs: z
-        .number()
-        .int()
-        .min(1000)
-        .max(480_000)
-        .default(REVIEWER_TOOL_TIMEOUT_MS_DEFAULT),
-      /** Maximum duration of the reviewer's substantive review phase. */
-      reviewTimeoutMs: z
-        .number()
-        .int()
-        .min(1000)
-        .max(600_000)
-        .default(REVIEWER_REVIEW_TIMEOUT_MS_DEFAULT),
-      /** Serialization budget, including at most one bounded format correction. */
-      serializationTimeoutMs: z
-        .number()
-        .int()
-        .min(1000)
-        .max(480_000)
-        .default(REVIEWER_SERIALIZATION_TIMEOUT_MS_DEFAULT),
-      /** Absolute deadline from reviewer dispatch authorization through binding. */
+      /** Absolute deadline from reviewer dispatch authorization through evidence binding. */
       executionTimeoutMs: z
         .number()
         .int()
         .min(1000)
         .max(1_800_000)
         .default(REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT),
+      outputTokenMax: z.unknown().optional(),
+      toolTimeoutMs: z.unknown().optional(),
+      reviewTimeoutMs: z.unknown().optional(),
+      serializationTimeoutMs: z.unknown().optional(),
     })
+    .strict()
     .superRefine((reviewer, ctx) => {
-      if (reviewer.toolTimeoutMs > reviewer.reviewTimeoutMs) {
+      for (const key of RETIRED_REVIEWER_KEYS) {
+        const value = reviewer[key];
+        if (value === undefined || value === RETIRED_REVIEWER_DEFAULTS[key]) continue;
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['toolTimeoutMs'],
-          message: 'toolTimeoutMs must not exceed reviewTimeoutMs',
-        });
-      }
-      if (reviewer.reviewTimeoutMs > reviewer.executionTimeoutMs) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['reviewTimeoutMs'],
-          message: 'reviewTimeoutMs must not exceed executionTimeoutMs',
-        });
-      }
-      if (reviewer.serializationTimeoutMs > reviewer.executionTimeoutMs) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['serializationTimeoutMs'],
-          message: 'serializationTimeoutMs must not exceed executionTimeoutMs',
+          path: [key],
+          message: RETIRED_REVIEWER_REASONS[key],
         });
       }
     })
-    .default({
-      outputTokenMax: REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT,
-      toolTimeoutMs: REVIEWER_TOOL_TIMEOUT_MS_DEFAULT,
-      reviewTimeoutMs: REVIEWER_REVIEW_TIMEOUT_MS_DEFAULT,
-      serializationTimeoutMs: REVIEWER_SERIALIZATION_TIMEOUT_MS_DEFAULT,
-      executionTimeoutMs: REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT,
-    }),
-
+    .transform(({ executionTimeoutMs }) => ({ executionTimeoutMs }))
+    .default({ executionTimeoutMs: REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT }),
   /** Archive configuration. */
   archive: z
     .object({

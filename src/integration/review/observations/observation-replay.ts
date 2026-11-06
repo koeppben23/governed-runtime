@@ -76,6 +76,13 @@ const NO_REPLAY: ObservationReplayResult = {
   responseMismatches: [],
 };
 
+/** One immutable repository observation per path/revision/content in an attempt. */
+export function observationReplayKey(
+  observation: Pick<RepositoryObservation, 'path' | 'revision' | 'contentDigest'>,
+): string {
+  return `${observation.path}\u0000${observation.revision}\u0000${observation.contentDigest}`;
+}
+
 type MintObservationBase = {
   attempt: ReviewAttempt;
   childSessionId: string;
@@ -228,9 +235,7 @@ export async function replayObservationCaptures(input: {
     observationCapabilityDigest(capability),
   );
 
-  const existing = new Set(
-    (attempt.observations ?? []).map((o) => `${o.path}\u0000${o.revision}\u0000${o.contentDigest}`),
-  );
+  const existing = new Set((attempt.observations ?? []).map(observationReplayKey));
   const observations: RepositoryObservation[] = [];
   const drops = new DropLedger(skipped);
 
@@ -247,7 +252,7 @@ export async function replayObservationCaptures(input: {
       drops.record(result.drop, capture);
       continue;
     }
-    const key = `${capture.path}\u0000${capture.revision}\u0000${result.observation.contentDigest}`;
+    const key = observationReplayKey(result.observation);
     if (existing.has(key)) continue;
     existing.add(key);
     observations.push(result.observation);

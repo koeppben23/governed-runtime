@@ -11,6 +11,44 @@ import { STRUCTURED_REVIEW_REASONS } from './reasons-validation-structured.js';
 
 export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
+    code: 'GOVERNANCE_AUTHORITY_BLOCKED',
+    category: 'state',
+    messageTemplate: 'Governance activation authority cannot be verified: {message}',
+    recoverySteps: [
+      'Preserve the activation journal and workflow evidence; missing authority is not deactivation',
+      'Resolve the reported storage, generation or scope conflict before retrying a governed action',
+      'Use an explicit authorized recovery or EndGovernance action; do not recreate authority with hydrate',
+    ],
+  },
+  {
+    code: 'GOVERNANCE_NOT_ACTIVE',
+    category: 'admissibility',
+    messageTemplate:
+      'This FlowGuard operation requires explicit trusted operator activation: {message}',
+    recoverySteps: [
+      'Continue ordinary native host work without invoking governance tools',
+      'Run /start in the root session to start governance; prompts, tools and hydrate cannot activate it',
+    ],
+  },
+  {
+    code: 'GOVERNANCE_END_UNSAFE',
+    category: 'state',
+    messageTemplate: 'Governance cannot end safely: {message}',
+    recoverySteps: [
+      'Finish or abort the workflow before ending governance; workflow termination is not EndGovernance',
+      'Resolve pending system work, reviewer execution, mutation outcomes and unreconciled audit operations first',
+      'Use RecoverCapacity or the typed review transport settlement for a blocked reviewer capacity lock',
+    ],
+  },
+  {
+    code: 'START_ARGUMENTS_INVALID',
+    category: 'input',
+    messageTemplate: 'Invalid /start arguments: {message}',
+    recoverySteps: [
+      'Run /start without arguments, or with exactly one policy mode: solo, team, team-ci or regulated',
+    ],
+  },
+  {
     code: 'HELP_ARGUMENTS_INVALID',
     category: 'input',
     messageTemplate: 'Invalid FlowGuard help arguments.',
@@ -212,9 +250,9 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'MISSING_SESSION_ID',
     category: 'input',
-    messageTemplate: 'sessionId is required (from OpenCode context.sessionID)',
+    messageTemplate: 'sessionId is required from the host tool context',
     recoverySteps: [
-      'Ensure OpenCode context provides a valid sessionID',
+      'Ensure the host provides a valid sessionID',
       'This is usually an integration error — check tool context',
     ],
   },
@@ -222,9 +260,9 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'MISSING_WORKTREE',
     category: 'input',
-    messageTemplate: 'worktree is required (from OpenCode context.worktree)',
+    messageTemplate: 'worktree is required from the host tool context',
     recoverySteps: [
-      'Ensure OpenCode context provides a valid worktree path',
+      'Ensure the host provides a valid worktree path',
       'This is usually an integration error — check tool context',
     ],
   },
@@ -234,7 +272,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'input',
     messageTemplate: 'fingerprint is missing or malformed (expected 24 hex chars)',
     recoverySteps: [
-      'Ensure OpenCode context provides a valid worktree and fingerprint',
+      'Ensure the host provides a valid worktree and fingerprint',
       'Fingerprint must be a 24-character lowercase hex string',
     ],
   },
@@ -422,18 +460,6 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Call flowguard_review with a concrete content field: branch=<ref>, prNumber=<n>, url=<supported-url>, or text=<content>',
       'InputOrigin and references are provenance metadata only — they do not load content',
-    ],
-  },
-
-  {
-    code: 'OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED',
-    category: 'config',
-    messageTemplate:
-      'OpenCode accepts the FlowGuard instruction entry but the detected runtime ({runtimeLine}, version {version}) does not resolve instruction sources. FlowGuard mandates are not active.',
-    recoverySteps: [
-      'Switch to an OpenCode runtime that is not on the FlowGuard incompatible deny-list',
-      'Verify the mandate file path is present in the opencode.json instructions[] array',
-      'Open an OpenCode session and confirm FlowGuard mandates take effect; FlowGuard cannot verify activation automatically',
     ],
   },
 

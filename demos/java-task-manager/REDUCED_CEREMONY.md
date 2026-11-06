@@ -51,7 +51,8 @@ Same as `README.md`, plus:
 
   After the merge, build the tarball from `develop` as usual.
 
-- JDK 21+, Node.js 22+, OpenCode CLI (`opencode`) in PATH.
+- JDK 21+, Node.js 22.22.2 (from `.node-version`), npm 10.x, and the OpenCode V2
+  candidate CLI (`opencode`) in PATH; see [prerequisites](README.md#prerequisites).
 
 ## Setup — Two Workspaces, One Seed
 
@@ -66,8 +67,10 @@ after `/start` in each fresh workspace.
 
 The default install scope is global (`~/.config/opencode`); the explicit
 `--install-scope repo` above keeps both A/B workspaces self-contained. With a
-global install, restart OpenCode Desktop and keep the workspace configs below
-as the authoritative per-workspace policy.
+global install, V2 watches plugin/config changes; the OpenCode V2 host command `/reload`
+forces rediscovery.
+Installation does not activate governance. Keep the workspace configs below as
+the authoritative per-workspace policy.
 
 The root runner prepares every installable live demo and creates the two A/B
 workspaces from the same seed:

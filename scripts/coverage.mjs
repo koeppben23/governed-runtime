@@ -16,7 +16,12 @@ const ci = process.argv.includes('--ci');
 const args = ['vitest', 'run', '--project', 'unit', '--project', 'integration', '--coverage'];
 // Note: `--silent` is intentionally NOT used — combined with multi-project
 // coverage it suppresses the v8 report write. CI log noise is acceptable.
-if (ci) args.push('--coverage.reporter=json-summary');
+if (ci) {
+  // The production-program architecture guard parses the actual SDK/compiler
+  // graph. Bound competing instrumented workers on shared CI CPUs rather than
+  // increasing its 15-second budget or removing it from coverage.
+  args.push('--coverage.reporter=json-summary', '--maxWorkers=2');
+}
 
 // shell:true so `npx` resolves cross-platform (Node cannot spawn npx.cmd directly).
 const result = spawnSync('npx', args, {

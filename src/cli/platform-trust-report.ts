@@ -5,14 +5,23 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { EnforcementLevel, HostCapabilities } from '../adapters/host-adapter.js';
 import type { HostId } from '../shared/hosts.js';
 import type { DoctorCheck, InstallScope } from './install-types.js';
 import { codexInstallStatus, resolveCodexMarketplacePath } from './codex-plugin-install.js';
 
+/** Diagnostic-only projection; never an adapter capability or assurance authority. */
+interface HostTrustCapabilities {
+  readonly preToolBlock: boolean;
+  readonly argMutation: boolean;
+  readonly outputReplacement: boolean;
+  readonly contextInjection: boolean;
+  readonly compactionInjection: boolean;
+  readonly reviewTransports: readonly Readonly<Record<string, unknown>>[];
+}
+
 interface HostTrustProjection {
-  enforcementLevel: EnforcementLevel;
-  capabilities: HostCapabilities;
+  enforcementLevel: 'synchronous' | 'hook_gated' | 'advisory';
+  capabilities: HostTrustCapabilities;
   runtimeVerification: string;
   activation: string;
   hookSemantics: string;
@@ -31,7 +40,7 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       contextInjection: true,
       reviewTransports: [
         {
-          kind: 'native_task_message_json',
+          kind: 'native_subagent_message_json',
           validatedResult: true,
           parentVisible: true,
           transcriptNavigable: true,
@@ -45,11 +54,11 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
     runtimeVerification:
       'runtime probe required for Governance active; file existence is not proof',
     activation:
-      'configured when local plugin artifacts and import check pass; restart still required',
+      'local plugin artifacts and import check configure discovery only; V2 watches plugin/config changes, /reload forces rediscovery; governance activation remains NOT_VERIFIED',
     hookSemantics: 'in-process plugin can synchronously block through FlowGuard runtime decisions',
     approvalPrimitive: 'FlowGuard /review-decision with validated obligation-bound ReviewFindings',
     reviewerTransport:
-      'native_task_message_json uses one native Task child and request-correlated JSON validated by FlowGuard; model selection and child identity bind both phases',
+      'native_subagent_message_json uses one native subagent child and a proven terminal JSON capture window validated by FlowGuard; model selection and child identity bind both phases',
     receiptPreservation: [
       'sessionId: preserved by FlowGuard state/audit',
       'reviewDecisionId: preserved by FlowGuard decision receipt',

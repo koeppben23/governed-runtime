@@ -444,7 +444,7 @@ export async function buildReviewCompletionResponse(input: {
   });
   const presentationMarkdown = buildPeerReviewCard(
     { result, finalState, report, validatedReviewObligation },
-    { glyphProfile: (await readConfig(worktree)).presentation.opencode.glyphProfile },
+    { glyphProfile: (await readConfig(worktree)).presentation.glyphProfile },
   );
   return formatReviewCompletionResponse({
     finalState,

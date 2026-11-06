@@ -157,6 +157,19 @@ describe('flowguard_continue (runtime)', () => {
     setPhase('READY');
   });
 
+  it.each(['PLAN', 'VALIDATION', 'ARCHITECTURE', 'IMPL_REVIEW', 'PLAN_REVIEW', 'COMPLETE'])(
+    '%s routing does not mutate evidence or execute machine work',
+    async (phase) => {
+      setPhase(phase);
+      const before = JSON.stringify(mocks.state);
+      const { continue_cmd } = await import('./simple/continue-tool.js');
+      await continue_cmd.execute({}, {} as never);
+      expect(JSON.stringify(mocks.state)).toBe(before);
+      expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
+      expect(mocks.evaluate).not.toHaveBeenCalled();
+    },
+  );
+
   // ── HAPPY: deterministic guidance ─────────────────────────────────────────
 
   it('ARCHITECTURE phase derives its action from the canonical product projection', async () => {

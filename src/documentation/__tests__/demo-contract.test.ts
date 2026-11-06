@@ -65,6 +65,16 @@ const INSTALLED_INVOCATIONS = new Set(
   INSTALLED_COMMANDS.map((definition) => definition.invocation.split(/\s+/)[0]!),
 );
 
+/** /reload belongs to the host, not the FlowGuard installation catalogue.
+ * https://opencode.ai/v2/docs/plugins/#reload; require explicit ownership in docs. */
+function unsupportedDemoCommands(text: string): string[] {
+  return inlineCommandTokens(text).filter(
+    (token) =>
+      !INSTALLED_INVOCATIONS.has(token) &&
+      !(token === '/reload' && text.includes('OpenCode V2 host command `/reload`')),
+  );
+}
+
 describe('java demo workflow contract', () => {
   it('uses only canonical phase names in the demo docs', () => {
     const canonical = new Set<string>(Phase.options);
@@ -119,15 +129,29 @@ describe('java demo workflow contract', () => {
     expect(resolveTransition('EVIDENCE_REVIEW', 'APPROVE')).not.toBe('COMPLETE');
   });
 
-  it('only references installed slash commands inside inline code', () => {
+  it('only references installed FlowGuard commands or explicitly owned host reload', () => {
     for (const [file, text] of Object.entries(DOCS)) {
-      for (const token of inlineCommandTokens(text)) {
-        expect(
-          INSTALLED_INVOCATIONS.has(token),
-          `${file} references a phantom command ${token}`,
-        ).toBe(true);
-      }
+      expect(
+        unsupportedDemoCommands(text),
+        `${file} references a phantom or unowned command`,
+      ).toEqual([]);
     }
+  });
+
+  it('recognizes host reload without adding it to FlowGuard installed commands', () => {
+    expect(INSTALLED_INVOCATIONS.has('/reload')).toBe(false);
+    expect(
+      unsupportedDemoCommands('Use the OpenCode V2 host command `/reload`, then `/start`.'),
+    ).toEqual([]);
+  });
+
+  it('still rejects phantom commands and unowned host-command references', () => {
+    expect(
+      unsupportedDemoCommands('Run `/phantom-flowguard`, `/reload` and `/phantom-host`.'),
+    ).toEqual(['/phantom-flowguard', '/reload', '/phantom-host']);
+    expect(unsupportedDemoCommands('OpenCode V2 host command `/phantom-host`')).toEqual([
+      '/phantom-host',
+    ]);
   });
 
   it('documents the governance override for an exhausted review', () => {

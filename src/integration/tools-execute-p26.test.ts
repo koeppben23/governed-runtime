@@ -65,7 +65,10 @@ import { hashText } from '../shared/hashing.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import type { ToolDefinition, ToolResult } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 
 vi.mock('./git-control-plane', async (importOriginal) => {
   const { gitControlPlaneAdapterMock } = await import('./adapter-mock-test-helpers.js');
@@ -247,7 +250,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   // Reset workspace mock once-queues to prevent cross-test leaks.
   // vi.clearAllMocks() only clears calls/results, NOT mockResolvedValueOnce
   // queues. If a P26 test fails before consuming its once-mocks, the stale
@@ -316,7 +319,7 @@ async function executeDecision(args: {
   verdict: 'approve' | 'changes_requested' | 'reject';
   rationale: string;
 }): Promise<ToolResult> {
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: args.verdict,
@@ -328,7 +331,7 @@ function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void 
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,

@@ -17,7 +17,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { buildInvocationFixture } from '../review-invocation-test-helpers.js';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ReviewFindings } from '../state/evidence.js';
 import {
@@ -26,7 +25,6 @@ import {
   isTarAvailable,
   parseToolResult,
   isBlockedResult,
-  assertTestConfigDir,
   fulfillStrictReviewObligation,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
@@ -65,7 +63,10 @@ import { completedDispatchForInvocation } from '../state/evidence-test-constants
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { convertArgsToInputSchema } from '../mcp-server/schema-converter.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ReviewVerdict } from '../state/evidence.js';
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -200,7 +201,7 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   cleanupEnv();
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -222,17 +223,8 @@ async function hydrateSession(
 }
 
 function recordUserDecision(verdict: ReviewVerdict): void {
-  const command =
-    verdict === 'approve'
-      ? '/approve'
-      : verdict === 'approve_with_governance_override'
-        ? '/override-approve'
-        : verdict === 'changes_requested'
-          ? '/request-changes'
-          : '/reject';
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
-    command,
     expectedVerdict: verdict,
   });
 }
@@ -292,6 +284,19 @@ describe('plan', () => {
       expect(result.error).toBeUndefined();
       expect(result.planDigest).toBeTruthy();
       expect(result.selfReviewIteration).toBe(0);
+    });
+
+    it('rejects a minimal plan without ATX headings before spending review authority', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute({ planText: 'X' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING');
+      expect(result.message).not.toContain('UNREGISTERED_REASON');
+      expect(result.message).not.toContain('{reason}');
+      const state = await readState(await currentSessionDir());
+      expect(state!.plan).toBeNull();
+      expect(state!.reviewAssurance?.obligations ?? []).toHaveLength(0);
     });
 
     it('presents multiple rejection causes without spending state, audit or review authority', async () => {
@@ -635,6 +640,17 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('EMPTY_PLAN');
+    });
+
+    it('blocks without ticket evidence in the TICKET phase', async () => {
+      await hydrateSession();
+      const dir = await currentSessionDir();
+      const state = await readState(dir);
+      await writeState(dir, { ...state!, phase: 'TICKET', ticket: null });
+      const raw = await plan.execute({ planText: '## Plan' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('TICKET_REQUIRED');
     });
 
     it('blocks in READY phase (command not allowed without ticket phase)', async () => {
@@ -1874,33 +1890,6 @@ describe('plan', () => {
       const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
       expect(summary.reviewedDigest).toBeUndefined();
       expect(summary.reviewedObligationId).toBeUndefined();
-    });
-  });
-
-  describe('assertTestConfigDir (test safety guard)', () => {
-    it('HAPPY: passes when OPENCODE_CONFIG_DIR is set to a temp directory', async () => {
-      const ws = await createTestWorkspace();
-      expect(() => assertTestConfigDir()).not.toThrow();
-      await ws.cleanup();
-    });
-
-    it('BAD: throws when OPENCODE_CONFIG_DIR is not set', () => {
-      const cleanup = withTestEnv({ OPENCODE_CONFIG_DIR: undefined });
-      try {
-        expect(() => assertTestConfigDir()).toThrow('Unsafe OPENCODE_CONFIG_DIR');
-      } finally {
-        cleanup();
-      }
-    });
-
-    it('BAD: throws when OPENCODE_CONFIG_DIR points to non-temp directory', () => {
-      const nonTempPath = path.join(os.homedir(), '.config', 'opencode');
-      const cleanup = withTestEnv({ OPENCODE_CONFIG_DIR: nonTempPath });
-      try {
-        expect(() => assertTestConfigDir()).toThrow('Unsafe OPENCODE_CONFIG_DIR');
-      } finally {
-        cleanup();
-      }
     });
   });
 

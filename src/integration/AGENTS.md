@@ -27,8 +27,8 @@ API. It must never become a provider of new authorities for lower layers.
   composition (`createFlowGuardPluginHooks`) and registers the runtime hooks
   (beforehooks, afterhooks, audit, compaction, discovery-health,
   enforcement-tracking, events, host-task-diagnostics, logging, modules, policy,
-  risk, workspace). `plugin-orchestrator.ts` is only the shared
-  `OrchestratorDeps` type surface and registers nothing.
+  risk, workspace). Shared `OrchestratorDeps` types are owned directly by
+  `review/pipeline-types.ts`; there is no plugin-orchestrator facade.
 - When adding a new hook, wire it in `plugin.ts` (`createFlowGuardPluginHooks`)
   and add corresponding contract tests.
 

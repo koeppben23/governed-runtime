@@ -62,7 +62,7 @@ function extractCommandList(content: string, label: RegExp): string[] {
 function extractProductIdentityCoreCommandTable(): string[] {
   const content = readDoc('PRODUCT_IDENTITY.md');
   const section = content.match(
-    /Nineteen installed core FlowGuard commands[\s\S]*?\n\nProduct commands/,
+    /Twenty installed core FlowGuard commands[\s\S]*?\n\nProduct commands/,
   );
   expect(section, 'PRODUCT_IDENTITY.md must contain the core command table').toBeTruthy();
   return extractSlashCommands(section![0]);
@@ -85,23 +85,32 @@ function isProductAlias(definition: InstalledCommandDefinition): boolean {
 
 const productAliasDefinitions = INSTALLED_COMMANDS.filter(isProductAlias);
 const productAliasTemplates = new Set<string>(
-  productAliasDefinitions.map((definition) => definition.templateFile),
+  productAliasDefinitions.flatMap((definition) =>
+    definition.templateFile === null ? [] : [definition.templateFile],
+  ),
 );
 
 describe('documentation/top-level-docs-drift', () => {
-  const installedCommands = INSTALLED_TEMPLATE_FILES.map((templateFile) =>
-    slash(templateFile.replace(/\.md$/, '')),
-  ).sort();
+  // Installed templates plus native plugin commands (registered, never installed).
+  const installedCommands = [
+    ...INSTALLED_TEMPLATE_FILES.map((templateFile) => slash(templateFile.replace(/\.md$/, ''))),
+    ...INSTALLED_COMMANDS.filter((definition) => definition.templateFile === null).map(
+      (definition) => definition.invocation,
+    ),
+  ].sort();
 
   const productAliasCommands = productAliasDefinitions
     .map((definition) => definition.invocation)
     .sort();
 
-  const coreInstalledCommands = INSTALLED_TEMPLATE_FILES.filter(
-    (templateFile) => !productAliasTemplates.has(templateFile),
-  )
-    .map((templateFile) => slash(templateFile.replace(/\.md$/, '')))
-    .sort();
+  const coreInstalledCommands = [
+    ...INSTALLED_TEMPLATE_FILES.filter(
+      (templateFile) => !productAliasTemplates.has(templateFile),
+    ).map((templateFile) => slash(templateFile.replace(/\.md$/, ''))),
+    ...INSTALLED_COMMANDS.filter(
+      (definition) => definition.templateFile === null && !isProductAlias(definition),
+    ).map((definition) => definition.invocation),
+  ].sort();
 
   const policyModeLabels = [SOLO_POLICY, TEAM_POLICY, TEAM_CI_POLICY, REGULATED_POLICY]
     .map((policy) => policy.mode)

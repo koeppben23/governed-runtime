@@ -149,6 +149,10 @@ describe('presentation/index.ts barrel', () => {
     'DIRECTIVE_COPY',
     'directiveLabel',
     'directiveDescription',
+    'WORKFLOW_CHOICE_ACTIONS',
+    'WORKFLOW_CHOICE_QUESTION',
+    'buildWorkflowChoiceConclusion',
+    'buildWorkflowChoiceDocument',
   ] as const;
 
   const INTERNAL_SYMBOLS = [

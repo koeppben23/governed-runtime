@@ -13,7 +13,7 @@
   - **`/approve`** — Record the human decision at a review gate.
   - `/status` — Show the current phase and next action.
   - `/abort` — End the current workflow without presenting it as completed.
-  - `/start` — Prepare or restore a governed session.
+  - `/start` — Activate or resume FlowGuard governance for this root session.
   - `/override-approve` — Accept an exhausted review gate with a recorded governance override.
   - `/request-changes` — Record the human decision at a review gate.
 

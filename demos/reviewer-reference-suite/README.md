@@ -9,6 +9,12 @@ The suite does not try to make the reviewer return `accept` more often. It asks
 whether the reviewer applies the same professional standard to the same frozen
 evidence and finishes the review it started.
 
+> **V2 status (2026-11-02):** the live runner and its `chat.params` observer target
+> the removed V1 reviewer transport. Its output-cap arms write the removed
+> `reviewer.outputTokenMax` key, which current FlowGuard rejects with
+> `CONFIG_INVALID`. Recorded runs below remain historical V1 evidence; a V2 port of
+> the live runner is installed-host acceptance work and is **NOT_VERIFIED**.
+
 ## Assurance boundary
 
 - Deterministic contract tests in

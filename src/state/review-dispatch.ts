@@ -8,7 +8,7 @@
  * This module owns the append-only ledger mutators used by every controlled
  * writer (`appendReviewDispatch`, `markDispatchOutcomeUnknown`,
  * `completeReviewDispatch`, `abandonReviewDispatch`,
- * `rebindReviewDispatchHostCall`, `hasReleasedDispatch`)
+ * `hasReleasedDispatch`)
  * together with the shared base `emptyReviewAssurance` /
  * `ensureReviewAssurance` constructors.
  *
@@ -107,28 +107,6 @@ export function completeReviewDispatch(
     dispatches: (base.dispatches ?? []).map((record) =>
       record.hostCallId === hostCallId && record.dispatchStatus === 'authorized'
         ? { ...record, dispatchStatus: 'completed' as const, completedAt }
-        : record,
-    ),
-  };
-}
-
-/**
- * Re-key an authorized dispatch from its pre-release host-call identity to the
- * bound child session identity. Native Task releases are authorized under the
- * Task call ID before the child exists; evidence binding then rebinds the same
- * authorized record to the exact child session in the same mutation.
- */
-export function rebindReviewDispatchHostCall(
-  assurance: ReviewAssuranceState | undefined,
-  fromHostCallId: string,
-  toHostCallId: string,
-): ReviewAssuranceState {
-  const base = ensureReviewAssurance(assurance);
-  return {
-    ...base,
-    dispatches: (base.dispatches ?? []).map((record) =>
-      record.hostCallId === fromHostCallId && record.dispatchStatus === 'authorized'
-        ? { ...record, hostCallId: toHostCallId }
         : record,
     ),
   };

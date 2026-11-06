@@ -1,0 +1,6 @@
+{
+  "package": "@opencode/cli",
+  "version": "2.2.4",
+  "status": "candidate",
+  "scope": "Native CLI/server smoke-test target only; not ACTIVE product or Desktop certification"
+}

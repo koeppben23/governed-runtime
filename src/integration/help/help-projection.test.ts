@@ -149,7 +149,7 @@ describe('buildHelpResult', () => {
     expect(result.directive).toBeNull();
   });
 
-  it('terminal help follows the command policy: recovery escapes available, flow commands blocked', () => {
+  it('terminal help keeps read-only routing/recovery available while mutating flow commands stay blocked', () => {
     for (const phase of ['COMPLETE', 'ABORTED'] as const) {
       const state =
         phase === 'ABORTED'
@@ -169,7 +169,10 @@ describe('buildHelpResult', () => {
       expect(statusFor('/start'), phase).toBe('available');
       expect(statusFor('/hydrate'), phase).toBe('available');
       expect(statusFor('/abort'), phase).toBe('available');
-      expect(statusFor('/continue'), phase).toBe('blocked');
+      expect(statusFor('/continue'), phase).toBe('available');
+      expect(
+        result.commands.find((command) => command.invocation === '/continue')?.preflight,
+      ).toEqual({ status: 'available', guarantee: 'read_only_available' });
       expect(statusFor('/ticket'), phase).toBe('blocked');
     }
   });
@@ -351,6 +354,58 @@ describe('buildHelpResult', () => {
       expect(allContinue.preflight.reasonCode).toBe('CONTINUE_AMBIGUOUS');
     }
   });
+
+  it.each(['PLAN', 'VALIDATION', 'PLAN_REVIEW', 'IMPL_REVIEW', 'COMPLETE', 'ABORTED'] as const)(
+    '/continue at %s projects read-only routing, never mutating CONTINUE admissibility',
+    (phase) => {
+      const state = makeProgressedState(phase);
+      const before = JSON.stringify(state);
+      const result = buildHelpResult(state, TEAM_POLICY, {
+        view: 'command',
+        requestedInvocation: '/continue',
+      });
+      expect(result.commands[0]?.description).toContain(
+        'without executing checks, reviews or transitions',
+      );
+      expect(result.commands[0]?.preflight).toEqual({
+        status: 'available',
+        guarantee: 'read_only_available',
+      });
+      expect(JSON.stringify(state)).toBe(before);
+    },
+  );
+
+  it.each(['READY', 'VALIDATION', 'IMPL_VALIDATION', 'IMPL_REVIEW'] as const)(
+    '/check at %s projects native eligibility, not machine VALIDATE authorization',
+    (phase) => {
+      const result = buildHelpResult(makeProgressedState(phase), TEAM_POLICY, {
+        view: 'command',
+        requestedInvocation: '/check',
+      });
+      expect(result.commands[0]?.id).toBe('operational.check');
+      expect(result.commands[0]?.description).toContain('verification checks and review loop');
+      expect(result.commands[0]?.preflight).toEqual({
+        status: 'available',
+        guarantee: 'eligible_to_attempt',
+      });
+      expect(result.directive).toBeNull();
+    },
+  );
+
+  it.each(['/check', '/continue'])(
+    '%s still requires a session and never authorizes itself through help',
+    (invocation) => {
+      const result = buildHelpResult(null, null, {
+        view: 'command',
+        requestedInvocation: invocation,
+      });
+      expect(result.commands[0]?.preflight).toMatchObject({
+        status: 'blocked',
+        reasonCode: 'SESSION_REQUIRED',
+      });
+      expect(result.directive).toBeNull();
+    },
+  );
 });
 
 // ── Artifacts ─────────────────────────────────────────────────────────
@@ -529,7 +584,7 @@ describe('resume end-to-end via help.execute', () => {
     await writeRepoConfig(ws.tmpDir, {
       ...DEFAULT_CONFIG,
       schemaVersion: 'v1',
-      presentation: { opencode: { glyphProfile: 'ascii' } },
+      presentation: { glyphProfile: 'ascii' },
     });
     const fingerprint = await computeFingerprint(ws.tmpDir);
     await writeState(sessionDir(fingerprint.fingerprint, ctx.sessionID), {

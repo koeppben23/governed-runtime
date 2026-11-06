@@ -163,6 +163,46 @@ describe('buildReviewFeedbackProjection', () => {
     expect(buildReviewFeedbackProjection(mismatchedHost)).toBeNull();
   });
 
+  it('projects the exact consumed changes-requested feedback for implementation rework', () => {
+    const base = feedbackState();
+    const assurance = base.reviewAssurance!;
+    const rejectedDigest = 'rejected-implementation-digest';
+    const obligation = assurance.obligations[0]!;
+    const state = makeState('IMPLEMENTATION', {
+      implementationRework: { rejectedDigest, exhausted: false },
+      reviewAssurance: {
+        ...assurance,
+        obligations: assurance.obligations.map((item) => ({
+          ...item,
+          obligationType: 'implement' as const,
+          subjectDigest: rejectedDigest,
+          status: 'consumed' as const,
+          consumedAt: FIXED_TIME,
+        })),
+        invocations: assurance.invocations.map((item) => ({
+          ...item,
+          obligationType: 'implement' as const,
+          consumedByObligationId: obligation.obligationId,
+        })),
+        attempts: assurance.attempts.map((item) => ({
+          ...item,
+          obligationType: 'implement' as const,
+          subjectDigest: rejectedDigest,
+        })),
+        dispatches: assurance.dispatches.map((item) => ({
+          ...item,
+          obligationType: 'implement' as const,
+        })),
+      },
+    });
+
+    expect(buildReviewFeedbackProjection(state)).toMatchObject({
+      obligation: { type: 'implement', subjectDigest: rejectedDigest },
+      review: { verdict: 'changes_requested' },
+      missingVerification: ['Add a controller regression test for the null path.'],
+    });
+  });
+
   it('fails closed outside the owning phase, for a stale generation, or a different obligation type', () => {
     const state = feedbackState();
     const assurance = state.reviewAssurance!;

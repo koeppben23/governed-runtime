@@ -7,6 +7,7 @@
   "checkers": [],
   "tsconfigFile": "tsconfig.json",
   "vitest": {
+    "pool": "forks",
     "configFile": "vitest.stryker-topology.config.ts",
     "related": false
   },

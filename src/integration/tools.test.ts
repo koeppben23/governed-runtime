@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { PERF_ENABLED } from '../test-policy.js';
+import { benchmarkSync, PERF_ENABLED } from '../test-policy.js';
 import {
   status,
   hydrate,
@@ -40,7 +40,6 @@ import {
   attachGovernanceFooter,
 } from './tools/index.js';
 import * as barrel from './index.js';
-import { benchmarkSync } from '../test-policy.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -145,9 +144,11 @@ describe('integration/tools', () => {
       }
     });
 
-    it('barrel re-exports FlowGuardAuditPlugin', () => {
+    it('barrel re-exports the native V2 FlowGuardAuditPlugin definition, not a factory', () => {
       expect(barrel.FlowGuardAuditPlugin).toBeDefined();
-      expect(typeof barrel.FlowGuardAuditPlugin).toBe('function');
+      expect(typeof barrel.FlowGuardAuditPlugin).toBe('object');
+      expect(barrel.FlowGuardAuditPlugin.id).toBe('flowguard');
+      expect(typeof barrel.FlowGuardAuditPlugin.setup).toBe('function');
     });
   });
 
@@ -395,21 +396,18 @@ describe('integration/tools', () => {
 
   // ─── PERF ──────────────────────────────────────────────────
   describe.skipIf(!PERF_ENABLED)('PERF', () => {
-    it('importing all tools is effectively free (no side effects)', () => {
-      // Tools are just objects with description, args, execute.
-      // No database connections, no file reads, no network calls on import.
-      // Verify by checking all tools are already available (loaded on module import).
-      const start = performance.now();
-      for (let i = 0; i < 1000; i++) {
-        for (const name of TOOL_NAMES) {
-          const tool = TOOLS[name] as Record<string, unknown>;
-          // Access description to ensure the object is realized
-          void tool.description;
+    it('1000 batches of all tool description accesses stay below 10ms at warm p99', () => {
+      // This measures access to already imported objects, not module-import I/O.
+      const result = benchmarkSync(() => {
+        for (let i = 0; i < 1000; i++) {
+          for (const name of TOOL_NAMES) {
+            const tool = TOOLS[name] as Record<string, unknown>;
+            void tool.description;
+          }
         }
-      }
-      const elapsed = performance.now() - start;
-      // 9000 property accesses in < 10ms
-      expect(elapsed).toBeLessThan(10);
+      });
+      // Every sample retains 1000 × TOOL_NAMES.length property accesses.
+      expect(result.p99Ms).toBeLessThan(10);
     });
   });
 });

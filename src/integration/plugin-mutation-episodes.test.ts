@@ -284,27 +284,26 @@ describe('mutation outcome classification', () => {
     expect(await completedOutcome('edit', complete)).toBe('unknown');
   });
 
-  it('classifies edit by its complete success contract', async () => {
-    const complete = {
-      diff: '--- a\n+++ b\n',
-      filediff: { file: 'src/a.ts', patch: 'x', additions: 1, deletions: 0 },
-      diagnostics: { errors: [] },
+  it('classifies edit by its real 2.2.4/2.2.5 files success contract', async () => {
+    const file = {
+      file: 'src/a.ts',
+      patch: '@@ -1 +1 @@',
+      status: 'modified',
+      additions: 1,
+      deletions: 0,
     };
+    const complete = { files: [file], truncated: false };
     expect(await completedOutcome('edit', complete)).toBe('success');
-    expect(await completedOutcome('edit', { ...complete, diff: undefined })).toBe('unknown');
-    expect(
-      await completedOutcome('edit', {
-        ...complete,
-        filediff: { file: 'src/a.ts', patch: 'x', additions: 1 },
-      }),
-    ).toBe('unknown');
-    expect(await completedOutcome('edit', { ...complete, filediff: 'x' })).toBe('unknown');
-    for (const filediff of [
-      { ...complete.filediff, file: 1 },
-      { ...complete.filediff, patch: false },
-      { ...complete.filediff, additions: '1' },
+    expect(await completedOutcome('edit', { files: [] })).toBe('unknown');
+    expect(await completedOutcome('edit', { files: 'src/a.ts' })).toBe('unknown');
+    for (const malformed of [
+      { ...file, file: 1 },
+      { ...file, patch: false },
+      { ...file, additions: '1' },
+      { ...file, deletions: '0' },
+      { ...file, status: 'failed' },
     ])
-      expect(await completedOutcome('edit', { ...complete, filediff })).toBe('unknown');
+      expect(await completedOutcome('edit', { files: [malformed] })).toBe('unknown');
     expect(await completedOutcome('write', complete)).toBe('unknown');
   });
 });

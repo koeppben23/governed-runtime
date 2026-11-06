@@ -754,7 +754,7 @@ describe('implement', () => {
   });
 
   describe('CORNER', () => {
-    it('filters out .opencode/ files from domain files', async () => {
+    it('keeps high-risk .opencode/ files in domain files', async () => {
       await reachImplementation();
       vi.mocked(gitMock.changedFiles).mockResolvedValue([
         'src/foo.ts',
@@ -765,7 +765,7 @@ describe('implement', () => {
       expect(parseToolResult(raw).error).toBeUndefined();
       const domain = (await readState(await currentSessionDir()))!.implementation!.domainFiles;
       expect(domain).toContain('src/foo.ts');
-      expect(domain).not.toContain('.opencode/tools/flowguard.ts');
+      expect(domain).toContain('.opencode/tools/flowguard.ts');
       expect(domain).not.toContain('node_modules/dep/index.js');
     });
 

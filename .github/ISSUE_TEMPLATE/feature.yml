@@ -49,8 +49,8 @@ body:
       value: |
         - [ ] Behavior is implemented through the owning authority, without duplicate runtime authority.
         - [ ] Tests cover happy path and relevant negative path.
-        - [ ] Docs updated or explicitly not needed.
-        - [ ] CHANGELOG.md updated or explicitly not needed.
+        - [ ] All impacted docs synchronized, or no-impact assessment recorded.
+        - [ ] CHANGELOG.md updated under [Unreleased] (mandatory for every PR).
     validations:
       required: true
   - type: textarea
@@ -62,8 +62,8 @@ body:
         - [ ] Change is scoped to this ticket.
         - [ ] Conventional commit and PR title used.
         - [ ] Tests added or updated where needed.
-        - [ ] Documentation updated or explicitly marked not needed with reason.
-        - [ ] CHANGELOG.md updated or explicitly marked not needed with reason.
+        - [ ] All impacted documentation synchronized, or no-impact assessment recorded.
+        - [ ] CHANGELOG.md updated under [Unreleased] (mandatory for every PR).
         - [ ] Verification commands recorded in PR.
         - [ ] PR links/closes this issue.
     validations:

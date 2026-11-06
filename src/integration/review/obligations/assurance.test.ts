@@ -1022,10 +1022,11 @@ describe('integration/review-assurance', () => {
       expect(result.agentType).toBe(REVIEWER_SUBAGENT_TYPE);
       expect(result.mandateDigest).toBe(FIXTURE_MANDATE_DIGEST);
       expect(result.consumedByObligationId).toBeNull();
-      expect(result.invocationMode).toBe('native_task_message_json');
+      expect(result.invocationMode).toBe('native_subagent_message_json');
       expect(result.source).toBe('host-orchestrated');
       expect(result.reviewOutputMode).toBe('validated_json');
-      expect(result.transportVersion).toBe(5);
+      expect(result.transportVersion).toBe(6);
+      expect(result.nativeProvenance?.nativeCallId).toBe('child-1');
       expect(result.reviewAssuranceLevel).toBe('host_message_validated');
       expect(result.capturedRawFindings).toEqual(SAMPLE_RAW_FINDINGS);
       expect(result.capturedVerdict).toBe('accept');

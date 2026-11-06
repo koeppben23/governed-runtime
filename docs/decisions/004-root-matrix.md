@@ -8,26 +8,76 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-10-22):
+(counts updated 2026-11-04):
 
-- `root-composition`: 29 files (plugin lifecycle entrypoints and barrels)
-- `root-host-runtime`: exactly 5 named files (`host-mutation-observation.ts`,
-  `installed-commands.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
+- `root-composition`: 32 files (plugin lifecycle entrypoints and barrels)
+- `root-host-runtime`: exactly 7 named files (`host-mutation-observation.ts`,
+  `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 49 root production files
+- total: 54 root production files
 
-ADR-009 adds `plugin-reviewer-capture.ts` as hook composition and
+The bounded P0-10 audit removes `plugin-orchestrator.ts`, which only forwarded
+the `OrchestratorDeps` type to one production caller. That caller now imports
+the existing canonical owner `review/pipeline-types.ts` directly. This shrinks
+the frozen composition matrix by one; no replacement module or runtime
+authority is added.
+
+The activation/scope change in #1190 adds `plugin-native-tools.ts` for native
+catalogue/executor/completion composition and `opencode-governance.ts` for exact
+host session/delegation correlation. Durable activation schemas and lifecycle
+validation remain in `state/` and `machine/`; the journal is owned by `adapters/`.
+Neither new root file supplies a competing workflow or approval authority.
+
+Finding 6 step 2 adds `plugin-native-review.ts` to connect native hooks to the
+existing dispatch ledger and frozen prompt owners. `plugin-native-events.ts`
+holds the extracted event consumer/fence so `plugin.ts` retains single hook
+registration ownership within its unchanged 650-LOC budget. These composition
+files add no evidence, approval, capture or recovery authority. The named
+`review/dispatch/native-review-dispatch.ts` growth exception isolates native V2
+pre-release/current-child checks without invoking obsolete host DTOs; the zone's
+growth target and all file-size limits remain unchanged.
+
+ADR-009 added `plugin-reviewer-capture.ts` as hook composition and
 `reviewer-capture.ts` as the synchronous request-provenance/capture-fence authority.
-Review modules consume that leaf authority; they do not import plugin composition.
+The #1169 lifecycle simplification removes the hook-wrapper module: `plugin.ts`
+owns single native V2 registrations. The V1 Task capture fence
+(`reviewer-capture.ts`), its execution watchdog and failure persister
+(`reviewer-execution-watchdog.ts`, `reviewer-execution-failure.ts`) and the
+`chat.params` output-cap persister (`reviewer-output-cap-failure.ts`) were
+removed with the V1 reviewer transport (2026-11-02); they had no V2 production
+caller. The current same-child capture fence is
+`review/dispatch/native-review-capture.ts`. No replacement root module or new
+authority was added.
 
-The reviewer output-cap `chat.params` hook and its terminal-persistence path live
-in `integration/reviewer-output-cap.ts` and
-`integration/reviewer-output-cap-failure.ts` at the root composition boundary;
-they are host transport adapters, not a new review authority. The bounded
-execution watchdog and its terminal-persistence adapter live in
-`integration/reviewer-execution-watchdog.ts` and
-`integration/reviewer-execution-failure.ts`.
+`integration/reviewer-output-cap.ts` and the `reviewer.outputTokenMax` key were
+removed (2026-11-02): FlowGuard applies no reviewer output cap, model options stay
+host-native, and an unreadable or invalid `flowguard.json` now blocks ACTIVE
+runtime creation in `plugin.ts` instead of only the reviewer context.
+
+WS3 (#1190) adds `plugin-start-command.ts` at the composition boundary: it registers
+the native `/start` command and sequences locked preflight/fresh hydration, the
+activation commit, idempotent audit and best-effort catalogue/report publication.
+ACTIVE/ACTIVATING reuse their verified workflow; no hydrate is used as a status
+query, and governed runtime admission is gated until its durable audit confirmation exists.
+The Start decision itself (channel, actor, lock, journal)
+remains owned by `opencode-governance.ts` and `adapters/governance-activation.ts`;
+the command module adds no activation, approval or workflow authority.
+
+WS3 autonomous activation adds `opencode-governance-rpc.ts` as the public native
+transport contract. Its dedicated `StartGovernance` operation shares the Start
+composition and existing lifecycle, actor/policy, audit and admission authorities;
+it introduces no alternate workflow or decision machine.
+
+WS3 decision commands add `plugin-decision-command.ts` as native composition.
+`workflow-decision-invocation.ts` replaces the unbound TTL intent authority with
+scoped, exact-subject decision operations; no second workflow machine is added.
+WS3 lifecycle commands add `plugin-governance-lifecycle-command.ts` and the pure
+`governance-end-preconditions.ts`; they reuse the canonical review-settlement and
+activation-journal authorities and add no parallel state machine.
+WS3 `/check` scope and mandate injection add `plugin-check-command.ts` and
+`plugin-mandates.ts`; both consume the existing command-scope and mandates
+renderer authorities.
 
 MUT4 (#1172) adds `plugin-mutation-reconciliation.ts` at the composition boundary
 to connect asynchronous host notifications and the synchronous pre-implement

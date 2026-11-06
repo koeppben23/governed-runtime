@@ -157,8 +157,9 @@ export type ExternalReference = z.infer<typeof ExternalReferenceSchema>;
 /**
  * How the reviewer was invoked.
  *
- * `native_task_message_json` is the only sanctioned transport: OpenCode
- * exposes the reviewer as a native Task child and FlowGuard captures structured
- * findings from a schema-constrained follow-up in that same child session.
+ * `native_task_message_json` is the historical OpenCode reviewer Task transport.
+ * `native_subagent_message_json` is the current OpenCode V2 native subagent
+ * transport with a separately proven terminal capture window. Historical
+ * evidence keeps its own generation; neither is normalized into the other.
  */
-export type ReviewInvocationMode = 'native_task_message_json';
+export type ReviewInvocationMode = 'native_task_message_json' | 'native_subagent_message_json';

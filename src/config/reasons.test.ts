@@ -70,10 +70,14 @@ describe('config/reasons', () => {
       expect(reason?.recoverySteps[0]).toContain('Request changes');
     });
 
-    it('mutation binding recovery first reopens IMPLEMENTATION from the evidence gate', () => {
+    it('mutation binding recovery distinguishes known from unknown outcomes', () => {
       const reason = defaultReasonRegistry.get('MUTATION_EPISODE_BINDING_REQUIRED');
-      expect(reason?.quickFixCommand).toBe('/request-changes');
-      expect(reason?.recoverySteps[0]).toContain('/request-changes');
+      expect(reason?.quickFixCommand).toBe('/status');
+      expect(reason?.recoverySteps[0]).toContain('/status');
+      expect(reason?.recoverySteps.join('\n')).toContain('flowguard_reconcile_mutation_episode');
+      expect(reason?.recoverySteps.join('\n')).toContain(
+        'Unknown outcomes cannot be cleared by /request-changes',
+      );
     });
   });
 

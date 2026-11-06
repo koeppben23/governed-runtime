@@ -26,6 +26,22 @@ FlowGuard uses a pre-built proprietary distribution model. Upgrades involve down
 
 ### Standard Upgrade
 
+**OpenCode V2 fresh-install exception:** the installer does not migrate V1
+FlowGuard wrappers, global mandate registrations or obsolete ownership
+manifests. Before replacing them, archive the old installation/configuration and
+governance evidence byte-for-byte and verify the archive. Remove only confirmed
+obsolete FlowGuard registrations, preserving customer settings, then install
+fresh. `--force` is not an old-format adapter, and the new uninstaller refuses
+obsolete installations instead of cleaning them destructively. See the
+[native installation boundary](./installation.md#native-v2-layout-and-fresh-install-boundary).
+The standard reinstall below applies only to the current install format.
+
+For a running OpenCode process that already reports a failed `@flowguard/core`
+import, a successful file installation or `/reload` does not establish recovery.
+Use the [native load recovery procedure](./installation.md#native-v2-layout-and-fresh-install-boundary)
+after active work is safely stopped, then verify the affected Desktop server's
+plugin and command APIs rather than a separate fresh CLI server.
+
 ```bash
 # 0. Pre-upgrade preflight (read-only, workspace-scoped). Exits 1 when this
 #    workspace is not upgrade-ready; historical archives are warnings only.

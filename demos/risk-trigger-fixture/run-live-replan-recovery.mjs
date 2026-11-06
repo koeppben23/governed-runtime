@@ -18,12 +18,11 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   Runner,
-  assertToolchain,
   parseArgs,
-  readPins,
   sha256,
   verifyChecksumSidecar,
 } from '../java-task-manager/run-live-matrix.mjs';
+import { readPins, assertToolchain } from '../lib/toolchain.mjs';
 import {
   applyFixtureRepoConfig,
   fixtureRepoConfigRiskTriggerPaths,

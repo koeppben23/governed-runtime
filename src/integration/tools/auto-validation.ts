@@ -34,7 +34,7 @@
 
 import type { Phase, SessionState } from '../../state/schema.js';
 import type { SystemWorkOperation } from '../../state/system-work.js';
-import type { ToolResult, WorkspaceToolContext } from './helpers.js';
+import type { AutoValidationProgress, ToolResult, WorkspaceToolContext } from './helpers.js';
 import { formatBlocked } from '../blocked-result.js';
 import {
   withMutableSessionTransaction,
@@ -336,7 +336,9 @@ async function runActiveCheckSequence(
   context: WorkspaceToolContext,
   phase: ValidationPhase,
   activeChecks: readonly string[],
+  progress?: AutoValidationProgress,
 ): Promise<CheckSequenceResult> {
+  await progress?.({ phase, checks: activeChecks });
   let lastResponse: string | null = null;
   for (const kind of activeChecks) {
     const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
@@ -441,6 +443,7 @@ async function finalizeAutomaticValidationAttempt(input: {
 async function runAutomaticValidationAttempt(
   context: WorkspaceToolContext,
   deps: SystemWorkRetryDeps,
+  progress?: AutoValidationProgress,
 ): Promise<SystemWorkResumeOutcome> {
   const sessionKey = context.sessionID;
   if (activeValidationSessions.has(sessionKey)) return { kind: 'none' };
@@ -472,7 +475,7 @@ async function runAutomaticValidationAttempt(
       ...getLogTraceFields(),
     });
 
-    const sequence = await runActiveCheckSequence(context, phase, checks);
+    const sequence = await runActiveCheckSequence(context, phase, checks, progress);
     if (sequence.kind === 'completed' || sequence.kind === 'blocked') return sequence;
     if (sequence.kind === 'empty') return { kind: 'none' };
 
@@ -498,8 +501,9 @@ async function runAutomaticValidationAttempt(
 export async function runActiveChecksAutomatically(
   context: WorkspaceToolContext,
   deps: SystemWorkRetryDeps = DEFAULT_SYSTEM_WORK_RETRY_DEPS,
+  progress?: AutoValidationProgress,
 ): Promise<string | null> {
-  const outcome = await runAutomaticValidationAttempt(context, deps);
+  const outcome = await runAutomaticValidationAttempt(context, deps, progress);
   return outcome.kind === 'none' ? null : outcome.response;
 }
 

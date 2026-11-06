@@ -116,6 +116,19 @@ describe('cli/parseArgs', () => {
       expect(args.checksumsFile).toBe('./checksums.sha256');
     });
 
+    it('parses --restart-host and --no-restart-host', () => {
+      const yes = okResult(parseArgs(['install', '--restart-host']));
+      const no = okResult(parseArgs(['install', '--no-restart-host']));
+      expect(yes.restartHost).toBe(true);
+      expect(no.restartHost).toBe(false);
+      expect(okResult(parseArgs(['install'])).restartHost).toBeUndefined();
+    });
+
+    it('rejects ambiguous host restart flags', () => {
+      errorResult(parseArgs(['install', '--restart-host', '--no-restart-host']));
+      errorResult(parseArgs(['install', '--no-restart-host', '--restart-host']));
+    });
+
     it('parses --allow-unverified-tarball', () => {
       const args = okResult(
         parseArgs([

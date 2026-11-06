@@ -429,7 +429,7 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     category: 'adapter',
     messageTemplate: 'Session error received from host runtime: {message}',
     recoverySteps: [
-      'Check the host runtime (OpenCode) logs for the root cause',
+      'Check the host runtime logs for the root cause',
       'The session may have encountered an unrecoverable error',
       'Start a new session if the current one is no longer functional',
     ],

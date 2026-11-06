@@ -141,17 +141,17 @@ Repository-level architecture decision records (review zone budgets, root matrix
 
 ## Quick Reference
 
-| Command            | Allowed In                                    | Description                    |
-| ------------------ | --------------------------------------------- | ------------------------------ |
-| `/hydrate`         | Any                                           | Bootstrap session → READY      |
-| `/status`          | Any                                           | Read-only workflow orientation |
-| `/ticket`          | READY, TICKET                                 | Record task, start ticket flow |
-| `/plan`            | TICKET, PLAN                                  | Generate plan                  |
-| `/review-decision` | PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW     | Human approval                 |
-| `/validate`        | VALIDATION                                    | Run checks                     |
-| `/implement`       | IMPLEMENTATION                                | Execute plan                   |
-| `/architecture`    | READY, ARCHITECTURE                           | Create/revise ADR              |
-| `/review`          | READY                                         | Start peer review flow         |
-| `/continue`        | Any                                           | Auto-advance                   |
-| `/abort`           | Any                                           | Terminate                      |
-| `/archive`         | COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE | Archive session                |
+| Command            | Allowed In                                    | Description                             |
+| ------------------ | --------------------------------------------- | --------------------------------------- |
+| `/hydrate`         | Any                                           | Legacy compatibility; not V2 activation |
+| `/status`          | Any                                           | Read-only workflow orientation          |
+| `/ticket`          | READY, TICKET                                 | Record task, start ticket flow          |
+| `/plan`            | TICKET, PLAN                                  | Generate plan                           |
+| `/review-decision` | PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW     | Policy-selected approval decision       |
+| `/validate`        | VALIDATION                                    | Run checks                              |
+| `/implement`       | IMPLEMENTATION                                | Execute plan                            |
+| `/architecture`    | READY, ARCHITECTURE                           | Create/revise ADR                       |
+| `/review`          | READY                                         | Start peer review flow                  |
+| `/continue`        | Any                                           | Auto-advance                            |
+| `/abort`           | Any                                           | Terminate                               |
+| `/archive`         | COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE | Archive session                         |

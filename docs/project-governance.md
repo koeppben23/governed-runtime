@@ -13,8 +13,8 @@ Every ticket should state:
 - Touched surface
 - Acceptance criteria
 - Verification required
-- Documentation required or not required with reason
-- `CHANGELOG.md` required or not required with reason
+- Impacted documentation, or a reasoned no-impact assessment
+- Required `CHANGELOG.md` entry under `[Unreleased]`
 
 ## Clean Code And Clean Architecture
 
@@ -86,8 +86,8 @@ Definition Of "100% Clean Code" checklist in CONTRIBUTING.md.
 - Conventional commit and PR title used
 - Tests added or updated where needed
 - Negative-path tests added for governance or fail-closed behavior
-- Documentation updated or explicitly marked not needed with reason
-- `CHANGELOG.md` updated or explicitly marked not needed with reason
+- All impacted documentation synchronized; no-impact assessments justified
+- `CHANGELOG.md` updated under `[Unreleased]` (mandatory for every PR)
 - Verification commands recorded in PR
 - PR links or closes the issue
 
@@ -111,7 +111,7 @@ A ticket is ready only when:
 | `Risk`               | `TRIVIAL`, `STANDARD`, `HIGH-RISK`                                                          |
 | `Touched Surface`    | `Docs`, `CLI`, `Policy`, `State`, `Audit`, `Archive`, `Release`, `Installer`, `CI`, `Tests` |
 | `Docs Required`      | `Yes`, `No`, `Unknown`                                                                      |
-| `Changelog Required` | `Yes`, `No`, `Unknown`                                                                      |
+| `Changelog Required` | `Yes` (every PR)                                                                            |
 | `Verification Level` | `Targeted`, `Full`, `Release`                                                               |
 | `Release Impact`     | `None`, `Patch`, `Minor`, `Major`, `RC`                                                     |
 | `Status`             | `Backlog`, `Ready`, `In Progress`, `Review`, `Blocked`, `Done`                              |
@@ -126,23 +126,18 @@ semantics, install/upgrade/release steps, error codes, recovery guidance, or
 support expectations change. Update developer docs when architecture boundaries,
 SSOT ownership, test strategy, release process, or contribution workflow changes.
 
-If docs are not updated, the PR must state why no documentation change is needed.
+Update all affected docs in the same PR. If no document is affected, record the
+impact assessment; no cosmetic edit is required. Stale or contradictory affected
+docs block merge. Automated checks do not replace semantic review.
 
 ## Changelog Contract
 
-Update `CHANGELOG.md` for release-relevant changes:
-
-- user-visible behavior
-- CLI, API, or config changes
-- policy or governance semantics
-- release, install, upgrade, or rollback behavior
-- security or fail-closed behavior
-- error or recovery text
-- meaningful test or quality gate changes
-
-`CHANGELOG.md` is not required for typo-only docs, formatting, internal-only
-cleanup without behavior change, or test refactors without new release-relevant
-coverage. If not updated, the PR must state why no changelog entry is needed.
+Every PR MUST update `CHANGELOG.md` under `[Unreleased]`, including docs-only,
+formatting, tests, CI and internal cleanup. No exemption. Describe completed
+behavior, never intended or unverified support. The executable contract and
+commands are owned by [CONTRIBUTING.md](../CONTRIBUTING.md#changelog-contract).
+The `doc-drift` job is merge-blocking through `ci-gate`; semantic alignment with
+code, tests and shipped artifacts must also be reviewed on the final candidate.
 
 ## High-Risk Contract
 

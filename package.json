@@ -22,6 +22,10 @@
       "import": "./dist/integration/plugin.js",
       "types": "./dist/integration/plugin.d.ts"
     },
+    "./integration/governance-rpc": {
+      "import": "./dist/integration/opencode-governance-rpc.js",
+      "types": "./dist/integration/opencode-governance-rpc.d.ts"
+    },
     "./testing": {
       "import": "./dist/testing.js",
       "types": "./dist/testing.d.ts"
@@ -72,12 +76,14 @@
     "test:review-modeb-contract": "vitest run --project integration src/integration/review-modeb-contract.test.ts",
     "test:e2e-contract": "vitest run --project integration src/integration/runtime-flow-e2e-contract.test.ts",
     "test:unit": "vitest run --project unit",
+    "test:unit:no-perf": "vitest run --project unit --testNamePattern '^(?!.*\\bPERF\\b)'",
+    "test:unit:perf": "vitest run --project unit --testNamePattern '\\bPERF\\b' --maxWorkers=1",
     "test:scripts": "vitest run --project scripts",
     "test:architecture": "vitest run --project unit src/architecture/",
     "test:evals": "vitest run --project evals",
     "test:demo-contract": "vitest run --project unit src/documentation/__tests__/demo-contract.test.ts",
     "test:integration": "vitest run --project integration",
-    "test:integration:perf": "vitest run --project integration --testNamePattern 'PERF'",
+    "test:integration:perf": "vitest run --project integration --testNamePattern 'PERF' --maxWorkers=1",
     "test:sdk-contract": "vitest run --project integration src/integration/sdk-contract.test.ts",
     "test:sdk-contract:hooks": "vitest run --project integration src/integration/sdk-contract-hooks.test.ts",
     "test:sdk-contract:mcp": "vitest run --project integration src/integration/sdk-contract-mcp.test.ts",
@@ -100,13 +106,14 @@
     "check:doc-drift": "npm run build && npm run generate-doc-inventory && git diff --exit-code docs/_inventory.generated.md && npx vitest run --project unit src/documentation/__tests__/product-inventory.test.ts src/documentation/__tests__/comment-count-drift.test.ts",
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
-    "mutation": "node scripts/stryker-patch.js && stryker run",
+    "mutation": "stryker run",
     "pack:checksums": "node scripts/pack-with-checksums.js",
     "release:prepare": "node scripts/prepare-release.js",
     "setup-hooks": "node scripts/setup-git-hooks.js",
     "prepare": "npm run setup-hooks",
     "release:verify": "npm run check && npm run lint && npm test && npm run build && npm run check:esm && npm run test:install-verify",
-    "release:assert-main-tag": "node scripts/assert-main-release-tag.js"
+    "release:assert-main-tag": "node scripts/assert-main-release-tag.js",
+    "check:pr-documentation": "node scripts/check-pr-documentation.mjs"
   },
   "engines": {
     "node": "^20.0.0 || ^22.0.0 || ^24.0.0",
@@ -126,6 +133,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@opencode/client": "2.2.4",
+    "@opencode/plugin": "2.2.4",
     "@opentelemetry/api": "^1.10.0",
     "asn1js": "^4.0.0",
     "jose": "^6.2.14",
@@ -144,7 +153,6 @@
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.0.2",
     "@eslint/js": "^9.37.0",
-    "@opencode-ai/plugin": "1.19.5",
     "@stryker-mutator/core": "^10.1.1",
     "@stryker-mutator/typescript-checker": "^10.1.1",
     "@stryker-mutator/vitest-runner": "^10.1.1",

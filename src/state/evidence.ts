@@ -4,8 +4,8 @@
  *              All implementation lives in focused evidence-* modules.
  *              This file is the public entry point for `state/evidence.js` imports.
  *
- *              evidence-assurance-internal.ts MUST NOT appear in these re-exports —
- *              OpenCodeSessionId is an internal helper and was never part of the
+ *              host-identity.ts MUST NOT appear in these re-exports —
+ *              HostSessionId is an internal helper and was never part of the
  *              public evidence.ts API surface.
  *
  * @version v2 (split into focused modules, no behavior change, no API expansion)

@@ -1,184 +1,103 @@
-/**
- * @module integration/opencode-host-adapter
- * @description OpenCode platform adapter — concrete implementation of HostAdapter (HAI).
- *
- * Independent review has exactly one productive OpenCode transport:
- * `native_task_message_json`. OpenCode's native Task owns the visible,
- * navigable, permission-isolated reviewer child; FlowGuard then requests a
- * normal JSON serialization in that SAME child session with the same model and
- * variant. A direct session.create/session.prompt child is intentionally not
- * advertised because OpenCode does not surface it as a native subagent in the
- * parent UI.
- *
- * @see https://github.com/koeppben23/governed-runtime/issues/242
- * @version v5
- */
-
-import type {
-  HostAdapter,
-  HostCapabilities,
-  HostReviewTransportCapability,
-  HostToolEvent,
-  BlockDecision,
-  ToolResultMutation,
-  CapabilityValidationResult,
-  EnforcementLevel,
-} from '../adapters/host-adapter.js';
-import {
-  REQUIRED_INDEPENDENT_REVIEW_TRANSPORT,
-  reviewTransportSatisfies,
-} from '../adapters/host-adapter.js';
+/** OpenCode V2 mechanics. No SDK request/response envelope enters governance. */
+import type { Plugin } from '@opencode/plugin';
+import type { OpenCodeEvent } from '@opencode/client';
+import type { HostAdapter, HostSession } from '../adapters/host-adapter.js';
 import type { OrchestratorClient } from './review/types.js';
-import { buildEnforcementError } from './blocked-result.js';
+import type { PluginEvent } from './plugin-events.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 
-export interface OpenCodeAdapterConfig {
-  readonly client: OrchestratorClient;
-  readonly directory: string;
-  readonly worktree: string;
+class HostAdapterInitError extends Error {
+  readonly code = 'HOST_ADAPTER_INIT_FAILED';
 }
 
-export class HostAdapterInitError extends Error {
-  readonly code = 'HOST_ADAPTER_INIT_FAILED' as const;
-
-  constructor(message: string) {
-    super(message);
-    this.name = 'HostAdapterInitError';
-  }
+function hasMethods(domain: unknown, methods: readonly string[]): boolean {
+  if (domain === null || typeof domain !== 'object') return false;
+  return methods.every((method) => typeof Reflect.get(domain, method) === 'function');
 }
 
-export class HostCapabilityMismatchError extends Error {
-  readonly code = 'HOST_CAPABILITY_MISMATCH' as const;
-
-  constructor(mismatches: ReadonlyArray<{ readonly capability: string }>) {
-    const names = mismatches.map((mismatch) => mismatch.capability).join(', ');
-    super(`[FlowGuard] OpenCode host capability mismatch: ${names || 'unknown'}`);
-    this.name = 'HostCapabilityMismatchError';
-  }
-}
-
-const NATIVE_TASK_STRUCTURED_REVIEW_TRANSPORT: HostReviewTransportCapability = {
-  kind: 'native_task_message_json',
-  validatedResult: true,
-  parentVisible: true,
-  transcriptNavigable: true,
-  isolatedAgentIdentity: true,
-  // OpenCode's native Task derives child permissions from the parent and the
-  // selected subagent, and applies additional task/primary-tool denies.
-  permissionIsolation: true,
-  assurance: 'host_message_validated',
-};
-
-export class OpenCodeHostAdapter implements HostAdapter {
-  readonly platform = 'opencode' as const;
-
-  readonly capabilities: HostCapabilities = {
-    preToolBlock: true,
-    argMutation: true,
-    outputReplacement: true,
-    contextInjection: true,
-    reviewTransports: [NATIVE_TASK_STRUCTURED_REVIEW_TRANSPORT],
-    compactionInjection: true,
-  };
-
-  readonly enforcementLevel: EnforcementLevel = 'synchronous';
-
-  private readonly client: OrchestratorClient;
-  private readonly directoryPath: string;
-  private readonly worktreePath: string;
-
-  constructor(config: OpenCodeAdapterConfig) {
-    this.client = config.client;
-    this.directoryPath = config.directory;
-    this.worktreePath = config.worktree;
-  }
-
-  getWorkingDirectory(): string {
-    return this.directoryPath;
-  }
-
-  getWorktree(): string {
-    return this.worktreePath;
-  }
+export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
+  constructor(
+    readonly context: Plugin.Context,
+    private readonly signal: AbortSignal,
+  ) {}
 
   async initialize(): Promise<void> {
-    // Native Task creation is host-owned and therefore absent from the client
-    // API used here. FlowGuard only needs the agent registry and same-child
-    // session.prompt for the structured serialization half of the transport.
-    if (
-      typeof this.client?.app?.agents !== 'function' ||
-      typeof this.client?.session?.prompt !== 'function'
-    ) {
-      throw new HostAdapterInitError(
-        '[FlowGuard] OpenCode adapter initialization failed: SDK client missing ' +
-          'app.agents or session.prompt. Cannot guarantee native reviewer structured serialization.',
-      );
+    const ctx = this.context;
+    const available = [
+      hasMethods(ctx.session, ['get', 'context', 'prompt', 'wait', 'interrupt', 'hook']),
+      hasMethods(ctx.tool, ['hook', 'transform']),
+      hasMethods(ctx.event, ['subscribe']),
+      hasMethods(ctx.storage, ['get', 'set', 'scan']),
+    ];
+    if (available.includes(false)) {
+      throw new HostAdapterInitError('The native OpenCode V2 plugin context is incomplete.');
     }
-  }
-
-  /**
-   * Boot validation is contract-attested only. The native Task lifecycle is
-   * runtime-observed at the before/after hook boundary and exact child metadata
-   * is required before evidence can bind.
-   */
-  async validateCapabilities(): Promise<CapabilityValidationResult> {
-    return {
-      valid: true,
-      mismatches: [],
-      runtimeVerified: [],
-      contractAttested: [
-        'preToolBlock',
-        'argMutation',
-        'outputReplacement',
-        'contextInjection',
-        'reviewTransports.native_task_message_json',
-        'compactionInjection',
-      ],
-    };
   }
 
   async shutdown(): Promise<void> {
-    // OpenCode plugin lifecycle is SDK-managed.
-  }
-
-  deliverBlockDecision(_event: HostToolEvent, decision: BlockDecision): void {
-    throw buildEnforcementError(decision.code, decision.reason);
-  }
-
-  deliverArgMutation(_event: HostToolEvent, _args: Record<string, unknown>): void {
-    // OpenCode argument mutation is performed directly on the hook output ref.
-  }
-
-  mutateToolResult(_event: HostToolEvent, _mutation: ToolResultMutation): void {
-    // OpenCode result mutation is performed directly on the hook output ref.
-  }
-
-  isReviewerSupported(): boolean {
-    return this.capabilities.reviewTransports.some((transport) =>
-      reviewTransportSatisfies(transport, REQUIRED_INDEPENDENT_REVIEW_TRANSPORT),
-    );
+    /* Registrations are owned by plugin setup/cleanup. */
   }
 
   log(level: 'debug' | 'info' | 'warn' | 'error', message: string, data?: unknown): void {
-    if (this.client.tui?.showToast && (level === 'warn' || level === 'error')) {
-      this.client.tui
-        .showToast({
-          body: {
-            message: `[FlowGuard] ${message}`,
-            variant: level === 'error' ? 'error' : 'info',
-          },
-        })
-        .catch(() => {
-          /* diagnostic-only */
-        });
-    }
-    void data;
+    console[level](`[FlowGuard] ${message}`, ...(data === undefined ? [] : [data]));
   }
 
-  injectCompactionContext(_context: string): void {
-    // OpenCode compaction context is injected directly by the hook handler.
+  async getSession(sessionId: string): Promise<HostSession> {
+    const session = await this.context.session.get(
+      { sessionID: sessionId },
+      { signal: this.signal },
+    );
+    if (session.id !== sessionId) {
+      throw new HostAdapterInitError(
+        'The host returned another session for an exact session lookup.',
+      );
+    }
+    return {
+      sessionId: session.id,
+      directory: session.location.directory,
+      ...(session.parentID === undefined ? {} : { parentSessionId: session.parentID }),
+      ...(session.agent === undefined ? {} : { agent: session.agent }),
+    };
+  }
+
+  async readHistory(sessionId: string): Promise<unknown> {
+    // Preserve native bytes/identities. In particular, never synthesize a V1
+    // assistant parentID from an inbox admission or the latest response.
+    return this.context.session.context({ sessionID: sessionId }, { signal: this.signal });
   }
 }
 
-export function createOpenCodeHostAdapter(config: OpenCodeAdapterConfig): HostAdapter {
-  return new OpenCodeHostAdapter(config);
+/** Project notifications to existing application events, never to completion evidence. */
+export function projectOpenCodeEvent(event: OpenCodeEvent): {
+  readonly sessionId: string;
+  readonly event: PluginEvent;
+} | null {
+  if (event.type === 'session.tool.failed') {
+    return {
+      sessionId: event.data.sessionID,
+      event: {
+        type: event.type,
+        data: {
+          ...event.data,
+          hostEventId: event.id,
+          hostCallId: encodeHostCallId(
+            event.data.sessionID,
+            event.data.assistantMessageID,
+            event.data.id,
+          ),
+        },
+      },
+    };
+  }
+  if (
+    event.type === 'session.deleted' ||
+    event.type === 'session.idle' ||
+    event.type === 'session.execution.failed'
+  ) {
+    return {
+      sessionId: event.data.sessionID,
+      event: { type: event.type, data: { ...event.data, hostEventId: event.id } },
+    };
+  }
+  return null;
 }

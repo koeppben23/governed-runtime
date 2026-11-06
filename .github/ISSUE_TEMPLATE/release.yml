@@ -16,6 +16,7 @@ body:
       label: Protected Main Release Checklist
       value: |
         - [ ] Follow the canonical protected-main release procedure in CONTRIBUTING.md.
+        - [ ] CHANGELOG.md updated under [Unreleased] (mandatory for every PR).
         - [ ] Record any recovery from a pre-merge tag according to CONTRIBUTING.md.
     validations:
       required: true

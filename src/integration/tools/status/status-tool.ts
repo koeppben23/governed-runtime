@@ -364,7 +364,7 @@ export const status: ToolDefinition = {
       }
       const presentation: PresentationRenderOptions = {
         glyphProfile: (await readConfig(session.wsDir ?? (context.worktree || context.directory)))
-          .presentation.opencode.glyphProfile,
+          .presentation.glyphProfile,
       };
 
       if (!session.state) {

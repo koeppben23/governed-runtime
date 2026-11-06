@@ -453,7 +453,7 @@ follow-up) carries `obligationId`, `childSessionId`, and either
 `followupPromptMsUnavailable: not_invoked` when no host prompt was sent. It
 times only the host prompt, not agent resolution, validation, or binding.
 
-Limits: the native reviewer Task bypasses the generic tool hooks, so its
+Limits: the native reviewer subagent bypasses the generic tool hooks, so its
 execution is not covered by `beforeToAfterMs`; use the host session export
 for Task and model timings. These lines are absent while the file sink is not
 yet active, when the configured level is above `info`, or when an enabled rate
@@ -531,7 +531,7 @@ plugin lifecycle
 command.execute.before
 tool.execute.before
 tool.execute.after
-native Task/reviewer orchestration
+native reviewer subagent/reviewer orchestration
 host events
 session compaction
 host process behavior
@@ -639,11 +639,13 @@ breakpoint mapping.
    the pinned source checkout and uses the Bun inspector for that process.
 
 6. First FlowGuard breakpoints (in the `debug.bun.sh` session):
-   - `<playground>/.opencode/plugins/flowguard-audit.ts` — the wrapper; proves
+   - `<playground>/.opencode/plugins/flowguard/index.ts` — the native wrapper; proves
      that the host discovered the repo-scoped plugin.
    - `<playground>/.opencode/node_modules/@flowguard/core/dist/integration/plugin.js`
-     — `FlowGuardAuditPlugin` execution.
-7. Trigger `/start` or `/hydrate` in the host TUI.
+     — `FlowGuardAuditPlugin.setup` execution.
+7. Observe native setup/reload/cleanup. Do not treat a `/start` or `/hydrate`
+   callback as operator provenance: activation remains blocked pending the UI
+   source proof, and installed INACTIVE parity remains NOT_VERIFIED.
 
 FlowGuard TS-level breakpoints are not available for the installed copy: the
 published tarball ships only `dist/` and `VERSION`, so breakpoints bind in the

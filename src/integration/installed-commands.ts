@@ -11,6 +11,7 @@
  */
 
 import { Command } from '../machine/commands.js';
+import { NATIVE_CHECK_COMMAND, NATIVE_START_COMMAND } from '../shared/flowguard-identifiers.js';
 import {
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHITECTURE,
@@ -47,13 +48,13 @@ export type InstalledCommandId =
   | 'workflow.architecture'
   | 'workflow.abort'
   | 'operational.archive'
-  | 'alias.start'
+  | 'operational.start'
   | 'alias.task'
   | 'variant.approve'
   | 'variant.override-approve'
   | 'variant.request-changes'
   | 'variant.reject'
-  | 'alias.check'
+  | 'operational.check'
   | 'workflow.export'
   | 'alias.why'
   | 'operational.finish'
@@ -82,15 +83,27 @@ type ToolName =
 
 export interface InstalledCommandDefinition {
   readonly id: InstalledCommandId;
-  /** Template body file to install. Multiple definitions may share a file. */
-  readonly templateFile: `${string}.md`;
+  /**
+   * Template body file to install; multiple definitions may share a file. `null`
+   * marks a native plugin command that is registered at runtime, never installed.
+   */
+  readonly templateFile: `${string}.md` | null;
   readonly invocation: `/${string}`;
   readonly kind: 'workflow' | 'operational' | 'preferred_name' | 'action_variant' | 'convenience';
-  readonly target: Readonly<{
-    toolName: ToolName;
-    fixedArgs?: Readonly<Record<string, unknown>>;
-    workflowCommand?: Command;
-  }>;
+  readonly target: Readonly<
+    | {
+        toolName: ToolName;
+        fixedArgs?: Readonly<Record<string, unknown>>;
+        workflowCommand?: Command;
+        nativeCommand?: never;
+      }
+    | {
+        nativeCommand: typeof NATIVE_START_COMMAND | typeof NATIVE_CHECK_COMMAND;
+        toolName?: never;
+        fixedArgs?: never;
+        workflowCommand?: never;
+      }
+  >;
   readonly visibility: 'primary' | 'visible_alias' | 'compatibility';
   readonly presentationGroup: PresentationGroup;
   /** Presentation copy for operational interfaces. */
@@ -147,12 +160,12 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     id: 'workflow.continue',
     templateFile: 'continue.md',
     invocation: '/continue',
-    kind: 'workflow',
-    target: { toolName: TOOL_FLOWGUARD_CONTINUE, workflowCommand: Command.CONTINUE },
+    kind: 'operational',
+    target: { toolName: TOOL_FLOWGUARD_CONTINUE },
     visibility: 'compatibility',
     presentationGroup: 'work',
     description:
-      'Compatibility routing surface: advances the workflow on explicit request. Not workflow guidance.',
+      'Read-only routing: report the canonical next action without executing checks, reviews or transitions.',
   },
   {
     id: 'workflow.implement',
@@ -190,11 +203,11 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'workflow.review-decision',
-    templateFile: 'review-decision.md',
+    templateFile: null,
     invocation: '/review-decision',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_DECISION, workflowCommand: Command.REVIEW_DECISION },
-    visibility: 'compatibility',
+    visibility: 'visible_alias',
     presentationGroup: 'review',
     description: 'Record the human decision at a review gate.',
   },
@@ -242,15 +255,14 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     intent: 'export_result',
   },
   {
-    id: 'alias.start',
-    templateFile: 'start.md',
+    id: 'operational.start',
+    templateFile: null,
     invocation: '/start',
     kind: 'preferred_name',
-    target: { toolName: TOOL_FLOWGUARD_HYDRATE, workflowCommand: Command.HYDRATE },
+    target: { nativeCommand: NATIVE_START_COMMAND },
     visibility: 'primary',
     presentationGroup: 'start',
-    description: 'Prepare or restore a governed session.',
-    intent: 'refresh_repository',
+    description: 'Activate or resume FlowGuard governance for this root session.',
   },
   {
     id: 'alias.task',
@@ -264,7 +276,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'variant.approve',
-    templateFile: 'approve.md',
+    templateFile: null,
     invocation: '/approve',
     kind: 'action_variant',
     target: {
@@ -279,7 +291,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'variant.override-approve',
-    templateFile: 'override-approve.md',
+    templateFile: null,
     invocation: '/override-approve',
     kind: 'action_variant',
     target: {
@@ -294,7 +306,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'variant.request-changes',
-    templateFile: 'request-changes.md',
+    templateFile: null,
     invocation: '/request-changes',
     kind: 'action_variant',
     target: {
@@ -309,7 +321,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'variant.reject',
-    templateFile: 'reject.md',
+    templateFile: null,
     invocation: '/reject',
     kind: 'action_variant',
     target: {
@@ -323,15 +335,15 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     intent: 'reject',
   },
   {
-    id: 'alias.check',
-    templateFile: 'check.md',
+    id: 'operational.check',
+    templateFile: null,
     invocation: '/check',
-    kind: 'preferred_name',
-    target: { toolName: TOOL_FLOWGUARD_RUN_CHECK, workflowCommand: Command.VALIDATE },
+    kind: 'operational',
+    target: { nativeCommand: NATIVE_CHECK_COMMAND },
     visibility: 'compatibility',
     presentationGroup: 'verify',
     description:
-      'Compatibility surface: records verification results when explicitly requested. Validation runs automatically. Not workflow guidance.',
+      'Run the canonical verification checks and review loop for the current implementation.',
     intent: 'run_validation',
   },
   {
@@ -410,7 +422,11 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
 
 /** Unique template files across all installed interface identities. */
 export const INSTALLED_TEMPLATE_FILES: readonly string[] = [
-  ...new Set(INSTALLED_COMMANDS.map((definition) => definition.templateFile)),
+  ...new Set(
+    INSTALLED_COMMANDS.flatMap((definition) =>
+      definition.templateFile === null ? [] : [definition.templateFile],
+    ),
+  ),
 ];
 
 export function getInstalledCommand(invocation: string): InstalledCommandDefinition | undefined {

@@ -1,53 +1,7 @@
-export const TOOL_WRAPPER = `\
-/**
- * FlowGuard tools — thin wrapper.
- * All logic lives in @flowguard/core. This file re-exports
- * the named tool definitions for OpenCode to discover.
- *
- * Tool naming: OpenCode derives names as <filename>_<exportname>.
- * flowguard.ts + export const status -> flowguard_status
- *
- * @see https://opencode.ai/docs/custom-tools
- */
-export {
-  status,
-  hydrate,
-  ticket,
-  plan,
-  decision,
-  implement,
-  review_implementation,
-  resolve_implementation_challenge,
-  run_check,
-  review,
-  continue,
-  abort_session,
-  archive,
-  export,
-  architecture,
-  help,
-  observe_repository,
-  reconcile_mutation_episode,
-} from "@flowguard/core/integration";
-`;
+/** One auto-discovered native V2 plugin. Tools are registered by its setup. */
+export const PLUGIN_RELATIVE_PATH = 'plugins/flowguard/index.ts';
 
-// ---------------------------------------------------------------------------
-// Plugin wrapper — plugins/flowguard-audit.ts
-// ---------------------------------------------------------------------------
-
-/**
- * Thin wrapper for `plugins/flowguard-audit.ts`.
- *
- * Re-exports the FlowGuardAuditPlugin from `@flowguard/core`
- * so that OpenCode can discover it.
- */
 export const PLUGIN_WRAPPER = `\
-/**
- * FlowGuard audit plugin — thin wrapper.
- * All logic lives in @flowguard/core. This file re-exports
- * the FlowGuardAuditPlugin for OpenCode to discover.
- *
- * @see https://opencode.ai/docs/plugins
- */
-export { FlowGuardAuditPlugin } from "@flowguard/core/integration";
+/** FlowGuard native OpenCode V2 plugin; installation does not activate governance. */
+export { default } from "@flowguard/core/integration/plugin";
 `;

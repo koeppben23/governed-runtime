@@ -23,7 +23,9 @@ working tree — it operates independently of Development changes on `main`.
 ../../run-demo-setup.sh --install --install-scope repo --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 # Open /tmp/flowguard-demos/java-task-manager in OpenCode Desktop
 # Alternative: omit --install-scope repo to install globally (~/.config/opencode,
-# commands in every project); restart OpenCode Desktop after a global install.
+# commands in every project). The installer verifies and restarts the exact
+# OpenCode service after the applied install; use /reload only if it reports
+# HOST_RESTART_REQUIRED. Installation does not activate governance.
 ```
 
 ---
@@ -490,11 +492,12 @@ The card also shows the findings grouped by severity and the evidence block
 FlowGuard ships near-synonym commands; the script picks one of each on purpose.
 If someone in the audience knows the other name, this is why both exist:
 
-- **`/check` vs `/validate`:** both are compatibility-only surfaces that call
-  `flowguard_run_check` (`/check` is the generic surface, `/validate` the
-  phase-specific variant). The canonical walkthrough does not type them:
-  validation runs automatically in-flow through the `flowguard_run_check`
-  evidence path.
+- **`/check` vs `/validate`:** `/check` is a native scoped verification/review
+  turn for an ACTIVE root; it runs under the build agent, waits, clears scope
+  and restores the prior agent. It is not a VALIDATE alias. `/validate` is the
+  explicit baseline-validation template using `flowguard_run_check`. The
+  canonical walkthrough does not type either: validation runs automatically
+  in-flow through that same guarded execution-evidence path.
 - **`/export` vs `/archive`:** `/export` is the canonical completion step at
   EXPORT_READY (tool `flowguard_export`). It materializes and verifies the
   required package as `export-{sessionId}.tar.gz`, persists

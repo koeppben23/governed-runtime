@@ -284,10 +284,20 @@ if [ "$STATUS" -ne 0 ]; then
   die "JSON/Markdown report validation failed" 1
 fi
 
-# The mkdir is the atomic target reservation. The two already-validated files
-# are moved after that claim; this prevents overwrite/concurrent publication but
-# is not a single directory rename if the process is killed between the moves.
-mkdir "$FINAL" 2>/dev/null || die "refusing to overwrite existing report directory: $FINAL"
+# Claim through Node's non-recursive filesystem operation, not a shell utility
+# that may report success after EEXIST (Ubuntu uutils mkdir, LP #2171333).
+# The two validated files are moved after the exclusive claim; this is still not
+# a single directory rename if the process is killed between the moves.
+"$NODE_BIN" - "$FINAL" <<'NODE'
+const fs = require('node:fs');
+try {
+  fs.mkdirSync(process.argv[2]);
+} catch (error) {
+  process.stderr.write(`Report reservation failed: ${error.code}: ${error.message}\n`);
+  process.exitCode = 1;
+}
+NODE
+[ "$?" -eq 0 ] || die "cannot reserve report directory; refusing to overwrite: $FINAL"
 FINAL_CLAIMED=1
 if ! mv "$JSON_REPORT" "$FINAL/iso27001-report.json" || ! mv "$MD_REPORT" "$FINAL/iso27001-report.md"; then
   die "cannot publish the completed reports" 1

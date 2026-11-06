@@ -110,10 +110,16 @@ describe('validateTarball', () => {
 });
 
 describe('emitPostInstallWarnings', () => {
-  it('adds restart notice for opencode platform', () => {
+  it('adds native host verification notice without claiming activation for opencode', () => {
     const ctx = initInstallContext(repoArgs({ installPlatform: 'opencode' }));
     emitPostInstallWarnings(ctx);
-    expect(ctx.notices.some((n) => n.message.includes('Restart'))).toBe(true);
+    expect(
+      ctx.notices.some(
+        (n) =>
+          n.message.includes('verifies the running host') &&
+          n.message.includes('does not activate'),
+      ),
+    ).toBe(true);
   });
 
   it('adds plugin-dir notice for claude-code', () => {

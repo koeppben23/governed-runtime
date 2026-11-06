@@ -34,11 +34,7 @@ import { validateChallengeConsistency } from '../enforcement/challenge-consisten
 import { buildFrozenArtifactReviewMaterial } from '../context/reviewer-context.js';
 import { artifactReviewSubjectScopeFromSections } from '../context/subject-scope.js';
 import { createReviewObligation, freezeReviewMaterial } from '../obligations/assurance.js';
-import {
-  obligationCaptureContract,
-  refsAddedAfterDispatch,
-  validateCapturedFindings,
-} from './native-task-review-bindings.js';
+import { obligationCaptureContract, validateCapturedFindings } from './native-review-findings.js';
 
 const NOW = '2026-10-20T00:00:00.000Z';
 const SUBJECT = 'a'.repeat(64);
@@ -461,25 +457,5 @@ describe('obligation-bound findings schema - early rejection of gate violations'
       }).ok,
     ).toBe(false);
     expect(validate(findings(fixture, { overallVerdict: 'unable_to_review' }))).toBe(true);
-  });
-});
-
-describe('obligation-bound findings schema - dispatch-to-capture contract drift', () => {
-  it('reports validation-attempt refs that did not exist when the child was dispatched', () => {
-    const fixture = BASE_FIXTURES[2]!;
-    const { allowedEvidenceRefs } = obligationCaptureContract(fixture.state, fixture.obligation);
-    expect(
-      refsAddedAfterDispatch(fixture.state, allowedEvidenceRefs, '2026-10-19T00:00:00.000Z'),
-    ).toEqual([ATTEMPT_A, ATTEMPT_B]);
-    expect(refsAddedAfterDispatch(fixture.state, allowedEvidenceRefs, NOW)).toEqual([]);
-    // Frozen refs (plan/ADR sections, content) can never be added after dispatch.
-    const plan = BASE_FIXTURES[0]!;
-    expect(
-      refsAddedAfterDispatch(
-        plan.state,
-        obligationCaptureContract(plan.state, plan.obligation).allowedEvidenceRefs,
-        '2000-01-01T00:00:00.000Z',
-      ),
-    ).toEqual([]);
   });
 });

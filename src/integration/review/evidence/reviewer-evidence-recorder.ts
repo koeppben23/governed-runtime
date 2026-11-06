@@ -9,6 +9,7 @@
 
 import type { ReviewObligationType } from '../../../state/evidence.js';
 import type { ReviewInvocationEvidence } from '../../../state/evidence-review-invocation.js';
+import { NativeSubagentCaptureProvenance } from '../../../state/evidence-review-invocation.js';
 import {
   appendInvocationEvidence,
   consumeReviewObligation,
@@ -17,11 +18,7 @@ import {
   blockObligationWithInvocation,
   hasEvidenceReuse,
 } from '../obligations/assurance.js';
-import {
-  completeReviewDispatch,
-  ensureReviewAssurance,
-  rebindReviewDispatchHostCall,
-} from '../../../state/review-dispatch.js';
+import { completeReviewDispatch, ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { updateAttemptStatus } from '../obligations/attempt-lifecycle.js';
 import { hasAuthorizedDispatch } from '../../../state/review-dispatch.js';
 import { updateObligation } from '../obligations/obligation-state.js';
@@ -45,14 +42,8 @@ type SdkEvidenceParams = {
   obligationType: ReviewObligationType;
   sessionId: string;
   childSessionId: string;
-  /** Bound host call identity (child session) whose dispatch this evidence closes. */
+  /** Native host call identity of the authorized dispatch this evidence closes. */
   hostCallId: string;
-  /**
-   * Pre-release host call identity the dispatch was authorized under when it
-   * differs from the final child session identity (native Task call ID). The
-   * binding mutation rebinds the authorized dispatch to `hostCallId`.
-   */
-  authorizedHostCallId?: string;
   attemptId: string;
   promptHash: string;
   findingsHash: string;
@@ -69,6 +60,8 @@ type SdkEvidenceParams = {
     >,
     'findings'
   > & { findings: Record<string, unknown> };
+  /** Current terminal-capture proof; every new invocation is generation 6. */
+  nativeProvenance: NonNullable<ReviewInvocationEvidence['nativeProvenance']>;
   semanticIntents?: (
     result: AuditableEvidenceRecordResult,
     state: SessionState,
@@ -105,6 +98,7 @@ function buildReviewInvocation(
     attemptId: params.attemptId,
     capturedRawFindings: params.reviewerResult.findings,
     capture: params.reviewerResult.capture,
+    nativeProvenance: params.nativeProvenance,
   });
 }
 
@@ -124,10 +118,9 @@ function resolveEvidenceLineage(
     attempt.obligationType === obligation.obligationType &&
     attempt.subjectDigest === obligation.subjectDigest &&
     attempt.status === 'created' &&
-    attempt.childSessionId === undefined;
+    attempt.childSessionId === params.childSessionId;
   if (!lineageMatches || !attempt) return null;
-  const authorizedHostCallId = params.authorizedHostCallId ?? params.hostCallId;
-  if (!hasAuthorizedDispatch(assurance, authorizedHostCallId, attempt.attemptId)) {
+  if (!hasAuthorizedDispatch(assurance, params.hostCallId, attempt.attemptId)) {
     return null;
   }
   return { attemptId: attempt.attemptId };
@@ -175,12 +168,46 @@ function settleBoundEvidence(
   );
 }
 
+function provenanceMatchesCapture(
+  provenance: SdkEvidenceParams['nativeProvenance'],
+  capture: SdkEvidenceParams['reviewerResult']['capture'],
+): boolean {
+  return (
+    provenance.requestMessageId === capture.requestMessageId &&
+    provenance.responseMessageId === capture.responseMessageId &&
+    provenance.requestDigest === capture.requestDigest &&
+    provenance.payloadDigest === capture.payloadDigest &&
+    provenance.assistantMessageIds[0] === capture.assistantMessageIds[0] &&
+    provenance.model.providerID === capture.model.providerID &&
+    provenance.model.modelID === capture.model.modelID &&
+    provenance.model.variant === capture.model.variant
+  );
+}
+
 function validCapture(params: SdkEvidenceParams, flags: MutationFlags): boolean {
   const valid =
     hasCaptureLineage({ ...params, capture: params.reviewerResult.capture }) &&
-    captureMatchesFindings(params.reviewerResult.capture, params.reviewerResult.findings);
+    captureMatchesFindings(params.reviewerResult.capture, params.reviewerResult.findings) &&
+    NativeSubagentCaptureProvenance.safeParse(params.nativeProvenance).success &&
+    provenanceMatchesCapture(params.nativeProvenance, params.reviewerResult.capture) &&
+    params.nativeProvenance.nativeCallId === params.hostCallId;
   if (!valid) flags.lineageUnavailable = true;
   return valid;
+}
+
+function hasExpiredReviewerExecution(params: SdkEvidenceParams, now: string): boolean {
+  return (
+    params.executionFailed?.() === true ||
+    (params.deadlineAt !== undefined && Date.parse(now) >= Date.parse(params.deadlineAt))
+  );
+}
+
+function reuseBlocked(state: SessionState, params: SdkEvidenceParams): SessionState {
+  return updateObligation(state, params.obligationId, (item) => ({
+    ...item,
+    status: 'blocked',
+    blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+  }));
 }
 
 function applyEvidenceMutation(
@@ -198,20 +225,13 @@ function applyEvidenceMutation(
     flags.missing = true;
     return state;
   }
-  if (
-    params.executionFailed?.() ||
-    (params.deadlineAt !== undefined && Date.parse(now) >= Date.parse(params.deadlineAt))
-  ) {
+  if (hasExpiredReviewerExecution(params, now)) {
     flags.executionExpired = true;
     return state;
   }
   if (hasEvidenceReuse(assurance.invocations, params.childSessionId, params.findingsHash)) {
     flags.reused = true;
-    return updateObligation(state, params.obligationId, (item) => ({
-      ...item,
-      status: 'blocked',
-      blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
-    }));
+    return reuseBlocked(state, params);
   }
   const lineage = resolveEvidenceLineage(assurance, obligation, params);
   if (!lineage) {
@@ -244,13 +264,10 @@ function applyEvidenceMutation(
   );
   // Attempt binding, invocation evidence, and dispatch completion are ONE
   // mutation: the ledger can never diverge from evidence.
-  const withBoundDispatch = params.authorizedHostCallId
-    ? rebindReviewDispatchHostCall(boundAssurance, params.authorizedHostCallId, params.hostCallId)
-    : boundAssurance;
   const withInvocation = {
     ...state,
     reviewAssurance: completeReviewDispatch(
-      appendInvocationEvidence(withBoundDispatch, invocation),
+      appendInvocationEvidence(boundAssurance, invocation),
       params.hostCallId,
       params.fulfilledAt,
     ),

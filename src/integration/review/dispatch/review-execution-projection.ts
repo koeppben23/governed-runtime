@@ -15,7 +15,6 @@ export interface ReviewExecutionProjection {
   readonly agentType: string;
   readonly parentSessionId: string;
   readonly childSessionId: string;
-  readonly host: 'opencode';
   readonly invocationMode: ReviewInvocationEvidence['invocationMode'];
   readonly visible: boolean;
   readonly transcriptNavigable: boolean;
@@ -35,7 +34,6 @@ export function projectReviewExecution(
     agentType: invocation.agentType,
     parentSessionId: invocation.parentSessionId,
     childSessionId: invocation.childSessionId,
-    host: 'opencode',
     invocationMode: invocation.invocationMode,
     visible: invocation.hostVisible,
     transcriptNavigable: invocation.transcriptNavigable === true,

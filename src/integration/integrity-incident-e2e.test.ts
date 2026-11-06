@@ -1,4 +1,7 @@
-import { messageCaptureFixture } from '../review-invocation-test-helpers.js';
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../review-invocation-test-helpers.js';
 
 /**
  * @module integration/integrity-incident-e2e.test
@@ -41,6 +44,7 @@ import {
 import { resolveCeremonyProfile } from './phase-tool-gate.js';
 import { recordEvidenceOrBlockReuse } from './review/evidence/reviewer-evidence-recorder.js';
 import { persistAuthorizedReviewDispatch } from './review/dispatch/durable-dispatch.js';
+import { updateAttemptStatus } from './review/obligations/attempt-lifecycle.js';
 import {
   appendObligationWithAttempt,
   artifactReviewSubjectScope,
@@ -204,6 +208,12 @@ function recordingParams(
   findings: ReturnType<typeof baseFindings>,
 ) {
   const boundFindings = { ...findings, attestation: { toolObligationId: obligation.obligationId } };
+  const capture = messageCaptureFixture({
+    childSessionId: CHILD,
+    obligationId: obligation.obligationId,
+    attemptId,
+    findings: boundFindings,
+  });
   return {
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
@@ -218,15 +228,11 @@ function recordingParams(
     reviewerResult: {
       sessionId: CHILD,
       reviewOutputMode: 'validated_json' as const,
-      capture: messageCaptureFixture({
-        childSessionId: CHILD,
-        obligationId: obligation.obligationId,
-        attemptId,
-        findings: boundFindings,
-      }),
+      capture,
       reviewAssuranceLevel: 'host_message_validated' as const,
       findings: boundFindings,
     },
+    nativeProvenance: nativeProvenanceFixture(capture, CHILD),
   };
 }
 
@@ -257,6 +263,17 @@ describe('integrity incident chain (recordEvidenceOrBlockReuse → persisted sta
         canonicalPromptDigest: PROMPT_DIGEST,
         authorizedAt: NOW,
       });
+      // Native child correlation after dispatch release (as `bindNativeReviewChild`).
+      await persistingDeps.updateReviewAssurance(sessionDir, (state, now) => ({
+        ...state,
+        reviewAssurance: updateAttemptStatus(
+          ensureReviewAssurance(state.reviewAssurance),
+          seed.attemptId,
+          'created',
+          now,
+          { childSessionId: CHILD },
+        ),
+      }));
       const seedResult = await recordEvidenceOrBlockReuse(
         persistingDeps as never,
         sessionDir,

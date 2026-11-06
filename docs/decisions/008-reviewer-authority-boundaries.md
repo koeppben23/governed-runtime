@@ -84,7 +84,14 @@ with an expected failure) is **not** adopted by this ADR. It would be a separate
 decision requiring reference-suite evidence that the semantic reviewer cannot
 apply the rule reliably.
 
-The operational output-token baseline is **65K**, configured as
+**Historical V1 experiment:** the following 65K baseline and hook behavior are
+retained as the experiment record, not current V2 support. ADR-009 subsequently
+selected host budgeting by default. The V2 entrypoint removes the V1 cap rewrite
+and blocks numeric overrides pending native headroom/wire proof; see
+[ADR-010](./010-host-neutral-opt-in-governance.md) and the
+[V2 inventory](../host-probes/opencode-v2/implementation-inventory.md#native-entrypointclient-implementation-in-progress).
+
+The operational output-token baseline was **65K**, configured as
 `reviewer.outputTokenMax` in `flowguard.json` and applied by the FlowGuard
 OpenCode plugin's `chat.params` hook to the `flowguard-reviewer` agent only.
 

@@ -1,6 +1,6 @@
 /**
  * @module integration/review/validation/review-validation-structured-evidence
- * @description Structured review findings resolution from native Task invocation evidence.
+ * @description Structured review findings resolution from native reviewer subagent invocation evidence.
  *
  * Extracted from review-validation.ts. The final acceptance/rejection
  * authority remains there. Imports only from state, shared, and the
@@ -23,6 +23,7 @@ import {
   hasValidStructuredInvocationContract,
   type ReviewFindingsAcceptanceRejection,
 } from './review-validation-acceptance.js';
+import { isBindableReviewTransport } from '../../../state/evidence-review-invocation.js';
 import {
   validateChallengeConsistency,
   type ChallengeConsistencyCode,
@@ -196,7 +197,7 @@ export function resolveStructuredFindings(
   const matchingInvocations = assurance.invocations.filter(
     (inv) =>
       inv.obligationId === obligation.obligationId &&
-      inv.invocationMode === 'native_task_message_json' &&
+      isBindableReviewTransport(inv) &&
       inv.capturedRawFindings != null,
   );
   return resolveFromStructuredInvocations(context, matchingInvocations);

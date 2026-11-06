@@ -11,7 +11,7 @@ import { defineConfig } from 'vitest/config';
  * audit-format, event-name and genesis constants that encode the authority.
  *
  * Run locally with:
- *   node scripts/stryker-patch.js && npx stryker run stryker.event-core.conf.json
+ *   npx stryker run stryker.event-core.conf.json
  *   node scripts/verify-mutation-admission.mjs --profile event-core
  */
 export default defineConfig({

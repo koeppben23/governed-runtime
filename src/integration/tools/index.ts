@@ -49,6 +49,9 @@ import type { ActionIntent } from '../../shared/presentation-vocabulary.js';
 import { renderMarkdown } from '../../presentation/markdown.js';
 import type { PresentationDocument } from '../../presentation/model.js';
 
+// Read-only policy preparation shared by hydrate and explicit root activation.
+export { resolveHydratePolicy } from './hydrate/hydrate-policy.js';
+
 function buildFlowGuardFooter(phase: unknown): Record<string, unknown> {
   return {
     source: 'flowguard-tool-output-wrapper',
@@ -176,7 +179,7 @@ function withGovernanceFooter(
         if (needsPresentationProfile(result)) {
           try {
             glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
-              .opencode.glyphProfile;
+              .glyphProfile;
           } catch {
             // Presentation must not replace canonical result when config loading fails.
           }

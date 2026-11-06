@@ -82,6 +82,33 @@ is fixed by merged #953: persisted order is authoritative, a prepared-only
 operation needs an unambiguous adjacent-ID position, and the reconciled audit
 trail retains that exact order.
 
+## OpenCode V2 candidate — confirmed opt-in violations (2026-11-01, PR #1190)
+
+**P0 / Open / Merge blocked.** The V2 branch at `46671919` does not conform to
+[ADR-010 D2/D8](docs/decisions/010-host-neutral-opt-in-governance.md). A loaded but
+never-started product can veto ordinary shell/edit work: real OpenCode 2.2.4
+comparisons show `SESSION_DIR_NOT_FOUND` in Git directories and `NOT_GIT_REPO`
+outside Git, while absent-product controls execute the same effects successfully.
+The provider-wire comparison also observes extra FlowGuard tools before start.
+These probes use the workspace-built product, not a packed-install or Desktop
+certification. An injected component event-stream failure additionally reproduces
+a global fence rejecting an unrelated unstarted session.
+
+The current workflow-location/binding resolver is not a durable activation
+authority. Fix activation, loss/restart handling, event-failure scope and tool
+publication together; neither missing workflow state nor an ordinary SDK callback
+may be promoted to activation authority. The conformance tests remain normal
+failing assertions until the product is corrected:
+
+- `src/cli/opencode-inactive-parity.smoke.test.ts`
+- `src/integration/plugin-inactive-event-scope.test.ts`
+- the unstarted/non-Git conformance cases in `src/integration/plugin-bootstrap.test.ts`
+
+PR #1190 remains Draft and ACTIVE V2 NO-GO. Installer/catalogue lifecycle success
+does not establish INACTIVE parity. Existing reviewer, regular-error recovery and
+operator-source proof gaps remain independent acceptance blockers; see the
+[implementation inventory](docs/host-probes/opencode-v2/implementation-inventory.md).
+
 ## Status Legend
 
 | Status                   | Meaning                                                                                                                                        |

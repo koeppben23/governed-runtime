@@ -11,7 +11,7 @@ on:
       - '.github/workflows/mutation-schemas.yml'
       - 'scripts/verify-mutation-admission.mjs'
       - 'scripts/mutation-profile-registry.json'
-      - 'scripts/stryker-patch.js'
+      - 'package-lock.json'
 
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Run schemas mutation tests
-        run: node scripts/stryker-patch.js && npx stryker run stryker.schemas.conf.json
+        run: npx stryker run stryker.schemas.conf.json
       - name: Write and verify mutation admission manifest
         run: |
           node scripts/verify-mutation-admission.mjs --profile schemas --write-profile-manifest

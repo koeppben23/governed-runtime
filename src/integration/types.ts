@@ -1,11 +1,8 @@
 /**
  * @module integration/types
- * @description Typed interfaces for the OpenCode plugin hook boundary.
- *
- * These interfaces mirror the exact shapes defined by the OpenCode SDK
- * (`@opencode-ai/plugin` type definitions) for tool execution hooks.
- *
- * SDK source of truth: .sdk-baselines/opencode/plugin-index.d.ts
+ * @description Host-neutral application ports consumed by governance hooks.
+ * These are not SDK types. The native V2 composition root validates/adapts
+ * id/input/result and resolves scope before calling these application ports.
  *
  * tool.execute.before:
  *   - input: { tool, sessionID, callID } (read-only identity + session metadata)
@@ -15,14 +12,8 @@
  *   - input: { tool, sessionID, callID, args } (read-only, includes original args)
  *   - output: { title, output, metadata } (mutable tool result)
  *
- * @see https://opencode.ai/docs/plugins
- *
- * Type narrowing: these interfaces intentionally narrow SDK types from
- * `any` to `Record<string, unknown>` and add `readonly` modifiers for
- * compile-time fail-closed safety. The SDK contractually guarantees
- * object shapes at runtime (args, metadata are always objects); the
- * narrowing catches accidental mutations and property access errors
- * early, without changing runtime behavior.
+ * Native contract authority: .sdk-baselines/opencode/plugin-tool.d.ts.
+ * The native host does not guarantee object input; the boundary checks it.
  *
  * @version v3
  */

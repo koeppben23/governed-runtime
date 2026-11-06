@@ -28,7 +28,7 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import { GitError, resolveRoot, isGitRepo, type GitErrorCode } from './git.js';
+import { GitError, resolveRoot, type GitErrorCode } from './git.js';
 import * as path from 'node:path';
 
 // -- Error --------------------------------------------------------------------
@@ -66,96 +66,12 @@ export class BindingError extends Error {
 
 // -- Types --------------------------------------------------------------------
 
-/**
- * OpenCode Custom Tool context -- subset of fields relevant to FlowGuard.
- *
- * Full OpenCode tool context:
- *   { agent, sessionID, messageID, directory, worktree }
- *
- * We consume:
- * - sessionId  (from context.sessionID) -- identifies the OpenCode session
- * - worktree   (from context.worktree)  -- git worktree root, resolved by OpenCode
- * - directory   (from context.directory)  -- working directory, fallback for resolution
- *
- * The mapping from OpenCode context to ToolContext is done in the integration
- * layer (Layer 5). This type documents the contract.
- */
-export interface ToolContext {
-  /** OpenCode session ID (from context.sessionID). */
-  readonly sessionId: string;
-  /** Git worktree root (from context.worktree). Preferred source. */
-  readonly worktree: string;
-  /** Working directory (from context.directory). Fallback for worktree resolution. */
-  readonly directory: string;
-}
-
-/**
- * Resolved and validated binding -- ready for use by rails and persistence.
- */
-export interface ResolvedBinding {
+/** Resolved worktree and host session used for binding comparison. */
+interface BindingComparison {
   /** Absolute path to the git worktree root. OS-normalized. */
   readonly worktreeRoot: string;
-  /** OpenCode session ID (pass-through from context). */
+  /** Host session ID, retained for diagnostics; worktree equality is authoritative. */
   readonly sessionId: string;
-}
-
-// -- Public API ---------------------------------------------------------------
-
-/**
- * Resolve a FlowGuard binding from OpenCode tool context.
- *
- * Strategy:
- * 1. Validate session ID is present
- * 2. Use context.worktree if non-empty (fast path, no subprocess)
- * 3. Otherwise resolve from context.directory via git
- * 4. Normalize the resolved path
- *
- * @param ctx - OpenCode tool context (mapped from Custom Tool context object).
- * @returns Resolved binding with validated worktree root.
- * @throws BindingError if resolution fails.
- */
-export async function resolveBinding(ctx: ToolContext): Promise<ResolvedBinding> {
-  // 1. Session ID is required
-  if (!ctx.sessionId?.trim()) {
-    throw new BindingError(
-      'MISSING_SESSION_ID',
-      'OpenCode session ID is required (context.sessionID). ' +
-        'This should never be empty in a Custom Tool call.',
-    );
-  }
-
-  // 2. Prefer context.worktree (fast path)
-  let worktreeRoot = ctx.worktree?.trim() || '';
-
-  // 3. Fallback: resolve from directory
-  if (!worktreeRoot) {
-    if (!ctx.directory?.trim()) {
-      throw new BindingError(
-        'NO_WORKTREE',
-        'Neither context.worktree nor context.directory is available. ' +
-          'Cannot determine FlowGuard session location.',
-      );
-    }
-
-    const isRepo = await isGitRepo(ctx.directory);
-    if (!isRepo) {
-      throw new BindingError(
-        'NOT_GIT_REPO',
-        `Directory is not inside a git repository: ${ctx.directory}. ` +
-          'FlowGuard requires a git repository.',
-      );
-    }
-
-    worktreeRoot = await resolveRoot(ctx.directory);
-  }
-
-  // 4. Normalize (resolve symlinks, normalize separators)
-  worktreeRoot = path.resolve(worktreeRoot);
-
-  return {
-    worktreeRoot,
-    sessionId: ctx.sessionId,
-  };
 }
 
 /**
@@ -163,12 +79,7 @@ export async function resolveBinding(ctx: ToolContext): Promise<ResolvedBinding>
  *
  * Rules:
  * - Worktree MUST match (same project = same workspace fingerprint)
- * - Session ID MAY differ (new OpenCode session continuing same project is OK)
- *
- * Why allow different session IDs?
- *   A developer starts a FlowGuard session, closes their terminal, opens a new
- *   OpenCode session, and continues. The project (worktree) is the same, the
- *   FlowGuard state should persist. Only the OpenCode session ID changes.
+ * - Session ID MAY differ (a new host session may continue the same project)
  *
  * Why reject different worktrees?
  *   If the state's worktree doesn't match, the workspace fingerprint resolves
@@ -177,7 +88,7 @@ export async function resolveBinding(ctx: ToolContext): Promise<ResolvedBinding>
  * @returns true if compatible.
  * @throws BindingError if worktree mismatch.
  */
-export function validateBinding(state: SessionState, binding: ResolvedBinding): true {
+export function validateBinding(state: SessionState, binding: BindingComparison): true {
   const stateWorktree = normalizeBindingPath(state.binding.worktree);
   const currentWorktree = normalizeBindingPath(binding.worktreeRoot);
 
@@ -268,26 +179,6 @@ export function validateFingerprintBinding(state: SessionState, fingerprint: str
   }
 
   return true;
-}
-
-/**
- * Create a ToolContext from raw OpenCode Custom Tool context.
- *
- * This is the mapping function used in the integration layer.
- * It normalizes the OpenCode context field names to our internal convention.
- *
- * @param openCodeCtx - Raw context object from OpenCode's tool() callback.
- */
-export function fromOpenCodeContext(openCodeCtx: {
-  sessionID: string;
-  worktree: string;
-  directory: string;
-}): ToolContext {
-  return {
-    sessionId: openCodeCtx.sessionID,
-    worktree: openCodeCtx.worktree,
-    directory: openCodeCtx.directory,
-  };
 }
 
 // -- Internals ----------------------------------------------------------------

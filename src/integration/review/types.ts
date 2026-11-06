@@ -2,11 +2,11 @@
  * @module integration/review/types
  * @description Shared type definitions for the review bounded context.
  *
- * This leaf module owns the host client surface and the reviewer result DTO
- * used by the visible native Task transport and the evidence recorder. It has
- * no runtime SDK dependency and no SDK child-session creation capability.
+ * This leaf module owns the host history-read port and the reviewer result DTO
+ * used by the native same-child reviewer capture and the evidence recorder. It
+ * has no runtime SDK dependency and no SDK child-session creation capability.
  *
- * @version v2 — removed the SDK child-session creation/cancellation surface
+ * @version v3 — reduced the host port to the history read used by V2 owners
  */
 
 import type {
@@ -39,7 +39,6 @@ const REVIEWER_COMPLETION_FAILURE_CODES = [
   'REVIEWER_OUTPUT_TRUNCATED',
   'REVIEWER_STEP_BUDGET_EXHAUSTED',
   'REVIEWER_TASK_INCOMPLETE',
-  'REVIEWER_HOST_MESSAGE_ENCODING_FAILED',
 ] as const;
 
 export type ReviewerCompletionFailureCode = (typeof REVIEWER_COMPLETION_FAILURE_CODES)[number];
@@ -48,39 +47,6 @@ export function isReviewerCompletionFailureCode(
   code: string,
 ): code is ReviewerCompletionFailureCode {
   return (REVIEWER_COMPLETION_FAILURE_CODES as readonly string[]).includes(code);
-}
-
-/** Reviewer output-cap configuration failure categories. */
-export type ReviewerOutputCapErrorCode =
-  | 'REVIEWER_OUTPUT_CAP_CONFIG_UNREADABLE'
-  | 'REVIEWER_OUTPUT_CAP_CONFIG_INVALID'
-  | 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_UNKNOWN'
-  | 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_TOO_SMALL';
-
-/** Reviewer output-cap failure retained for the native Task after-hook. */
-export interface ReviewerOutputCapFailure {
-  readonly code: ReviewerOutputCapErrorCode;
-  readonly reason: string;
-  readonly model: string;
-  readonly modelLimit: number | null;
-  readonly configured: number | 'host';
-}
-
-/** Terminal failure raised by the bounded reviewer execution watchdog. */
-export type ReviewerExecutionFailureCode =
-  'REVIEWER_EXECUTION_TIMEOUT' | 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
-
-export interface ReviewerExecutionIdentity {
-  readonly parentSessionId: string;
-  readonly callId: string;
-  readonly childSessionId?: string;
-}
-
-export interface ReviewerExecutionFailure {
-  readonly code: ReviewerExecutionFailureCode;
-  readonly reason: string;
-  readonly phase: 'review' | 'tool' | 'serialization' | 'total';
-  readonly abortConfirmed: boolean;
 }
 
 /**
@@ -154,111 +120,10 @@ export interface ReviewVerificationEvidenceItem {
   readonly claimAssertionEvidence?: ReviewClaimAssertionEvidenceSet;
 }
 
-/**
- * Minimal SDK client interface for the review orchestrator.
- *
- * Mirrors the subset of OpencodeClient used by review modules.
- * Defined as an interface (not imported from SDK) so these modules
- * have zero runtime SDK dependency — testable with plain mocks.
- */
+/** Semantic host operations, not an SDK client or a wire-response adapter. */
 export interface OrchestratorClient {
-  app: {
-    agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
-  };
-  session: {
-    /** Request cancellation of exactly one host session. */
-    abort?(opts: { path: { id: string } }): Promise<{ data?: boolean; error?: unknown }>;
-    /** Host session metadata, used to resolve a reviewer child's parent. */
-    get?(opts: { path: { id: string } }): Promise<{
-      data?: { id?: string; parentID?: string } | undefined;
-      error?: unknown;
-    }>;
-    /** List sessions; used as a parent-resolution fallback when get races creation. */
-    list?(): Promise<{
-      data?: Array<{ id?: string; parentID?: string }> | undefined;
-      error?: unknown;
-    }>;
-    /** Host status map; `idle` is the only quiescent state. */
-    status?(): Promise<{ data?: Record<string, { type?: string }> | undefined; error?: unknown }>;
-    /** Host-recorded session messages; used to verify reviewer task completion. */
-    messages?(opts: { path: { id: string } }): Promise<{
-      data?:
-        | Array<{
-            info?: {
-              id?: string;
-              parentID?: string;
-              sessionID?: string;
-              role?: string;
-              model?: { providerID: string; modelID: string; variant?: string };
-              providerID?: string;
-              modelID?: string;
-              variant?: string;
-              finish?: string;
-              error?: unknown;
-            };
-            parts?: Array<{
-              id?: string;
-              type?: string;
-              text?: string;
-              synthetic?: boolean;
-              ignored?: boolean;
-              callID?: string;
-              tool?: string;
-              state?: { status?: string; metadata?: { sessionId?: string } };
-            }>;
-          }>
-        | undefined;
-      error?: unknown;
-    }>;
-    prompt(opts: {
-      path: { id: string };
-      body: {
-        agent?: string;
-        messageID?: string;
-        model?: { providerID: string; modelID: string };
-        variant?: string;
-        system?: string;
-        parts: Array<{ type: string; text: string }>;
-      };
-    }): Promise<{
-      data?:
-        | {
-            /** Response parts are diagnostics only, never reviewer authority. */
-            parts?: Array<{
-              id?: string;
-              type?: string;
-              text?: string;
-              synthetic?: boolean;
-              ignored?: boolean;
-            }>;
-            info?: {
-              id?: string;
-              parentID?: string;
-              sessionID?: string;
-              role?: string;
-              agent?: string;
-              providerID?: string;
-              modelID?: string;
-              variant?: string;
-              finish?: string;
-              time?: { completed?: number };
-              error?: {
-                name: string;
-                message?: string;
-                data?: { message?: string; retries?: number };
-              };
-            };
-          }
-        | undefined;
-      error?: unknown;
-    }>;
-  };
-  /** Optional TUI client for toast notifications. Not available in headless/CLI mode. */
-  tui?: {
-    showToast(opts: {
-      body: { message: string; variant?: 'info' | 'success' | 'error' };
-    }): Promise<unknown>;
-  };
+  /** Native session history bytes; callers validate every identity they use. */
+  readHistory(sessionId: string): Promise<unknown>;
 }
 
 /**

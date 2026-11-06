@@ -4,6 +4,19 @@ Host-aware governance runtime for AI-assisted software delivery.
 
 > **Version:** 2.0.0-tp.2 | TypeScript | Host-aware | OpenCode synchronous enforcement path
 
+> **OpenCode V2 migration checkpoint:** native entrypoint and installation are
+> implemented; complete installed INACTIVE parity, interactive/autonomous activation,
+> policy-required human provenance and reviewer recovery remain unverified.
+> Reviewer dispatch and same-child evidence generation are connected; safe
+> unknown-outcome recovery remains unverified. PR #1190 is Draft; this branch
+> is not a supported ACTIVE V2 release.
+
+V2 must preserve V1 capabilities and governance guarantees, including
+policy-permitted autonomous workflows and fully automatic independent AI review.
+Explicit interactive and authorized autonomous activation are separate required
+paths; human approvals remain policy-dependent. See
+[ADR-010](./docs/decisions/010-host-neutral-opt-in-governance.md), amendment of 2026-11-02.
+
 FlowGuard provides deterministic workflow control, evidence gates, audit trails,
 and policy-bound decisions around supported AI-assisted engineering hosts. OpenCode
 currently provides the strongest enforcement path through its synchronous plugin;
@@ -18,7 +31,7 @@ FlowGuard is distributed as a pre-built proprietary release artifact via GitHub 
 
 1. Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
 2. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
-3. Restart OpenCode (plugins are loaded once at startup)
+3. OpenCode V2 watches plugin/config changes; its native reload action forces rediscovery. Installation does not activate governance; installed V2 acceptance remains NOT_VERIFIED.
 4. Verify: `npx --package ./flowguard-core-{version}.tgz flowguard doctor`
 
 If you installed with `--install-scope repo`, use the same flag for `doctor`.
@@ -35,19 +48,29 @@ the developer's global host configuration.
 In headless/non-interactive execution, FlowGuard does not rely on follow-up questions: missing safety-critical inputs fail closed with explicit blocked reasons.
 
 > [!NOTE] > **Headless operation is separate from the interactive plugin:**
-> The interactive plugin (`flowguard_*` tools inside OpenCode) is stable.
+> The native interactive plugin (`flowguard_*` tools inside OpenCode) remains under V2 acceptance.
 > The standalone CLI wrappers (`flowguard run`, `flowguard serve`) are experimental.
 > For production headless workflows, use OpenCode directly (`opencode run`, `opencode serve`).
 
 ## In 30 Seconds
 
-This section applies to OpenCode, the fully supported GA host.
+This describes the intended governed OpenCode workflow, not completed V2
+activation/reviewer acceptance. Installation alone cannot enable it.
 
-Three governed flows are available after `/start` (or `/hydrate`):
+Three governed flows are available after `/start`:
 
 **Ticket flow** — full development lifecycle:
 
-1. `/start` — bootstrap the session
+![FlowGuard's intended human-gated ticket lifecycle: independently reviewed plan, approval, baseline validation, implementation, fresh verification, independent review, evidence approval and persisted export. V2 Desktop acceptance remains open; R4 is a documented NOT_SUPPORTED trusted-plugin limitation.](./docs/assets/development-lifecycle.svg)
+
+The diagram shows the standard full-ceremony, human-gated path, not completed V2
+acceptance. `/start` activates governance; `/hydrate` does not. Policy-authorized
+autonomy and reduced ceremony are separate paths. R4 is a documented
+`NOT_SUPPORTED` host limitation under the trusted-plugin model; untrusted
+co-installed plugins are outside the supported boundary, and a native command
+alone does not prove human identity.
+
+1. `/start` — start governance and bootstrap the session
 2. `/task "description"` — capture your governed task
 3. `/plan` — generate an implementation plan (subagent-reviewed iteratively)
 4. `/approve` — approve the plan (or `/request-changes` to revise)
@@ -69,9 +92,11 @@ Three governed flows are available after `/start` (or `/hydrate`):
 2. `/review` — plain peer review report (no external content)
    OR `/review prNumber=42` / `branch=feature` / `url=https://...` /
    `text="diff"` → blocked with `requiredReviewAttestation` (obligation UUID)
-3. When plugin orchestration is active, FlowGuard may invoke the reviewer
-   subagent and inject `pluginReviewFindings`; otherwise the blocked response
-   instructs manual subagent invocation.
+3. When plugin orchestration is active on a host with a verified native review
+   transport, FlowGuard authorizes the reviewer subagent and binds structured
+   findings to the obligation. OpenCode V2 currently connects dispatch and
+   independent-Child authority only; native completion/capture/evidence remains
+   blocked, so free-form reviewer text is never accepted as a verdict.
 4. `/review prNumber=42 reviewFindings=<complete object>` →
    PEER_REVIEW_COMPLETE, receives structured `reviewCard`
 

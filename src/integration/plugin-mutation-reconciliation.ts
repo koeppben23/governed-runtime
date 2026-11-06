@@ -4,29 +4,24 @@ import { unresolvedMutationEpisodes } from '../state/evidence-mutation-episode.j
 import { observeEditFailure } from './host-mutation-observation.js';
 import { commitMutationCompletion } from './plugin-mutation-episodes.js';
 import { IntegrationInvariantError } from './errors.js';
+import { readHostCallIdentity } from '../state/host-identity.js';
 
 const EventTrigger = z.object({
-  type: z.literal('message.part.updated'),
-  properties: z.object({
-    part: z.object({
-      type: z.literal('tool'),
-      tool: z.literal('edit'),
-      sessionID: z.string().min(1),
-      callID: z.string().min(1),
-      state: z.object({ status: z.literal('error') }),
-    }),
-  }),
+  type: z.literal('session.tool.failed'),
+  data: z.object({ hostCallId: z.string().min(1) }),
 });
 
-/** Async events are wakeups, never a replacement for a fresh host history read. */
+/** Async events are wakeups, never a replacement for a fresh host history read.
+ * The governed session owns the episode store; the projected native host call
+ * identity selects the episode, including delegated-child calls. */
 export async function reconcileMutationEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
+  governedSessionId: string,
 ): Promise<void> {
   const trigger = EventTrigger.safeParse(event);
   if (!trigger.success) return;
-  const part = trigger.data.properties.part;
-  await reconcileHostMutationEpisodes(runtime, part.sessionID, part.callID);
+  await reconcileHostMutationEpisodes(runtime, governedSessionId, trigger.data.data.hostCallId);
 }
 
 /** Synchronous barrier before /implement; host I/O is deliberately outside the state write lock. */
@@ -45,29 +40,33 @@ export async function reconcileHostMutationEpisodes(
       episode.toolName === 'edit' && (callId === undefined || episode.hostCallId === callId),
   );
   if (episodes.length === 0) return;
-  const session = runtime.orchestratorDeps.client.session;
-  if (typeof session.messages !== 'function')
-    throw new IntegrationInvariantError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Host message access is required to observe the open edit outcome.',
-    );
-  const readMessages = session.messages.bind(session);
-  let response: Awaited<ReturnType<NonNullable<typeof session.messages>>>;
-  try {
-    response = await boundedHistoryRead(() => readMessages({ path: { id: sessionId } }));
-  } catch (error) {
-    throw new IntegrationInvariantError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      `Host mutation outcome query failed: ${error instanceof Error ? error.message : 'unavailable'}`,
-    );
-  }
-  if (response?.error || !response?.data)
-    throw new IntegrationInvariantError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Host mutation outcome history is unavailable.',
-    );
+  const client = runtime.orchestratorDeps.client;
+  const histories = new Map<string, unknown>();
   for (const episode of episodes) {
-    const observation = observeEditFailure(response.data, sessionId, episode);
+    const identity = readHostCallIdentity(episode.hostCallId);
+    if (identity === null) continue; // Historical/invalid IDs stay unresolved, never migrated.
+    if (!histories.has(identity.sessionId)) {
+      let history: unknown;
+      try {
+        history = await boundedHistoryRead(() => client.readHistory(identity.sessionId));
+      } catch (error) {
+        throw new IntegrationInvariantError(
+          'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+          `Host mutation outcome query failed: ${error instanceof Error ? error.message : 'unavailable'}`,
+        );
+      }
+      if (!Array.isArray(history))
+        throw new IntegrationInvariantError(
+          'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+          'Host mutation outcome history is unavailable.',
+        );
+      histories.set(identity.sessionId, history);
+    }
+    const observation = observeEditFailure(
+      histories.get(identity.sessionId),
+      identity.sessionId,
+      episode,
+    );
     if (observation.kind === 'unobserved') {
       runtime.log.info('mutation', 'host mutation remains unresolved', {
         sessionId,

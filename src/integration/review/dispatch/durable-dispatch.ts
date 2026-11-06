@@ -53,7 +53,7 @@ export interface CaptureClosureAuditInput {
   readonly code: string;
   readonly diagnostics: readonly PendingReviewRetryDiagnostic[];
   /**
-   * Child session that produced the failed capture, when the native Task
+   * Child session that produced the failed capture, when the native reviewer subagent
    * release already bound it. It is written to the staled attempt in the SAME
    * mutation that abandons the dispatch, so the discarded reviewer transcript
    * stays attributable. It never authorizes evidence on its own.
@@ -226,7 +226,7 @@ export interface ExecutionClosureIdentity {
 }
 
 /** Resolve only recorded execution identities, including a dispatch rebound to its child. */
-export function resolveExecutionDispatch(
+function resolveExecutionDispatch(
   assurance: ReturnType<typeof ensureReviewAssurance>,
   hostCallId: string,
   identity: ExecutionClosureIdentity,
@@ -247,7 +247,7 @@ export function resolveExecutionDispatch(
 }
 
 /** Terminal evidence must belong to this exact dispatch, attempt and child. */
-export function executionDispatchIsTerminal(
+function executionDispatchIsTerminal(
   assurance: ReturnType<typeof ensureReviewAssurance>,
   record: ReviewDispatchRecord,
   childSessionId?: string,

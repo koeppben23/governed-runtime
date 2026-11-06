@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { validateProviderExtensions } from './registry-validation.js';
+import { validateProviderExtensions } from './registry-validation-test-helpers.js';
 import { ASSERTION_PROVIDER_EXTENSIONS } from './registry.js';
 import type { AssertionProviderExtension, ExecutionProfile } from './contract.js';
 import { pytestProvider } from './pytest/provider.js';

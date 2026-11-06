@@ -28,11 +28,9 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   Runner,
-  assertToolchain,
   enableRawArchiveInRepoConfig,
   finalizeControlRecord,
   parseArgs,
-  readPins,
   sha256,
   verifyChecksumSidecar,
 } from './run-live-matrix.mjs';
@@ -45,6 +43,7 @@ import {
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
 import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
+import { readPins, assertToolchain } from '../lib/toolchain.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');

@@ -555,7 +555,7 @@ describe('demo perf baseline - statistics, output, and write safety', () => {
 
   it('EDGE: the follow-up sentinel matches the product serialization prompt', () => {
     const source = fs.readFileSync(
-      path.join(__dirname, '../../integration/review/dispatch/structured-followup.ts'),
+      path.join(__dirname, '../../integration/review/dispatch/serialization-prompt.ts'),
       'utf8',
     );
     expect(source).toContain(`'${FOLLOWUP_PROMPT_SENTINEL}'`);

@@ -7,7 +7,7 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 - Node.js 20+
 - npm
-- OpenCode
+- OpenCode V2 (native API candidate: 2.2.4; complete product acceptance remains NO-GO)
 
 ## Installation Steps
 
@@ -46,18 +46,89 @@ operator has verified the artifact through another controlled channel.
 Before installing, choose the host platform. Enforcement and activation guarantees
 differ per host.
 
-| Host        | Enforcement   | Global Target                 | Repo Target            | Activation       | Key Limitation               |
-| ----------- | ------------- | ----------------------------- | ---------------------- | ---------------- | ---------------------------- |
-| OpenCode    | `synchronous` | `~/.config/opencode/`         | `./.opencode/`         | Restart OpenCode | —                            |
-| Claude Code | `hook_gated`  | `~/.claude/`                  | `./.claude/`           | Restart Claude   | Hook timeout = tool proceeds |
-| Codex       | `hook_gated`  | `~/.codex/plugins/flowguard/` | `./plugins/flowguard/` | Restart Codex    | `NOT_VERIFIED_NATIVE_LOAD`   |
+| Host        | Enforcement   | Global Target                 | Repo Target            | Activation                                                              | Key Limitation                    |
+| ----------- | ------------- | ----------------------------- | ---------------------- | ----------------------------------------------------------------------- | --------------------------------- |
+| OpenCode V2 | `synchronous` | `~/.config/opencode/`         | `./.opencode/`         | Installer verifies/restarts the running host; not governance activation | Installed acceptance NOT_VERIFIED |
+| Claude Code | `hook_gated`  | `~/.claude/`                  | `./.claude/`           | Restart Claude                                                          | Hook timeout = tool proceeds      |
+| Codex       | `hook_gated`  | `~/.codex/plugins/flowguard/` | `./plugins/flowguard/` | Restart Codex                                                           | `NOT_VERIFIED_NATIVE_LOAD`        |
 
 OpenCode provides the strongest enforcement path through its synchronous plugin.
 Claude Code and Codex are supported through MCP, hooks, and native packaging with
 hook-gated, platform-limited guarantees. See
 [Platform Limitations](./platform-limitations.md) for details.
 
-Claude Code and Codex are technical previews; OpenCode is the fully supported GA host.
+The native V2 installer is an implementation checkpoint, not a support
+certification. Installed INACTIVE parity, interactive and authorized autonomous
+activation, policy-required human origin, reviewer assurance and recovery remain
+open; PR #1190 remains Draft. Installation does not authorize either start path.
+V1 capabilities/governance guarantees and policy-permitted fully automatic
+operation must be preserved; see [ADR-010](./decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02).
+
+### Native V2 layout and fresh-install boundary
+
+The installer writes exactly one default-export plugin at
+`plugins/flowguard/index.ts` under the selected OpenCode directory. That plugin
+owns native tool registrations; no `tools/flowguard.ts` or V1 plugin wrapper is
+installed. Existing OpenCode JSON/JSONC, comments, instructions, model/variant
+selection and permissions are preserved byte-for-byte. An absent config remains
+absent. `flowguard-mandates.md` is a passive managed artifact, **not** registered
+in `instructions[]`; installing files does not activate a session.
+
+The installer publishes the watched native plugin entrypoint only after its
+dependency tree is live. This prevents a running host from importing the fresh
+entrypoint before `@flowguard/core` is available; publication failures still
+restore the previous dependency tree and managed artifacts.
+
+OpenCode watches configuration/plugin changes; use `/reload` for normal
+rediscovery. Installation additionally verifies the **actual running service**:
+it reads the loopback service record at `~/.local/state/opencode/service.json`,
+checks the installed target's location-scoped `/api/plugin` state and
+`/api/command` for native `/start`.
+
+- After an applied install, the installer restarts the exact running service
+  and verifies the replacement even when the previously loaded plugin still
+  reports `active`; an active module can be stale after package files change.
+  Non-interactive installs restart by default. `--no-restart-host` opts out and
+  keeps verification read-only.
+- If the installer runs inside the service (for example an agent-hosted
+  terminal), it schedules a detached restart of the exact service executable
+  after the installer exits. The current host session is interrupted; a failed
+  schedule is reported as `HOST_RESTART_FAILED`.
+- If automatic restart is disabled (`--no-restart-host`) or the installer cannot
+  prove it is outside the service, it reports `HOST_RESTART_REQUIRED` with the
+  exact `'<service-executable>' service restart` command.
+- Only a loopback `http(s)` service URL, a live `opencode`/`opencode-cli`
+  process whose command is `serve --service`, and the PID from the service
+  record are accepted. Malformed, stale or non-loopback records never authorize
+  a process kill or receive the service password.
+- If no service is running or its loopback API is unreachable, artifacts remain
+  installed and host verification is `NOT_VERIFIED`; no restart is guessed. A
+  restart failure does not roll back installed artifacts.
+- Host lifecycle verification and restart are implemented for macOS and Linux
+  when the service runs a native `opencode`/`opencode-cli` executable. A
+  Node-launched service is reported stale and is never signalled because the
+  exact restart target cannot be proven. Windows reports that automatic host
+  lifecycle verification is unsupported and leaves the restart to the operator.
+
+The retained-import failure in older installations is thus handled by the
+installer when it can safely identify and replace the service process. If the
+installer is hosted by that process, finish active work and run the reported
+command from an external terminal. Do not delete configuration, databases or
+governance evidence. Verify plugin status `active` and native `/start`
+availability afterwards. Do not create `start.md` or use `/hydrate` as an
+activation substitute. See the official [plugin reload caveat](https://opencode.ai/v2/docs/plugins/#reload)
+for changes to unwatched local dependencies.
+
+Old FlowGuard wrappers, global mandate registrations, duplicate configured
+FlowGuard plugins and obsolete installer ownership manifests are rejected before
+artifact writes, including with `--force`. There is no format migration or V1
+fallback. Archive the old installation, configuration, state and evidence
+byte-for-byte; verify archive integrity; remove only confirmed obsolete FlowGuard
+registrations, preserving customer settings, then install fresh. Do not delete
+audit evidence or use the new uninstaller to migrate an obsolete manifest.
+Current ownership manifests use `schemaVersion: 2`; unsupported formats fail
+explicitly. `--force` only reinstalls the current format and does not prove
+ownership of a modified plugin file.
 
 ### 2. Initialize OpenCode Integration (Standard)
 
@@ -102,17 +173,22 @@ Expected output:
 
 ```
   [ok] ~/.config/opencode/flowguard-mandates.md
-  [ok] ~/.config/opencode/tools/flowguard.ts
-  [ok] ~/.config/opencode/plugins/flowguard-audit.ts
+  [ok] ~/.config/opencode/plugins/flowguard/index.ts
   [ok] ~/.config/opencode/commands/hydrate.md
   ... (installed command files)
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
-  [ok] ~/.config/opencode/opencode.json (or opencode.jsonc when present)
+  [warn] OpenCode V2 runtime load, INACTIVE parity, operator UI and reviewer assurance NOT_VERIFIED
   [ok] flowguard.json — config valid (defaults only)
 
   N/N checks passed
 ```
+
+`/start` is registered natively by the FlowGuard plugin and is never installed as
+a command file. Install and `doctor` refuse a target that contains
+`commands/start.md`, whoever owns it, with `MANAGED_ARTIFACT_CONFLICT`: such a
+file would collide with the native command. Move or rename it, then retry;
+`--force` does not remove it.
 
 ## Install from Local Source Checkout
 
@@ -153,10 +229,14 @@ npm run flowguard:doctor
 | `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`                               |
 | `--checksums-file <path>`                      | Optional explicit checksum file. Defaults to `checksums.sha256` next to tarball    |
 | `--allow-unverified-tarball`                   | Explicit supply-chain opt-out; not recommended and logged                          |
+| `--restart-host`                               | Restart the exact running OpenCode service after an applied install (default)      |
+| `--no-restart-host`                            | Verify read-only; never restart the host automatically                             |
 
 ## Malformed JSON Recovery
 
-When FlowGuard recovers from malformed JSON by rewriting an installer-managed config file, it first writes a timestamped `.flowguard-backup-*` file next to the original. If the backup cannot be written, install stops and does not overwrite the malformed file.
+Malformed OpenCode JSON/JSONC blocks installation without changing the file.
+For installer-managed `package.json` recovery, FlowGuard writes a timestamped
+`.flowguard-backup-*` before replacement; a failed backup blocks the write.
 
 Inspect the backup, repair the malformed JSON if needed, then rerun `flowguard install --force`.
 
@@ -189,6 +269,15 @@ tool bindings.
 ```bash
 npx --package ./flowguard-core-{version}.tgz flowguard uninstall
 ```
+
+Uninstall removes the proven managed OpenCode entrypoint and restores recorded
+package-declaration changes. Removing an installer-created `package.json` does
+not prove ownership of the contents of `node_modules`: a nonempty dependency
+directory is preserved and reported, including any later-added files inside
+`@flowguard/core`. Symlinks and non-directory dependency roots are also preserved;
+only an empty directory is removed. Retained dependency bytes do not register the
+removed plugin. Inspect them before any manual cleanup; do not delete a shared
+dependency tree merely because FlowGuard was installed there.
 
 ## Local Development
 

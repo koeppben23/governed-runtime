@@ -2,6 +2,7 @@
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "testRunner": "vitest",
   "vitest": {
+    "pool": "forks",
     "configFile": "vitest.stryker-schemas.config.ts",
     "related": false
   },

@@ -28,7 +28,8 @@ import {
   TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
 } from '../../integration/tool-names.js';
 import { COMMANDS } from './index.js';
-import { TOOL_WRAPPER } from '../wrappers/index.js';
+import { CHECK_COMMAND } from './check.js';
+import { FLOWGUARD_TOOL_NAMES } from '../../integration/tool-names.js';
 
 const REGISTERED_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_STATUS,
@@ -74,18 +75,10 @@ describe('command templates: tool reference integrity', () => {
     expect(body).toContain('flowguard_continue');
   });
 
-  it('every command-referenced tool is exported by the installed OpenCode wrapper', () => {
-    const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
-    expect(exportBlock).not.toBeNull();
-    const exports = new Set(
-      exportBlock![1]!
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean),
-    );
+  it('every command-referenced tool belongs to the native plugin registration authority', () => {
+    const exports: ReadonlySet<string> = new Set(FLOWGUARD_TOOL_NAMES);
     const missing = [...REGISTERED_TOOLS]
       .filter((tool) => Object.values(COMMANDS).some((body) => body.includes(tool)))
-      .map((tool) => tool.replace(/^flowguard_/, ''))
       .filter((name) => !exports.has(name));
     expect(missing).toEqual([]);
   });
@@ -105,7 +98,6 @@ describe('command templates: agent pinning for review-orchestration commands', (
     'implement.md',
     'review.md',
     'architecture.md',
-    'check.md',
   ] as const;
 
   for (const cmd of COMMANDS_REQUIRING_BUILD_AGENT) {
@@ -158,19 +150,21 @@ describe('command templates: OpenCode frontmatter contract', () => {
 
 describe('check command: implementation review orchestration', () => {
   it('starts and submits mandatory review after checks enter IMPL_REVIEW', () => {
-    const body = COMMANDS['check.md'];
+    const body = CHECK_COMMAND;
     if (!body) throw new TypeError('missing check command template');
 
     expect(body).toContain('If its phase is `IMPL_REVIEW`');
-    expect(body).toContain('FlowGuard binds the independent review');
+    expect(body).toContain('FlowGuard alone binds the independent review');
     expect(body).toContain('Do not author reviewer context or submit');
-    expect(body).toContain('invoke the host-native `task` tool exactly as that contract instructs');
+    expect(body).toContain(
+      'invoke the host-native `subagent` tool exactly as that contract instructs',
+    );
     expect(body).toContain('`flowguard_review_implementation({ reviewVerdict })`');
     expect(body).toContain('Never make the subsequent human approval decision.');
   });
 
   it('stops after baseline validation reaches IMPLEMENTATION', () => {
-    const body = COMMANDS['check.md'];
+    const body = CHECK_COMMAND;
     if (!body) throw new TypeError('missing check command template');
 
     expect(body).toContain('If its phase is `IMPLEMENTATION`');
@@ -185,8 +179,8 @@ describe('check command: implementation review orchestration', () => {
  * P1.3 slice 6 — narrative drift guard.
  *
  * The third LoopVerdict 'unable_to_review' is part of the runtime contract
- * (see src/types/loop-verdict.ts, src/integration/review-validation.ts,
- * src/integration/plugin-orchestrator.ts). Slash-command narratives MUST
+ * (see src/state/evidence-primitives.ts and
+ * src/integration/review/validation/review-validation.ts). Slash-command narratives MUST
  * teach the agent how to handle it, otherwise the agent will mishandle
  * BLOCKED responses with code SUBAGENT_UNABLE_TO_REVIEW.
  *

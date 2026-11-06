@@ -153,6 +153,17 @@ Legacy `location` text is not accepted.
    /hydrate policyMode=regulated
    ```
 
+## Native OpenCode installer recovery
+
+CLI installation errors are separate from the governance reason registry below.
+`OPENCODE_FRESH_INSTALL_REQUIRED` rejects obsolete or duplicate FlowGuard
+installation/ownership formats: archive the old installation and evidence
+byte-for-byte, confirm ownership before removing obsolete registrations, and
+install V2 fresh. `--force` does not migrate formats. `OPENCODE_CONFIG_INVALID`
+means the installer could not safely inspect OpenCode JSON/JSONC; preserve and
+repair that file before retrying. Neither error authorizes deletion of audit
+history or customer configuration.
+
 ## Error Codes
 
 ### Plan claim admission and review cost
@@ -181,35 +192,38 @@ real, registered reason.
 
 ### Session & State
 
-| Code                                      | Description                                                                                        | Solution                                                                                                                                                                                                                                                             |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NO_SESSION`                              | No session exists for the current workspace                                                        | Run `/hydrate` first                                                                                                                                                                                                                                                 |
-| `MISSING_SESSION_ID`                      | Tool call missing session id                                                                       | Re-invoke via OpenCode (the runtime injects sessionId)                                                                                                                                                                                                               |
-| `MISSING_WORKTREE`                        | Workspace fingerprint cannot be resolved                                                           | Run from inside a git worktree                                                                                                                                                                                                                                       |
-| `INVALID_FINGERPRINT`                     | Workspace fingerprint missing or malformed (expected 24 hex chars)                                 | Run `flowguard doctor`                                                                                                                                                                                                                                               |
-| `CONFIG_MISSING`                          | Config file is absent                                                                              | Re-run `flowguard install` for this workspace                                                                                                                                                                                                                        |
-| `CONFIG_INVALID`                          | Config file failed schema validation                                                               | Restore from a trusted backup or re-install                                                                                                                                                                                                                          |
-| `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` | Runtime is on the FlowGuard deny-list of runtimes known not to resolve `instructions[]`            | Switch to an OpenCode runtime not on the deny-list; verify the mandate path is in `instructions[]`; FlowGuard cannot verify activation automatically                                                                                                                 |
-| `SCHEMA_VALIDATION_FAILED`                | Persisted session state failed an incompatible schema or evidence contract                         | Follow the operator recovery tree in [Upgrade and Rollback](./upgrade-rollback.md#operator-recovery-for-incompatible-persisted-state): complete an active session or archive a terminal one with the release that wrote it, then upgrade; never edit persisted state |
-| `SESSION_STATE_INCOMPATIBLE`              | Persisted session state predates the current schema hard cut and is rejected at the read preflight | Same operator recovery tree: complete an active session or archive a terminal one with the release that wrote it, then upgrade and start a fresh session; archive restore does not make the old session readable                                                     |
-| `SESSION_ERROR`                           | Session error received from host runtime                                                           | Check OpenCode logs for root cause; start a new session                                                                                                                                                                                                              |
-| `SESSION_LOCK_CONTENDED`                  | Session write lock could not be acquired (a concurrent operation held it past the timeout)         | Wait for the concurrent FlowGuard operation to finish and re-run `/hydrate`; remove a stale `session-state.json.lock` only after confirming no live process holds it                                                                                                 |
-| `LOCK_TIMEOUT_EXHAUSTED`                  | Session write lock retries exhausted after all attempts                                            | Retry the interrupted FlowGuard command (e.g., `/check` for the same check kind); run `/status --why-blocked` to inspect session state; if persistent, check session directory for stale lock diagnostics                                                            |
-| `REVIEWER_INVOCATION_EXHAUSTED`           | All reviewer subagent retry attempts failed                                                        | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output                                                                                                                                                       |
-| `TSA_TIMESTAMP_ASSURANCE_FAILED`          | Timestamp authority assurance failed                                                               | Check TSA endpoint availability, trust anchors, and timestamp policy configuration                                                                                                                                                                                   |
+| Code                             | Description                                                                                        | Solution                                                                                                                                                                                                                                                             |
+| -------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NO_SESSION`                     | No session exists for the current workspace                                                        | Run `/hydrate` first                                                                                                                                                                                                                                                 |
+| `MISSING_SESSION_ID`             | Tool call missing session id                                                                       | Re-invoke via OpenCode (the runtime injects sessionId)                                                                                                                                                                                                               |
+| `MISSING_WORKTREE`               | Workspace fingerprint cannot be resolved                                                           | Run from inside a git worktree                                                                                                                                                                                                                                       |
+| `INVALID_FINGERPRINT`            | Workspace fingerprint missing or malformed (expected 24 hex chars)                                 | Run `flowguard doctor`                                                                                                                                                                                                                                               |
+| `CONFIG_MISSING`                 | Config file is absent                                                                              | Re-run `flowguard install` for this workspace                                                                                                                                                                                                                        |
+| `CONFIG_INVALID`                 | Config file failed schema validation                                                               | Restore from a trusted backup or re-install                                                                                                                                                                                                                          |
+| `SCHEMA_VALIDATION_FAILED`       | Persisted session state failed an incompatible schema or evidence contract                         | Follow the operator recovery tree in [Upgrade and Rollback](./upgrade-rollback.md#operator-recovery-for-incompatible-persisted-state): complete an active session or archive a terminal one with the release that wrote it, then upgrade; never edit persisted state |
+| `SESSION_STATE_INCOMPATIBLE`     | Persisted session state predates the current schema hard cut and is rejected at the read preflight | Same operator recovery tree: complete an active session or archive a terminal one with the release that wrote it, then upgrade and start a fresh session; archive restore does not make the old session readable                                                     |
+| `SESSION_ERROR`                  | Session error received from host runtime                                                           | Check OpenCode logs for root cause; start a new session                                                                                                                                                                                                              |
+| `SESSION_LOCK_CONTENDED`         | Session write lock could not be acquired (a concurrent operation held it past the timeout)         | Wait for the concurrent FlowGuard operation to finish and re-run `/hydrate`; remove a stale `session-state.json.lock` only after confirming no live process holds it                                                                                                 |
+| `LOCK_TIMEOUT_EXHAUSTED`         | Session write lock retries exhausted after all attempts                                            | Retry the interrupted FlowGuard command (e.g., `/check` for the same check kind); run `/status --why-blocked` to inspect session state; if persistent, check session directory for stale lock diagnostics                                                            |
+| `REVIEWER_INVOCATION_EXHAUSTED`  | All reviewer subagent retry attempts failed                                                        | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output                                                                                                                                                       |
+| `TSA_TIMESTAMP_ASSURANCE_FAILED` | Timestamp authority assurance failed                                                               | Check TSA endpoint availability, trust anchors, and timestamp policy configuration                                                                                                                                                                                   |
 
 ### Command & Phase
 
-| Code                       | Description                                                              | Solution                                                                       |
-| -------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `COMMAND_BLOCKED`          | Command input or required dependency was blocked before execution        | Fix the blocked input or dependency and retry the command                      |
-| `COMMAND_NOT_ALLOWED`      | Command is not in the allowed-phase set for current phase                | Check `docs/commands.md` "Allowed in" for the command                          |
-| `COMMAND_SCOPE_DENIED`     | Tool was invoked outside the active explicit command's permitted scope   | Report the command result and wait for the user to invoke the next command     |
-| `WRONG_PHASE`              | Tool requires a specific phase precondition                              | Run `/status` to see the current phase, then `/continue`                       |
-| `HOST_TOOL_PHASE_DENIED`   | Mutating host tool (bash/write/edit) blocked in investigation-only phase | Use read-only tools (read, glob, grep) during TICKET/PLAN/ARCHITECTURE phases  |
-| `HOST_TOOL_UNKNOWN_DENIED` | Unknown host tool denied by default                                      | Use an explicitly supported host tool or extend the canonical allow-list first |
-| `INVALID_VERDICT`          | `/review-decision` verdict is not approve/changes_requested/reject       | Pass a valid verdict literal                                                   |
-| `INVALID_TRANSITION`       | Topology event not valid for current phase                               | Run `/status` and `/why` for diagnostic explanation                            |
+| Code                           | Description                                                                      | Solution                                                                                                                                                                                                                                                           |
+| ------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `COMMAND_BLOCKED`              | Command input or required dependency was blocked before execution                | Fix the blocked input or dependency and retry the command                                                                                                                                                                                                          |
+| `COMMAND_NOT_ALLOWED`          | Command is not in the allowed-phase set for current phase                        | Check `docs/commands.md` "Allowed in" for the command                                                                                                                                                                                                              |
+| `COMMAND_SCOPE_DENIED`         | Tool was invoked outside the active explicit command's permitted scope           | Report the command result and wait for the user to invoke the next command                                                                                                                                                                                         |
+| `WRONG_PHASE`                  | Tool requires a specific phase precondition                                      | Run `/status` to see the current phase, then `/continue`                                                                                                                                                                                                           |
+| `HOST_TOOL_PHASE_DENIED`       | Mutating host tool (bash/write/edit) blocked in investigation-only phase         | Use read-only tools (read, glob, grep) during TICKET/PLAN/ARCHITECTURE phases                                                                                                                                                                                      |
+| `HOST_TOOL_UNKNOWN_DENIED`     | Unknown host tool denied by default                                              | Use an explicitly supported host tool or extend the canonical allow-list first                                                                                                                                                                                     |
+| `GOVERNANCE_AUTHORITY_BLOCKED` | Activation history, generation or native delegation cannot be verified           | Preserve the private enrollment/journal and workflow evidence. Resolve the reported storage or scope conflict; missing authority is not deactivation and hydrate cannot recreate it.                                                                               |
+| `GOVERNANCE_NOT_ACTIVE`        | A productive FlowGuard operation was invoked without authorized activation       | Ordinary native host work remains available. Run `/start` in the root session to start governance. The native command channel is recorded as `host_command` with the resolved actor and is not a verified-human claim; prompts, tools and hydrate cannot activate. |
+| `GOVERNANCE_END_UNSAFE`        | EndGovernance was requested before safe workflow/reviewer/mutation/audit closure | Finish or abort the workflow, resolve reviewer/mutation execution and audit operations, and recover any capacity lock before retrying `/end-governance`. `/finish` and `/abort` do not end governance implicitly.                                                  |
+| `START_ARGUMENTS_INVALID`      | `/start` received an argument other than one policy mode                         | Run `/start` without arguments or with exactly one of `solo`, `team`, `team-ci`, `regulated`                                                                                                                                                                       |
+| `INVALID_VERDICT`              | `/review-decision` verdict is not approve/changes_requested/reject               | Pass a valid verdict literal                                                                                                                                                                                                                                       |
+| `INVALID_TRANSITION`           | Topology event not valid for current phase                                       | Run `/status` and `/why` for diagnostic explanation                                                                                                                                                                                                                |
 
 ### Validation Evidence
 
@@ -283,24 +297,21 @@ real, registered reason.
 | `REVIEW_EVIDENCE_NOT_OBSERVED` | evidenceLocations have no matching authoritative repository observation for this reviewer attempt | Cite only locations obtained via flowguard_observe_repository during the attempt; start a fresh review otherwise |
 | `REVIEWER_CONTEXT_UNAVAILABLE` | Canonical reviewer context could not be materialized; no review attempt was created | Restore the persisted Discovery basis or workspace fingerprint, then re-run the review |
 | `INVALID_REVIEW_TOOL_SEQUENCE` | Review tool call sequence is invalid (e.g. reviewerUnavailable after spawn) | Follow invocation sequence; do not submit reviewerUnavailable when a host-observed reviewer invocation exists |
-| `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE` | The isolated reviewer agent or a required agent capability is unavailable | Inspect the actual SDK/provider error; no host StructuredOutput capability is required |
-| `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE` | The host/provider rejected the selected execution options | Correct explicit OpenCode model options; do not restart the reviewer automatically or force `none` |
 | `HOST_STRUCTURED_OUTPUT_REQUIRED` | The correlated assistant response is not one complete strict JSON object | Inspect the contract diagnostic; do not extract JSON from prose or submit copied findings |
 | `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION` | The correlated JSON violates ReviewerFindingsInput | Follow bounded capture recovery; never repair reviewer semantics outside the capture transaction |
 | `REVIEWER_CAPTURE_PROVENANCE_INVALID` | Request/response identity, model selection, tool-free execution or successful completion cannot be proved | Resolve the exact execution outcome; do not accept stale or concurrent messages or bypass the capture fence |
-| `REVIEWER_HOST_MESSAGE_ENCODING_FAILED` | OpenCode cannot encode a historical formatted message needed for reviewer provenance | Preserve session history and track upstream issues #40169/#26929; use an official corrected host, never a FlowGuard persistence workaround |
 | `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read | Re-hydrate; if persistent, restore from archive |
 | `REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE` | Invocation does not establish coherent persisted attempt lineage | Re-invoke the reviewer; the stale invocation is retained for audit |
 | `REVIEW_ATTEMPT_NOT_FOUND` | Attempt referenced by invocation was not found in assurance state | Verify the attempt exists with flowguard_status; re-invoke reviewer if corrupt |
 | `REVIEW_ASSURANCE_UNAVAILABLE` | Review assurance state missing; cannot reject an incoherent attempt | Ensure the session has an active review obligation with an attempt |
 | `REVIEW_ATTEMPT_UNAVAILABLE` | No attempt can currently bind reviewer evidence; the frozen material is intact | Re-run the originating command for the same frozen subject; an obligation with no bindable attempt is closed deterministically so the next submission mints a fresh obligation |
-| `REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND` | A previous reviewer exhausted its execution capacity; no new review may start in the same user turn | Report the blocked review and stop. A new review requires a new explicit review command from the user; do not retry the same transport or switch review tools |
-| `REVIEWER_STEP_BUDGET_EXHAUSTED` | The reviewer child reached its configured host step budget before structured findings could be captured; a plausible final text at the limit is not accepted | Terminal capacity closure: the exact dispatch is `outcome_unknown`, the attempt is `stale`, and the obligation is blocked with this code. Do not invoke the reviewer Task again, resubmit the artifact, or start another review in this turn. A new review requires a new explicit review command from the user (for a plan review: `/plan` again) |
-| `REVIEWER_OUTPUT_CAP_INVALID` | The configured reviewer output cap cannot be applied because the model limit is below it, the model limit is unknown, or the FlowGuard config is unreadable/invalid | Set `reviewer.outputTokenMax` in `flowguard.json` to at most the model output limit reported in the reason (or choose a compatible model), restart OpenCode, then re-run the originating command; do not re-arm the same invalid configuration |
-| `REVIEWER_EXECUTION_TIMEOUT` | The reviewer exceeded a bounded execution deadline and the host confirmed termination | Report the blocked review and stop. A new review requires a new explicit review command after the host is quiescent; do not raise the timeout to bypass the block |
-| `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` | The reviewer exceeded a bounded deadline but host termination or quiescence could not be confirmed | Do not start another reviewer Task. Inspect the exact child session and confirm host quiescence before any further review |
-| `REVIEWER_OUTPUT_TRUNCATED` | The reviewer child stopped at the host output limit (`finish: "length"` / `MessageOutputLengthError`) before a final answer; the truncated review is never serialized | Terminal capacity closure: the exact dispatch is `outcome_unknown`, the attempt is `stale`, and the obligation is blocked with this code. Do not invoke the reviewer Task again, resubmit the artifact, or start another review in this turn. A new review requires a new explicit review command from the user (for a plan review: `/plan` again) |
-| `REVIEWER_TASK_INCOMPLETE` | The reviewer child finished (`stop`) without a non-blank final answer | While the attempt budget allows, FlowGuard re-arms a fresh attempt on the same frozen obligation and answers with a `reviewRetry` envelope (invoke the reviewer Task again). The blocked code itself means no fresh attempt was authorized: do not invoke the Task again; stop and re-run the originating command (for `/plan`: submit the current plan again), which re-arms a still-pending obligation or mints a fresh one when the exhausted budget closed it |
+| `REVIEW_CAPACITY_NOT_LOCKED` | No recoverable terminal reviewer capacity lock exists | Run `/status`; use `reviewRecovery: "retry_transport"` for an unknown execution outcome, or inspect the durable review lineage |
+| `REVIEW_CAPACITY_RECOVERY_UNSAFE` | The terminal capacity lock has no exact safe-release lineage, or the lock/lineage changed | Keep the lock and blocked obligation unchanged; use `retry_transport` for unknown outcomes or EndGovernance after safe workflow closure |
+| `REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND` | A previous reviewer exhausted its execution capacity; no new review may start in the same user turn | Report the blocked review and stop. Run `/recover-capacity` to release a proven terminal reviewer closure lock, then issue a new explicit review command. An unknown reviewer outcome is recovered in a later turn through `retry_transport`. Do not switch review tools |
+| `REVIEWER_STEP_BUDGET_EXHAUSTED` | The reviewer child reached its configured host step budget before structured findings could be captured; a plausible final text at the limit is not accepted | Terminal capacity closure: the exact dispatch is `outcome_unknown`, the attempt is `stale`, and the obligation is blocked with this code. Do not invoke the reviewer subagent again, resubmit the artifact, or start another review in this turn. Run `/recover-capacity` after its lineage is durable, then issue a new explicit review command (for a plan review: `/plan` again) |
+| `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` | The reviewer execution was interrupted, failed or could not be proven complete; no evidence was bound | Do not start another reviewer subagent in this turn. In a later user turn call the originating review tool with `reviewRecovery: "retry_transport"`: FlowGuard interrupts the stale child, proves a stable idle boundary and reopens the same frozen obligation for one fresh attempt within its budget. Unprovable settlement keeps it blocked |
+| `REVIEWER_OUTPUT_TRUNCATED` | The reviewer child stopped at the host output limit (`finish: "length"` / `MessageOutputLengthError`) before a final answer; the truncated review is never serialized | Terminal capacity closure: the exact dispatch is `outcome_unknown`, the attempt is `stale`, and the obligation is blocked with this code. Do not invoke the reviewer subagent again, resubmit the artifact, or start another review in this turn. Run `/recover-capacity` after its lineage is durable, then issue a new explicit review command (for a plan review: `/plan` again) |
+| `REVIEWER_TASK_INCOMPLETE` | The reviewer child finished (`stop`) without a non-blank final answer | While the attempt budget allows, FlowGuard re-arms a fresh attempt on the same frozen obligation and answers with a `reviewRetry` envelope (invoke the reviewer subagent again). The blocked code itself means no fresh attempt was authorized: do not invoke the reviewer subagent again; stop and re-run the originating command (for `/plan`: submit the current plan again), which re-arms a still-pending obligation or mints a fresh one when the exhausted budget closed it |
 | `REVIEWER_TASK_ABORTED` | The reviewer task was aborted (`MessageAbortedError`), possibly by the user; it is never restarted automatically | If intended, nothing to do; otherwise re-run the originating command to re-arm a fresh attempt |
 | `REVIEWER_COMPLETION_UNVERIFIABLE` | Host-recorded messages cannot prove reviewer completion (unreadable, host error, more steps than the limit, tool call or no `stop` in the last step); the review cannot be accepted | Do not consume the result as findings; re-run the originating command when host evidence is available, or report the blocker |
 | `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE` | Reviewer child session completed without host-owned execution provenance | Re-run the originating FlowGuard command; do not reuse the prior reviewer output or submit copied findings |
@@ -312,7 +323,7 @@ real, registered reason.
 
 | Code                                  | Description                                       | Solution                                                                                |
 | ------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `ENVELOPE_CAPTURE_FAILED`             | Reviewer Task tool produced no bindable output    | Re-invoke the reviewer subagent; verify it is reachable                                 |
+| `ENVELOPE_CAPTURE_FAILED`             | Reviewer subagent produced no bindable output     | Re-invoke the reviewer subagent; verify it is reachable                                 |
 | `ENVELOPE_PAYLOAD_NOT_FOUND`          | Reviewer output contained no extractable JSON     | Re-invoke the reviewer and ensure it returns ONLY the ReviewFindings JSON               |
 | `ENVELOPE_PAYLOAD_AMBIGUOUS`          | Multiple JSON candidates in reviewer output       | Re-invoke the reviewer and ensure exactly one JSON object is returned                   |
 | `ENVELOPE_SCHEMA_INVALID`             | Reviewer output failed schema validation          | Re-invoke the reviewer with the canonical prompt; check all required fields are present |
@@ -448,6 +459,9 @@ FOUR_EYES_ACTOR_MATCH
 GIT_COMMAND_FAILED
 GIT_NOT_FOUND
 GIT_TIMEOUT
+GOVERNANCE_AUTHORITY_BLOCKED
+GOVERNANCE_END_UNSAFE
+GOVERNANCE_NOT_ACTIVE
 GOVERNANCE_OVERRIDE_NOT_REQUIRED
 GOVERNANCE_OVERRIDE_RATIONALE_REQUIRED
 GOVERNANCE_OVERRIDE_REQUIRED
@@ -519,7 +533,6 @@ NO_PLAN
 NO_SELF_REVIEW
 NO_SESSION
 NO_WORKTREE
-OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED
 ORCHESTRATION_PERMANENTLY_FAILED
 OUTBOX_ORDER_CONFLICT
 PARSE_FAILED
@@ -572,10 +585,7 @@ REVIEWER_CAPTURE_PROVENANCE_INVALID
 REVIEWER_COMPLETION_UNVERIFIABLE
 REVIEWER_CONTEXT_UNAVAILABLE
 REVIEWER_INVOCATION_EXHAUSTED
-REVIEWER_OUTPUT_CAP_INVALID
 REVIEWER_EXECUTION_OUTCOME_UNKNOWN
-REVIEWER_EXECUTION_TIMEOUT
-REVIEWER_HOST_MESSAGE_ENCODING_FAILED
 REVIEWER_OUTPUT_TRUNCATED
 REVIEWER_STEP_BUDGET_EXHAUSTED
 REVIEWER_TASK_ABORTED
@@ -583,11 +593,14 @@ REVIEWER_TASK_INCOMPLETE
 REVIEWER_UNAVAILABLE_STRICT
 REVIEW_ASSURANCE_STATE_UNAVAILABLE
 REVIEW_ASSURANCE_UNAVAILABLE
+REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING
 REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE
 REVIEW_ATTEMPT_NOT_FOUND
 REVIEW_ATTEMPT_UNAVAILABLE
 REVIEW_BRANCH_PROVENANCE_MISSING
 REVIEW_CARD_ARTIFACT_IMMUTABLE
+REVIEW_CAPACITY_NOT_LOCKED
+REVIEW_CAPACITY_RECOVERY_UNSAFE
 REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND
 REVIEW_CARD_ARTIFACT_WRITE_FAILED
 REVIEW_CONTENT_SOURCE_INCOMPLETE
@@ -648,14 +661,13 @@ SESSION_OVERRIDE_MISMATCH
 SESSION_OVERRIDE_UNRESOLVABLE
 SESSION_STATE_DIRECT_WRITE_DENIED
 SESSION_STATE_INCOMPATIBLE
+START_ARGUMENTS_INVALID
 STATE_INCOMPATIBLE
 STATE_INTEGRITY_MISMATCH
 STATE_MISSING
 STATE_MISSING_WITH_AUDIT
 STATE_UNREADABLE
 STRICT_REVIEW_ORCHESTRATION_FAILED
-STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE
-STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE
 SUBAGENT_CHALLENGE_CONTRADICTED
 SUBAGENT_CHALLENGE_COUNT_INCOHERENT
 SUBAGENT_CHALLENGE_EVIDENCE_MISSING

@@ -5,30 +5,21 @@ FlowGuard-governed runtime session.
 
 ## Scope and Precedence
 
-- This file applies repository-wide.
-- Nested `AGENTS.md` files in subdirectories ADD rules for files in their
-  subtree. A nested file MUST NOT weaken repository-wide safety, evidence, or
-  Git rules stated here.
-- Apply repository-wide and nested rules cumulatively. A nested rule overrides
-  a repository-wide rule only when it explicitly names the replaced rule and
-  does not weaken safety, evidence, or Git rules.
-- If two applicable instructions conflict and neither defines an explicit
-  override, stop before the conflicting action and report the conflict.
+- Applies repository-wide; nested `AGENTS.md` files ADD subtree rules.
+- Apply rules cumulatively. Overrides must explicitly name the replaced rule;
+  nested rules MUST NOT weaken repository-wide safety, evidence, or Git rules.
+- Without an explicit override, stop before a conflicting action and report it.
 
 ## Enforcement Boundary
 
-These instructions guide repository work but do NOT enforce policy by
-themselves. Architecture tests, type checks, CI, hooks, schemas, and runtime
-guards are the enforcement authorities. Never replace an enforceable check with
-an instruction-only rule.
+Instructions do NOT enforce policy. Architecture tests, type checks, CI, hooks,
+schemas, and runtime guards do. Never replace an enforceable check with prose.
 
 ## Capability Awareness
 
-- Do not assume that shell, network, Git write access, PR APIs, or interactive
-  clarification are available.
-- When a required capability is unavailable, do not simulate the result.
-  Continue with safe read-only work where possible, or stop the action as
-  `BLOCKED`.
+- Do not assume shell, network, Git writes, PR APIs, or clarification are available.
+- Never simulate an unavailable capability: continue safe read-only work or mark
+  the affected action `BLOCKED`.
 - Resolve ambiguity from repository evidence first. For material high-risk
   ambiguity, do not guess. Resolve it through repository evidence or
   clarification; otherwise mark the affected action `BLOCKED`.
@@ -69,7 +60,7 @@ an instruction-only rule.
 
 ### Assumptions and Evidence
 
-Use these markers in contributor output:
+Contributor evidence markers:
 
 - `ASSUMPTION`: necessary and plausible, but not verified from repository
   artifacts.
@@ -96,14 +87,11 @@ Use these markers in contributor output:
 
 ### No Legacy Compatibility in FlowGuard Source
 
-This is a repository-development rule for FlowGuard's own codebase. It applies
-only while implementing, reviewing, or refactoring FlowGuard-owned source,
-tests, configuration, repository-local tooling, schemas, and FlowGuard APIs in
-this repository. It MUST NOT be propagated into installed FlowGuard mandates,
-generated prompts, generated code, governed downstream repositories, or runtime
-instructions for users' coding agents. FlowGuard MUST NOT reject, rewrite, or
-remove legacy patterns in a user's project merely because this repository rule
-exists.
+This rule applies only to FlowGuard-owned source, tests, config, local tooling,
+schemas, and APIs while implementing, reviewing, or refactoring this repository.
+It MUST NOT enter installed mandates, generated prompts/code, downstream repos,
+or runtime agent instructions. FlowGuard MUST NOT reject, rewrite, or remove
+legacy patterns in a user's project merely because this repository rule exists.
 
 FlowGuard source MUST implement only the current canonical contract. Do not
 introduce or preserve compatibility shims, deprecated aliases, legacy fallbacks,
@@ -116,13 +104,10 @@ implementation rather than maintaining both. Unsupported old inputs or formats
 must fail explicitly at the current validation or trust boundary instead of
 being silently migrated or normalized.
 
-If an AI coder encounters legacy or backward-compatibility code in a FlowGuard
-file or execution path it is already changing or reviewing, removal is part of
-the same change. Delete the compatibility path and update directly affected call
-sites, tests, schemas, and docs to the current canonical authority. Do not retain
-such code merely because it predates the task. Keep cleanup bounded to the
-touched and directly dependent FlowGuard surface unless correctness requires a
-wider removal.
+Remove compatibility code encountered on touched or reviewed FlowGuard paths in
+the same change, including directly affected call sites, tests, schemas, and docs.
+Age is no exemption. Bound cleanup to touched/directly dependent surfaces unless
+correctness requires wider removal.
 
 Tests and fixtures MAY represent obsolete inputs when their purpose is to prove
 that the current boundary rejects them. Historical documentation MAY describe
@@ -130,9 +115,23 @@ removed behavior. Reviewers MUST treat newly introduced or knowingly retained
 production compatibility code on the touched FlowGuard surface as a review
 blocker.
 
+## Mandatory Changelog and Documentation Consistency
+
+- **Every PR MUST change `CHANGELOG.md` under `[Unreleased]`**, including docs,
+  refactors, tests, CI and cleanup. No exemption; describe completed behavior.
+- Synchronize ALL impacted docs, examples, help, ADRs, schemas/config, support
+  matrices, install/recovery guides and artifacts with code in the same PR.
+  Unaffected docs need no cosmetic edits. Manually review semantic drift.
+- Run `npm run check:doc-drift` for docs/generated changes and
+  `npm run check:pr-documentation` against the PR base for every PR.
+  Missing changelog or stale affected docs blocks merge even with green tests.
+- [ADR-010](docs/decisions/010-host-neutral-opt-in-governance.md) owns governance
+  architecture; [#1169](https://github.com/koeppben23/governed-runtime/issues/1169)
+  owns the V2 port. Do not inject contributor rules into ungoverned sessions.
+
 ## Canonical Authorities
 
-Before implementing a change, identify the canonical authority. Change the authority, not a local duplicate.
+Before implementation, identify the canonical authority. Change it, not a duplicate.
 
 - State transitions: `src/machine/`
 - Module direction policy: `src/architecture/support/module-dependency-policy.ts`

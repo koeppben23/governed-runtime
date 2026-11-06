@@ -68,14 +68,14 @@ describe('cli/main doctor exit code (build-dependent, #423)', () => {
     it('doctor returns 0 when only warn checks present (no errors)', async () => {
       const tarball = await createMockTarball();
       await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
-      // Overwrite opencode.json to simulate desktop-owned config missing task hardening
+      // Native customer configuration requires no global mandates or task rewrites.
       const ocPath = path.join(tmpDir, 'opencode.json');
       await fs.writeFile(
         ocPath,
         JSON.stringify(
           {
-            plugin: ['flowguard-audit'],
-            instructions: ['.opencode/flowguard-mandates.md'],
+            plugins: ['customer-plugin'],
+            instructions: ['CUSTOM.md'],
           },
           null,
           2,
@@ -83,8 +83,19 @@ describe('cli/main doctor exit code (build-dependent, #423)', () => {
         'utf-8',
       );
       const code = await main(['doctor', '--install-scope', 'repo']);
-      // warn for task-hardening, but no hard error → exit 0
+      // Runtime acceptance remains a warning, not an invented activation PASS.
       expect(code).toBe(0);
+    });
+    it('returns 1 for obsolete FlowGuard registration instead of treating it as a warning', async () => {
+      await main([
+        'install',
+        '--install-scope',
+        'repo',
+        '--core-tarball',
+        await createMockTarball(),
+      ]);
+      await fs.writeFile(path.join(tmpDir, 'opencode.json'), '{"plugin":["flowguard-audit"]}');
+      expect(await main(['doctor', '--install-scope', 'repo'])).toBe(1);
     });
   });
 });

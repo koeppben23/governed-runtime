@@ -105,12 +105,22 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING',
+    category: 'input',
+    messageTemplate:
+      'The artifact review subject cannot be created without ATX section anchors: {reason}',
+    recoverySteps: [
+      'Add ATX headings (for example "## Context" and "## Decision") so review findings can anchor to concrete sections',
+      'Resubmit the artifact; no plan version, ADR revision or review obligation was created by the rejected call',
+    ],
+  },
+  {
     code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
     category: 'state',
     messageTemplate:
       'The reviewer child reached its configured host step budget before structured findings could be captured.',
     recoverySteps: [
-      'The review obligation is closed with this code. Do not invoke the reviewer Task again, resubmit the same artifact, or start another review in this turn.',
+      'The review obligation is closed with this code. Do not invoke the reviewer subagent again, resubmit the same artifact, or start another review in this turn.',
       'Report the blocker and stop. A new review requires a new explicit review command from the user (for a plan review: /plan again).',
     ],
   },
@@ -121,7 +131,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'The reviewer child stopped at the host output limit before a final review answer; the truncated review is never serialized or accepted: {reason}',
     recoverySteps: [
-      'The review obligation is closed with this code. Do not invoke the reviewer Task again, resubmit the same artifact, or start another review in this turn.',
+      'The review obligation is closed with this code. Do not invoke the reviewer subagent again, resubmit the same artifact, or start another review in this turn.',
       'Report the blocker and stop. A new review requires a new explicit review command from the user (for a plan review: /plan again).',
     ],
   },
@@ -132,9 +142,9 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'A previous reviewer exhausted its execution capacity and its review obligation is blocked. No new review may start in the same user turn.',
     recoverySteps: [
-      'Do not invoke the reviewer Task, resubmit the artifact, or start another review in this turn.',
-      'Report the blocked review and stop. A new review requires a new explicit review command from the user.',
-      'Do not bypass the lock by switching review tools or retrying the same transport.',
+      'Do not invoke the reviewer subagent, resubmit the artifact, or start another review in this turn.',
+      'Report the blocked review and stop. A new review requires a new explicit review command from the user; an unknown reviewer outcome is instead recovered in a later user turn through reviewRecovery "retry_transport".',
+      'Do not bypass the lock by switching review tools or retrying the same transport in this turn.',
     ],
   },
 
@@ -144,7 +154,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'The reviewer child finished without a final review answer; an unanswered review is never serialized or accepted: {reason}',
     recoverySteps: [
-      'No fresh reviewer attempt was authorized for this obligation: do not invoke the reviewer Task again for it, and never submit or copy reviewer findings.',
+      'No fresh reviewer attempt was authorized for this obligation: do not invoke the reviewer subagent again for it, and never submit or copy reviewer findings.',
       'Report this blocker and stop. Recovery is the next run of the originating FlowGuard command (for /plan: submit the current plan again): it re-arms a still-pending obligation within its attempt budget, or mints a fresh review obligation when the exhausted budget closed this one.',
     ],
   },
@@ -556,7 +566,7 @@ export const REVIEW_VALIDATION_REASONS = [
       'Inspect the captured reviewer findings (missingVerification[], unknowns[]) for the specific tool-failure cause',
       'Plan or ADR: submit the artifact again (/plan or /architecture) to mint a fresh review obligation',
       'Implementation: re-record the implementation and re-run the independent review',
-      'Standalone /review: start a fresh /review for the current content',
+      'Standalone /review: abort the blocked review, then start a fresh governed session and run /review for the current content',
       'If the cause is a corrupted mandate digest or template hash mismatch, re-hydrate the session before retrying',
     ],
   },

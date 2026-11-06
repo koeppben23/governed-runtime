@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveEventContract,
-  deriveToolPartContract,
+  deriveMessageContract,
   normalize,
   sha256,
 } from '../sdk-type-snapshot.mjs';
 
 const SDK_FIXTURE = [
-  'export type Event = EventAlpha | EventBeta;',
+  'export type V2Event = EventAlpha | EventBeta;',
+  'export type EventSubscribeOutput = V2Event;',
+  'export type SessionStructuredError = {\n    type: string;\n    message: string;\n};',
   '',
   'export type EventAlpha = {',
   '    type: "alpha.created";',
@@ -26,25 +28,37 @@ const SDK_FIXTURE = [
 
 describe('scripts/sdk-type-snapshot', () => {
   it('rejects missing nested tool lifecycle declarations', () => {
-    expect(() => deriveToolPartContract(SDK_FIXTURE)).toThrow(/ToolPart/);
+    expect(() => deriveMessageContract(SDK_FIXTURE)).toThrow(/SessionMessageInfo/);
   });
   it('pins nested tool-state changes independently of the Event union', () => {
     const fixture = [
-      'export type ToolPart = {\n    state: ToolState;\n};',
-      'export type ToolState = ToolStatePending | ToolStateRunning | ToolStateCompleted | ToolStateError;',
-      ...['ToolStatePending', 'ToolStateRunning', 'ToolStateCompleted', 'ToolStateError'].map(
-        (name) => `export type ${name} = {\n    status: "${name}";\n};`,
-      ),
+      'export type SessionMessageInfo = SessionMessageAssistant;',
+      'export type ToolContent = ToolTextContent | ToolFileContent;',
+      ...[
+        'SessionMessageAssistant',
+        'SessionMessageAssistantTool',
+        'SessionMessageToolStateStreaming',
+        'SessionMessageToolStateRunning',
+        'SessionMessageToolStateCompleted',
+        'SessionMessageToolStateError',
+        'ToolTextContent',
+        'ToolFileContent',
+        'SessionStructuredError',
+      ].map((name) => `export type ${name} = {\n    status: "${name}";\n};`),
     ].join('\n');
-    const before = deriveToolPartContract(fixture);
-    expect(before).toContain('export type ToolState =');
-    expect(before).toContain('export type ToolStateError =');
+    const before = deriveMessageContract(fixture);
+    expect(before).toContain('export type SessionMessageInfo =');
+    expect(before).toContain('export type SessionMessageToolStateError =');
     expect(
-      deriveToolPartContract(fixture.replace('status: "ToolStateError"', 'error: string')),
+      deriveMessageContract(
+        fixture.replace('status: "SessionMessageToolStateError"', 'error: string'),
+      ),
     ).not.toBe(before);
     expect(() =>
-      deriveToolPartContract(fixture.replace('export type ToolStateError', 'export type Removed')),
-    ).toThrow(/ToolStateError/);
+      deriveMessageContract(
+        fixture.replace('export type SessionMessageToolStateError', 'export type Removed'),
+      ),
+    ).toThrow(/SessionMessageToolStateError/);
   });
   describe('normalize', () => {
     it('normalizes CRLF and trailing whitespace to a single trailing newline', () => {
@@ -67,7 +81,7 @@ describe('scripts/sdk-type-snapshot', () => {
   describe('deriveEventContract', () => {
     it('captures the union and every member declaration in union order', () => {
       const derived = deriveEventContract(SDK_FIXTURE);
-      expect(derived).toContain('export type Event = EventAlpha | EventBeta;');
+      expect(derived).toContain('export type V2Event = EventAlpha | EventBeta;');
       expect(derived).toContain('type: "alpha.created";');
       expect(derived).toContain('type: "beta.error";');
       expect(derived.indexOf('EventAlpha = {')).toBeLessThan(derived.indexOf('EventBeta = {'));
@@ -75,12 +89,12 @@ describe('scripts/sdk-type-snapshot', () => {
     });
 
     it('fails loudly when the Event union is missing', () => {
-      expect(() => deriveEventContract('export type NotEvent = string;')).toThrow(/Event union/);
+      expect(() => deriveEventContract('export type NotEvent = string;')).toThrow(/V2Event union/);
     });
 
     it('fails loudly when a union member declaration is missing', () => {
       const broken = [
-        'export type Event = EventAlpha | EventMissing;',
+        'export type V2Event = EventAlpha | EventMissing;',
         '',
         'export type EventAlpha = {',
         '    type: "alpha";',

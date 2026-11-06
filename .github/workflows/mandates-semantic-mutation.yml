@@ -13,7 +13,7 @@ on:
       - 'stryker.mandates.conf.json'
       - 'scripts/verify-mutation-admission.mjs'
       - 'scripts/mutation-profile-registry.json'
-      - 'scripts/stryker-patch.js'
+      - 'package-lock.json'
       - '.github/workflows/mandates-semantic-mutation.yml'
   workflow_dispatch:
 
@@ -40,8 +40,6 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
-      - name: Patch Stryker/Vitest per-test selection
-        run: node scripts/stryker-patch.js
       - name: Run semantic mandate mutation gate
         run: npx stryker run stryker.mandates.conf.json
         env:

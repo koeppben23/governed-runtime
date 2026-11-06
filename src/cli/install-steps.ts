@@ -8,7 +8,6 @@
  * @version v1
  */
 
-import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -33,12 +32,11 @@ import { InstallError, pushError } from './install-helpers.js';
 import {
   computeMandatesDigest,
   reviewerDefinitionForPlatform,
-  resolveOpencodeConfigPath,
   resolveTarget,
   writeIfAbsent,
 } from './install-helpers.js';
 import { verifyTarballChecksum } from './install-helpers-integrity.js';
-import { detectPackageManager, snapshotForRollback } from './install-helpers-rollback.js';
+import { snapshotForRollback } from './install-helpers-rollback.js';
 import {
   FLOWGUARD_TARBALL_PATTERN,
   PACKAGE_VERSION,
@@ -49,24 +47,21 @@ import {
   type InstallErrorCode,
   type InstallPlatform,
 } from './install-types.js';
-import {
-  mergeOpencodeJson,
-  mergePackageJson,
-  parseExistingFlowGuardConfig,
-} from './install-json.js';
+import { mergePackageJson, parseExistingFlowGuardConfig } from './install-json.js';
 import type { RollbackEntry } from './install-helpers-rollback.js';
 import type { InstallMutationSink } from './install-mutation-types.js';
-import { assertManagedMandatesOwnership } from './install-ownership.js';
+import {
+  assertManagedMandatesOwnership,
+  assertNativeOpenCodeInstallTarget,
+} from './install-ownership.js';
 import { ensureDirTracked, MutationJournal } from './install-transaction.js';
 import {
   COMMANDS,
   MANDATES_FILENAME,
   PLUGIN_WRAPPER,
-  TOOL_WRAPPER,
+  PLUGIN_RELATIVE_PATH,
   buildMandatesContent,
 } from './templates.js';
-
-const DEPENDENCY_INSTALL_TIMEOUT_MS = 300_000;
 
 // ─── Install context ─────────────────────────────────────────────────────────
 
@@ -205,7 +200,7 @@ async function buildDirectorySnapshots(
     entries.push(await snapshotForRollback(join(target, 'agents'), 'directory'));
     entries.push(await snapshotForRollback(join(target, 'commands'), 'directory'));
     entries.push(await snapshotForRollback(join(target, 'plugins'), 'directory'));
-    entries.push(await snapshotForRollback(join(target, 'tools'), 'directory'));
+    entries.push(await snapshotForRollback(join(target, 'plugins', 'flowguard'), 'directory'));
   } else {
     entries.push(await snapshotForRollback(join(target, 'vendor'), 'directory'));
     if (installPlatform === 'claude-code') {
@@ -223,7 +218,6 @@ export interface SnapshotResult {
   mandatesPath: string;
   configTargetDir: string;
   pkgPath: string;
-  opencodeJsonPath: string | null;
   cfgPath: string;
   reviewerPath: string;
   mutationJournal: MutationJournal;
@@ -256,8 +250,6 @@ export async function buildRollbackSnapshot(
 
   const configTargetDir = resolveConfigTargetDir(ctx);
   const pkgPath = join(target, 'package.json');
-  const opencodeJsonPath =
-    installPlatform === 'opencode' ? resolveOpencodeConfigPath(args.installScope, target) : null;
   const cfgPath = join(configTargetDir, 'flowguard.json');
   const reviewerDefinition = reviewerDefinitionForPlatform(installPlatform);
   const reviewerPath = join(target, reviewerDefinition.relativePath);
@@ -268,7 +260,6 @@ export async function buildRollbackSnapshot(
   const preStateEntries: RollbackEntry[] = [
     ...dirEntries,
     await snapshotForRollback(pkgPath, 'file'),
-    ...(opencodeJsonPath ? [await snapshotForRollback(opencodeJsonPath, 'file')] : []),
     await snapshotForRollback(cfgPath, 'file'),
     await snapshotForRollback(mandatesPath, 'file'),
     await snapshotForRollback(vendorTarballPath, 'file'),
@@ -285,8 +276,7 @@ export async function buildRollbackSnapshot(
             ),
           )
         : [
-            await snapshotForRollback(join(target, 'tools', 'flowguard.ts'), 'file'),
-            await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts'), 'file'),
+            await snapshotForRollback(join(target, PLUGIN_RELATIVE_PATH), 'file'),
             await snapshotForRollback(reviewerPath, 'file'),
             ...(await Promise.all(
               Object.keys(COMMANDS).map(
@@ -302,14 +292,13 @@ export async function buildRollbackSnapshot(
     mandatesPath,
     configTargetDir,
     pkgPath,
-    opencodeJsonPath,
     cfgPath,
     reviewerPath,
     mutationJournal,
   };
 }
 
-// ─── Step: Write artifacts (tarball + mandates + platform plugins) ────────────
+// ─── Step: Prepare artifacts (native OpenCode entrypoint is published later) ──
 
 function createInstallMutationSink(
   journal: MutationJournal,
@@ -362,27 +351,6 @@ async function writeOpencodeArtifacts(
   const reviewerDefinition = reviewerDefinitionForPlatform(ctx.installPlatform);
   const reviewerPath = join(target, reviewerDefinition.relativePath);
 
-  const toolOp = await writeIfAbsent(
-    join(target, 'tools', 'flowguard.ts'),
-    TOOL_WRAPPER,
-    args.force,
-  );
-  ctx.ops.push(toolOp);
-  if (toolOp.action !== 'skipped')
-    journal.record(findPreState(snapshot.preStateEntries, join(target, 'tools', 'flowguard.ts')));
-
-  const pluginOp = await writeIfAbsent(
-    join(target, 'plugins', 'flowguard-audit.ts'),
-    PLUGIN_WRAPPER,
-    args.force,
-  );
-  ctx.ops.push(pluginOp);
-  if (pluginOp.action !== 'skipped') {
-    journal.record(
-      findPreState(snapshot.preStateEntries, join(target, 'plugins', 'flowguard-audit.ts')),
-    );
-  }
-
   for (const [name, content] of Object.entries(COMMANDS)) {
     const cmdOp = await writeIfAbsent(join(target, 'commands', name), content, args.force);
     ctx.ops.push(cmdOp);
@@ -397,6 +365,20 @@ async function writeOpencodeArtifacts(
     journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
 }
 
+/** The watched entrypoint must never precede its installed dependency tree.
+ * A running host can retain an unresolved package import even across /reload. */
+export async function publishOpencodePlugin(
+  ctx: InstallContext,
+  snapshot: SnapshotResult,
+): Promise<void> {
+  const journal = snapshot.mutationJournal;
+  await ensureDirTracked(join(ctx.target, 'plugins', 'flowguard'), journal);
+  const pluginPath = join(ctx.target, PLUGIN_RELATIVE_PATH);
+  const op = await writeIfAbsent(pluginPath, PLUGIN_WRAPPER, ctx.args.force);
+  ctx.ops.push(op);
+  if (op.action !== 'skipped') journal.record(findPreState(snapshot.preStateEntries, pluginPath));
+}
+
 export async function writeArtifacts(
   ctx: InstallContext,
   tarball: ValidatedTarball,
@@ -408,9 +390,14 @@ export async function writeArtifacts(
   // Re-check immediately before the first mutation to close the TOCTOU window.
   // This is the same ownership authority used by the install preflight.
   await assertManagedMandatesOwnership(snapshot.mandatesPath);
+  if (installPlatform === 'opencode') {
+    await assertNativeOpenCodeInstallTarget(target, [
+      target,
+      ...(ctx.args.installScope === 'repo' ? [resolve('.')] : []),
+    ]);
+  }
 
   if (installPlatform !== 'claude-code' && installPlatform !== 'codex') {
-    await ensureDirTracked(join(target, 'tools'), journal);
     await ensureDirTracked(join(target, 'plugins'), journal);
     await ensureDirTracked(join(target, 'commands'), journal);
     await ensureDirTracked(join(target, 'agents'), journal);
@@ -450,14 +437,6 @@ export async function writeConfigFiles(
   ctx.ops.push(pkgOp);
   if (pkgOp.action !== 'skipped') {
     journal.record(findPreState(snapshot.preStateEntries, snapshot.pkgPath));
-  }
-
-  if (snapshot.opencodeJsonPath) {
-    const ocOp = await mergeOpencodeJson(snapshot.opencodeJsonPath, args.installScope);
-    ctx.ops.push(ocOp);
-    if (ocOp.action !== 'skipped') {
-      journal.record(findPreState(snapshot.preStateEntries, snapshot.opencodeJsonPath));
-    }
   }
 
   if (installPlatform !== 'opencode') {
@@ -570,44 +549,6 @@ async function mergeExistingOpencodeConfig(
   snapshot.mutationJournal.record(findPreState(snapshot.preStateEntries, snapshot.cfgPath));
 }
 
-// ─── Step: Install dependencies ──────────────────────────────────────────────
-
-export async function installDependencies(
-  ctx: InstallContext,
-  snapshot: SnapshotResult,
-): Promise<void> {
-  const pm = detectPackageManager();
-  if (pm === null) {
-    throw new CliInstallError(
-      'PACKAGE_MANAGER_UNAVAILABLE',
-      'Neither bun nor npm found in PATH. Install bun (https://bun.sh) or Node.js/npm.',
-    );
-  }
-
-  try {
-    execSync(pm === 'npm' ? 'npm install --no-audit --no-fund' : 'bun install', {
-      cwd: snapshot.configTargetDir,
-      stdio: 'pipe',
-      timeout: DEPENDENCY_INSTALL_TIMEOUT_MS,
-    });
-    ctx.ops.push({ path: join(snapshot.configTargetDir, 'node_modules'), action: 'written' });
-
-    const corePath = join(snapshot.configTargetDir, 'node_modules', '@flowguard', 'core');
-    if (!existsSync(corePath)) {
-      throw new CliInstallError(
-        'DEPENDENCY_CORE_MISSING',
-        'Dependencies installed but @flowguard/core not found.',
-      );
-    }
-  } catch (err) {
-    throw new CliInstallError(
-      'DEPENDENCY_INSTALL_FAILED',
-      `Dependency install failed: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err },
-    );
-  }
-}
-
 // ─── Step: Post-install notices ──────────────────────────────────────────────
 
 export function emitPostInstallWarnings(ctx: InstallContext): void {
@@ -639,8 +580,8 @@ export function emitPostInstallWarnings(ctx: InstallContext): void {
     ctx.notices.push({
       kind: 'next',
       message:
-        'Restart OpenCode to reload the updated FlowGuard configuration.' +
-        ' Mandate activation remains NOT_VERIFIED.',
+        'OpenCode V2 watches plugin changes; the install CLI verifies the running host after installation.' +
+        ' Installation does not activate governance. Operator UI and reviewer assurance remain NOT_VERIFIED.',
     });
   }
 }

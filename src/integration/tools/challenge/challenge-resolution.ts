@@ -6,12 +6,15 @@ import type { ChallengeResolution } from '../../../state/evidence.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
-import { isOpenImplementationChallenge } from '../implementation/implement-review-state.js';
+import {
+  isOpenImplementationChallenge,
+  reopenReviewAfterAuthorResolution,
+} from '../implementation/implement-review-state.js';
 import { formatBlocked } from '../../blocked-result.js';
 import {
   enrichWithWorkflowDirective,
   withMutableSessionTransaction,
-  writeStateWithArtifacts,
+  writeStateWithArtifactsAndAuditOperations,
 } from '../helpers.js';
 
 /** True if `challengeId` ever appeared as an implementation_challenge in the history. */
@@ -62,6 +65,84 @@ function checkResolvableChallenge(
   return null;
 }
 
+function buildReopenAuditIntents(input: {
+  readonly resolvedState: SessionState;
+  readonly nextState: SessionState;
+  readonly now: string;
+}) {
+  const lock = input.resolvedState.reviewAssurance?.capacityLock ?? null;
+  if (input.nextState === input.resolvedState || lock === null) return [];
+  const newAttempt = input.nextState.reviewAssurance?.attempts.find(
+    (attempt) =>
+      !input.resolvedState.reviewAssurance?.attempts.some(
+        (previous) => previous.attemptId === attempt.attemptId,
+      ),
+  );
+  return [
+    {
+      phase: input.nextState.phase,
+      event: 'review:obligation_reopened',
+      occurredAt: input.now,
+      detail: {
+        obligationId: lock.obligationId,
+        priorBlockedCode: lock.code,
+        reason: 'author_resolution',
+        ...(newAttempt === undefined ? {} : { attemptId: newAttempt.attemptId }),
+        ...(newAttempt?.origin.kind === 'dispatch_rearm'
+          ? { predecessorAttemptId: newAttempt.origin.predecessorAttemptId }
+          : {}),
+      },
+    },
+  ];
+}
+
+async function recordChallengeResolution(input: {
+  readonly sessDir: string;
+  readonly state: SessionState;
+  readonly now: string;
+  readonly challengeId: string;
+  readonly attemptIds: readonly string[];
+  readonly implementation: NonNullable<SessionState['implementation']>;
+}): Promise<string> {
+  let author: ChallengeResolution['author'];
+  try {
+    author = await resolveActor(input.state.binding.worktree);
+  } catch {
+    // Identity is advisory provenance; absence must not prevent evidence recording.
+    author = undefined;
+  }
+  const resolution: ChallengeResolution = {
+    challengeId: input.challengeId,
+    implementationDigest: input.implementation.digest,
+    validationAttemptIds: [...input.attemptIds],
+    resolvedAt: input.now,
+    ...(author ? { author } : {}),
+  };
+  const resolvedState = {
+    ...input.state,
+    challengeResolutions: [...input.state.challengeResolutions, resolution],
+  };
+  const nextState = reopenReviewAfterAuthorResolution(resolvedState, input.now);
+  await writeStateWithArtifactsAndAuditOperations(
+    input.sessDir,
+    nextState,
+    undefined,
+    buildReopenAuditIntents({ resolvedState, nextState, now: input.now }),
+  );
+  return JSON.stringify(
+    enrichWithWorkflowDirective(
+      {
+        phase: nextState.phase,
+        status: 'Implementation challenge resolution recorded as advisory NOT_VERIFIED evidence.',
+        challengeResolution: resolution,
+        reviewAuthorityRestored: nextState !== resolvedState,
+        advisory: 'NOT_VERIFIED: this evidence does not alter implementation-review acceptance.',
+      },
+      nextState,
+    ),
+  );
+}
+
 export const resolve_implementation_challenge: ToolDefinition = {
   description:
     'Record advisory evidence resolving one prior implementation review challenge. ' +
@@ -109,38 +190,14 @@ export const resolve_implementation_challenge: ToolDefinition = {
             return formatBlocked('IMPLEMENTATION_VALIDATION_ATTEMPT_FAILED', { attemptId });
           }
         }
-        let author: ChallengeResolution['author'];
-        try {
-          author = await resolveActor(state.binding.worktree);
-        } catch {
-          // Identity is advisory provenance; absence must not prevent evidence recording.
-          author = undefined;
-        }
-        const resolution: ChallengeResolution = {
+        return recordChallengeResolution({
+          sessDir,
+          state,
+          now: ctx.now(),
           challengeId,
-          implementationDigest: implementation.digest,
-          validationAttemptIds: attemptIds,
-          resolvedAt: ctx.now(),
-          ...(author ? { author } : {}),
-        };
-        const nextState = {
-          ...state,
-          challengeResolutions: [...state.challengeResolutions, resolution],
-        };
-        await writeStateWithArtifacts(sessDir, nextState);
-        return JSON.stringify(
-          enrichWithWorkflowDirective(
-            {
-              phase: nextState.phase,
-              status:
-                'Implementation challenge resolution recorded as advisory NOT_VERIFIED evidence.',
-              challengeResolution: resolution,
-              advisory:
-                'NOT_VERIFIED: this evidence does not alter implementation-review acceptance.',
-            },
-            nextState,
-          ),
-        );
+          attemptIds,
+          implementation,
+        });
       });
     } catch (error) {
       return formatError(error);

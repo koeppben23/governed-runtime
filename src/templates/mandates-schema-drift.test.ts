@@ -6,7 +6,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { OPENCODE_JSON_TEMPLATE, REVIEWER_AGENT } from './mandates.js';
+import { REVIEWER_AGENT } from './mandates.js';
+import { PLUGIN_WRAPPER } from './wrappers/index.js';
 
 describe('REVIEWER_AGENT permanent contract', () => {
   it('keeps reviewer identity, isolation, and falsification guidance always on', () => {
@@ -33,16 +34,13 @@ describe('REVIEWER_AGENT permanent contract', () => {
   });
 });
 
-describe('OPENCODE_JSON_TEMPLATE: no plugin array', () => {
-  it('has no plugin key and retains its instruction entry', () => {
-    const parsed = JSON.parse(OPENCODE_JSON_TEMPLATE('.opencode/flowguard-mandates.md'));
-    expect(parsed).not.toHaveProperty('plugin');
-    expect(parsed.instructions).toEqual(['.opencode/flowguard-mandates.md']);
-  });
-
-  it('stays valid JSON for arbitrary instruction paths', () => {
-    for (const entry of ['.opencode/flowguard-mandates.md', 'AGENTS.md', 'custom/path.md']) {
-      expect(() => JSON.parse(OPENCODE_JSON_TEMPLATE(entry))).not.toThrow();
-    }
+describe('native plugin installation template', () => {
+  it('loads only the native default entrypoint without global instruction or tool registration', () => {
+    expect(PLUGIN_WRAPPER).toContain(
+      'export { default } from "@flowguard/core/integration/plugin"',
+    );
+    expect(PLUGIN_WRAPPER).not.toMatch(
+      /instructions|permission|TOOL_WRAPPER|FlowGuardAuditPlugin\(/,
+    );
   });
 });

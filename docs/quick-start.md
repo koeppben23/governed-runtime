@@ -1,12 +1,21 @@
 # Quick Start (OpenCode)
 
-This Quick Start applies to OpenCode, the fully supported GA host.
+This Quick Start applies to OpenCode, the primary V2 host. The ACTIVE V2
+integration is still Draft/NO-GO. The bounded OpenCode 2.2.4 CLI/server parity
+matrix passes 65/65 on Linux, macOS and Windows; see the
+[P0-00 evidence](./host-probes/opencode-v2/p0-00-inactive-parity.md).
+Installed Desktop 2.2.4 and whole-PR acceptance remain open. R4 is a documented
+`NOT_SUPPORTED` trusted-plugin limitation: untrusted co-installed plugins are
+outside the supported V2 security boundary, and no receipt claims
+tool-result-byte attestation. Use this guide for evaluation, not as a GA release
+claim.
 
 ## Prerequisites
 
 - Node.js 20+
 - OpenCode
-- `git` (FlowGuard requires running inside a git worktree; missing git BLOCKs `/hydrate`)
+- `git` (FlowGuard requires running inside a git worktree; missing git BLOCKs
+  `/start`)
 
 ## Installation
 
@@ -20,6 +29,11 @@ Open OpenCode and start a governed session:
 ```
 /start
 ```
+
+`/start` is a native plugin command. Run it in the root session (not in a delegated
+subagent session); it prepares the workflow and activates governance for that
+session only. Until then OpenCode behaves natively. An optional single argument
+selects a policy mode, for example `/start team`.
 
 After starting, FlowGuard enters the **READY** phase. Choose one of three flows.
 
@@ -112,9 +126,11 @@ Materializes the required verifiable export and completes the workflow once
 export evidence is persisted. Canonical verification requires an authorized raw
 auditor package.
 
-All canonical commands (`/hydrate`, `/ticket`, `/review-decision`, `/validate`,
+The workflow commands (`/ticket`, `/review-decision`, `/validate`,
 `/architecture`, `/review`, `/export`, `/archive`, `/abort`, `/continue`) remain
-fully supported for scripts, CI, and advanced workflows.
+supported for scripts, CI, and advanced workflows. `/hydrate` is a legacy
+compatibility command; it is **not** a V2 activation path and must not be used
+in place of `/start` or an authorized autonomous `StartGovernance` call.
 
 ## Architecture Flow (ADR Creation)
 
@@ -122,7 +138,12 @@ Create an Architecture Decision Record. The flow is symmetric to `/plan`: ADR
 authoring runs through the same independent-subagent review loop (F13 parity).
 
 ```
-/architecture title="Use PostgreSQL for primary storage" adrText="## Context\n…\n## Decision\n…\n## Consequences\n…"
+/architecture title="Use PostgreSQL for primary storage" adrText="## Context
+…
+## Decision
+…
+## Consequences
+…"
 ```
 
 The ADR must include `## Context`, `## Decision`, and `## Consequences` sections
@@ -130,7 +151,7 @@ The ADR must include `## Context`, `## Decision`, and `## Consequences` sections
 ADR-specific criteria (Context completeness, Decision concreteness, Consequences
 honesty, MADR structure). The agent revises and re-submits on
 `changes_requested`. On convergence, the workflow advances to `ARCH_REVIEW`,
-where a human approves:
+where the approval authority selected by the frozen policy decides:
 
 ```
 /approve
@@ -164,32 +185,32 @@ Or review a specific GitHub pull request:
 
 **Product surface (recommended for daily use):**
 
-| Command               | Description                                 |
-| --------------------- | ------------------------------------------- |
-| `/start`              | Bootstrap session → READY                   |
-| `/task <text or URL>` | Record task (supports external URLs)        |
-| `/approve`            | Approve at the current review gate          |
-| `/request-changes`    | Request changes at the current review gate  |
-| `/reject`             | Reject at the current review gate           |
-| `/check`              | Compatibility: re-run validation            |
-| `/export`             | Materialize the verifiable export           |
-| `/why`                | Diagnostic: explain the current next-action |
-| `/status`             | Read-only session view                      |
+| Command               | Description                                       |
+| --------------------- | ------------------------------------------------- |
+| `/start`              | Activate governance for this root session → READY |
+| `/task <text or URL>` | Record task (supports external URLs)              |
+| `/approve`            | Approve at the current review gate                |
+| `/request-changes`    | Request changes at the current review gate        |
+| `/reject`             | Reject at the current review gate                 |
+| `/check`              | Compatibility: re-run validation                  |
+| `/export`             | Materialize the verifiable export                 |
+| `/why`                | Diagnostic: explain the current next-action       |
+| `/status`             | Read-only session view                            |
 
 **Canonical commands:**
 
-| Command                              | Description                          |
-| ------------------------------------ | ------------------------------------ |
-| `/hydrate`                           | Bootstrap session → READY            |
-| `/ticket <text or URL>`              | Record task (supports external URLs) |
-| `/plan`                              | Generate plan                        |
-| `/architecture`                      | Create/revise ADR                    |
-| `/implement`                         | Execute approved plan                |
-| `/validate`                          | Run validation                       |
-| `/review <PR-URL or branch>`         | Start peer review flow               |
-| `/continue`                          | Auto-advance                         |
-| `/review-decision approve`           | Approve                              |
-| `/review-decision changes_requested` | Request changes                      |
-| `/review-decision reject`            | Reject                               |
-| `/archive`                           | Archive completed session            |
-| `/abort`                             | Terminate session                    |
+| Command                              | Description                             |
+| ------------------------------------ | --------------------------------------- |
+| `/hydrate`                           | Legacy compatibility; not V2 activation |
+| `/ticket <text or URL>`              | Record task (supports external URLs)    |
+| `/plan`                              | Generate plan                           |
+| `/architecture`                      | Create/revise ADR                       |
+| `/implement`                         | Execute approved plan                   |
+| `/validate`                          | Run validation                          |
+| `/review <PR-URL or branch>`         | Start peer review flow                  |
+| `/continue`                          | Auto-advance                            |
+| `/review-decision approve`           | Approve                                 |
+| `/review-decision changes_requested` | Request changes                         |
+| `/review-decision reject`            | Reject                                  |
+| `/archive`                           | Archive completed session               |
+| `/abort`                             | Terminate session                       |

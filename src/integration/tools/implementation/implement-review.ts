@@ -4,16 +4,16 @@
  *
  * Host-Observed Independent Review for /implement
  *
- * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
- * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. The HOST captures the reviewer's structured findings into
+ * Architecture: FlowGuard does NOT call subagents. The host primary agent
+ * orchestrates independent review by calling the native flowguard-reviewer
+ * subagent. The HOST captures the reviewer's structured findings into
  * the review assurance evidence; the agent never resubmits findings.
  *
  * Flow:
  * 1. Primary agent performs implementation work
  * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
  * 3. FlowGuard returns next-action instructing subagent invocation
- * 4. Primary agent calls flowguard-reviewer subagent via Task tool
+ * 4. Primary agent calls the native flowguard-reviewer subagent
  * 5. Host captures the reviewer's structured findings into invocation evidence
  * 6. Primary agent submits the review verdict ONLY (Mode B)
  * 7. FlowGuard resolves the host-captured findings, validates, and persists them
@@ -31,13 +31,13 @@
  *
  * Multi-call pattern driven by the LLM:
  *
- * Step 1: LLM makes code changes using OpenCode built-in tools (read, write, bash)
+ * Step 1: LLM makes code changes using host built-in tools (read, write, shell)
  * Step 2: LLM calls flowguard_implement({})
  *   -> Tool auto-detects changed files via git, records ImplEvidence
  *   -> Auto-advances to IMPL_REVIEW
  *   -> Returns "review needed" with policy-conditional next-action
  *
- * Step 3: LLM calls flowguard-reviewer subagent via Task tool
+ * Step 3: LLM calls flowguard-reviewer subagent via reviewer subagent
  * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept" })
  *   -> Tool resolves the host-captured findings and records the review iteration
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
@@ -250,8 +250,7 @@ async function handleApprovedReview(input: {
 }): Promise<string> {
   // Resolve presentation dependencies before any state mutation.
   // If config I/O fails, no EVIDENCE_REVIEW state has been persisted.
-  const glyphProfile = (await readConfig(input.runtime.worktree)).presentation.opencode
-    .glyphProfile;
+  const glyphProfile = (await readConfig(input.runtime.worktree)).presentation.glyphProfile;
 
   // 1. Persist the legitimate review progress at the evidence gate FIRST: the
   // reviewer acceptance is durable and the persisted phase is truthful, even
@@ -278,10 +277,23 @@ async function handleApprovedReview(input: {
   // approval even when the current worktree bytes happen to match.
   const unboundMutations = unboundMutationEpisodeCount(gateState);
   if (unboundMutations > 0) {
+    const unknown = gateState.mutationEpisodes.filter(
+      (episode) =>
+        episode.status === 'completed' &&
+        episode.outcome === 'unknown' &&
+        episode.implementationDigest === null &&
+        !gateState.mutationEpisodeResolutions.some(
+          (resolution) => resolution.hostCallId === episode.hostCallId,
+        ),
+    );
+    const recoveryAction =
+      unknown.length === 0
+        ? 'Known outcomes can be bound by /request-changes followed by /implement.'
+        : `Unknown mutation outcomes: ${unknown.map((episode) => episode.hostCallId).join(', ')}. Restart the exact host, then call flowguard_reconcile_mutation_episode({ hostCallId }) for each before /request-changes and /implement.`;
     return formatBlocked(
       'MUTATION_EPISODE_BINDING_REQUIRED',
       { count: String(unboundMutations) },
-      { phase: gateState.phase },
+      { phase: gateState.phase, recoveryAction },
     );
   }
 

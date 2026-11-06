@@ -4,8 +4,8 @@ import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { parseStrictJsonObject, JSON_OBJECT_BYTE_LIMIT } from '../shared/strict-json-object.js';
 import { ReviewerFindingsInput } from './evidence-review-input.js';
+import { HostMessageId } from './host-identity.js';
 
-const MessageId = z.string().regex(/^msg/);
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 
 export const ReviewerModelSelection = z
@@ -24,14 +24,14 @@ export const ReviewMessageCapture = z
     childSessionId: z.string().min(1),
     obligationId: z.string().uuid(),
     attemptId: z.string().uuid(),
-    requestMessageId: MessageId,
-    responseMessageId: MessageId,
+    requestMessageId: HostMessageId,
+    responseMessageId: HostMessageId,
     requestDigest: Digest,
     payloadText: z.string().min(1).max(JSON_OBJECT_BYTE_LIMIT),
     payloadDigest: Digest,
     model: ReviewerModelSelection,
     /** Exactly one observed model step; no intervening tool or foreign request. */
-    assistantMessageIds: z.tuple([MessageId]).readonly(),
+    assistantMessageIds: z.tuple([HostMessageId]).readonly(),
   })
   .strict()
   .superRefine((capture, ctx) => {

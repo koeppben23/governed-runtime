@@ -33,6 +33,8 @@ const SRC_ROOT = join(REPO_ROOT, 'src');
 const INTERNAL_TEST_SUPPORT = [
   'src/audit/__fixtures__/rfc3161.ts',
   'src/audit/audit-test-helpers.ts',
+  'src/cli/opencode-live-host-test-helpers.ts',
+  'src/cli/opencode-native-test-helpers.ts',
   'src/discovery/discovery-test-fixtures.ts',
   'src/discovery/verification-planner-test-helpers.ts',
   'src/fixtures.ts',
@@ -66,16 +68,23 @@ function isUnderSrc(fileName: string): boolean {
 
 describe('production/test distribution boundary', () => {
   it('every internal test-support file exists and is classified as test code', () => {
-    expect(INTERNAL_TEST_SUPPORT).toHaveLength(13);
+    expect(INTERNAL_TEST_SUPPORT).toHaveLength(15);
     for (const rel of INTERNAL_TEST_SUPPORT) {
       expect(existsSync(join(REPO_ROOT, rel)), rel).toBe(true);
       expect(isTestSourcePath(rel.slice('src/'.length)), rel).toBe(true);
     }
   });
 
-  it('keeps internal test support out of the production program graph', () => {
+  // Building the real production program parses every source file; on loaded CI
+  // runners this exceeds the 15 s default. The graph (not type checking) is the
+  // contract, so the default library and ambient type packages are not loaded:
+  // they cannot add a `src/` file to the program.
+  it('keeps internal test support out of the production program graph', { timeout: 60_000 }, () => {
     const parsed = parseConfig('tsconfig.json');
-    const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
+    const program = ts.createProgram({
+      rootNames: parsed.fileNames,
+      options: { ...parsed.options, noLib: true, types: [], noEmit: true },
+    });
     const srcSources = program.getSourceFiles().filter((source) => isUnderSrc(source.fileName));
 
     // Non-vacuum: the production program really is the production graph.

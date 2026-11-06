@@ -27,7 +27,7 @@ import { blockObligation } from './review/obligations/obligation-state.js';
 import { updateAttemptStatus } from './review/obligations/attempt-lifecycle.js';
 import { abandonReviewDispatch, ensureReviewAssurance } from '../state/review-dispatch.js';
 import type { SessionState } from '../state/schema.js';
-import { strictBlockedOutput } from './blocked-result.js';
+import { buildEnforcementError, strictBlockedOutput } from './blocked-result.js';
 
 import { createSessionState as createEnforcementState } from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/types.js';
@@ -181,7 +181,11 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   ): Promise<void> {
     await withSessionWriteLock(sessDir, async () => {
       const current = await readState(sessDir);
-      if (!current) return;
+      if (!current)
+        throw buildEnforcementError(
+          'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
+          'Review assurance state disappeared before its durable write.',
+        );
       const now = new Date().toISOString();
       const next = update(current, now);
       await writeStateWithAuditOperationsAlreadyLocked(sessDir, next, semanticIntents?.(next, now));

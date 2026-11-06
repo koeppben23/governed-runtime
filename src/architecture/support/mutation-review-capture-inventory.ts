@@ -3,26 +3,6 @@ import type { AdmissionCandidateEntry } from './mutation-authority-inventory.js'
 
 const TARGETS = [
   [
-    'src/integration/reviewer-capture.ts',
-    'Request correlation, tool fence and quarantine termination',
-    'src/integration/reviewer-capture.test.ts',
-  ],
-  [
-    'src/integration/review/dispatch/structured-followup.ts',
-    'Same-child JSON execution and unknown-outcome handling',
-    'src/integration/review/dispatch/structured-followup.test.ts',
-  ],
-  [
-    'src/integration/review/dispatch/provider-error.ts',
-    'Trusted provider error classification',
-    'src/integration/review/dispatch/provider-error.test.ts',
-  ],
-  [
-    'src/integration/review/dispatch/reviewer-task-completion.ts',
-    'Ordered host completion and child model proof',
-    'src/integration/review/dispatch/reviewer-task-completion.test.ts',
-  ],
-  [
     'src/shared/strict-json-object.ts',
     'Bounded strict JSON model-input decoder',
     'src/shared/strict-json-object.test.ts',

@@ -2,6 +2,123 @@
 
 FlowGuard supports per-repository configuration via `flowguard.json`.
 
+## Autonomous governance activation (OpenCode V2)
+
+Autonomous activation is disabled by default. In `.opencode/flowguard.json`:
+
+```json
+{
+  "schemaVersion": "v1",
+  "governance": {
+    "autonomousActivation": {
+      "enabled": false,
+      "minimumActorAssurance": "idp_verified"
+    }
+  }
+}
+```
+
+Enabling this permission does not activate any session. An automation client must
+explicitly call `flowguard-governance.StartGovernance` through OpenCode's plugin
+RPC, with `sessionID`, canonical `worktreeRoot`, and the expected frozen
+`policyDigest` (the canonical policy snapshot hash). `policyMode` is optional;
+its resolution is identical to `/start`, including central-policy constraints.
+The typed contract is exported from `@flowguard/core/integration/governance-rpc`.
+An existing workflow's digest is its `policySnapshot.hash`; fresh workflows use
+the same read-only `resolveHydratePolicy` resolution as hydration and the
+canonical policy-snapshot freezer. A foreign digest is rejected, never replaced
+with the server's choice.
+
+The server resolves the actor using the existing policy-aware actor authority;
+requests cannot supply an actor, assurance or decision source. The canonical
+assurance ordering applies (`best_effort`, `claim_validated`, `idp_verified`).
+Lowering the minimum is an explicit deployment choice, not a default fallback.
+The permission is read again for repeat/recovery requests; disabling it prevents
+further autonomous starts/repairs, without implicitly ending an ACTIVE session.
+Interactive `/start` remains available to repair a committed activation audit.
+
+The actor is the server identity, not an authenticated identity of the individual
+RPC caller. On shared instances, separately control which clients may reach this
+operation. Per-caller permissions require an additional identity binding; see
+the [trust boundary](./trust-boundaries.md).
+
+Only a root session in the addressed host location may start. Child sessions,
+wrong worktrees/policies, disabled permission and insufficient assurance return
+`{ kind: "blocked", code, reason }` before hydration. Successful responses contain
+`kind: "activated" | "already_active"` and `activationId`, after the shared
+activation audit and durable confirmation. Repeat and concurrent interactive
+starts do not create another activation. Audit/confirmation failure blocks
+runtime admission until the explicit operation is retried. Installation,
+hydration, ordinary prompts and workflow state alone still never activate
+governance. This operation grants no approval or review exemption.
+
+## Approval decisions (OpenCode V2)
+
+`/approve [rationale]` and `/override-approve <non-empty rationale>` are native
+commands, as are `/request-changes`, `/reject` and `/review-decision <verdict>
+[rationale]`. They run the same canonical decision tool and rails, without a
+model turn or a prompt-derived permission. The operation is scoped to its exact
+session, worktree, frozen policy, activation generation, current state and
+rationale. No pending approval is cached for a later model tool call.
+
+The **frozen policy snapshot**, not activation source or live config, decides
+whether `flowguard_decision` can run autonomously. At a human-gated policy it
+requires an explicit `host_command` operation; autonomous activation does not
+provide one. Where the policy permits automation, an explicit model tool decision
+remains possible and is recorded as `autonomous`. Both paths enforce the existing
+actor assurance, four-eyes, reviewed-subject/evidence and override rules. An
+exhausted review requires the explicit override verdict and a durable rationale;
+an ordinary approval never silently becomes an override.
+
+`host_command` records the channel, not verified human origin. OpenCode exposes
+the same callback to UI/SDK callers; the server actor is not independently bound
+to each caller. Apply the host access-control trust boundary described above.
+The decision and its bound receipt commit together through the existing audit
+outbox. Audit-write failure is surfaced; reconciliation preserves the original
+decision rather than approving the subject again. Status-report failures after
+a confirmed decision do not undo the committed outcome.
+
+## Reviewer capacity recovery and EndGovernance
+
+`/recover-capacity` is a native operator command. It releases a persisted
+terminal reviewer closure lock (for example step-budget or output truncation). The command verifies the exact blocked
+obligation, stale attempt and `outcome_unknown` dispatch, and refuses to release a
+lock when a reviewer dispatch is still authorized, an attempt is still bound, or
+the closure is `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` (use the typed
+`reviewRecovery: "retry_transport"` path instead). The obligation remains blocked;
+a new explicit review command must mint the fresh review. The release and its
+audit intent commit in one review-assurance write, and the command reconciles the
+audit before reporting success.
+
+`/end-governance` is a native operator command, not `/finish` or `/abort`. It ends
+the root activation through the canonical `ACTIVE → ENDING → INACTIVE` journal
+under one new `host_command` decision. It requires a terminal workflow (or
+`READY`), no pending system work, no unresolved workflow error, no active capacity
+lock, no authorized reviewer dispatch or bound attempt, no unresolved host
+mutation episode, and no unreconciled audit operation. An interrupted `ENDING`
+revision is completed under its existing decision and actor. After the successful
+inactive commit, the command appends `governance:ended`; a failed audit is
+reported as durably INACTIVE with an unconfirmed End audit, and repeating the
+command reconciles it. Neither command proves verified human origin; both record
+the `host_command` channel and the canonically resolved actor.
+
+## ACTIVE-session mandates and `/check`
+
+While a session is verified ACTIVE, the native context hook injects the canonical
+phase-aware FlowGuard mandates into each non-reviewer model request. No mandate
+text is injected for INACTIVE/absent authority or into the frozen reviewer child
+context. The injected system part is marked `source: flowguard-mandates`; a
+request that already carries that source is not duplicated. Injection reads the
+current root workflow state and fails closed if that state disappears.
+
+`/check` is a native command. Its explicit callback installs the `check` scope,
+clears any rework continuation latch, switches to the `build` agent for the
+synthetic check turn (restoring the prior agent afterwards), and clears the scope
+when that turn reaches idle. The same model/tool loop then uses the canonical
+`flowguard_status`, `flowguard_run_check` and implementation-review tools; the
+scope prevents unrelated workflow/host mutations between the check result and the
+next explicit command. `/validate` remains unchanged.
+
 ## Config File Location
 
 ### Repository-specific risk surfaces
@@ -548,31 +665,34 @@ Applies only to new sessions. Existing sessions retain their snapshot value.
 > (global override) or by registering a custom profile (see
 > `docs/profiles.md#custom-profiles`).
 
-### presentation.opencode.glyphProfile
+### presentation.glyphProfile
 
 **Type:** `enum`
 **Values:** `unicode`, `ascii`
 **Default:** `unicode`
 
-Selects the status-marker vocabulary for transient OpenCode
-`presentation.markdown` output:
+Selects the status-marker vocabulary for transient `presentation.markdown`
+output:
 
 ```json
 {
   "presentation": {
-    "opencode": {
-      "glyphProfile": "ascii"
-    }
+    "glyphProfile": "ascii"
   }
 }
 ```
 
-This is an OpenCode-only presentation preference, not workflow, policy, or
+This is a host-neutral presentation preference, not workflow, policy, or
 audit authority. `unicode` uses the canonical markers (such as `✓`, `⚠`, and
 `→`); `ascii` substitutes only renderer-owned status and action markers (such
 as `[OK]`, `[WARN]`, and `[NEXT]`) for terminals or fonts that cannot display
 them. It does not transliterate arbitrary Markdown, embedded artifact content,
 or user-authored text.
+
+Earlier installers wrote the same setting as
+`presentation.opencode.glyphProfile`. That key is still read with unchanged
+meaning; use the neutral key for new configuration. Supplying both keys with
+different values fails configuration validation instead of choosing one.
 
 Canonical `reviewCard` artifacts remain Unicode and are preserved verbatim.
 The profile affects the separate, host-visible `presentation.markdown` field.
@@ -581,12 +701,12 @@ Repository config takes precedence over global config, as described in
 
 ## Environment Variables
 
-| Variable                    | Description                                                                                    | Default                              |
-| --------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `OPENCODE_CONFIG_DIR`       | Config root                                                                                    | `~/.config/opencode`                 |
-| `FLOWGUARD_POLICY_PATH`     | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`)                       | unset                                |
-| `FLOWGUARD_REVIEWER_MODEL`  | Operative reviewer model id pinned into the reviewer agent frontmatter at install time         | unset (host default)                 |
-| `FLOWGUARD_REVIEWER_EFFORT` | Operative reviewer reasoning-effort pinned into the reviewer agent frontmatter at install time | `none` for OpenCode; unset otherwise |
+| Variable                    | Description                                                                     | Default              |
+| --------------------------- | ------------------------------------------------------------------------------- | -------------------- |
+| `OPENCODE_CONFIG_DIR`       | Config root                                                                     | `~/.config/opencode` |
+| `FLOWGUARD_POLICY_PATH`     | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`)        | unset                |
+| `FLOWGUARD_REVIEWER_MODEL`  | Reviewer model reference; OpenCode V2 preserves native `provider/model#variant` | unset (host default) |
+| `FLOWGUARD_REVIEWER_EFFORT` | Claude reviewer effort; explicitly rejected for OpenCode V2 and Codex           | unset                |
 
 Log level is sourced exclusively from `config.logging.level` (see the
 **logging** section above). There is no `FLOWGUARD_LOG_LEVEL` env override at
@@ -603,20 +723,24 @@ regardless of these values (governance stays model-invariant).
 
 Values are validated fail-closed at install time:
 
-- `FLOWGUARD_REVIEWER_MODEL` — alphanumerics, dots, slashes, `@`, colons, and
-  hyphens only; newlines rejected (YAML-injection guard).
-- `FLOWGUARD_REVIEWER_EFFORT` — one of `none`, `low`, `medium`, `high`,
-  `xhigh`, or `max` (OpenCode also accepts `none`). It is applied only when the
-  operator sets it explicitly; FlowGuard no longer injects a default reasoning
-  value. Any other value aborts the install.
+- OpenCode `FLOWGUARD_REVIEWER_MODEL` uses native `provider/model` with an
+  optional `#variant`. The exact reference is YAML-quoted; newlines, whitespace
+  within the reference and malformed separators are rejected. No model-family,
+  provider or variant allowlist is imposed, and omitted selection stays native.
+- OpenCode rejects any nonempty `FLOWGUARD_REVIEWER_EFFORT` rather than emitting
+  the removed V1 `reasoningEffort:` passthrough. Select the model's native
+  `#variant` using `FLOWGUARD_REVIEWER_MODEL`, or leave both unset. This configures
+  a preference; it does not prove actual reviewer execution/effort fidelity.
+- Claude model IDs retain the character validation; Claude effort accepts `low`,
+  `medium`, `high`, `xhigh` or `max`. Invalid values abort installation.
 
 Per-host support matrix (the injected frontmatter key differs by host):
 
-| Host          | `model:` injection | Effort frontmatter key | Notes                                                                             |
-| ------------- | ------------------ | ---------------------- | --------------------------------------------------------------------------------- |
-| `opencode`    | yes                | `reasoningEffort:`     | Applied only when explicitly set; host/provider defaults are preserved otherwise. |
-| `claude-code` | yes                | `effort:`              | Effort values: `low`/`medium`/`high`/`xhigh`/`max`.                               |
-| `codex`       | no                 | unsupported            | See limitation below.                                                             |
+| Host          | `model:` injection | Effort frontmatter key | Notes                                                          |
+| ------------- | ------------------ | ---------------------- | -------------------------------------------------------------- |
+| `opencode`    | yes                | native `#variant`      | No effort translation; exact native reference or host default. |
+| `claude-code` | yes                | `effort:`              | Effort values: `low`/`medium`/`high`/`xhigh`/`max`.            |
+| `codex`       | no                 | unsupported            | See limitation below.                                          |
 
 **Codex limitation:** FlowGuard ships the Codex reviewer as a markdown subagent,
 which does not honor `model`/`model_reasoning_effort` directives. Codex configures
@@ -625,106 +749,65 @@ dropping operator intent, setting either env var while installing for Codex
 **fails closed** with an explicit error. Unset the variables for the Codex
 install, or configure the Codex custom agent directly.
 
-### Reviewer Output Token Cap (OpenCode)
+### Reviewer Output Budget (OpenCode)
 
-The independent reviewer's output ceiling is configured in `flowguard.json`:
+FlowGuard does not configure a reviewer output-token cap. The native host and
+the selected model/variant own the output budget, including for smaller or
+locally hosted models; no requested value is clamped and no model or variant is
+substituted. The former `reviewer.outputTokenMax` key and the V1
+`chat.params`/`maxOutputTokens` workaround are removed.
 
-```json
+**Existing configurations keep working.** Earlier installers wrote the retired
+reviewer keys with their defaults into every `flowguard.json`
+(`outputTokenMax: "host"`, `toolTimeoutMs: 30000`, `reviewTimeoutMs: 480000`,
+`serializationTimeoutMs: 60000`). A retired key whose value equals that former
+default has today's meaning and is dropped when the config is read;
+`flowguard install --force` rewrites the current shape. A retired key with any
+other value requested a function V2 no longer provides (a numeric reviewer cap
+or a watchdog sub-budget) and fails with `CONFIG_INVALID` and a reason naming
+the key. Unknown `reviewer` keys are rejected.
+
+### Reviewer Execution Deadline (OpenCode)
+
+`json
 {
   "reviewer": {
-    "outputTokenMax": "host"
-  }
-}
-```
-
-`"host"` is the model-neutral default: OpenCode's resolved output budget is used
-unchanged, including for smaller or locally hosted agent models. A fresh install
-writes it; an existing config without the field resolves to it through the config
-schema. An explicit numeric value such as `32000` is preserved, including across
-`install --force`, and is validated against the model's reported output limit.
-
-The FlowGuard OpenCode plugin applies the value through the `chat.params` hook to
-the `flowguard-reviewer` agent only. The parent and every other agent keep the
-host default. The reviewer model, selected variant/reasoning options, step limit,
-and all governance gates are unchanged. OpenCode calls the hook
-after it computes its own `maxOutputTokens`, and the hook's value is passed to the
-provider request.
-
-In `"host"` mode the hook leaves `maxOutputTokens` untouched. The hook fails the
-reviewer request closed — before the provider call — when the configuration
-cannot be read, is invalid, or an explicitly configured numeric cap exceeds the
-model's reported output limit. It never silently clamps the requested cap.
-Correct `reviewer.outputTokenMax` to the reported model limit (or choose a
-compatible model) and restart OpenCode. The plugin reads the config at startup.
-
-`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a host-wide fallback for hosts
-where the FlowGuard plugin hook is not active. It is not required for the
-reviewer baseline; when it is set, the plugin still applies
-`reviewer.outputTokenMax` to the reviewer. The fallback affects the whole host
-process, not only the reviewer.
-
-### Reviewer Execution Budgets (OpenCode)
-
-The reviewer execution path has independent upper bounds and one absolute deadline:
-
-```json
-{
-  "reviewer": {
-    "toolTimeoutMs": 30000,
-    "reviewTimeoutMs": 480000,
-    "serializationTimeoutMs": 60000,
     "executionTimeoutMs": 600000
   }
 }
-```
+`
 
-These are the productive safety defaults, not the performance target. The
-80-second review / 120-second total profile is an opt-in lifecycle-validation
-profile; it must not be treated as the final product default until measured
-against real reviews. `toolTimeoutMs` is nested inside `reviewTimeoutMs`; it is
-not additive. The absolute deadline starts at reviewer dispatch authorization
-and covers child discovery, review, same-child serialization, validation, and
-binding. The remaining budget is headroom for orchestration and binding, not a
-sleep.
+`executionTimeoutMs` (1,000-1,800,000 ms, default 600,000) is the absolute deadline
+from reviewer dispatch authorization through evidence binding. If it has
+elapsed when the same-child capture reaches the canonical evidence recorder, no
+evidence is bound and the review is blocked. The native V2 adapter has no
+watchdog that interrupts a running reviewer; safe unknown-outcome recovery is
+open Finding 6 work (**NOT_VERIFIED**). The former V1 watchdog sub-budgets
+`toolTimeoutMs`, `reviewTimeoutMs` and `serializationTimeoutMs` are removed and
+follow the same compatibility rule as `outputTokenMax`.
 
-When a deadline expires, FlowGuard requests termination of the exact reviewer
-child and polls host state. A blocked attempt is persisted with
-`REVIEWER_EXECUTION_TIMEOUT` only after termination is confirmed. If host
-quiescence cannot be established, the attempt is persisted as
-`REVIEWER_EXECUTION_OUTCOME_UNKNOWN` and no new review may start in the same
-turn. A client timeout or an abort acknowledgement alone is not termination
-proof.
-
-SDK/transport exceptions during same-child serialization use the same durable
-execution closure. Host abort and status confirmation have a bounded 1-second
-reconciliation window; a nonresponding host is recorded as `OUTCOME_UNKNOWN`.
-A synchronous execution fence prevents binding while that reconciliation is
-pending. Failed persistence keeps the fence and retries closure; it is never
-reported as confirmed durable termination. Cleanup requires the exact recorded
-call/child lineage and a persisted terminal result. A parent's sole remaining
-Task is not sufficient identity evidence. Already-bound invocations are
-immutable, including when their dispatch was rebound from Task call ID to child
-session ID.
+An unreadable or invalid `flowguard.json` blocks every ACTIVE FlowGuard
+operation of the worktree with `CONFIG_INVALID`; logging alone falls back to
+defaults so the failure can be reported. INACTIVE sessions are not affected.
 
 The productive OpenCode reviewer may use `read` and
 `flowguard_observe_repository`; `glob` and `grep` are denied. The prepared
 review context and observation authority must supply the required evidence. A
 missing-evidence review blocks rather than silently searching the repository.
 
-The hook changes the model request only. OpenCode's internal context/compaction
-reservation is not changed by this setting; that remains a documented limitation
-for very large contexts. A plugin loaded after FlowGuard can also overwrite
-`maxOutputTokens`; the final provider-request capture in the reviewer reference
-suite is the acceptance authority.
+#### Historical V1 reference-suite results (not V2 acceptance)
 
-This is a **conditional baseline**, not a statistical validation. Evidence is the
+The removed V1 hook changed the request cap, not the internal compaction
+reservation. Its final provider-request capture was the acceptance authority,
+since later plugins could overwrite the cap. This is historical evidence only;
+the V2 adapter does not claim equivalent headroom or wire behavior.
+
+This was a **conditional baseline**, not a statistical validation. Evidence is the
 reviewer reference suite: 65K single-review matrix 9/9 expected, full-loop B 3/3
 bound `changes_requested`, and full-loop R 3/3 `accept` in the targeted
 three-repetition run (3/4 accept including the earlier R-B false positive). The
-32K fallback is selected by setting `reviewer.outputTokenMax` to `32000`. Monitor
-reasoning-token use, truncations, capacity closures, and runtime on demo runs;
-the R-B counterexample interpretation remains a documented residual semantic
-risk.
+historical 32K arm does not authorize a V2 numeric override. The R-B counterexample
+interpretation remains a documented residual semantic risk.
 
 The reference-suite runner may additionally set `FLOWGUARD_REFERENCE_SUITE=1`
 and `FLOWGUARD_REVIEWER_STEPS=16` to test a larger step budget. That override is

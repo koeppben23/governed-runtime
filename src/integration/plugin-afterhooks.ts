@@ -9,7 +9,7 @@
  *
  * Independent review is intentionally NOT auto-spawned here. A review-required
  * FlowGuard response remains pending so the parent agent invokes OpenCode's
- * native Task surface; that host-visible Task is the single productive review
+ * native reviewer subagent surface; that host-visible Task is the single productive review
  * transport and owns the child-session lifecycle.
  *
  * @version v2
@@ -17,7 +17,7 @@
 
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
-import { parseToolResult, strictBlockedOutput } from './blocked-result.js';
+import { buildEnforcementError, parseToolResult, strictBlockedOutput } from './blocked-result.js';
 import { getToolOutput, getAutoAdvanceOverflow, getSessionLockSignal } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
@@ -70,7 +70,7 @@ export async function toolAfter(
     const sessionId = hookInput?.sessionID ?? 'unknown';
     // Measured at after-hook entry, before any further after-hook processing.
     const latencyFields = toolLatencyLogFields(runtime, toolName, input, hookOutput);
-    const traceId = getToolTraceId(runtime, input, 'after');
+    const traceId = getToolTraceId(input);
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
       const now = new Date().toISOString();
       // Stryker disable next-line ObjectLiteral
@@ -389,28 +389,38 @@ async function resumeSystemWorkForSession(
 export async function handlePluginEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
+  governedSessionId: string,
 ): Promise<void> {
   return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
     const eventDeps: EventHandlerDeps = {
       log: runtime.log,
       cleanupSession: (sessionId: string) => cleanupSessionRuntime(runtime, sessionId),
-      resumePendingSystemWork: (sessionId: string) =>
-        resumeSystemWorkForSession(runtime, sessionId),
-      observeMutationEvent: (hostEvent) => reconcileMutationEvent(runtime, hostEvent),
+      // Delegated-session idleness is not a root lifecycle wakeup.
+      resumePendingSystemWork: async (sessionId: string) => {
+        if (sessionId === governedSessionId)
+          await resumeSystemWorkForSession(runtime, governedSessionId);
+      },
+      observeMutationEvent: (hostEvent) =>
+        reconcileMutationEvent(runtime, hostEvent, governedSessionId),
       async emitSessionErrorAudit(sessionId, errorMessage, detail) {
-        const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
-        // Without durable session identity there is no canonical audit event
-        // to append. The outer event handler remains fail-safe for the host.
-        if (resolution.status !== 'resolved') return;
+        const resolution = await runtime.ws.resolveSessionAuthority(governedSessionId);
+        // The event was admitted for a verified ACTIVE scope; losing its
+        // workflow authority now must reach the scope fence, not vanish.
+        if (resolution.status !== 'resolved')
+          throw buildEnforcementError(
+            resolution.status === 'unavailable' ? resolution.code : 'SESSION_DIR_NOT_FOUND',
+            'The ACTIVE session error cannot be persisted to its governed audit trail.',
+          );
         await appendReviewAuditEventForState(
           resolution.sessDir,
-          sessionId,
+          governedSessionId,
           resolution.state,
           'error:SESSION_ERROR',
           {
             code: 'SESSION_ERROR',
             message: errorMessage,
             ...detail,
+            ...(sessionId === governedSessionId ? {} : { nativeSessionId: sessionId }),
           },
         );
       },

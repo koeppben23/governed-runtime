@@ -2,7 +2,7 @@
  * @module integration/proofgraph/structural-provider.test
  * @description Structural/schema surfaces as revision-bound ProofGraph evidence (#762).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   evaluateStructuralSurfaces,
   bindStructuralEvidence,
@@ -12,6 +12,7 @@ import {
   STRUCTURAL_PROVIDER_VERSION,
 } from './structural-provider.js';
 import { computeSurfaceDigest } from './surface-digest.js';
+import * as surfaceDigest from './surface-digest.js';
 import { makeState } from '../../fixtures.js';
 import { ProofProviderResult } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
@@ -85,6 +86,34 @@ describe('evaluateStructuralSurfaces', () => {
     expect(surfaceDigestMap(evaluateStructuralSurfaces())).toEqual(
       surfaceDigestMap(evaluateStructuralSurfaces()),
     );
+  });
+
+  it('binds the native command identity rather than an invented run-check alias into the digest', () => {
+    const digest = vi.spyOn(surfaceDigest, 'computeSurfaceDigest');
+    try {
+      evaluateStructuralSurfaces();
+      expect(digest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nativeCommands: expect.arrayContaining(['check']),
+          installedCommands: expect.arrayContaining([
+            expect.objectContaining({
+              invocation: '/check',
+              templateFile: null,
+              nativeCommand: 'check',
+              toolName: null,
+              workflowCommand: null,
+            }),
+            expect.objectContaining({
+              invocation: '/continue',
+              toolName: 'flowguard_continue',
+              workflowCommand: null,
+            }),
+          ]),
+        }),
+      );
+    } finally {
+      digest.mockRestore();
+    }
   });
 });
 

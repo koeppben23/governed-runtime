@@ -15,6 +15,7 @@ import { doctor } from './doctor-command.js';
 import { install } from './install-command.js';
 import { detectInstalledArtifacts, formatTargetPath, resolveTarget } from './install-helpers.js';
 import { classifyInstallOutcome } from './install-outcome.js';
+import { applyHostLifecycle, runOpenCodeHostLifecycle } from './opencode-host-lifecycle.js';
 import { formatDoctor, formatResult } from './install-output.js';
 import { uninstall } from './uninstall-command.js';
 import { resolvePackageRoot, SHIPPED_EXECUTABLE_CHECK } from './install-types.js';
@@ -60,12 +61,28 @@ async function executeInstallAction(args: CliArgs, cliLog: FlowGuardLogger): Pro
     codex: 'Codex',
   };
   const hostName = hostNames[platform] ?? platform;
-  const result = await install(args);
   console.log(`Installing FlowGuard for ${hostName} at ${displayTarget}...`);
   console.log(`  Install scope: ${args.installScope}`);
   console.log(`  Platform: ${platform}`);
   console.log(`  Policy mode: ${args.policyMode}`);
   console.log('');
+  const result = await install(args);
+  if (platform === 'opencode' && result.errors.length === 0) {
+    const outcomeBeforeHost = classifyInstallOutcome(result);
+    if (outcomeBeforeHost === 'applied') {
+      console.log('  Verifying the running OpenCode service...');
+      const serviceRecordPath = process.env['FLOWGUARD_OPENCODE_SERVICE_RECORD'];
+      const lifecycle = await runOpenCodeHostLifecycle({
+        target,
+        scope: args.installScope,
+        allowRestart: args.restartHost ?? true,
+        forceRestart: true,
+        ...(serviceRecordPath !== undefined ? { serviceRecordPath } : {}),
+      });
+      applyHostLifecycle(result, lifecycle);
+      cliLog.info('cli', 'host lifecycle completed', { status: lifecycle.status });
+    }
+  }
   console.log(formatResult(result));
   const outcome = classifyInstallOutcome(result);
   console.log(`  Outcome: ${outcome}`);

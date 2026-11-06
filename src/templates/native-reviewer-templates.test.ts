@@ -58,9 +58,9 @@ describe('reviewer prompt authority separation', () => {
 
   it('removes glob/grep from the productive reviewer while keeping read and observation', () => {
     const prompt = renderReviewerPrompt('all');
-    expect(prompt).toContain('read: allow');
-    expect(prompt).toContain('glob: deny');
-    expect(prompt).toContain('grep: deny');
-    expect(prompt).toContain('flowguard_observe_repository: allow');
+    expect(prompt).toContain('action: "*", resource: "*", effect: deny');
+    expect(prompt).toContain('action: read, resource: "*", effect: allow');
+    expect(prompt).toContain('action: flowguard_observe_repository, resource: "*", effect: allow');
+    expect(prompt).not.toMatch(/^permission:/m);
   });
 });

@@ -98,7 +98,6 @@ export function formatDoctor(checks: DoctorCheck[], host: InstallPlatform): stri
     modified: 'MODIFIED',
     unmanaged: 'UNMANAGED',
     version_mismatch: 'VERSION',
-    instruction_missing: 'INSTR_MISSING',
     error: 'ERROR',
     warn: 'WARN',
     info: 'NOTE',
@@ -188,6 +187,9 @@ Options:
   --checksums-file Path to checksums.sha256 (defaults to tarball-adjacent checksums.sha256)
   --allow-unverified-tarball
                    Supply-chain opt-out: install without tarball integrity verification (not recommended)
+  --restart-host   Restart the exact running OpenCode service after an applied install (default)
+  --no-restart-host
+                   Verify the host read-only; never restart it automatically
 
 Examples:
   npx --package ./flowguard-core-${v}.tgz flowguard install --core-tarball ./flowguard-core-${v}.tgz
