@@ -61,11 +61,11 @@ import { buildWorkflowChoiceConclusion } from '../presentation/workflow-choice.j
 import type { CompactCardDocument } from '../presentation/model.js';
 
 type Registration = { dispose(): Promise<void> };
+const NO_ACTIVATION_BINDING = { activationId: null, activationGeneration: null } as const;
 type CommandInvocation = {
   readonly sessionID: string;
   readonly prompt: { readonly text: string };
 };
-
 type StartWorkflow = {
   readonly worktreeRoot: string;
   readonly state: SessionState;
@@ -139,6 +139,7 @@ async function getNextAction(
       schemaVersion: 'next-action.v1',
       kind: 'blocked',
       sessionID: request.sessionID,
+      ...NO_ACTIVATION_BINDING,
       phase: null,
       stateDigest: null,
       policyDigest: null,
@@ -165,6 +166,7 @@ async function getNextAction(
       ...projectNextActionResult(
         authority.state,
         resolvePolicyFromSnapshot(authority.state.policySnapshot),
+        activation.record,
       ),
       sessionID: request.sessionID,
     };
@@ -173,6 +175,8 @@ async function getNextAction(
     schemaVersion: 'next-action.v1',
     kind: 'blocked',
     sessionID: request.sessionID,
+    activationId: activation.record.activationId,
+    activationGeneration: activation.record.generation,
     phase: null,
     stateDigest: null,
     policyDigest: null,

@@ -16,6 +16,8 @@ function choiceView(overrides: Partial<NextActionResult> = {}): NextActionResult
     phase: 'READY',
     stateDigest: 'a'.repeat(64),
     policyDigest: 'b'.repeat(64),
+    activationId: '11111111-1111-4111-8111-111111111111',
+    activationGeneration: 1,
     title: 'Choose a workflow',
     question: 'Choose one workflow to start. Nothing runs until you send a command.',
     actions: [
@@ -56,6 +58,7 @@ function deps(
     select: vi.fn(async () => '/task'),
     command,
     notify,
+    isAlive: () => true,
     ...overrides,
   } as WorkflowChooserDeps & {
     readonly command: ReturnType<typeof vi.fn>;
@@ -90,6 +93,65 @@ describe('TUI workflow chooser', () => {
   it('refuses a stale state after selection', async () => {
     const d = deps({
       latest: choiceView({ stateDigest: 'c'.repeat(64) }),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('stale');
+    expect(d.command).not.toHaveBeenCalled();
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('state changed'), 'warning');
+  });
+
+  it('refuses when the active session changes during the post-selection RPC', async () => {
+    let active = 'ses_root';
+    let calls = 0;
+    const d = deps({
+      currentSessionID: () => active,
+      getView: vi.fn(async () => {
+        calls += 1;
+        if (calls === 2) active = 'ses_other';
+        return choiceView();
+      }),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('stale');
+    expect(d.command).not.toHaveBeenCalled();
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('Session changed'), 'warning');
+  });
+
+  it('refuses a late dialog result after plugin unload', async () => {
+    let alive = true;
+    const d = deps({
+      isAlive: () => alive,
+      select: vi.fn(async () => {
+        alive = false;
+        return '/task';
+      }),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('disposed');
+    expect(d.command).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the activation generation changed after selection', async () => {
+    const d = deps({
+      latest: choiceView({ activationGeneration: 2 }),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('stale');
+    expect(d.command).not.toHaveBeenCalled();
+    expect(d.notify).toHaveBeenCalledWith(expect.stringContaining('state changed'), 'warning');
+  });
+
+  it('refuses when the activation id changed after selection', async () => {
+    const d = deps({
+      latest: choiceView({ activationId: '22222222-2222-4222-8222-222222222222' }),
     });
 
     const outcome = await chooseWorkflow(d, 'ses_root');

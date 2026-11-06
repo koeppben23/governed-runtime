@@ -55,6 +55,8 @@ export const NextActionResult = z
     schemaVersion: z.literal('next-action.v1'),
     kind: NextActionKind,
     sessionID: z.string().min(1),
+    activationId: z.string().uuid().nullable(),
+    activationGeneration: z.number().int().positive().nullable(),
     phase: z.string().min(1).nullable(),
     stateDigest: z.string().min(1).nullable(),
     policyDigest: z.string().min(1).nullable(),
@@ -152,6 +154,7 @@ function blockerFor(
 export function projectNextActionResult(
   state: SessionState,
   policy: FlowGuardPolicy,
+  activation?: { readonly activationId: string; readonly generation: number },
 ): NextActionResult {
   const status = buildStatusProjection(state, policy);
   const conclusion = status.conclusion;
@@ -160,6 +163,8 @@ export function projectNextActionResult(
     schemaVersion: 'next-action.v1',
     kind,
     sessionID: state.binding.hostSessionId,
+    activationId: activation?.activationId ?? null,
+    activationGeneration: activation?.generation ?? null,
     phase: state.phase,
     stateDigest: computeStateDigest(state),
     policyDigest: state.policySnapshot?.hash ?? null,

@@ -35,6 +35,16 @@ describe('next-action RPC projection', () => {
     expect(view.policyDigest).toBe(state.policySnapshot?.hash);
   });
 
+  it('carries the activation identity when supplied by the canonical authority', () => {
+    const view = projectNextActionResult(makeState('READY'), team, {
+      activationId: '11111111-1111-4111-8111-111111111111',
+      generation: 3,
+    });
+
+    expect(view.activationId).toBe('11111111-1111-4111-8111-111111111111');
+    expect(view.activationGeneration).toBe(3);
+  });
+
   it('preserves canonical blockers and never projects chooser actions', () => {
     const state = makeState('READY', {
       error: {

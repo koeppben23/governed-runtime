@@ -108,6 +108,8 @@ describe('native /start command', () => {
       phase: string;
       title: string;
       stateDigest: string;
+      activationId: string | null;
+      activationGeneration: number | null;
       actions: Array<{ invocation: string }>;
     };
     expect(view).toMatchObject({
@@ -121,6 +123,8 @@ describe('native /start command', () => {
       '/review',
     ]);
     expect(view.stateDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(view.activationId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(view.activationGeneration).toBeGreaterThan(0);
   });
 
   it('hydrates, binds the frozen policy and activates the root via host_command', async () => {

@@ -741,10 +741,16 @@ workflow chooser. It is not a server, headless or decision command.
   `/task` (recommended), `/architecture` and `/review`.
 - It may open automatically once after a session becomes idle in an unchanged
   READY state. Cancelling, closing, switching sessions or plugin reload performs
-  no command. `/choose-workflow` reopens it on demand.
+  no command, including a dialog result that arrives after unload.
+  `/choose-workflow` reopens it on demand.
 - Before requesting a command, the chooser re-reads the read-only
-  `GetNextAction` projection and compares the state digest. Changed, stale or
-  unavailable state aborts with a visible message; no command is synthesized.
+  `GetNextAction` projection and compares the state digest plus the canonical
+  activation id and activation generation. It then re-checks the active session
+  before execution. Changed, stale or unavailable state aborts with a visible
+  message; no command is synthesized.
+- The installed pinned-host PTY proof opens and cancels the chooser without a
+  transition, then selects `/task` and observes the canonical READY → TICKET
+  transition through the real installed command channel.
 - Selection uses the supported host command channel (`session.command`). The
   chooser never approves, overrides, mutates state or treats a UI click as
   verified human authorship.
