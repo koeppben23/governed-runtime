@@ -72,6 +72,7 @@ function deps(
   readonly command: ReturnType<typeof vi.fn>;
   readonly submitDecision: ReturnType<typeof vi.fn>;
   readonly promptRationale: ReturnType<typeof vi.fn>;
+  readonly promptCommandText: ReturnType<typeof vi.fn>;
   readonly notify: ReturnType<typeof vi.fn>;
 } {
   const view = overrides.view ?? choiceView();
@@ -84,6 +85,7 @@ function deps(
   const command = vi.fn(async () => {});
   const submitDecision = vi.fn(async () => ({ kind: 'applied' as const, invocation: '/approve' }));
   const promptRationale = vi.fn(async () => 'Documented override rationale.');
+  const promptCommandText = vi.fn(async () => 'Describe the task.');
   const notify = vi.fn();
   return {
     getView,
@@ -92,6 +94,7 @@ function deps(
     command,
     submitDecision,
     promptRationale,
+    promptCommandText,
     notify,
     isAlive: () => true,
     ...overrides,
@@ -99,6 +102,7 @@ function deps(
     readonly command: ReturnType<typeof vi.fn>;
     readonly submitDecision: ReturnType<typeof vi.fn>;
     readonly promptRationale: ReturnType<typeof vi.fn>;
+    readonly promptCommandText: ReturnType<typeof vi.fn>;
     readonly notify: ReturnType<typeof vi.fn>;
   };
 }
@@ -115,7 +119,7 @@ describe('TUI workflow chooser', () => {
     const outcome = await chooseWorkflow(d, 'ses_root');
 
     expect(outcome).toEqual({ status: 'selected', stateDigest: 'a'.repeat(64) });
-    expect(d.command).toHaveBeenCalledWith('ses_root', 'task');
+    expect(d.command).toHaveBeenCalledWith('ses_root', 'task', 'Describe the task.');
   });
 
   it('cancellation executes nothing', async () => {

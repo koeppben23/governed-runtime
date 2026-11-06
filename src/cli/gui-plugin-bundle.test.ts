@@ -9,11 +9,6 @@ interface FakeCommand {
   readonly run: () => void;
 }
 
-interface FakePill {
-  readonly id: string;
-  readonly show: (input: { readonly session: Record<string, unknown> }) => unknown;
-}
-
 function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
   const additions: Array<{ registry: string; value: unknown }> = [];
   const rpcCalls: Array<Record<string, unknown>> = [];
@@ -25,7 +20,7 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
     add,
     dialogs: {
       select: vi.fn(async () => '/task'),
-      prompt: vi.fn(async () => 'Documented override rationale.'),
+      prompt: vi.fn(async () => 'Task description.'),
       confirm: vi.fn(async () => true),
     },
     sessions: { current: () => session },
@@ -61,7 +56,6 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
   };
   plugin.setup(host);
   const command = additions.find((entry) => entry.registry === 'command')?.value as FakeCommand;
-  const pill = additions.find((entry) => entry.registry === 'composer-pill')?.value as FakePill;
   Object.assign(session, {
     id: 'ses_root',
     location: { directory: '/tmp/worktree' },
@@ -81,18 +75,16 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
       },
     },
   });
-  return { command, pill, rpcCalls, commandCalls, views, host };
+  return { command, rpcCalls, commandCalls, views, host };
 }
 
 describe('installed Desktop GUI bundle', () => {
-  it('registers one command and one persistent session-header slot', () => {
+  it('registers only the on-demand workflow command', () => {
     const ctx = {} as Record<string, unknown>;
     const session = {} as Record<string, unknown>;
     const loaded = load(ctx, session);
 
     expect(loaded.command.id).toBe('choose-workflow');
-    expect(loaded.pill.id).toBe('next-action');
-    expect(loaded.pill.show({ session })).toEqual({ label: 'FlowGuard' });
   });
 
   it('runs the selected workflow command after re-reading the same view', async () => {
@@ -117,7 +109,7 @@ describe('installed Desktop GUI bundle', () => {
       expect(loaded.commandCalls).toContainEqual({
         sessionID: 'ses_root',
         name: 'task',
-        text: '',
+        text: 'Task description.',
       }),
     );
     expect(loaded.rpcCalls.map((call) => call['method'])).toEqual([

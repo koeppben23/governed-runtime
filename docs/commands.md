@@ -741,10 +741,11 @@ decision authority; both consume the same read-only projection.
 
 - The chooser uses the canonical `CHOOSE_FLOW` projection and shows exactly
   `/task` (recommended), `/architecture` and `/review`.
-- It may open automatically once after a session becomes idle in an unchanged
-  READY state. Cancelling, closing, switching sessions or plugin reload performs
-  no command, including a dialog result that arrives after unload.
-  `/choose-workflow` reopens it on demand.
+- It opens only when the user explicitly invokes `/choose-workflow` or runs
+  `/choose-workflow` in the host. There is no automatic idle modal and no
+  persistent composer pill. Cancelling, closing, switching sessions or plugin
+  reload performs no command, including a dialog result that arrives after
+  unload.
 - Before requesting a command, the chooser re-reads the read-only
   `GetNextAction` projection and compares the state digest plus the canonical
   activation id and activation generation. It then re-checks the active session
@@ -759,10 +760,10 @@ decision authority; both consume the same read-only projection.
 - Only `CHOOSE_FLOW` is handled. Review gates, exhausted overrides and native
   decisions remain with the canonical commands and the separate revision-bound
   interaction contract.
-- Desktop GUI support is installed as a `gui-experimental` bundle but its
-  visual chooser and native composer pill remain `NOT_VERIFIED` until an installed
-  OpenCode Desktop 2.2.5 proof is recorded. The portable Markdown chooser from
-  `/start` and `/status` remains complete.
+- Desktop GUI support is installed as a `gui-experimental` bundle and opens the
+  same chooser only when requested. Its visual chooser remains `NOT_VERIFIED`
+  until an installed OpenCode Desktop 2.2.5 proof is recorded. The portable
+  Markdown chooser from `/start` and `/status` remains complete.
 
 ### Native review decisions
 
@@ -778,6 +779,6 @@ decision path and rejects a stale or mismatched view with
 A governance override (`/override-approve`) requires a non-empty rationale
 entered in the dialog. The rationale is durable decision evidence. The native
 channel remains `host_command`; a UI click never raises actor assurance or
-claims verified human authorship. The automatic idle chooser handles only
-`CHOOSE_FLOW`; review decisions are opened explicitly or from the persistent
-Next Action surface.
+claims verified human authorship. The chooser never opens automatically:
+workflow selection and review decisions both require an explicit
+`/choose-workflow` request.

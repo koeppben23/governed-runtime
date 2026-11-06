@@ -12,9 +12,8 @@ and the tested commit.
 
 1. Install the packed artifact and open **OpenCode Desktop 2.2.5**.
 2. Open a new governed session and run `/start`; leave it in `READY`.
-3. Verify the persistent FlowGuard composer pill above the input
-   appears without opening a modal automatically.
-4. Open `/choose-workflow`; verify exactly `/task`, `/architecture` and `/review`,
+3. Verify no FlowGuard pill, panel or modal appears without an explicit request.
+4. Run `/choose-workflow`; verify exactly `/task`, `/architecture` and `/review`,
    with `/task` marked recommended but not preselected.
 5. Press Escape; verify the session is still `ACTIVE`/`READY` and no command ran.
 6. Reopen the chooser, select `/task`; verify the canonical `READY → TICKET`

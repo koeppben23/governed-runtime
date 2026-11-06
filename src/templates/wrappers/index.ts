@@ -19,8 +19,7 @@ export const GUI_PLUGIN_RELATIVE_PATH = 'plugins/flowguard/gui-experimental.cjs'
 
 export const GUI_PLUGIN_BUNDLE = `\
 /** FlowGuard optional OpenCode Desktop GUI; never a governance authority. */
-const { Plugin, Command, ComposerPill } = require('@opencode/plugin/gui');
-const { createEffect, createSignal, onCleanup } = require('solid-js');
+const { Plugin, Command } = require('@opencode/plugin/gui');
 
 const RPC_ID = 'flowguard-governance';
 
@@ -43,28 +42,9 @@ function getView(session) {
   return call(session, 'GetNextAction', { sessionID: session.id });
 }
 
-function statusLabel(view) {
-  if (!view) return 'FlowGuard';
-  if (view.kind === 'choose_flow') return 'FlowGuard · READY · choose workflow';
-  if (view.kind === 'decision_required') return 'FlowGuard · ' + (view.phase || 'review') + ' · decision required';
-  if (view.kind === 'next_action') return 'FlowGuard · ' + (view.phase || 'active') + ' · ' + ((view.actions[0] && view.actions[0].invocation) || 'next action');
-  if (view.kind === 'system_work') return 'FlowGuard · ' + (view.phase || 'active') + ' · in progress';
-  if (view.kind === 'blocked') return 'FlowGuard · not active or blocked';
-  return 'FlowGuard · ' + (view.phase || 'terminal');
-}
-
 function isCurrentSession(ctx, session) {
   const current = ctx.sessions.current();
   return Boolean(current && current.id === session.id && current.server.id === session.server.id);
-}
-
-function pillLabel(view) {
-  if (view.kind === 'choose_flow') return 'FlowGuard · choose';
-  if (view.kind === 'decision_required') return 'FlowGuard · decision';
-  if (view.kind === 'next_action') return 'FlowGuard · ' + ((view.actions[0] && view.actions[0].invocation) || 'action');
-  if (view.kind === 'system_work') return 'FlowGuard · working';
-  if (view.kind === 'blocked') return 'FlowGuard · blocked';
-  return 'FlowGuard · complete';
 }
 
 function sameBinding(left, right) {
@@ -116,6 +96,20 @@ async function choose(ctx, session) {
     return;
   }
 
+  let commandText = '';
+  if (selected === '/task') {
+    commandText = await ctx.dialogs.prompt({
+      title: 'FlowGuard task',
+      description: 'Describe the task, or pass --file <path> to use a repository file.',
+      placeholder: 'What should FlowGuard implement?',
+    });
+    if (commandText === undefined) return;
+    if (commandText.trim() === '') {
+      toast(ctx, 'A task description is required.', 'error');
+      return;
+    }
+  }
+
   const latest = await getView(session);
   if (!latest || latest.stateDigest === null || !sameView(first, latest, selected)) {
     toast(ctx, 'FlowGuard state changed; no action was executed. Reopen the chooser.', 'error');
@@ -134,7 +128,7 @@ async function choose(ctx, session) {
       cancel: 'Cancel',
     });
     if (!confirmed) return;
-    await session.server.client.session.command({ sessionID: session.id, name: selected.replace(/^\\//, ''), text: '' });
+    await session.server.client.session.command({ sessionID: session.id, name: selected.replace(/^\\//, ''), text: commandText });
     toast(ctx, 'FlowGuard action requested.', 'success');
     return;
   }
@@ -164,76 +158,12 @@ async function choose(ctx, session) {
     return;
   }
 
-  await session.server.client.session.command({ sessionID: session.id, name: selected.replace(/^\\//, ''), text: '' });
+  await session.server.client.session.command({ sessionID: session.id, name: selected.replace(/^\\//, ''), text: commandText });
   toast(ctx, 'FlowGuard action requested.', 'success');
-}
-
-function Status(ctx, sessionAccessor) {
-  const [label, setLabel] = createSignal('FlowGuard');
-
-  createEffect(() => {
-    const session = sessionAccessor();
-    if (!session) {
-      setLabel('FlowGuard');
-      return;
-    }
-    let alive = true;
-    const refresh = async () => {
-      try {
-        const view = await getView(session);
-        if (alive) setLabel(statusLabel(view));
-      } catch {
-        if (alive) setLabel('FlowGuard');
-      }
-    };
-    void refresh();
-    const timer = setInterval(refresh, 3000);
-    onCleanup(() => {
-      alive = false;
-      clearInterval(timer);
-    });
-  });
-
-  return ctx.ui.Button({
-    variant: 'ghost-muted',
-    size: 'small',
-    children: label(),
-    onClick: () => {
-      const session = sessionAccessor();
-      if (!session) {
-        toast(ctx, 'Open a session before choosing a FlowGuard action.', 'default');
-        return;
-      }
-      void choose(ctx, session);
-    },
-  });
 }
 
 module.exports = Plugin.define({
   setup(ctx) {
-    const [views, setViews] = createSignal(new Map());
-    const inFlight = new Set();
-    const refresh = (session) => {
-      if (!session || inFlight.has(session.id)) return;
-      inFlight.add(session.id);
-      getView(session)
-        .then((view) => {
-          const next = new Map(views());
-          next.set(session.id, view);
-          setViews(next);
-        })
-        .catch(() => {})
-        .finally(() => inFlight.delete(session.id));
-    };
-
-    createEffect(() => {
-      const session = ctx.sessions.current();
-      if (!session) return;
-      refresh(session);
-      const timer = setInterval(() => refresh(session), 3000);
-      onCleanup(() => clearInterval(timer));
-    });
-
     ctx.add(Command, {
       id: 'choose-workflow',
       title: 'FlowGuard: choose workflow or decision',
@@ -249,30 +179,6 @@ module.exports = Plugin.define({
         void choose(ctx, session);
       },
     });
-
-    ctx.add(ComposerPill, {
-      id: 'next-action',
-      order: 0,
-      show: (input) => {
-        const view = views().get(input.session.id);
-        if (!view) {
-          refresh(input.session);
-          return { label: 'FlowGuard' };
-        }
-        const label = pillLabel(view);
-        return {
-          label: label,
-          title: statusLabel(view) || label,
-          run: () => {
-            if (view.kind === 'choose_flow' || view.kind === 'decision_required' || view.kind === 'next_action') {
-              void choose(ctx, input.session);
-            } else {
-              toast(ctx, 'Run /status for FlowGuard details.', 'default');
-            }
-          },
-        };
-      },
-    });
-  },
+  }
 });
 `;

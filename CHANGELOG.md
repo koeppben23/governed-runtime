@@ -11,13 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add the optional Desktop GUI companion for #1196 as an installed prebuilt
   `plugins/flowguard/gui-experimental.cjs` bundle. It exposes the same
-  `/choose-workflow` dialog and a native composer pill for the persistent Next Action over the read-only Next Action RPC, re-reads activation, policy, state,
-  obligation and subject bindings before executing, and uses the canonical
-  `session.command` / `SubmitDecision` paths. TUI persistent status remains
-  `NOT_SUPPORTED` on the pinned host because the accepted footer/composer slot
-  claims are not painted; the Desktop visual surface remains `NOT_VERIFIED`
-  until an installed OpenCode Desktop 2.2.5 proof is recorded. The portable
-  Markdown path remains complete.
+  `/choose-workflow` dialog only when explicitly requested; it installs no
+  persistent pill, panel or automatic modal. The command re-reads activation,
+  policy, state, obligation and subject bindings before executing and uses the
+  canonical `session.command` / `SubmitDecision` paths. The Desktop visual
+  surface remains `NOT_VERIFIED` until an installed OpenCode Desktop 2.2.5 proof
+  is recorded. The portable Markdown path remains complete.
 
 - Add revision-bound native review decisions for #1196. The read-only
   `GetNextAction` projection now carries the current review obligation, subject
@@ -36,9 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GetNextAction` RPC exposes the existing status projection with session,
   phase, policy, state-digest and canonical activation identity/generation
   binding. The chooser re-checks the active session after that second read,
-  rejects late dialog results after plugin unload, opens automatically at most
-  once per unchanged READY state, and never handles approval or override
-  decisions. An installed pinned-host PTY proof covers chooser open, cancel
+  rejects late dialog results after plugin unload, opens only on an explicit
+  `/choose-workflow` request (never unsolicited), and never handles approval or
+  override decisions. An installed pinned-host PTY proof covers chooser open, cancel
   without a transition, `/task` selection through `session.command`, and the
   resulting READY → TICKET transition. The smoke job budget grows to 15 minutes
   so that installed PTY proof runs without truncating the rest of the suite.

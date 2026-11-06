@@ -27,7 +27,7 @@ export interface WorkflowChooserDeps {
       readonly footer?: string;
     }[];
   }) => Promise<string | undefined>;
-  readonly command: (sessionID: string, name: string) => Promise<void>;
+  readonly command: (sessionID: string, name: string, text?: string) => Promise<void>;
   readonly submitDecision: (
     sessionID: string,
     invocation: string,
@@ -35,6 +35,11 @@ export interface WorkflowChooserDeps {
     rationale?: string,
   ) => Promise<NextActionDecisionResult>;
   readonly promptRationale: (options: {
+    readonly title: string;
+    readonly description?: string;
+    readonly placeholder?: string;
+  }) => Promise<string | undefined>;
+  readonly promptCommandText: (options: {
     readonly title: string;
     readonly description?: string;
     readonly placeholder?: string;
@@ -132,6 +137,7 @@ interface SelectionRequest {
   readonly latest: NextActionResult;
   readonly selected: string;
   readonly binding: DecisionBinding | null;
+  readonly text: string;
 }
 
 async function executeDecisionSelection(
@@ -168,8 +174,24 @@ async function executeSelection(
   if (request.binding !== null) {
     return executeDecisionSelection(deps, { ...request, binding: request.binding });
   }
-  await deps.command(request.sessionID, request.selected.replace(/^\//, ''));
+  await deps.command(request.sessionID, request.selected.replace(/^\//, ''), request.text);
   return { status: 'selected', stateDigest: request.view.stateDigest };
+}
+
+/** Collect the task argument before the final freshness read. */
+async function commandTextFor(deps: WorkflowChooserDeps, selected: string): Promise<string | null> {
+  if (selected !== '/task') return '';
+  const text = await deps.promptCommandText({
+    title: 'FlowGuard task',
+    description: 'Describe the task, or pass --file <path> to use a repository file.',
+    placeholder: 'What should FlowGuard implement?',
+  });
+  if (text === undefined) return null;
+  if (text.trim() === '') {
+    deps.notify('A task description is required.', 'warning');
+    return null;
+  }
+  return text;
 }
 
 /**
@@ -202,9 +224,12 @@ export async function chooseWorkflow(
     return { status: 'cancelled', stateDigest: view.stateDigest };
   }
 
+  const commandText = await commandTextFor(deps, selected);
+  if (commandText === null) {
+    return { status: 'cancelled', stateDigest: view.stateDigest };
+  }
+
   const latest = await deps.getView(sessionID);
-  const afterLatest = currentOrNull(deps, sessionID, latest.stateDigest);
-  if (afterLatest !== null) return afterLatest;
   if (!sameSelection(view, latest, selected)) {
     deps.notify('FlowGuard state changed; no workflow was started. Reopen the chooser.', 'warning');
     return { status: 'stale', stateDigest: latest.stateDigest };
@@ -212,7 +237,14 @@ export async function chooseWorkflow(
   const beforeCommand = currentOrNull(deps, sessionID, latest.stateDigest);
   if (beforeCommand !== null) return beforeCommand;
 
-  return executeSelection(deps, { sessionID, view, latest, selected, binding: decisionBinding });
+  return executeSelection(deps, {
+    sessionID,
+    view,
+    latest,
+    selected,
+    binding: decisionBinding,
+    text: commandText,
+  });
 }
 
 function createDeps(ctx: Plugin.Context, isAlive: () => boolean): WorkflowChooserDeps {
@@ -224,8 +256,8 @@ function createDeps(ctx: Plugin.Context, isAlive: () => boolean): WorkflowChoose
       return route.type === 'session' ? route.sessionID : null;
     },
     select: (options) => ctx.ui.dialog.select<string>(options),
-    command: async (sessionID, name) => {
-      await ctx.client.session.command({ sessionID, name, text: '' });
+    command: async (sessionID, name, text) => {
+      await ctx.client.session.command({ sessionID, name, text: text ?? '' });
     },
     submitDecision: (sessionID, invocation, expected, rationale) =>
       ctx.client.rpc(FlowGuardGovernance).SubmitDecision(
@@ -238,6 +270,7 @@ function createDeps(ctx: Plugin.Context, isAlive: () => boolean): WorkflowChoose
         { location: ctx.location },
       ),
     promptRationale: (options) => ctx.ui.dialog.prompt(options),
+    promptCommandText: (options) => ctx.ui.dialog.prompt(options),
     notify: (message, variant) => {
       ctx.ui.toast.show({ message, variant });
     },
@@ -253,35 +286,24 @@ interface TuiPluginDefinition {
 const plugin: TuiPluginDefinition = {
   id: 'flowguard-tui',
   setup(ctx) {
-    const [memory, updateMemory] = ctx.storage.memory<{
-      prompted: Record<string, string>;
-    }>('flowguard.workflow-choice', { initial: { prompted: {} } });
     const inFlight = new Set<string>();
     let disposed = false;
     const deps = createDeps(ctx, () => !disposed);
 
-    const recordOutcome = (sessionID: string, outcome: WorkflowChoiceOutcome): void => {
-      updateMemory((draft) => {
-        if (outcome.stateDigest === null) delete draft.prompted[sessionID];
-        else draft.prompted[sessionID] = outcome.stateDigest;
-      });
-    };
-
-    const openChooser = async (sessionID: string, quiet: boolean): Promise<void> => {
+    const openChooser = async (sessionID: string): Promise<void> => {
       if (disposed || inFlight.has(sessionID)) return;
       inFlight.add(sessionID);
       try {
-        const outcome = await chooseWorkflow(deps, sessionID, { allowDecision: !quiet });
+        const outcome = await chooseWorkflow(deps, sessionID);
         if (disposed) return;
-        recordOutcome(sessionID, outcome);
-        if (!quiet && outcome.status === 'unavailable') {
+        if (outcome.status === 'unavailable') {
           deps.notify('No workflow choice is available for this session.', 'info');
         }
-        if (!quiet && outcome.status === 'selected') {
+        if (outcome.status === 'selected') {
           deps.notify('FlowGuard action requested.', 'success');
         }
       } catch (error) {
-        if (!disposed && !quiet) {
+        if (!disposed) {
           deps.notify(
             `FlowGuard chooser failed: ${error instanceof Error ? error.message : String(error)}`,
             'error',
@@ -291,13 +313,6 @@ const plugin: TuiPluginDefinition = {
         inFlight.delete(sessionID);
       }
     };
-
-    const unsubscribe = ctx.data.on('session.idle', (event) => {
-      const sessionID = event.data.sessionID;
-      if (memory.prompted[sessionID] !== undefined) return;
-      if (deps.currentSessionID() !== sessionID) return;
-      void openChooser(sessionID, true);
-    });
 
     ctx.keymap.layer(() => ({
       mode: 'global',
@@ -316,7 +331,7 @@ const plugin: TuiPluginDefinition = {
               deps.notify('Open a session before choosing a FlowGuard workflow.', 'warning');
               return;
             }
-            await openChooser(sessionID, false);
+            await openChooser(sessionID);
           },
         },
       ],
@@ -324,7 +339,6 @@ const plugin: TuiPluginDefinition = {
 
     return () => {
       disposed = true;
-      unsubscribe();
     };
   },
 };

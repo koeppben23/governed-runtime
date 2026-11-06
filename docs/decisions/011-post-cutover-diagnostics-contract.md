@@ -287,9 +287,10 @@ Implemented in this repository state:
   command, and rejects late dialog results after plugin unload. An installed
   pinned-host PTY proof covers open, cancel without transition, `/task`
   selection through `session.command`, and the canonical READY → TICKET
-  transition. It handles only `CHOOSE_FLOW`; native approval/override decisions
-  and persistent status remain separate. Desktop GUI delivery remains
-  `NOT_VERIFIED` without an installed proof.
+  transition. It opens only on an explicit `/choose-workflow` request and
+  installs no persistent status surface. Native approval/override decisions
+  remain separate; Desktop GUI delivery remains `NOT_VERIFIED` without an
+  installed proof.
 
 Still not implemented or not verified:
 
