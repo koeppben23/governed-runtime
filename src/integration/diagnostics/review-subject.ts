@@ -16,11 +16,13 @@ import type { SessionState } from '../../state/schema.js';
 import {
   addContentDigestWarning,
   addFindingsWarnings,
+  addHistoricalImplReviewWarning,
   addImplementationVerdictWarnings,
   addSubjectBindingWarning,
   addUnboundWarning,
   addVerdictGapWarnings,
   bindFindings,
+  bindImplReview,
   boundContent,
   capturedForDisplay,
   contentLabel,
@@ -111,6 +113,7 @@ export function planSubject(
     findingsTruncated: findingsView.truncated,
     ...findingDetails(bound.current),
     unboundReview: bound.unbound,
+    historicalImplReview: null,
   };
 }
 
@@ -164,6 +167,7 @@ export function architectureSubject(
     findingsTruncated: findingsView.truncated,
     ...findingDetails(bound.current),
     unboundReview: bound.unbound,
+    historicalImplReview: null,
   };
 }
 
@@ -250,13 +254,22 @@ export async function implementationSubject(
   const bound = bindFindings(findings, unboundCause, 'review iteration');
   const captured = capturedForDisplay(findings, obligationMatches, state, obligation);
   const obligationFields = obligationViewFields(obligation, obligationMatches);
+  const implReviewBinding = bindImplReview(state.implReview, implementation.digest);
+  const currentImplReview = implReviewBinding.current;
   addSubjectBindingWarning(
     warnings,
     binding,
     'The latest implementation review obligation is bound to a different subject digest than the displayed implementation.',
   );
   addUnboundWarning(warnings, bound.unbound);
-  addImplementationVerdictWarnings(warnings, bound.current, state.implReview, obligation, captured);
+  addHistoricalImplReviewWarning(warnings, implReviewBinding.historical);
+  addImplementationVerdictWarnings(
+    warnings,
+    bound.current,
+    currentImplReview,
+    obligation,
+    captured,
+  );
   const findingsView = currentFindingsView(bound);
   addFindingsWarnings(warnings, findingsView);
   addContentDigestWarning(
@@ -275,15 +288,16 @@ export async function implementationSubject(
     contentTruncated: diff.truncated,
     contentVerified: diff.verified,
     paths: [...implementation.changedFiles],
-    reviewCompletion: implementationCompletion(state),
-    reviewerVerdict: verdictOf(bound.current, state.implReview?.verdict, captured),
-    reviewedAt: implementationReviewedAt(bound.current, captured, state.implReview, obligation),
+    reviewCompletion: implementationCompletion(currentImplReview),
+    reviewerVerdict: verdictOf(bound.current, currentImplReview?.verdict, captured),
+    reviewedAt: implementationReviewedAt(bound.current, captured, currentImplReview, obligation),
     subjectBinding: binding,
     findingsVersion: findingsVersionOf(bound.current, 'review iteration'),
     findings: findingsView.items,
     findingsTruncated: findingsView.truncated,
     ...findingDetails(bound.current),
     unboundReview: bound.unbound,
+    historicalImplReview: implReviewBinding.historical,
   };
 }
 
@@ -341,5 +355,6 @@ export function contentSubject(
     findingsTruncated: findingsView.truncated,
     ...findingDetails(bound.current),
     unboundReview: bound.unbound,
+    historicalImplReview: null,
   };
 }

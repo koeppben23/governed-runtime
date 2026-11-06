@@ -106,6 +106,15 @@ export interface ReviewFindingView {
   readonly findingId: string | null;
 }
 
+export interface HistoricalImplReviewView {
+  readonly verdict: string;
+  readonly executedAt: string;
+  readonly iteration: number;
+  readonly currDigest: string;
+  readonly expectedDigest: string;
+  readonly reason: 'digest_mismatch';
+}
+
 export interface UnboundReviewView {
   readonly verdict: string | null;
   readonly reviewedAt: string | null;
@@ -146,6 +155,11 @@ export interface ReviewSubjectView {
    * separately and never used as the current verdict.
    */
   readonly unboundReview: UnboundReviewView | null;
+  /**
+   * The implementation-review loop result when it is bound to a different
+   * implementation digest. It is historical only and never the current verdict.
+   */
+  readonly historicalImplReview: HistoricalImplReviewView | null;
 }
 
 export interface ReviewView {

@@ -8,7 +8,12 @@ import { warning } from '../../adapters/diagnostics/types.js';
 import { sanitizeDiagnosticString } from '../../logging/redact.js';
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewFindings, ReviewObligation } from '../../state/evidence.js';
-import type { ReviewFindingView, ReviewSubjectView, UnboundReviewView } from './types.js';
+import type {
+  HistoricalImplReviewView,
+  ReviewFindingView,
+  ReviewSubjectView,
+  UnboundReviewView,
+} from './types.js';
 
 export const DEFAULT_MAX_SUBJECT_BYTES = 32 * 1024;
 const MAX_FINDINGS = 100;
@@ -358,10 +363,50 @@ export function implementationReviewedAt(
   return null;
 }
 
-export function implementationCompletion(state: SessionState): string | null {
-  return state.implReview
-    ? `iteration ${state.implReview.iteration}; ${state.implReview.verdict}`
-    : null;
+export function implementationCompletion(implReview: SessionState['implReview']): string | null {
+  return implReview ? `iteration ${implReview.iteration}; ${implReview.verdict}` : null;
+}
+
+export interface ImplReviewBinding {
+  readonly current: SessionState['implReview'];
+  readonly historical: HistoricalImplReviewView | null;
+}
+
+/** Bind the implementation-review loop to the displayed implementation digest. */
+export function bindImplReview(
+  implReview: SessionState['implReview'],
+  implementationDigest: string,
+): ImplReviewBinding {
+  if (implReview === null) return { current: null, historical: null };
+  if (implReview.currDigest === implementationDigest) {
+    return { current: implReview, historical: null };
+  }
+  return {
+    current: null,
+    historical: {
+      verdict: implReview.verdict,
+      executedAt: implReview.executedAt,
+      iteration: implReview.iteration,
+      currDigest: implReview.currDigest,
+      expectedDigest: implementationDigest,
+      reason: 'digest_mismatch',
+    },
+  };
+}
+
+export function addHistoricalImplReviewWarning(
+  warnings: DiagnosticWarning[],
+  historical: HistoricalImplReviewView | null,
+): void {
+  if (historical === null) return;
+  warnings.push(
+    sanitizedWarning(
+      'REVIEW_IMPL_LOOP_STALE',
+      `The implementation-review loop is bound to digest ${historical.currDigest}, not the displayed implementation digest ${historical.expectedDigest}; it is shown only as historical output.`,
+      null,
+      'review',
+    ),
+  );
 }
 
 export function reviewCompletionOf(findings: ReviewFindings | undefined): string | null {

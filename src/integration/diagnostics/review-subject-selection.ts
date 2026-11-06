@@ -106,5 +106,6 @@ export function unavailableSubject(): ReviewSubjectView {
     scopeCreep: [],
     unknowns: [],
     unboundReview: null,
+    historicalImplReview: null,
   };
 }

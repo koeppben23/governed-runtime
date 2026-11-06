@@ -13,8 +13,14 @@ import { randomUUID } from 'node:crypto';
 import { initWorkspace } from '../../adapters/workspace/index.js';
 import { writeState } from '../../adapters/persistence.js';
 import { writeDiagnosticExport } from '../../adapters/diagnostics/export.js';
-import { BINDING, PLAN_RECORD, makeProgressedState, makeState } from '../../fixtures.js';
-import { FIXED_TIME } from '../../fixtures.js';
+import {
+  BINDING,
+  FIXED_TIME,
+  IMPL_REVIEW_CONVERGED,
+  PLAN_RECORD,
+  makeProgressedState,
+  makeState,
+} from '../../fixtures.js';
 import type { PlanRecord, ReviewFindings } from '../../state/evidence.js';
 import { computeRecordDigest } from '../../state/evidence-plan.js';
 import { hashText } from '../../shared/hashing.js';
@@ -352,6 +358,28 @@ describe('diagnostic review view', () => {
     expect(view.warnings).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: 'REVIEW_FINDINGS_UNBOUND' })]),
     );
+  });
+
+  it('BAD — does not present a stale implementation-review loop as current', async () => {
+    await writeProgressed('IMPL_REVIEW', {
+      implReview: { ...IMPL_REVIEW_CONVERGED, currDigest: 'stale-impl-digest' },
+    });
+
+    const view = await buildReviewView({ root: ws.tmpDir, sessionId: ROOT_ID, now: FIXED_NOW });
+
+    expect(view.subject.kind).toBe('implementation');
+    expect(view.subject.reviewerVerdict).toBeNull();
+    expect(view.subject.reviewCompletion).toBeNull();
+    expect(view.subject.historicalImplReview).toMatchObject({
+      verdict: 'accept',
+      currDigest: 'stale-impl-digest',
+      expectedDigest: 'digest-of-impl',
+      reason: 'digest_mismatch',
+    });
+    expect(view.warnings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'REVIEW_IMPL_LOOP_STALE' })]),
+    );
+    expect(renderReviewView(view)).toContain('Historical implementation-review loop');
   });
 
   it('BAD — reports a subject mismatch instead of implying approval', async () => {

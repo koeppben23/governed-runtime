@@ -261,8 +261,10 @@ Implemented in this repository state:
   exact subject revision/digest, verbatim material, reviewer verdict, findings
   and ProofGraph declarations versus evaluation while declaring decision
   authority `NOT GRANTED`. Only reviewer output positively bound to the displayed
-  revision is used as the current verdict; stale or unassigned output remains
-  visible as historical material. `logs` reads a bounded tail of the existing
+  revision is used as the current verdict; stale or unassigned output, including
+  an implementation-review loop whose `currDigest` differs from the displayed
+  implementation digest, remains visible as historical material. `logs` reads a
+  bounded tail of the existing
   JSONL sink with level/session/trace/time filters, sensitive-field masking and
   explicit truncation, malformed-line and missing-correlation states;
   `notifications` reports unsupported

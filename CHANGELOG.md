@@ -44,7 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   versus evaluation while stating that decision authority is not granted.
   Reviewer output is used as the current verdict only when it is positively
   bound to the displayed revision; stale or unassigned output is shown
-  separately as historical material. The log view reads only the newest tail of
+  separately as historical material. This includes implementation-review loops
+  whose recorded `currDigest` no longer matches the displayed implementation. The log view reads only the newest tail of
   the existing JSONL sink, applies level/session/trace/time filters, masks
   sensitive fields and reports byte, file, line, malformed-line and
   missing-correlation gaps explicitly. Notification

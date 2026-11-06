@@ -270,6 +270,23 @@ function unboundReviewSection(subject: ReviewSubjectView): string | null {
   return lines.join('\n');
 }
 
+function historicalImplReviewSection(subject: ReviewSubjectView): string | null {
+  const loop = subject.historicalImplReview;
+  if (loop === null) return null;
+  return [
+    '## Historical implementation-review loop',
+    '',
+    'This loop result is bound to a different implementation digest. It is not the current review verdict.',
+    '',
+    `- Verdict: ${cell(loop.verdict)}`,
+    `- Iteration: ${loop.iteration}`,
+    `- Executed at: ${cell(loop.executedAt)}`,
+    `- Loop digest: ${codeSpan(loop.currDigest)}`,
+    `- Displayed implementation digest: ${codeSpan(loop.expectedDigest)}`,
+    `- Reason: ${cell(loop.reason)}`,
+  ].join('\n');
+}
+
 function proofSection(view: ReviewView): string {
   const proof = view.proof;
   if (proof === null) {
@@ -320,6 +337,7 @@ function proofSection(view: ReviewView): string {
 /** Render the review-view content shell. */
 export function renderReviewView(view: ReviewView): string {
   const unbound = unboundReviewSection(view.subject);
+  const historicalLoop = historicalImplReviewSection(view.subject);
   return [
     '# FlowGuard Diagnostic Review View',
     '',
@@ -340,6 +358,7 @@ export function renderReviewView(view: ReviewView): string {
     reviewFindingsSection(view.subject),
     '',
     ...(unbound !== null ? [unbound, ''] : []),
+    ...(historicalLoop !== null ? [historicalLoop, ''] : []),
     proofSection(view),
     '',
     renderReviewLinks(view.reviewLinks),
