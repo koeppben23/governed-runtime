@@ -15,6 +15,8 @@ import {
   PLUGIN_WRAPPER,
   REVIEWER_AGENT_FILENAME,
   PLUGIN_RELATIVE_PATH,
+  TUI_PLUGIN_WRAPPER,
+  TUI_PLUGIN_RELATIVE_PATH,
   extractManagedBody,
   extractManagedDigest,
   extractManagedVersion,
@@ -119,6 +121,25 @@ async function checkWrapperFile(
   }
 }
 
+async function checkTuiWrapper(target: string, checks: DoctorCheck[]): Promise<void> {
+  const filePath = join(target, TUI_PLUGIN_RELATIVE_PATH);
+  const content = await safeRead(filePath);
+  if (content === null) {
+    checks.push({
+      file: filePath,
+      status: 'info',
+      detail:
+        'Optional TUI workflow chooser is not installed; the Markdown chooser remains available.',
+    });
+    return;
+  }
+  if (content.trim() !== TUI_PLUGIN_WRAPPER.trim()) {
+    checks.push({ file: filePath, status: 'modified', detail: 'content differs from template' });
+    return;
+  }
+  checks.push({ file: filePath, status: 'ok' });
+}
+
 async function checkCommandFiles(target: string, checks: DoctorCheck[]): Promise<void> {
   for (const [name, expectedContent] of Object.entries(COMMANDS)) {
     await checkWrapperFile(target, `commands/${name}`, expectedContent, checks);
@@ -151,6 +172,7 @@ async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   await checkMandatesDigest(target, checks);
   await checkWrapperFile(target, PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER, checks);
+  await checkTuiWrapper(target, checks);
   await checkCommandFiles(target, checks);
   await checkReviewerAgent(target, checks);
   return checks;

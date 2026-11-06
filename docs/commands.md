@@ -56,6 +56,7 @@ Template commands invoke their corresponding tools; native callbacks such as
 | `/end-governance`                                              | native activation         | Ends opt-in governance after safe closure; distinct from `/finish` and `/abort`                                                                                                        |
 | `/debug-export`                                                | native diagnostics        | Read-only diagnostic snapshot for the current session and known reviewer children; works before ACTIVE governance and never authorizes or repairs                                      |
 | `/diagnostics`                                                 | native diagnostics        | Read-only Session Explorer, review subject/findings, bounded file-log tail and notification-capability views; never evidence, approval or a decision control                           |
+| `/choose-workflow`                                             | TUI companion             | Opens the optional native TUI workflow chooser over the canonical `CHOOSE_FLOW` projection; cancel/stale state executes nothing, and review decisions are out of scope                 |
 | `/validate`                                                    | `flowguard_run_check`     | Explicit baseline validation through the same evidence path as automatic validation                                                                                                    |
 | `/check`                                                       | native scoped command     | Runs the canonical verification/review turn under the build agent, then clears scope and restores the prior agent; not a VALIDATE alias                                                |
 | `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                                                                                              |
@@ -726,3 +727,29 @@ nothing, and is never evidence, approval or authorization.
 
 The portable Markdown/file fallback remains complete: `/debug-export` still
 writes the versioned snapshot, and `/diagnostics` only projects the same facts.
+
+### `/choose-workflow` — Optional TUI workflow chooser
+
+The optional TUI companion installed at `plugins/flowguard/tui.ts` adds a native
+workflow chooser. It is not a server, headless or decision command.
+
+```text
+/choose-workflow
+```
+
+- The chooser uses the canonical `CHOOSE_FLOW` projection and shows exactly
+  `/task` (recommended), `/architecture` and `/review`.
+- It may open automatically once after a session becomes idle in an unchanged
+  READY state. Cancelling, closing, switching sessions or plugin reload performs
+  no command. `/choose-workflow` reopens it on demand.
+- Before requesting a command, the chooser re-reads the read-only
+  `GetNextAction` projection and compares the state digest. Changed, stale or
+  unavailable state aborts with a visible message; no command is synthesized.
+- Selection uses the supported host command channel (`session.command`). The
+  chooser never approves, overrides, mutates state or treats a UI click as
+  verified human authorship.
+- Only `CHOOSE_FLOW` is handled. Review gates, exhausted overrides and native
+  decisions remain with the canonical commands and the separate revision-bound
+  interaction contract.
+- Desktop GUI support is `NOT_VERIFIED` without an installed pinned-host proof.
+  The portable Markdown chooser from `/start` and `/status` remains complete.

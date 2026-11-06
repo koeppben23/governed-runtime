@@ -60,6 +60,8 @@ import {
   MANDATES_FILENAME,
   PLUGIN_WRAPPER,
   PLUGIN_RELATIVE_PATH,
+  TUI_PLUGIN_WRAPPER,
+  TUI_PLUGIN_RELATIVE_PATH,
   buildMandatesContent,
 } from './templates.js';
 
@@ -277,6 +279,7 @@ export async function buildRollbackSnapshot(
           )
         : [
             await snapshotForRollback(join(target, PLUGIN_RELATIVE_PATH), 'file'),
+            await snapshotForRollback(join(target, TUI_PLUGIN_RELATIVE_PATH), 'file'),
             await snapshotForRollback(reviewerPath, 'file'),
             ...(await Promise.all(
               Object.keys(COMMANDS).map(
@@ -377,6 +380,11 @@ export async function publishOpencodePlugin(
   const op = await writeIfAbsent(pluginPath, PLUGIN_WRAPPER, ctx.args.force);
   ctx.ops.push(op);
   if (op.action !== 'skipped') journal.record(findPreState(snapshot.preStateEntries, pluginPath));
+
+  const tuiPath = join(ctx.target, TUI_PLUGIN_RELATIVE_PATH);
+  const tuiOp = await writeIfAbsent(tuiPath, TUI_PLUGIN_WRAPPER, ctx.args.force);
+  ctx.ops.push(tuiOp);
+  if (tuiOp.action !== 'skipped') journal.record(findPreState(snapshot.preStateEntries, tuiPath));
 }
 
 export async function writeArtifacts(

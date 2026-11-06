@@ -1,4 +1,9 @@
-export { PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './wrappers/index.js';
+export {
+  PLUGIN_RELATIVE_PATH,
+  PLUGIN_WRAPPER,
+  TUI_PLUGIN_RELATIVE_PATH,
+  TUI_PLUGIN_WRAPPER,
+} from './wrappers/index.js';
 export { COMMANDS } from './commands/index.js';
 export {
   MANDATES_FILENAME,

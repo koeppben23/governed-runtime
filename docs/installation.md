@@ -66,13 +66,16 @@ operation must be preserved; see [ADR-010](./decisions/010-host-neutral-opt-in-g
 
 ### Native V2 layout and fresh-install boundary
 
-The installer writes exactly one default-export plugin at
-`plugins/flowguard/index.ts` under the selected OpenCode directory. That plugin
-owns native tool registrations; no `tools/flowguard.ts` or V1 plugin wrapper is
-installed. Existing OpenCode JSON/JSONC, comments, instructions, model/variant
-selection and permissions are preserved byte-for-byte. An absent config remains
-absent. `flowguard-mandates.md` is a passive managed artifact, **not** registered
-in `instructions[]`; installing files does not activate a session.
+The installer writes the server plugin at `plugins/flowguard/index.ts` and an
+optional TUI companion at `plugins/flowguard/tui.ts` under the selected OpenCode
+directory. The server plugin owns native tool registrations; the TUI companion
+is a progressive-enhancement workflow chooser and never a governance authority.
+No `tools/flowguard.ts` or V1 plugin wrapper is installed. Existing OpenCode
+JSON/JSONC, comments, instructions, model/variant selection and permissions are
+preserved byte-for-byte. An absent config remains absent.
+`flowguard-mandates.md` is a passive managed artifact, **not** registered in
+`instructions[]`; installing files does not activate a session. A host without
+TUI support or without the TUI wrapper uses the complete Markdown chooser.
 
 The installer publishes the watched native plugin entrypoint only after its
 dependency tree is live. This prevents a running host from importing the fresh

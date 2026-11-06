@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add the optional TUI workflow chooser for #1196. The installer writes
+  `plugins/flowguard/tui.ts`; the TUI plugin opens the canonical three-choice
+  dialog (or `/choose-workflow` on demand), cancels without executing anything,
+  and re-reads state before requesting the selected command. A read-only
+  `GetNextAction` RPC exposes the existing status projection with session,
+  phase, policy and state-digest binding. The chooser opens automatically at
+  most once per unchanged READY state and never handles approval or override
+  decisions. Desktop GUI and persistent status UI remain `NOT_VERIFIED`; the
+  Markdown chooser remains the complete fallback.
+
 - Unify the portable `CHOOSE_FLOW` presentation: when the canonical directive
   is `CHOOSE_FLOW`, `/status`, `/why`, `/finish` and `/help` now show the same
   three workflow choices as `/start` (`/task` recommended, `/architecture` and
