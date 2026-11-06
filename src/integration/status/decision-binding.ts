@@ -11,8 +11,8 @@ import type { Phase, SessionState } from '../../state/schema.js';
 import { findLatestReviewObligation } from '../../state/review-continuation.js';
 import { computeStateDigest } from '../audit-outbox.js';
 
-export const DecisionReviewType = z.enum(['plan', 'architecture', 'implement']);
-export type DecisionReviewType = z.infer<typeof DecisionReviewType>;
+const DecisionReviewType = z.enum(['plan', 'architecture', 'implement']);
+type DecisionReviewType = z.infer<typeof DecisionReviewType>;
 
 /**
  * Untrusted expected binding carried by a native decision control. The server
