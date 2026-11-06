@@ -20,8 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once per unchanged READY state, and never handles approval or override
   decisions. An installed pinned-host PTY proof covers chooser open, cancel
   without a transition, `/task` selection through `session.command`, and the
-  resulting READY → TICKET transition. Desktop GUI and persistent status UI
-  remain `NOT_VERIFIED`; the Markdown chooser remains the complete fallback.
+  resulting READY → TICKET transition. The smoke job budget grows to 15 minutes
+  so that installed PTY proof runs without truncating the rest of the suite.
+  Desktop GUI and persistent status UI remain `NOT_VERIFIED`; the Markdown
+  chooser remains the complete fallback.
 
 - Unify the portable `CHOOSE_FLOW` presentation: when the canonical directive
   is `CHOOSE_FLOW`, `/status`, `/why`, `/finish` and `/help` now show the same
