@@ -1613,6 +1613,8 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Update `jose` from 6.2.14 to 6.2.15.
+
 - **R4 reviewer-input boundary decision (#1190).** Record R4 as permanently
   `NOT_SUPPORTED` on the public OpenCode 2.2.4/2.2.5 APIs, never `PASS`, and
   limit the supported V2 operating model to trusted/operator-controlled
