@@ -142,7 +142,13 @@ export function buildFinishDocument(
   return {
     kind: 'compact_card',
     density: 'compact',
-    form: f.blocker.blocked ? 'blocked' : conclusion.kind === 'terminal' ? 'terminal' : 'success',
+    form: f.blocker.blocked
+      ? 'blocked'
+      : conclusion.kind === 'terminal'
+        ? 'terminal'
+        : conclusion.kind === 'decision_required'
+          ? 'decision'
+          : 'success',
     sections,
     conclusion,
   };
@@ -223,6 +229,12 @@ function toFinishConclusion(c: FinishConclusionProjection): PresentationConclusi
   switch (c.kind) {
     case 'next_action':
       return { kind: 'next_action', action: { ...c.action } };
+    case 'decision_required':
+      return {
+        kind: 'decision_required',
+        question: c.question,
+        actions: c.actions.map((action) => ({ ...action })),
+      };
     case 'recovery':
       return { kind: 'recovery', message: c.message, steps: [...c.steps] };
     case 'terminal':

@@ -359,8 +359,12 @@ describe('status.ts MUTATION_KILL matrix', () => {
       });
       expect(projection.directive.commands[0]).toBe('/task');
       expect(projection.conclusion).toMatchObject({
-        kind: 'next_action',
-        action: { invocation: '/task' },
+        kind: 'decision_required',
+        actions: [
+          { invocation: '/task' },
+          { invocation: '/architecture' },
+          { invocation: '/review' },
+        ],
       });
     });
 

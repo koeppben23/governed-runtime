@@ -311,7 +311,13 @@ describe('buildHelpResult', () => {
       view: 'context',
     });
     expect(result.readiness).toBe('none');
-    expect(result.directive?.invocation).toBe('/task');
+    expect(result.directive).toBeNull();
+    expect(result.nextActionSummary).toContain('/task');
+    expect(result.nextActionSummary).toContain('/architecture');
+    expect(result.nextActionSummary).toContain('/review');
+    expect(result.commands.find((command) => command.invocation === '/task')?.visibility).toBe(
+      'recommended',
+    );
   });
 
   it('non-terminal phases with complete evidence report readiness=none via IN_PROGRESS', () => {
