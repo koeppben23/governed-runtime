@@ -3,6 +3,8 @@ export {
   PLUGIN_WRAPPER,
   TUI_PLUGIN_RELATIVE_PATH,
   TUI_PLUGIN_WRAPPER,
+  GUI_PLUGIN_RELATIVE_PATH,
+  GUI_PLUGIN_BUNDLE,
 } from './wrappers/index.js';
 export { COMMANDS } from './commands/index.js';
 export {

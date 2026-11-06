@@ -10,12 +10,12 @@ The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
 (counts updated 2026-11-06):
 
-- `root-composition`: 35 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 36 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 7 named files (`host-mutation-observation.ts`,
   `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 57 root production files
+- total: 58 root production files
 
 The bounded P0-10 audit removes `plugin-orchestrator.ts`, which only forwarded
 the `OrchestratorDeps` type to one production caller. That caller now imports
@@ -94,7 +94,9 @@ Composition grows by one and the total root matrix grows to 56.
 The #1196 TUI chooser adds `tui-plugin.ts` as an optional client-side
 composition entrypoint. It consumes the read-only next-action RPC and the
 existing command channel; it adds no governance authority. Composition grows by
-one and the total root matrix grows to 57.
+one and the total root matrix grows to 57. The #1196 revision-bound decision slice adds
+`plugin-next-action-command.ts` as another composition entrypoint; composition
+grows by one and the total root matrix grows to 58.
 
 MUT4 (#1172) adds `plugin-mutation-reconciliation.ts` at the composition boundary
 to connect asynchronous host notifications and the synchronous pre-implement

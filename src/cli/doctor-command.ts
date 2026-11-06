@@ -17,6 +17,8 @@ import {
   PLUGIN_RELATIVE_PATH,
   TUI_PLUGIN_WRAPPER,
   TUI_PLUGIN_RELATIVE_PATH,
+  GUI_PLUGIN_BUNDLE,
+  GUI_PLUGIN_RELATIVE_PATH,
   extractManagedBody,
   extractManagedDigest,
   extractManagedVersion,
@@ -140,6 +142,25 @@ async function checkTuiWrapper(target: string, checks: DoctorCheck[]): Promise<v
   checks.push({ file: filePath, status: 'ok' });
 }
 
+async function checkGuiWrapper(target: string, checks: DoctorCheck[]): Promise<void> {
+  const filePath = join(target, GUI_PLUGIN_RELATIVE_PATH);
+  const content = await safeRead(filePath);
+  if (content === null) {
+    checks.push({
+      file: filePath,
+      status: 'info',
+      detail:
+        'Optional Desktop GUI chooser is not installed; the portable Markdown path remains available and Desktop delivery is NOT_VERIFIED.',
+    });
+    return;
+  }
+  if (content.trim() !== GUI_PLUGIN_BUNDLE.trim()) {
+    checks.push({ file: filePath, status: 'modified', detail: 'content differs from template' });
+    return;
+  }
+  checks.push({ file: filePath, status: 'ok' });
+}
+
 async function checkCommandFiles(target: string, checks: DoctorCheck[]): Promise<void> {
   for (const [name, expectedContent] of Object.entries(COMMANDS)) {
     await checkWrapperFile(target, `commands/${name}`, expectedContent, checks);
@@ -173,6 +194,7 @@ async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
   await checkMandatesDigest(target, checks);
   await checkWrapperFile(target, PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER, checks);
   await checkTuiWrapper(target, checks);
+  await checkGuiWrapper(target, checks);
   await checkCommandFiles(target, checks);
   await checkReviewerAgent(target, checks);
   return checks;

@@ -7,6 +7,8 @@ import {
   PLUGIN_RELATIVE_PATH,
   TUI_PLUGIN_WRAPPER,
   TUI_PLUGIN_RELATIVE_PATH,
+  GUI_PLUGIN_BUNDLE,
+  GUI_PLUGIN_RELATIVE_PATH,
   COMMANDS,
   FLOWGUARD_MANDATES_KERNEL,
   REVIEWER_AGENT,
@@ -22,6 +24,7 @@ function computeTemplateHashes(): Record<string, string> {
   return {
     pluginWrapper: sha256(PLUGIN_WRAPPER),
     tuiPluginWrapper: sha256(TUI_PLUGIN_WRAPPER),
+    guiPluginBundle: sha256(GUI_PLUGIN_BUNDLE),
     flowguardMandatesKernel: sha256(FLOWGUARD_MANDATES_KERNEL),
     reviewerAgent: sha256(REVIEWER_AGENT),
     packageJsonTemplate: sha256(PACKAGE_JSON_TEMPLATE('1.2.3')),
@@ -38,6 +41,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   it('installs exactly one native default export, not a second tool discovery surface', () => {
     expect(PLUGIN_RELATIVE_PATH).toBe('plugins/flowguard/index.ts');
     expect(TUI_PLUGIN_RELATIVE_PATH).toBe('plugins/flowguard/tui.ts');
+    expect(GUI_PLUGIN_RELATIVE_PATH).toBe('plugins/flowguard/gui-experimental.cjs');
     expect(PLUGIN_WRAPPER).toContain(
       'export { default } from "@flowguard/core/integration/plugin"',
     );

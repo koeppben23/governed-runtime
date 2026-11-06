@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add the optional Desktop GUI companion for #1196 as an installed prebuilt
+  `plugins/flowguard/gui-experimental.cjs` bundle. It exposes the same
+  `/choose-workflow` dialog and a compact persistent `session.header` status
+  button over the read-only Next Action RPC, re-reads activation, policy, state,
+  obligation and subject bindings before executing, and uses the canonical
+  `session.command` / `SubmitDecision` paths. TUI persistent status remains
+  `NOT_SUPPORTED` on the pinned host because the accepted footer/composer slot
+  claims are not painted; the Desktop visual surface remains `NOT_VERIFIED`
+  until an installed OpenCode Desktop 2.2.5 proof is recorded. The portable
+  Markdown path remains complete.
+
 - Add revision-bound native review decisions for #1196. The read-only
   `GetNextAction` projection now carries the current review obligation, subject
   digest, activation identity/generation, policy digest, state digest and phase

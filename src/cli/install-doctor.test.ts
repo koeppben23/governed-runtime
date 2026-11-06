@@ -172,7 +172,7 @@ describe('cli/doctor', () => {
       const executableChecks = checkShippedExecutables().length;
       const buildInfoChecks = checkBuildInfo().length;
       const expectedChecks =
-        Object.keys(COMMANDS).length + 9 + 12 + 1 + executableChecks + buildInfoChecks;
+        Object.keys(COMMANDS).length + 10 + 12 + 1 + executableChecks + buildInfoChecks;
       expect(checks.length).toBe(expectedChecks);
     });
   });

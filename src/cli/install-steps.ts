@@ -62,6 +62,8 @@ import {
   PLUGIN_RELATIVE_PATH,
   TUI_PLUGIN_WRAPPER,
   TUI_PLUGIN_RELATIVE_PATH,
+  GUI_PLUGIN_BUNDLE,
+  GUI_PLUGIN_RELATIVE_PATH,
   buildMandatesContent,
 } from './templates.js';
 
@@ -280,6 +282,7 @@ export async function buildRollbackSnapshot(
         : [
             await snapshotForRollback(join(target, PLUGIN_RELATIVE_PATH), 'file'),
             await snapshotForRollback(join(target, TUI_PLUGIN_RELATIVE_PATH), 'file'),
+            await snapshotForRollback(join(target, GUI_PLUGIN_RELATIVE_PATH), 'file'),
             await snapshotForRollback(reviewerPath, 'file'),
             ...(await Promise.all(
               Object.keys(COMMANDS).map(
@@ -385,6 +388,11 @@ export async function publishOpencodePlugin(
   const tuiOp = await writeIfAbsent(tuiPath, TUI_PLUGIN_WRAPPER, ctx.args.force);
   ctx.ops.push(tuiOp);
   if (tuiOp.action !== 'skipped') journal.record(findPreState(snapshot.preStateEntries, tuiPath));
+
+  const guiPath = join(ctx.target, GUI_PLUGIN_RELATIVE_PATH);
+  const guiOp = await writeIfAbsent(guiPath, GUI_PLUGIN_BUNDLE, ctx.args.force);
+  ctx.ops.push(guiOp);
+  if (guiOp.action !== 'skipped') journal.record(findPreState(snapshot.preStateEntries, guiPath));
 }
 
 export async function writeArtifacts(
