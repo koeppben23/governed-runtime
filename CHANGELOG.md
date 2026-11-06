@@ -1615,6 +1615,7 @@ stop`, reviewer child reported it could not complete the falsification).
 
 - Update `jose` from 6.2.14 to 6.2.15.
 - Update dev dependencies: `@vitest/coverage-v8` and `vitest` from 5.0.5 to 5.1.0, `eslint` from 10.13.0 to 10.14.0, and `knip` from 6.44.0 to 6.44.1.
+- Update `github/codeql-action/init` from 4.39.1 to 4.39.2.
 
 - **R4 reviewer-input boundary decision (#1190).** Record R4 as permanently
   `NOT_SUPPORTED` on the public OpenCode 2.2.4/2.2.5 APIs, never `PASS`, and
