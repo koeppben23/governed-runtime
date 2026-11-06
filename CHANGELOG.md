@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add the optional Desktop GUI companion for #1196 as an installed prebuilt
   `plugins/flowguard/gui-experimental.cjs` bundle. It exposes the same
-  `/choose-workflow` dialog and a compact persistent window-bottom status control over the read-only Next Action RPC, re-reads activation, policy, state,
+  `/choose-workflow` dialog and a native composer pill for the persistent Next Action over the read-only Next Action RPC, re-reads activation, policy, state,
   obligation and subject bindings before executing, and uses the canonical
   `session.command` / `SubmitDecision` paths. TUI persistent status remains
   `NOT_SUPPORTED` on the pinned host because the accepted footer/composer slot

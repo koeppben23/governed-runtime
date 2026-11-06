@@ -760,7 +760,7 @@ decision authority; both consume the same read-only projection.
   decisions remain with the canonical commands and the separate revision-bound
   interaction contract.
 - Desktop GUI support is installed as a `gui-experimental` bundle but its
-  visual chooser and persistent status remain `NOT_VERIFIED` until an installed
+  visual chooser and native composer pill remain `NOT_VERIFIED` until an installed
   OpenCode Desktop 2.2.5 proof is recorded. The portable Markdown chooser from
   `/start` and `/status` remains complete.
 

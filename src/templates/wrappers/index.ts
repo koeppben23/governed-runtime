@@ -19,7 +19,7 @@ export const GUI_PLUGIN_RELATIVE_PATH = 'plugins/flowguard/gui-experimental.cjs'
 
 export const GUI_PLUGIN_BUNDLE = `\
 /** FlowGuard optional OpenCode Desktop GUI; never a governance authority. */
-const { Plugin, Command, Slot } = require('@opencode/plugin/gui');
+const { Plugin, Command, ComposerPill } = require('@opencode/plugin/gui');
 const { createEffect, createSignal, onCleanup } = require('solid-js');
 
 const RPC_ID = 'flowguard-governance';
@@ -56,6 +56,15 @@ function statusLabel(view) {
 function isCurrentSession(ctx, session) {
   const current = ctx.sessions.current();
   return Boolean(current && current.id === session.id && current.server.id === session.server.id);
+}
+
+function pillLabel(view) {
+  if (view.kind === 'choose_flow') return 'FlowGuard · choose';
+  if (view.kind === 'decision_required') return 'FlowGuard · decision';
+  if (view.kind === 'next_action') return 'FlowGuard · ' + ((view.actions[0] && view.actions[0].invocation) || 'action');
+  if (view.kind === 'system_work') return 'FlowGuard · working';
+  if (view.kind === 'blocked') return 'FlowGuard · blocked';
+  return 'FlowGuard · complete';
 }
 
 function sameBinding(left, right) {
@@ -202,6 +211,29 @@ function Status(ctx, sessionAccessor) {
 
 module.exports = Plugin.define({
   setup(ctx) {
+    const [views, setViews] = createSignal(new Map());
+    const inFlight = new Set();
+    const refresh = (session) => {
+      if (!session || inFlight.has(session.id)) return;
+      inFlight.add(session.id);
+      getView(session)
+        .then((view) => {
+          const next = new Map(views());
+          next.set(session.id, view);
+          setViews(next);
+        })
+        .catch(() => {})
+        .finally(() => inFlight.delete(session.id));
+    };
+
+    createEffect(() => {
+      const session = ctx.sessions.current();
+      if (!session) return;
+      refresh(session);
+      const timer = setInterval(() => refresh(session), 3000);
+      onCleanup(() => clearInterval(timer));
+    });
+
     ctx.add(Command, {
       id: 'choose-workflow',
       title: 'FlowGuard: choose workflow or decision',
@@ -217,9 +249,29 @@ module.exports = Plugin.define({
         void choose(ctx, session);
       },
     });
-    ctx.add(Slot, {
-      at: 'window.bottom',
-      render: () => Status(ctx, () => ctx.sessions.current()),
+
+    ctx.add(ComposerPill, {
+      id: 'next-action',
+      order: 0,
+      show: (input) => {
+        const view = views().get(input.session.id);
+        if (!view) {
+          refresh(input.session);
+          return { label: 'FlowGuard' };
+        }
+        const label = pillLabel(view);
+        return {
+          label: label,
+          title: statusLabel(view) || label,
+          run: () => {
+            if (view.kind === 'choose_flow' || view.kind === 'decision_required' || view.kind === 'next_action') {
+              void choose(ctx, input.session);
+            } else {
+              toast(ctx, 'Run /status for FlowGuard details.', 'default');
+            }
+          },
+        };
+      },
     });
   },
 });

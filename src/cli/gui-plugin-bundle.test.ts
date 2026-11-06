@@ -9,9 +9,9 @@ interface FakeCommand {
   readonly run: () => void;
 }
 
-interface FakeSlot {
-  readonly at: string;
-  readonly render: (input: Record<string, unknown>) => unknown;
+interface FakePill {
+  readonly id: string;
+  readonly show: (input: { readonly session: Record<string, unknown> }) => unknown;
 }
 
 function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
@@ -39,7 +39,7 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
       return {
         Plugin: { define: (value: unknown) => value },
         Command: 'command',
-        Slot: 'slot',
+        ComposerPill: 'composer-pill',
       };
     }
     if (name === 'solid-js') {
@@ -61,7 +61,7 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
   };
   plugin.setup(host);
   const command = additions.find((entry) => entry.registry === 'command')?.value as FakeCommand;
-  const slot = additions.find((entry) => entry.registry === 'slot')?.value as FakeSlot;
+  const pill = additions.find((entry) => entry.registry === 'composer-pill')?.value as FakePill;
   Object.assign(session, {
     id: 'ses_root',
     location: { directory: '/tmp/worktree' },
@@ -81,7 +81,7 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
       },
     },
   });
-  return { command, slot, rpcCalls, commandCalls, views, host };
+  return { command, pill, rpcCalls, commandCalls, views, host };
 }
 
 describe('installed Desktop GUI bundle', () => {
@@ -91,8 +91,8 @@ describe('installed Desktop GUI bundle', () => {
     const loaded = load(ctx, session);
 
     expect(loaded.command.id).toBe('choose-workflow');
-    expect(loaded.slot.at).toBe('window.bottom');
-    expect(loaded.slot.render({})).toBe('button');
+    expect(loaded.pill.id).toBe('next-action');
+    expect(loaded.pill.show({ session })).toEqual({ label: 'FlowGuard' });
   });
 
   it('runs the selected workflow command after re-reading the same view', async () => {

@@ -12,7 +12,7 @@ and the tested commit.
 
 1. Install the packed artifact and open **OpenCode Desktop 2.2.5**.
 2. Open a new governed session and run `/start`; leave it in `READY`.
-3. Verify the persistent `FlowGuard · READY · choose workflow` window-bottom control
+3. Verify the persistent FlowGuard composer pill above the input
    appears without opening a modal automatically.
 4. Open `/choose-workflow`; verify exactly `/task`, `/architecture` and `/review`,
    with `/task` marked recommended but not preselected.
