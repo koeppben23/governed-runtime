@@ -282,6 +282,7 @@ describe('native V2 phase and integrity gates', () => {
       'end-governance',
       'check',
       'debug-export',
+      'diagnostics',
     ]);
     await expect(
       h.host.before(

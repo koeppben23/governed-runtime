@@ -94,6 +94,12 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
     reason:
       'flow-specific contention re-read: the export rail can only have produced the ticket-flow COMPLETE position after materialization',
   },
+  {
+    file: 'integration/diagnostics/review-subject-selection.ts',
+    max: 3,
+    reason:
+      'flow-specific subject selection: PEER_REVIEW_COMPLETE, ARCH_COMPLETE, and COMPLETE identify the displayed flow terminal subject, not terminal membership',
+  },
 ];
 
 /** Quoted terminal literal adjacent to an equality operator (a comparison). */

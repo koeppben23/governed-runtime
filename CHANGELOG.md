@@ -34,6 +34,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   delivery explicitly `NOT_VERIFIED`; the
   Session Explorer, review UI and notifications remain follow-up work.
 
+- Add the portable post-cutover diagnostic views tracked by #1202: native
+  `/diagnostics explorer`, `/diagnostics review`, `/diagnostics logs` and
+  `/diagnostics notifications` render bounded Markdown over existing
+  authorities. The explorer shows exact known parent/reviewer lineage,
+  obligation/attempt/dispatch/invocation IDs and explicit `not_verified` gaps
+  without speculative linkage. The review view shows the displayed subject
+  revision and digest, reviewer verdict, findings and ProofGraph declarations
+  versus evaluation while stating that decision authority is not granted.
+  Reviewer output is used as the current verdict only when it is positively
+  bound to the displayed revision; stale or unassigned output is shown
+  separately as historical material. This includes implementation-review loops
+  whose recorded `currDigest` no longer matches the displayed implementation. The log view reads only the newest tail of
+  the existing JSONL sink, applies level/session/trace/time filters, masks
+  sensitive fields and reports byte, file, line, malformed-line and
+  missing-correlation gaps explicitly. Notification
+  delivery remains `NOT_VERIFIED` with the file log as the complete fallback;
+  no toast, panel or governance action is attempted. Cross-surface tests keep
+  the export graph, explorer and rendered Markdown facts aligned.
+
 - Announce automatic plan-approval validation before it starts. The
   `/approve` host command now presents a visible `Validation started` turn
   naming the active checks (for example `build` and `test`) while the checks

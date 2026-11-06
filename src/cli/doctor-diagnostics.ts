@@ -18,7 +18,7 @@ export function checkDiagnosticCapabilities(): DoctorCheck[] {
       status: 'info',
       check: DIAGNOSTIC_DELIVERY_CHECK,
       detail:
-        'Native /debug-export and flowguard debug-export are available in this build; doctor does not execute them. Native Desktop panel/notification delivery is NOT_VERIFIED; file logs are the baseline.',
+        'Native /debug-export, /diagnostics and flowguard debug-export are available in this build; doctor does not execute them. Native Desktop panel/notification delivery is NOT_VERIFIED; file logs are the baseline.',
     },
   ];
 }
