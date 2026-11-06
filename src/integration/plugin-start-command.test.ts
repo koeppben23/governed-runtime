@@ -90,6 +90,43 @@ describe('native /start command', () => {
     expect(revisions()).toEqual([]);
   });
 
+  it('exposes the read-only next-action RPC over the canonical status projection', async () => {
+    await open();
+    const sessionId = randomUUID();
+    const rpc = host.rpcMethods.get('GetNextAction');
+    expect(rpc).toBeDefined();
+
+    const unavailable = (await rpc!({ sessionID: sessionId })) as Record<string, unknown>;
+    expect(unavailable).toMatchObject({
+      kind: 'blocked',
+      blocker: { code: 'GOVERNANCE_INACTIVE' },
+    });
+
+    await host.command('start', sessionId);
+    const view = (await rpc!({ sessionID: sessionId })) as {
+      kind: string;
+      phase: string;
+      title: string;
+      stateDigest: string;
+      activationId: string | null;
+      activationGeneration: number | null;
+      actions: Array<{ invocation: string }>;
+    };
+    expect(view).toMatchObject({
+      kind: 'choose_flow',
+      phase: 'READY',
+      title: 'Choose a workflow',
+    });
+    expect(view.actions.map((action) => action.invocation)).toEqual([
+      '/task',
+      '/architecture',
+      '/review',
+    ]);
+    expect(view.stateDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(view.activationId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(view.activationGeneration).toBeGreaterThan(0);
+  });
+
   it('hydrates, binds the frozen policy and activates the root via host_command', async () => {
     await open();
     const sessionId = randomUUID();

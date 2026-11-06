@@ -3,6 +3,7 @@ import { Rpc } from '@opencode/plugin/rpc';
 import { z } from 'zod';
 import { POLICY_DIGEST_PATTERN } from '../state/evidence-identifiers.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
+import { NextActionRequest, NextActionResult } from './status/next-action-projection.js';
 
 export const AutonomousStartRequest = z
   .object({
@@ -30,6 +31,11 @@ export const FlowGuardGovernance = Rpc.define({
     StartGovernance: {
       input: AutonomousStartRequest,
       output: AutonomousStartResult,
+      errors: {},
+    },
+    GetNextAction: {
+      input: NextActionRequest,
+      output: NextActionResult,
       errors: {},
     },
   },

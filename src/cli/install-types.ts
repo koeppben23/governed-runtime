@@ -10,6 +10,7 @@ import {
   MANDATES_FILENAME,
   REVIEWER_AGENT_FILENAME,
   PLUGIN_RELATIVE_PATH,
+  TUI_PLUGIN_RELATIVE_PATH,
 } from './templates.js';
 
 export type { PolicyMode } from '../config/policy-types.js';
@@ -84,6 +85,7 @@ export const BUILD_INFO_CHECK = 'build-info';
 export const FLOWGUARD_OWNED_FILES = [
   MANDATES_FILENAME,
   PLUGIN_RELATIVE_PATH,
+  TUI_PLUGIN_RELATIVE_PATH,
   `agents/${REVIEWER_AGENT_FILENAME}`,
   `subagents/${REVIEWER_AGENT_FILENAME}`,
   ...Object.keys(COMMANDS).map((name) => `commands/${name}`),

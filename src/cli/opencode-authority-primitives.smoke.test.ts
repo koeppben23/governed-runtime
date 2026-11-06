@@ -182,6 +182,15 @@ export default Plugin.define({ id: 'flowguard-source-probe', setup(ctx) {
   }] }));
   ctx.keymap.dispatch('flowguard-source-probe.observe', 'programmatic');
   ctx.keymap.dispatch('flowguard-source-probe.observe', '\\x07');
+  record({
+    type: 'capabilities',
+    dialogSelect: typeof ctx.ui.dialog.select,
+    sessionCommand: typeof ctx.client.session.command,
+    dataOn: typeof ctx.data.on,
+    keymapLayer: typeof ctx.keymap.layer,
+    storageMemory: typeof ctx.storage.memory,
+    toastShow: typeof ctx.ui.toast.show,
+  });
   record({ type: 'ready' });
 } });\n`,
         );
@@ -239,6 +248,15 @@ export default Plugin.define({ id: 'flowguard-source-probe', setup(ctx) {
       },
       { timeout: 30_000 },
     );
+    expect(await records()).toContainEqual({
+      type: 'capabilities',
+      dialogSelect: 'function',
+      sessionCommand: 'function',
+      dataOn: 'function',
+      keymapLayer: 'function',
+      storageMemory: 'function',
+      toastShow: 'function',
+    });
     // Pinned 2.2.4 synthesizes a "command" event here, despite the declaration's
     // no-event wording. Event presence is therefore not a source distinction.
     expect(await records()).toContainEqual({

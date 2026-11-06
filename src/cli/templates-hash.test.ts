@@ -5,6 +5,8 @@ import { describe, it, expect } from 'vitest';
 import {
   PLUGIN_WRAPPER,
   PLUGIN_RELATIVE_PATH,
+  TUI_PLUGIN_WRAPPER,
+  TUI_PLUGIN_RELATIVE_PATH,
   COMMANDS,
   FLOWGUARD_MANDATES_KERNEL,
   REVIEWER_AGENT,
@@ -19,6 +21,7 @@ const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').dig
 function computeTemplateHashes(): Record<string, string> {
   return {
     pluginWrapper: sha256(PLUGIN_WRAPPER),
+    tuiPluginWrapper: sha256(TUI_PLUGIN_WRAPPER),
     flowguardMandatesKernel: sha256(FLOWGUARD_MANDATES_KERNEL),
     reviewerAgent: sha256(REVIEWER_AGENT),
     packageJsonTemplate: sha256(PACKAGE_JSON_TEMPLATE('1.2.3')),
@@ -34,6 +37,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
   it('installs exactly one native default export, not a second tool discovery surface', () => {
     expect(PLUGIN_RELATIVE_PATH).toBe('plugins/flowguard/index.ts');
+    expect(TUI_PLUGIN_RELATIVE_PATH).toBe('plugins/flowguard/tui.ts');
     expect(PLUGIN_WRAPPER).toContain(
       'export { default } from "@flowguard/core/integration/plugin"',
     );

@@ -26,6 +26,10 @@
       "import": "./dist/integration/opencode-governance-rpc.js",
       "types": "./dist/integration/opencode-governance-rpc.d.ts"
     },
+    "./integration/tui-plugin": {
+      "import": "./dist/integration/tui-plugin.js",
+      "types": "./dist/integration/tui-plugin.d.ts"
+    },
     "./testing": {
       "import": "./dist/testing.js",
       "types": "./dist/testing.d.ts"

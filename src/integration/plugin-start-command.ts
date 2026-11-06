@@ -18,6 +18,10 @@ import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { resolveActorForPolicy } from '../adapters/actor-context.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
+import {
+  resolveGovernanceActivation,
+  type GovernanceActivationStore,
+} from '../adapters/governance-activation.js';
 import { freezePolicySnapshot, resolvePolicyFromSnapshot } from '../config/policy-snapshot.js';
 import { NATIVE_START_COMMAND } from '../shared/flowguard-identifiers.js';
 import {
@@ -35,6 +39,7 @@ import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { hydrate, resolveHydratePolicy } from './tools/index.js';
 import { FlowGuardGovernance, type AutonomousStartRequest } from './opencode-governance-rpc.js';
+import { projectNextActionResult, type NextActionResult } from './status/next-action-projection.js';
 import { addDecisionCommands } from './plugin-decision-command.js';
 import {
   addGovernanceLifecycleCommands,
@@ -56,11 +61,11 @@ import { buildWorkflowChoiceConclusion } from '../presentation/workflow-choice.j
 import type { CompactCardDocument } from '../presentation/model.js';
 
 type Registration = { dispose(): Promise<void> };
+const NO_ACTIVATION_BINDING = { activationId: null, activationGeneration: null } as const;
 type CommandInvocation = {
   readonly sessionID: string;
   readonly prompt: { readonly text: string };
 };
-
 type StartWorkflow = {
   readonly worktreeRoot: string;
   readonly state: SessionState;
@@ -78,7 +83,7 @@ export interface StartCommandDeps {
     | 'endRoot'
     | 'assertScopeCurrent'
     | 'assertActivationAuditConfirmed'
-  >;
+  > & { readonly store: GovernanceActivationStore };
   /** Publishes the productive catalogue for the now ACTIVE location. */
   readonly publish: () => Promise<void>;
   /** Lifecycle admission and operation tracking owned by the plugin composition. */
@@ -123,6 +128,72 @@ function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Prom
   });
 }
 
+async function getNextAction(
+  ctx: Plugin.Context,
+  governance: StartCommandDeps['governance'],
+  request: { readonly sessionID: string },
+): Promise<NextActionResult> {
+  const activation = await resolveGovernanceActivation(governance.store, request.sessionID);
+  if (activation.kind !== 'active') {
+    return {
+      schemaVersion: 'next-action.v1',
+      kind: 'blocked',
+      sessionID: request.sessionID,
+      ...NO_ACTIVATION_BINDING,
+      phase: null,
+      stateDigest: null,
+      policyDigest: null,
+      title: 'FlowGuard governance is not active',
+      question: null,
+      actions: [],
+      blocker: {
+        code: activation.kind === 'blocked' ? activation.code : 'GOVERNANCE_INACTIVE',
+        message:
+          activation.kind === 'blocked'
+            ? activation.reason
+            : 'Run /start before choosing a workflow.',
+        recovery: 'Run /start to activate governance, then choose a workflow.',
+      },
+    } satisfies NextActionResult;
+  }
+
+  const authority = await resolveSessionAuthority({
+    root: ctx.location.directory,
+    sessionId: request.sessionID,
+  });
+  if (authority.status === 'resolved') {
+    return {
+      ...projectNextActionResult(
+        authority.state,
+        resolvePolicyFromSnapshot(authority.state.policySnapshot),
+        activation.record,
+      ),
+      sessionID: request.sessionID,
+    };
+  }
+  return {
+    schemaVersion: 'next-action.v1',
+    kind: 'blocked',
+    sessionID: request.sessionID,
+    activationId: activation.record.activationId,
+    activationGeneration: activation.record.generation,
+    phase: null,
+    stateDigest: null,
+    policyDigest: null,
+    title: 'FlowGuard session unavailable',
+    question: null,
+    actions: [],
+    blocker: {
+      code: authority.status === 'absent' ? 'SESSION_STATE_ABSENT' : authority.code,
+      message:
+        authority.status === 'absent'
+          ? 'No FlowGuard state exists for this session.'
+          : authority.reason,
+      recovery: 'Start or hydrate a governed session, then retry.',
+    },
+  };
+}
+
 /** Dedicated native operation, never installed as a model tool or prompt trigger. */
 function registerAutonomousStart(
   ctx: Plugin.Context,
@@ -152,6 +223,7 @@ function registerAutonomousStart(
           };
         }
       }),
+    GetNextAction: (request) => getNextAction(ctx, deps.governance, request),
   });
 }
 
