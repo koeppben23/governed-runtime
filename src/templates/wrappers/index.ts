@@ -87,8 +87,9 @@ async function choose(ctx, session) {
     return;
   }
   const binding = first.kind === 'decision_required' ? first.decisionBinding : null;
-  if (first.kind !== 'choose_flow' && binding === null) {
-    toast(ctx, 'This FlowGuard state has no native decision binding.', 'default');
+  const isNextAction = first.kind === 'next_action';
+  if ((first.kind !== 'choose_flow' && !isNextAction && binding === null) || first.actions.length === 0) {
+    toast(ctx, 'No FlowGuard action is available for this state. Run /status for details.', 'default');
     return;
   }
   const selected = await ctx.dialogs.select({
@@ -113,6 +114,19 @@ async function choose(ctx, session) {
   }
   if (!isCurrentSession(ctx, session)) {
     toast(ctx, 'Session changed; no FlowGuard action was executed.', 'error');
+    return;
+  }
+
+  if (first.kind === 'next_action') {
+    const confirmed = await ctx.dialogs.confirm({
+      title: 'FlowGuard next action',
+      description: first.actions[0].description,
+      confirm: selected,
+      cancel: 'Cancel',
+    });
+    if (!confirmed) return;
+    await session.server.client.session.command({ sessionID: session.id, name: selected.replace(/^\\//, ''), text: '' });
+    toast(ctx, 'FlowGuard action requested.', 'success');
     return;
   }
 
@@ -204,8 +218,8 @@ module.exports = Plugin.define({
       },
     });
     ctx.add(Slot, {
-      at: 'session.header',
-      render: (input) => Status(ctx, () => input.session),
+      at: 'window.bottom',
+      render: () => Status(ctx, () => ctx.sessions.current()),
     });
   },
 });

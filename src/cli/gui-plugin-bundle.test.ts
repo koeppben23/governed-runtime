@@ -11,7 +11,7 @@ interface FakeCommand {
 
 interface FakeSlot {
   readonly at: string;
-  readonly render: (input: { readonly session: Record<string, unknown> }) => unknown;
+  readonly render: (input: Record<string, unknown>) => unknown;
 }
 
 function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
@@ -26,6 +26,7 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
     dialogs: {
       select: vi.fn(async () => '/task'),
       prompt: vi.fn(async () => 'Documented override rationale.'),
+      confirm: vi.fn(async () => true),
     },
     sessions: { current: () => session },
     toast: { show: vi.fn() },
@@ -90,8 +91,8 @@ describe('installed Desktop GUI bundle', () => {
     const loaded = load(ctx, session);
 
     expect(loaded.command.id).toBe('choose-workflow');
-    expect(loaded.slot.at).toBe('session.header');
-    expect(loaded.slot.render({ session })).toBe('button');
+    expect(loaded.slot.at).toBe('window.bottom');
+    expect(loaded.slot.render({})).toBe('button');
   });
 
   it('runs the selected workflow command after re-reading the same view', async () => {
@@ -123,6 +124,39 @@ describe('installed Desktop GUI bundle', () => {
       'GetNextAction',
       'GetNextAction',
     ]);
+  });
+
+  it('renders the persistent next action and executes it after confirmation', async () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    const view = {
+      kind: 'next_action',
+      stateDigest: 'a'.repeat(64),
+      activationId: '11111111-1111-4111-8111-111111111111',
+      activationGeneration: 1,
+      policyDigest: 'b'.repeat(64),
+      decisionBinding: null,
+      title: 'Plan required',
+      actions: [
+        { invocation: '/plan', description: 'Create the plan.', visibility: 'recommended' },
+      ],
+    };
+    loaded.views.push(view, view);
+    (ctx.dialogs as { select: ReturnType<typeof vi.fn> }).select.mockResolvedValueOnce('/plan');
+
+    loaded.command.run();
+
+    await vi.waitFor(() =>
+      expect(loaded.commandCalls).toContainEqual({
+        sessionID: 'ses_root',
+        name: 'plan',
+        text: '',
+      }),
+    );
+    expect((ctx.dialogs as { confirm: ReturnType<typeof vi.fn> }).confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ confirm: '/plan' }),
+    );
   });
 
   it('submits a decision only when the displayed subject binding is unchanged', async () => {
