@@ -13,9 +13,9 @@ the release fence admits only the superseding re-arm attempt. The independent
 review verified all four required native contracts and `independent-review-e2e`
 in CI at `b9a41e5b`. The local follow-up below additionally proves R2 native
 SIGKILL/reload continuation and a settlement crash boundary. Complete settlement
-race acceptance, R4 residuals
-and full reviewer parity remain open, so Finding 6 stays **BLOCKED** / ACTIVE V2
-**NO-GO**. See the [current subcontract matrix](./phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03).
+race acceptance and full reviewer parity remain open, so Finding 6 retains those
+gates. R4 is the accepted documented trusted-plugin limitation. See the
+[current subcontract matrix](./phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03).
 
 ## Trust chain
 
@@ -64,8 +64,9 @@ now reproduces later privileged After/Context replacements and actual post-hook
 normalization/truncation. It does not prove unprivileged reachability or establish
 a provider-neutral immutable final-consumption boundary. Hashing a
 pre-normalization or pre-truncation tool result must not be assumed equivalent
-to the host history or outgoing request. R4 remains open; no production receipt
-or evidence-recorder change is made by that research checkpoint.
+to the host history or outgoing request. R4 is `NOT_SUPPORTED` and accepted as
+the documented trusted-plugin limitation; no production receipt or
+evidence-recorder change is made by that research checkpoint.
 
 ### R2 restart reconciliation (2026-11-03)
 

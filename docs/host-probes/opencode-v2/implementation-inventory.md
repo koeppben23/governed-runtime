@@ -8,6 +8,13 @@ the production code below has already been simplified. It implements the
 pre-port review required by [ADR-010](../../decisions/010-host-neutral-opt-in-governance.md).
 The [gate matrix](./phase0-contract-gates.md) remains **NO-GO** for ACTIVE V2.
 
+**R4 status update (2026-11-06):** R4 is `NOT_SUPPORTED` on the public OpenCode
+2.2.4/2.2.5 APIs and is accepted as a documented trusted-plugin limitation under
+the [ADR-010 amendment](../../decisions/010-host-neutral-opt-in-governance.md#r4-reviewer-input-boundary-amendment-2026-11-06).
+Untrusted co-installed plugins are outside the supported V2 security boundary.
+Later dated references to R4 as an open blocker are historical audit context, not
+the current product decision.
+
 **2026-11-01 implementation update:** the activation/scope implementation now
 precedes workflow authority and uses one canonical journal, enrollment markers
 and lifecycle guards. Native catalogue filtering, scoped event fences and exact
@@ -38,8 +45,9 @@ the canonical ledger to native release and observed Child binding, and the
 terminal/evidence generation. At `2acef049`, three of the four required product
 contracts passed and recovery failed. The independent review verified all four
 contracts plus independent-review-e2e in CI at `b9a41e5b`. The local follow-up
-adds native SIGKILL/reload and settlement crash positives; complete native race,
-R4 and reviewer-parity acceptance remain open (see the current
+adds native SIGKILL/reload and settlement crash positives; complete native race
+and reviewer-parity acceptance remain open. R4 is the accepted documented
+trusted-plugin limitation (see the current
 [subcontract matrix](./phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03)). Controlled foreground/same-child
 execution is not evidence binding or safe unknown-outcome recovery. No historical
 test result, policy exception or proof generation is reclassified.
@@ -87,7 +95,8 @@ passes 65/65 on each of Linux, macOS and Windows in acceptance run `41855491592`
 on one checksum-verified package. Required CI `41855408259` passes on attempt 2;
 the initial PERF failure remains unattributed and the macOS cancellation is
 explicitly attributed by GitHub to unavailable hosted-runner capacity. The
-Windows diagnosis is closed; Desktop, full ACTIVE and R4 are not. See the
+Windows diagnosis is closed; Desktop and full ACTIVE are not. R4 is the
+accepted documented trusted-plugin limitation. See the
 [final diagnostic closure](./p0-00-inactive-parity.md#final-windowscli-server-diagnostic-closure-on-2f4aa06d).
 The following checkpoint paragraphs retain their dated execution history;
 they are not a claim that today's Windows matrix remains unexecuted or blocked.
@@ -105,8 +114,9 @@ each pass all 65 cases on `77605384`. Windows fails at package bootstrap in both
 the initial attempt and unchanged rerun before executing any case; its root
 cause remains NOT_VERIFIED, and the required CI gate fails. Desktop 2.2.4, live
 remote model catalogue refresh, complete mixed-resource acceptance and full V2 integration
-remain unverified. R4 stays NOT_SUPPORTED on
-the pinned public API and its security requirement remains BLOCKED.
+remain unverified. R4 stays NOT_SUPPORTED on the pinned public API; it is the
+accepted documented trusted-plugin limitation, not a `PASS` or a supported
+guarantee against untrusted co-installed plugins.
 
 The bounded follow-up instruments only the packed bootstrap and retains npm
 diagnostics. CI on `82a490aa` compares one Windows bootstrap alone with the
@@ -864,8 +874,8 @@ and the combined type/runtime closure is 716. Only deliberate
 [completed rail retirement](./p0-10-ownership-decisions.md#completed-rail-retirement-78-cases-dispositioned).
 P0-10 implementation cleanup and its required evidence pass (Hosted CI 37/37,
 default mutation 81.10, import/package proof). ISO publication exclusivity
-remains a separate open diagnosis; installed acceptance and R4 remain separate
-V2 blockers.
+remains a separate open diagnosis; installed acceptance remains a separate V2
+gate. R4 is the accepted documented trusted-plugin limitation.
 
 Scope: shipped package exports/binaries, native plugin composition and adapter,
 activation versus workflow authority, reviewer dispatch/capture/evidence owners,
@@ -899,7 +909,7 @@ removal takes the current inventory to 725 / 248; runtime reachability is unchan
 | Installed OpenCode entry         | `plugin.ts` owns one `Plugin.define` setup; the installed wrapper exports only that definition. No second callable V1 factory or old SDK autospawn entry was found.                                                                                       | Retain the native composition and its fail-closed lifecycle.                                                                                                                                                     |
 | Host adapter                     | `opencode-host-adapter.ts` implements exact metadata/history operations; `adapters/host-adapter.ts` and `review/types.ts` are structural ports, not competing SDK transports.                                                                             | Retain semantic boundaries; SDK mechanics stay at the host edge.                                                                                                                                                 |
 | Activation/workflow              | `adapters/governance-activation.ts` owns the host-storage journal/head/enrollment; `adapters/session-authority.ts` resolves bound workflow files.                                                                                                         | Different authorities for different state, not duplicate workflow-state writers.                                                                                                                                 |
-| Reviewer execution               | `plugin-native-review.ts` consumes native dispatch, initial request, capture and settlement owners. Dispatch uses the durable ledger; capture calls the existing `reviewer-evidence-recorder.ts`, which commits through injected `updateReviewAssurance`. | No second reviewer runtime/evidence writer found on this inspected chain. SDK-worded DTO names alone do not establish a V1 runtime. R4 is unchanged.                                                             |
+| Reviewer execution               | `plugin-native-review.ts` consumes native dispatch, initial request, capture and settlement owners. Dispatch uses the durable ledger; capture calls the existing `reviewer-evidence-recorder.ts`, which commits through injected `updateReviewAssurance`. | No second reviewer runtime/evidence writer found on this inspected chain. SDK-worded DTO names alone do not establish a V1 runtime. R4 remains NOT_SUPPORTED and is the accepted trusted-plugin limitation.      |
 | Historical transport evidence    | Current evidence schemas retain recorded transport generations; `session-authority.ts` blocks nonterminal sessions carrying historical transport 5.                                                                                                       | Archive verification is not live V1 dispatch, read-time synthesis or permission to continue old authority.                                                                                                       |
 | `plugin-orchestrator.ts`         | Exactly one production importer, `plugin-shared.ts`, uses it as a type only. The file only re-exports the existing `OrchestratorDeps` definition.                                                                                                         | Proven redundant facade removed; direct canonical type import, placement entry and source/docs guards updated. No runtime behavior changes.                                                                      |
 | `cli/opencode-runtime-compat.ts` | No production TypeScript importer, but `demos/lib/environment-gate.mjs` and `demos/java-task-manager/run-live-matrix.mjs` actively read it from the filesystem and extract `TESTED_OPENCODE_HOST_VERSION = '1.19.5'`.                                     | Live V1 tooling residue, not just historical evidence. Must port these consumers to the current candidate contract and remove the obsolete classifier/pin, not falsely certify V2 by changing the literal alone. |

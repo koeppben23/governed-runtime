@@ -3,9 +3,9 @@
 2026-11-04, PR #1190. **Bounded CLI/server PASS on Linux, macOS and Windows
 with OpenCode 2.2.4; not Desktop or whole-PR acceptance.** Windows executed
 all 65 cases on the current-build artifact (2 mixed + 28 repo + 28 global +
-7 original, 0 failed). R4 remains technically `NOT_SUPPORTED` under the
-unchanged untrusted-plugin contract and its security requirement remains
-BLOCKED. No ACTIVE-V2 release follows from this result.
+7 original, 0 failed). R4 remains technically `NOT_SUPPORTED` under the public
+host contract; the 2026-11-06 operator decision accepts it as a documented
+trusted-plugin limitation. No ACTIVE-V2 release follows from this result.
 
 ## Final Windows/CLI-server diagnostic closure on `2f4aa06d`
 

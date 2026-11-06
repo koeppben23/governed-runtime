@@ -1588,6 +1588,17 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **R4 reviewer-input boundary decision (#1190).** Record R4 as permanently
+  `NOT_SUPPORTED` on the public OpenCode 2.2.4/2.2.5 APIs, never `PASS`, and
+  limit the supported V2 operating model to trusted/operator-controlled
+  co-installed plugins. Untrusted or adversarial co-installed plugins are
+  explicitly outside the supported security boundary. FlowGuard keeps its
+  fail-closed capture/evidence diagnostics; the six unchanged probes and two
+  replacement counterexamples remain. Synchronize ADR-010, phase gates, R4
+  reports, platform limitations, README, Quick Start and the PR acceptance
+  matrix. This is a documented product limitation, not a technical resolution
+  and not a runtime bypass.
+
 - **Workflow choice card (#1190).** `/start` and `/hydrate` now render one
   compact decision card instead of repeating the workflow list in `## Workflows`,
   `## Next`, and a recommendation line. The card lists `/task` (recommended),

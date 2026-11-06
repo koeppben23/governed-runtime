@@ -150,7 +150,11 @@ Actual atomic state/audit consumption is a G-04 product test, not a P0 promise.
 V1-equivalent independent AI review remains a mandatory, fully automatable core
 capability wherever existing policy requires it. Preserve existing exceptions
 only; adding new exceptions or human intervention to avoid the V2 implementation
-gap is not an acceptable port. Finding 6 remains a release blocker.
+gap is not an acceptable port. Finding 6 retains its remaining parity and
+installed-acceptance gates. **R4 update (2026-11-06):** R4 is `NOT_SUPPORTED`;
+the trusted-plugin operating model accepts this as a documented limitation, and
+untrusted co-installed plugins are outside the supported V2 boundary. No R4
+assurance is claimed.
 
 Before binding, prove one coherent chain from frozen subject/revision and
 obligation/attempt/dispatch through authorized visible child, exact host-owned

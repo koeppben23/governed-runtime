@@ -33,8 +33,10 @@ It does not promise an unbypassable boundary around the entire host, filesystem,
 process tree or remote provider. A second runtime, OS sandbox, independent
 authentication service or general security framework is **not required or
 authorized as compensation** for missing host guarantees. Explicit controlled-path
-prevention and honest limits remain mandatory; reviewer/evidence correctness is
-not relaxed. See the [revised decision report](../host-probes/opencode-v2/p0-feasibility-decision.md)
+prevention and honest limits remain mandatory; reviewer/evidence correctness
+within the trusted-plugin model is not relaxed. The 2026-11-06 R4 amendment
+explicitly narrows only the adversarial co-installed-plugin input boundary. See
+the [revised decision report](../host-probes/opencode-v2/p0-feasibility-decision.md)
 for changed requirements, retained blockers and the selected operator-source contract.
 
 ## Options
@@ -122,6 +124,36 @@ model call; activation supplies no gate approval or capacity release. Native
 ACTIVE non-reviewer requests receive the canonical phase-aware mandates;
 INACTIVE sessions receive none.
 
+## R4 reviewer-input boundary amendment (2026-11-06)
+
+This operator decision closes the R4 feasibility question without claiming a
+technical fix. R4 is permanently **NOT_SUPPORTED** on the public OpenCode
+2.2.4/2.2.5 host contract: no public API provides a protected final-input check
+after all plugin transformations and before dispatch. The six unchanged
+diagnostics and two replacement counterexamples remain reproducible. Further
+FlowGuard tests cannot turn this host limit into host assurance.
+
+**Decision.**
+
+1. R4 is recorded as `NOT_SUPPORTED`, never `PASS`.
+2. The supported V2 operating model is a **trusted-plugin model**: the operator
+   controls the installed plugin set, and co-installed plugins are part of the
+   trusted computing base for reviewer-input integrity. Adversarial or untrusted
+   co-installed plugins are outside the supported V2 security boundary.
+3. FlowGuard continues to enforce its own reviewer capture, lineage, evidence and
+   fail-closed checks. It does not claim final tool-result byte integrity against
+   malicious same-process plugins, and it does not add a runtime bypass or weaken
+   an existing check. The retained counterexamples remain defects of the host
+   boundary, not accepted evidence paths.
+4. Operators that require reviewer-input integrity against untrusted co-installed
+   plugins are not supported on V2 until the host provides the protected contract
+   described in the [R4 report](../host-probes/opencode-v2/reviewer-tool-result-evidence.md).
+   This is a documented product limitation.
+5. This amendment supersedes the earlier D4/D7/release-gate interpretation that
+   R4 must be solved for untrusted co-installed plugins before the trusted-plugin
+   V2 model can ship. Historical R4 evidence remains unchanged and is not
+   relabelled as PASS.
+
 ## Decision
 
 ### D1. One canonical product core, many host adapters
@@ -185,7 +217,7 @@ FlowGuard currently defines **one** strict, evidence-backed active-governance co
 1. **Governance/evidence integrity:** invalid identity, authorization, reviewer completion, evidence, policy or audit prevents a valid FlowGuard authorization/export.
 2. **Controlled-path prevention:** on host paths FlowGuard actually intercepts and claims to govern, prohibited operations are refused _before_ execution with real, tested gates. This is not universal host/OS/provider containment.
 
-An absent/crashed/unloaded plugin cannot enforce host hooks. Its absence is harmless to INACTIVE native usage, but cannot silently validate formerly ACTIVE work. Do **not** assert post-unload prevention, external API containment or protection against ungoverned sibling processes. Trusted infrastructure is an operational assumption, not a claim that local same-user code or state is tamper-proof.
+An absent/crashed/unloaded plugin cannot enforce host hooks. Its absence is harmless to INACTIVE native usage, but cannot silently validate formerly ACTIVE work. Do **not** assert post-unload prevention, external API containment or protection against ungoverned sibling processes. Trusted infrastructure is an operational assumption, not a claim that local same-user code or state is tamper-proof. The 2026-11-06 R4 amendment narrows reviewer-input integrity to the trusted-plugin operating model: untrusted co-installed plugins are **outside** the supported V2 boundary, and R4 remains `NOT_SUPPORTED`.
 
 Paths outside interception, including native command shell expansion and
 autonomous remote actions, must have explicit coverage/limitation reporting.
@@ -228,7 +260,7 @@ review optional or add human intervention to compensate for the V2 migration.
 Finding 6 remains a release-blocking missing implementation until the required
 actual reviewer positives pass.
 
-A valid independent review needs frozen subject, isolated identity/permissions, navigable child or equivalently inspectable independent execution, exact request/response lineage, effective model/effort provenance, full normal terminal completion and coherent tool-free structured findings capture. The deterministic gate binds only complete validated evidence; ProofGraph never treats raw host text as attestation.
+A valid independent review needs frozen subject, isolated identity/permissions, navigable child or equivalently inspectable independent execution, exact request/response lineage, effective model/effort provenance, full normal terminal completion and coherent tool-free structured findings capture. The deterministic gate binds only complete validated evidence; ProofGraph never treats raw host text as attestation. Reviewer assurance is guaranteed within the trusted-plugin operating model. R4 final-input integrity against untrusted co-installed plugins is **NOT_SUPPORTED** and explicitly outside the supported boundary; no receipt claims tool-result-byte attestation.
 
 For OpenCode, [ADR-009](./009-model-neutral-review-transport.md) established native Task + same-child JSON under V1. This is an **adapter-specific baseline**, not a cross-host recipe. OpenCode V2 must prove its **own** equivalent lineage and use a new evidence generation when V1 `response.parentID` cannot be attested. Future hosts may use other **single coherent** transports if they prove the same assurance. Never combine unrelated weak transports.
 
@@ -263,6 +295,6 @@ These references describe official **interfaces**, not FlowGuard-certified behav
   [implementation inventory](../host-probes/opencode-v2/implementation-inventory.md#native-entrypointclient-implementation-in-progress).
 - OpenCode V1 is not retained as a product path after the V2 breaking replacement; other host integrations retain their currently **verified** support rather than inferred parity.
 - Porting/simplification may proceed against the revised contract without a sandbox, second runtime or universal provider-prevention proof. Actual authority acceptance requires the appropriate demonstrated D3 path: the `host_command` channel with the canonically resolved actor, or explicitly authorized autonomous activation, never a fabricated human equivalence. Reviewer binding requires exact provenance and completion proof. No unresolved high-risk assumption may enter implementation.
-- Release still requires installed INACTIVE noninterference, explicit scope-bound activation/decisions, deterministic gates, controlled-path negative tests, reviewer/evidence/audit integrity, native model/effort fidelity, durable recovery, conformance, simplification and full installed Desktop/CLI acceptance. These remain NOT_VERIFIED, so supported ACTIVE V2 governance and merge remain NO-GO. Missing out-of-scope containment alone is no longer a release blocker.
+- Release still requires installed INACTIVE noninterference, explicit scope-bound activation/decisions, deterministic gates, controlled-path negative tests, reviewer/evidence/audit integrity within the trusted-plugin model, native model/effort fidelity, durable recovery, conformance, simplification and full installed Desktop/CLI acceptance. These remain NOT_VERIFIED, so supported ACTIVE V2 governance and merge remain NO-GO. Missing out-of-scope containment alone is no longer a release blocker. R4 is not a merge gate under the trusted-plugin model; it remains a documented `NOT_SUPPORTED` host limitation and is never reported as `PASS`.
 - [Phase-0 test plan](../host-probes/opencode-v2/phase0-contract-gates.md) is the executable gate; it does not assert that any unrun test passed.
 - Scope, historical proof artifacts, evidence generations and migration decisions must be truthful. Existing ADRs/probe reports remain historical records, not silently rewritten claims.

@@ -58,8 +58,10 @@ describe('bounded OpenCode V2 acceptance claims', () => {
     expect(enforcement).toContain('intercepted');
     expect(enforcement).toContain('R4');
     expect(enforcement).toContain('NOT_SUPPORTED');
-    expect(enforcement).toContain('BLOCKED');
+    expect(enforcement).toContain('trusted-plugin operating model');
+    expect(enforcement).toContain('outside the supported V2 security boundary');
     expect(enforcement).toContain('untrusted co-installed plugins');
+    expect(enforcement).not.toContain('security requirement remains BLOCKED');
     expect(enforcement).toContain('unobservable');
   });
 });

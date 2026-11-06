@@ -114,7 +114,7 @@ coordination; `opencode-autonomous-start-live.smoke.test.ts` exercises the actua
 pinned-host RPC with no activation fixture, signed IdP actor resolution, negative
 authorization, concurrent Start, audit confirmation and SIGKILL/reload boundaries.
 Local native tests are bounded product evidence, not installed Desktop/operator
-acceptance or closure of R4.
+acceptance. R4 is the accepted documented trusted-plugin limitation.
 
 ## Inactive, active and blocked
 
@@ -198,8 +198,9 @@ Reviewer enrollment additionally requires the
 durable before native release and bound to the actual progress-receipt child.
 The [step-3 capture port](./reviewer-capture-evidence.md) connects evidence
 generation 6 and terminal same-child binding. The required native recovery test
-passes in reviewed CI at `b9a41e5b`; complete race/restart/R4 and installed
-acceptance remain separate (see the [subcontract matrix](./phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03)). None of these
+passes in reviewed CI at `b9a41e5b`; complete race/restart and installed
+acceptance remain separate, and R4 is the accepted documented trusted-plugin
+limitation (see the [subcontract matrix](./phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03)). None of these
 ordinary-delegation receipts mint reviewer evidence,
 operator decisions or regular edit-error terminality. Transport-v5 and
 `review-assurance.v7` remain unchanged.

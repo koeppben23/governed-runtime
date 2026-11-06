@@ -29,7 +29,7 @@ See [current CI diagnosis](./2026-11-05-ci-diagnosis.md).
 | Import/call-path/package                     | 717 production / 246 integration files, 3,813 internal imports, zero unresolved; combined shipped closure 716; only deliberate `shared/product-inventory.ts` outside. Package dry-run has 2,873 files and no retired artifacts.                                                       |
 | ISO publication exclusivity                  | Ubuntu/uutils mechanism reproduced (`EEXIST` then utility exit 0) on exact `0c064dd3` source. Node non-recursive reservation now passes 14 ISO cases; old-owner negative control fails with two successful publishers. Current hosted closure remains required; no flake designation. |
 | Installed acceptance                         | NOT_VERIFIED: final SHA/artifact-bound CLI/Desktop ACTIVE workflow and product E2E remain required. This is separate from P0-10 implementation cleanup.                                                                                                                               |
-| R4                                           | Separate external host-security dependency; BLOCKED / NOT_SUPPORTED under the unchanged untrusted-plugin threat model.                                                                                                                                                                |
+| R4                                           | `NOT_SUPPORTED` and accepted as a documented trusted-plugin limitation (ADR-010 2026-11-06); adversarial co-installed plugins are outside the supported V2 boundary. Not a PASS; no runtime bypass added.                                                                             |
 
 The historical checkpoints below retain their original identities and scopes.
 This status is not a P0-10 completion claim or final call-path certification.
@@ -395,5 +395,6 @@ has twice missed only `integration-perf` with unchanged budgets, so its formal
 full-green closure remains open; no P0-10 code regression is established. The
 ISO publication diagnosis was still open at that checkpoint; the later
 [CI diagnosis](./2026-11-05-ci-diagnosis.md) records the reproduced utility defect
-and bounded correction. R4 and installed ACTIVE/Desktop product acceptance
-remain separate V2 blockers. This PASS does not authorize merge.
+and bounded correction. R4 is the accepted documented trusted-plugin limitation;
+installed ACTIVE/Desktop product acceptance remains a separate V2 gate. This PASS
+does not authorize merge.

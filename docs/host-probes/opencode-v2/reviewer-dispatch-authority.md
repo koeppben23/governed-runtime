@@ -2,7 +2,9 @@
 
 This is the dispatch-only port following the accepted
 [`f0de6a41` mechanism checkpoint](./reviewer-transport-mechanism.md).
-**Finding 6 remains BLOCKED; Draft / ACTIVE V2 NO-GO is unchanged.**
+**Finding 6 retains its other parity/installed-acceptance gates. R4 is the
+accepted documented `NOT_SUPPORTED` trusted-plugin limitation (ADR-010
+2026-11-06); no R4 guarantee is claimed.**
 The later [step-3 capture port](./reviewer-capture-evidence.md) connects native
 same-child capture and evidence generation 6. This document remains the dispatch
 authority description; capture/audit/recovery acceptance is recorded separately.

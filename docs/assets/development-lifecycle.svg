@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1790" viewBox="0 0 2000 1790" role="img" aria-labelledby="title description">
   <title id="title">FlowGuard development lifecycle — standard human-gated ticket flow</title>
-  <desc id="description">Intended full-ceremony workflow: task, independent plan review, policy-required approval, baseline validation, implementation, fresh post-implementation verification, independent implementation review, evidence approval and persisted export. Dashed arrows show revision paths. This is not OpenCode V2 acceptance evidence; final reviewer-input integrity (R4) remains blocked.</desc>
+  <desc id="description">Intended full-ceremony workflow: task, independent plan review, policy-required approval, baseline validation, implementation, fresh post-implementation verification, independent implementation review, evidence approval and persisted export. Dashed arrows show revision paths. This is not OpenCode V2 acceptance evidence; R4 is a documented NOT_SUPPORTED trusted-plugin limitation.</desc>
   <!-- Adapted from Andreas Winter (wandi34), PR #1186, commit 87b211f64811773175806ca7088d78aaf472d78b.
        Editable V2 correction: /hydrate is not activation; scope and acceptance limits are explicit.
        Phase/edge annotations are checked against src/machine/topology.ts by development-lifecycle.test.ts. -->
@@ -146,6 +146,6 @@
   <text x="100" y="1540" class="note">Approving an exhausted review requires /override-approve; requesting changes or rejecting remains possible.</text>
   <text x="100" y="1580" class="note">Eligible reduced ceremony may skip IMPL_REVIEW only after post-implementation verification; policy gates still apply.</text>
   <text x="100" y="1620" class="note">Technical validation blocks stay in their validation phase for retry. Review self-loops, rejection, abort and other flows are omitted.</text>
-  <text x="100" y="1670" class="boundary">V2 migration: intended contract, not acceptance evidence. R4 final reviewer-input integrity remains BLOCKED.</text>
+  <text x="100" y="1670" class="boundary">V2 migration: intended contract, not acceptance evidence. R4 is a documented NOT_SUPPORTED trusted-plugin limitation.</text>
   <text x="100" y="1720" class="note">Authority: src/machine/topology.ts · Activation: src/integration/plugin-start-command.ts · Command origin is not verified human identity.</text>
 </svg>

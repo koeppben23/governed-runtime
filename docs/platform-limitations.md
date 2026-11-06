@@ -35,11 +35,14 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 | `hook_gated`  | Claude Code, Codex  | Out-of-process hook evaluation. Best-effort fail-closed — platform may proceed on hook failure.                           |
 | `advisory`    | Any (MCP-only)      | Governance decisions returned as tool output. LLM must comply voluntarily.                                                |
 
-For OpenCode V2.2.4, synchronous denial is not a universal host/OS containment
-guarantee. Native pre-prompt shell and other unobservable host paths are outside
-that claim. Under the untrusted co-installed plugins contract, the public APIs
-cannot guarantee final reviewer-input integrity: R4 is `NOT_SUPPORTED` and its
-security requirement remains BLOCKED. CLI/server parity does not certify Desktop
+For OpenCode V2.2.4/2.2.5, synchronous denial is not a universal host/OS
+containment guarantee. Native pre-prompt shell and other unobservable host paths
+are outside that claim. Under the untrusted co-installed plugins contract, the
+public APIs cannot guarantee final reviewer-input integrity: R4 is `NOT_SUPPORTED`.
+The 2026-11-06 operator decision accepts this as a documented host limitation
+under the trusted-plugin operating model; untrusted co-installed plugins are
+outside the supported V2 security boundary. This is not a `PASS` and no receipt
+claims tool-result-byte attestation. CLI/server parity does not certify Desktop
 or the full ACTIVE workflow. The [current contract gates](./host-probes/opencode-v2/phase0-contract-gates.md)
 own these acceptance boundaries and link the retained counterexamples; no
 supported ACTIVE V2 release follows from the enforcement-level label.

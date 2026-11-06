@@ -1,9 +1,13 @@
 # R4: native tool-result representation boundary
 
-2026-11-02 research, updated 2026-11-04, PR #1190. **R4 final-input integrity
-under the untrusted-co-installed-plugin contract is NOT_SUPPORTED by the public
-OpenCode 2.2.4 APIs. This is a feasibility finding, not R4 acceptance or a new
-runtime status. Finding 6 remains BLOCKED / ACTIVE V2 NO-GO.**
+2026-11-02 research, updated 2026-11-04 and 2026-11-06, PR #1190. **R4
+final-input integrity under the untrusted-co-installed-plugin contract is
+NOT_SUPPORTED by the public OpenCode 2.2.4/2.2.5 APIs. This is a feasibility
+finding, never R4 `PASS`. The 2026-11-06 operator decision accepts it as a
+documented host limitation under the trusted-plugin operating model; untrusted
+co-installed plugins are outside the supported V2 security boundary. R4 is not a
+merge gate under that model, but no receipt may claim tool-result-byte
+attestation.**
 
 ## Bounded feasibility conclusion (2026-11-04)
 
@@ -127,12 +131,14 @@ A usable host contract would need all of the following; these capabilities do
   arbitrary same-process code. The host must state and enforce which plugin
   capabilities are confined; this investigation does not establish such isolation.
 
-No host patch or upstream issue is created here. R4 remains **BLOCKED** until
-such a contract is implemented and verified against the retained counterexamples
-and applicable transport paths. `NOT_SUPPORTED` is not an optional-review mode,
-human-reviewer substitution, policy exception, provider restriction or permission
-to trust co-installed plugins. P0-00 INACTIVE parity and installed Desktop/CLI
-acceptance remain independent, unfinished gates; PR #1190 stays Draft / NO-GO.
+No host patch or upstream issue is created here. R4 remains **NOT_SUPPORTED**.
+Under the 2026-11-06 operator decision, the trusted-plugin operating model
+accepts this as a documented host limitation; untrusted co-installed plugins are
+outside the supported V2 security boundary. `NOT_SUPPORTED` is not a `PASS`, not
+an optional-review mode, human-reviewer substitution, policy exception or
+provider restriction, and it authorizes no runtime bypass. P0-00 INACTIVE parity
+and installed Desktop/CLI acceptance remain independent gates; PR #1190 may not
+claim R4 assurance.
 
 **NOT_VERIFIED in this documentation-only investigation:** new host enforcement
 (requires the host extension), native SDK/WebSocket/media adversarial coverage,
@@ -214,9 +220,9 @@ historical evidence, not additional verification of the feasibility conclusion.
 
 ## R4 correction (2026-11-03, #1169 WS4)
 
-Trust boundary (operator decision): co-installed plugins are untrusted for review
-evidence. FlowGuard now registers two **tail hooks per reviewer child** when the
-reviewer is admitted. Dynamic registration appends them after every setup-time
+Historical trust boundary (superseded by the 2026-11-06 amendment): co-installed
+plugins were treated as untrusted for review evidence. FlowGuard registered two
+**tail hooks per reviewer child** when the reviewer was admitted. Dynamic registration appends them after every setup-time
 hook, including later-ordered plugins and the R4 fixture hooks:
 
 - `execute.after` tail: the reviewer read result must still equal the digest
@@ -282,11 +288,13 @@ The fixture controls plugin installation/registration (privileged relative to
 an ordinary caller). It does not prove that caller text can install code, or
 that every provider/WebSocket path is reachable. It does establish that these
 installed-plugin APIs can bypass the present tails on the pinned host. Under
-the existing operator decision that co-installed plugins are untrusted for
+the historical operator assumption that co-installed plugins are untrusted for
 review evidence, **these paths cannot be excluded as trusted-host behavior**.
-R4 acceptance is therefore **BLOCKED** on an enforcement boundary or an explicit
-operator contract decision; no narrower threat model is silently adopted and no
-speculative digest/second evidence authority is introduced here.
+R4 acceptance therefore required an enforcement boundary or an explicit operator
+contract decision. The 2026-11-06 amendment made the latter: R4 is `NOT_SUPPORTED`
+and the supported V2 model is trusted-plugin. No narrower threat model was
+silently adopted and no speculative digest/second evidence authority is
+introduced here.
 
 ```sh
 npm run build

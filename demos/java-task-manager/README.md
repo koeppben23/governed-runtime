@@ -243,8 +243,9 @@ work itself.
 
 The active preflight requires the exact V2 CLI candidate's `opencode v<version>`
 output. It does not use or rewrite historical V1 comparison pins. Passing
-`--check` proves only toolchain selection, not full ACTIVE, Desktop or R4
-acceptance; the complete installed workflow remains open.
+`--check` proves only toolchain selection, not full ACTIVE or Desktop
+acceptance; the complete installed workflow remains open. R4 is the documented
+`NOT_SUPPORTED` trusted-plugin limitation.
 
 The persisted terminal phase is the outcome authority: when a transport-level
 block appears after the session already reached that phase, the flow records it

@@ -8,8 +8,8 @@ automatically without a human reviewer. Existing policy exceptions remain, but
 no new exception, optional-review mode or human substitution may bypass Finding 6. Human approval is a separate policy-dependent gate. The current native V2
 capture/evidence generation 6 implementation is connected. Unknown-outcome
 recovery is implemented (see Terminal reviewer capacity failures) but not yet
-accepted on an installed host; Finding 6 stays BLOCKED until R2, R4 and the
-installed acceptance pass.
+accepted on an installed host; Finding 6 retains the R2 and installed-acceptance
+gates. R4 is the accepted documented limitation under the trusted-plugin model.
 The [dispatch-only port](./host-probes/opencode-v2/reviewer-dispatch-authority.md)
 connects durable authorization and actual Child binding, not completed review.
 See [ADR-010's parity amendment](./decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02).
@@ -158,9 +158,9 @@ The [native transport prerequisite](./host-probes/opencode-v2/reviewer-transport
 observes controlled foreground/same-child completion plus adversarial windows
 without loading the product or writing evidence. The four required product
 reviewer contracts and independent-review-e2e pass in reviewed CI at `b9a41e5b`;
-local follow-up adds native process-restart proof. Complete race/R4/parity and
+local follow-up adds native process-restart proof. Complete race/parity and
 installed acceptance remain open in the
-[subcontract matrix](./host-probes/opencode-v2/phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03).
+[subcontract matrix](./host-probes/opencode-v2/phase0-contract-gates.md#p0-05--p0-08-evidence-breakdown-2026-11-03); R4 is the accepted documented trusted-plugin limitation.
 No optional-review workaround or proof-generation reinterpretation is authorized.
 
 ### Frozen repository observations on V2
@@ -175,8 +175,9 @@ Foreign/parent captures, unavailable revisions and mismatched content/response
 digests cannot authorize a citation. Serialization remains tool-free, including
 the observation tool. See the [native parity contracts](./host-probes/opencode-v2/ws2-closure.md#observation-parity-follow-up-2026-11-03).
 
-This restores a missing V2 call path; it does not close the documented R4
-installed-plugin/transport integrity gaps or the remaining retry/closure backlog.
+This restores a missing V2 call path; it does not close the remaining
+retry/closure backlog. R4 is the documented `NOT_SUPPORTED` trusted-plugin
+limitation, not a byte-attestation guarantee.
 
 ### Retryable native capture failures
 
@@ -341,9 +342,11 @@ representation after host normalization, truncation or transport mapping.
 Co-installed plugins remain untrusted: their mutable Context/HTTP paths are an
 unclosed requirement, not a trusted-host exclusion. The bounded investigation
 classifies final-input integrity as **NOT_SUPPORTED** by the public OpenCode
-2.2.4 APIs; R4 remains **BLOCKED**, without a new runtime bypass or policy
-exception. Unprivileged hook-installation reachability is **NOT_VERIFIED**. No
-current receipt should be described as tool-result-byte attestation. See the
+2.2.4/2.2.5 APIs. The 2026-11-06 operator decision accepts this as a documented
+trusted-plugin limitation; untrusted co-installed plugins are outside the
+supported V2 boundary. No runtime bypass or policy exception is added.
+Unprivileged hook-installation reachability is **NOT_VERIFIED**. No current
+receipt should be described as tool-result-byte attestation. See the
 [R4 result-boundary report](./host-probes/opencode-v2/reviewer-tool-result-evidence.md)
 and [WS2 closure/parity backlog](./host-probes/opencode-v2/ws2-closure.md).
 
@@ -833,7 +836,9 @@ For strict Independent Review enforcement in CI, the following checks must be **
 
 **Native V2 remains incomplete / ACTIVE NO-GO.** Canonical validation remains
 fail-closed; dispatch, evidence generation 6 and unknown-outcome recovery are
-connected; installed-host acceptance, R2 and R4 remain open. The retained architecture requires:
+connected; installed-host acceptance and R2 remain open. R4 is the accepted
+documented host limitation under the trusted-plugin model. The retained
+architecture requires:
 
 1. **Structural validation** — FlowGuard tools validate ReviewFindings schema, review mode vs. policy, plan-version binding, and iteration binding. Invalid findings are BLOCKED.
 2. **Deterministic dispatch authority** — The parent invokes native `subagent`; the plugin durably authorizes its exact operation, binds the actual Child, and captures one exclusive terminal JSON window as evidence generation 6. Unknown outcomes are recovered only through the proven settlement above. There is no second runtime or text fallback.
