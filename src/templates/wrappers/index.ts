@@ -53,6 +53,11 @@ function statusLabel(view) {
   return 'FlowGuard · ' + (view.phase || 'terminal');
 }
 
+function isCurrentSession(ctx, session) {
+  const current = ctx.sessions.current();
+  return Boolean(current && current.id === session.id && current.server.id === session.server.id);
+}
+
 function sameBinding(left, right) {
   if (!left || !right) return left === right;
   return left.obligationId === right.obligationId &&
@@ -96,10 +101,18 @@ async function choose(ctx, session) {
     })),
   });
   if (selected === undefined) return;
+  if (!isCurrentSession(ctx, session)) {
+    toast(ctx, 'Session changed; no FlowGuard action was executed.', 'error');
+    return;
+  }
 
   const latest = await getView(session);
   if (!latest || latest.stateDigest === null || !sameView(first, latest, selected)) {
     toast(ctx, 'FlowGuard state changed; no action was executed. Reopen the chooser.', 'error');
+    return;
+  }
+  if (!isCurrentSession(ctx, session)) {
+    toast(ctx, 'Session changed; no FlowGuard action was executed.', 'error');
     return;
   }
 
