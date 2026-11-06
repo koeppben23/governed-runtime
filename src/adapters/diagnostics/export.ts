@@ -35,9 +35,9 @@ import {
   type SessionCapture,
   type SessionDiscovery,
 } from './types.js';
+import { discoverReviewSessions } from './session-discovery.js';
 import type { HostTranscript } from './host-transcript.js';
 import type { AuditEvent } from '../../state/evidence-audit.js';
-import type { SessionState } from '../../state/schema.js';
 import type { RedactionMode } from '../../redaction/export-redaction.js';
 
 export { DiagnosticExportError } from './errors.js';
@@ -58,53 +58,6 @@ export interface DiagnosticExportRequest {
 export interface DiagnosticExportResult {
   readonly outputDir: string;
   readonly manifest: import('./export-schema.js').DiagnosticManifest;
-}
-
-function mergeLineage(
-  existing: 'verified' | 'not_verified' | undefined,
-  next: 'verified' | 'not_verified' | null,
-): 'verified' | 'not_verified' {
-  if (existing === 'not_verified' || next === 'not_verified') return 'not_verified';
-  return existing ?? next ?? 'not_verified';
-}
-
-function discoveredSessionIds(
-  state: SessionState | null,
-  rootSessionId: string,
-): Map<string, SessionDiscovery> {
-  const found = new Map<string, SessionDiscovery>();
-  if (!state?.reviewAssurance) return found;
-  const add = (
-    sessionId: string | undefined,
-    source: DiscoverySource,
-    parentSessionId: string | null,
-    lineage: 'verified' | 'not_verified' | null,
-  ) => {
-    if (typeof sessionId !== 'string' || sessionId.length === 0) return;
-    const existing = found.get(sessionId);
-    const sources = existing?.sources ?? [];
-    if (!sources.includes(source)) sources.push(source);
-    found.set(sessionId, {
-      sources,
-      parentSessionId: existing?.parentSessionId ?? parentSessionId,
-      lineage: mergeLineage(existing?.lineage, lineage),
-    });
-  };
-  for (const invocation of state.reviewAssurance.invocations) {
-    add(
-      invocation.childSessionId,
-      'review_invocation',
-      invocation.parentSessionId,
-      invocation.parentSessionId === rootSessionId ? 'verified' : 'not_verified',
-    );
-  }
-  for (const attempt of state.reviewAssurance.attempts) {
-    add(attempt.childSessionId, 'review_attempt', null, null);
-    for (const observation of attempt.observations) {
-      add(observation.observedBySessionId, 'review_observation', null, null);
-    }
-  }
-  return found;
 }
 
 async function auditWithinLimit(sessDir: string, maxBytes: number): Promise<boolean> {
@@ -396,7 +349,7 @@ async function collectSessions(
     );
     return root;
   }
-  for (const [sessionId, discovery] of discoveredSessionIds(root.state, request.sessionId)) {
+  for (const [sessionId, discovery] of discoverReviewSessions(root.state, request.sessionId)) {
     if (sessionId === request.sessionId) continue;
     if (Date.now() > acc.deadlineAt) {
       acc.truncated = true;

@@ -228,7 +228,7 @@ portable Markdown/file path remains complete and must not depend on a GUI.
 interaction surfaces and chooser. Neither issue may introduce a rival command
 catalogue or persisted view state.
 
-## Implementation status (2026-11-05)
+## Implementation status (2026-11-06)
 
 Implemented in this repository state:
 
@@ -255,10 +255,22 @@ Implemented in this repository state:
 - Doctor reports the native diagnostic command as available in this build and
   explicitly keeps native Desktop delivery `NOT_VERIFIED`; it does not execute
   the command.
+- Native `/diagnostics` provides the portable post-cutover views tracked by
+  #1202: `explorer` projects exact known lineage and explicit `not_verified`
+  gaps with obligation/attempt/dispatch/invocation IDs; `review` displays the
+  exact subject revision/digest, verbatim material, reviewer verdict, findings
+  and ProofGraph declarations versus evaluation while declaring decision
+  authority `NOT GRANTED`; `logs` reads a bounded tail of the existing JSONL sink
+  with level/session/trace/time filters, sensitive-field masking and explicit
+  truncation/missing-correlation states; `notifications` reports unsupported
+  delivery and keeps file logs as the complete fallback. The command writes no
+  artifact and creates no second store, logger or authority.
+- Cross-surface tests keep the exported `session-graph.json`, the explorer
+  projection and the rendered Markdown facts aligned.
 
 Still not implemented or not verified:
 
-- Session Explorer, review-gate UI, Next Action and notification surfaces.
+- Next Action and revision-bound native decision controls (owned by #1196).
 - Installed Desktop/TUI panel visibility and notification delivery.
 - Calibration of the default byte/time budgets against representative large
   workflows.

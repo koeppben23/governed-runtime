@@ -118,6 +118,7 @@ describe('native V2 entrypoint', () => {
       'end-governance',
       'check',
       'debug-export',
+      'diagnostics',
     ]);
     expect(h.createLogger).not.toHaveBeenCalled();
     expect(host.definitions.get('flowguard_help')).toMatchObject({

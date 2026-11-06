@@ -31,6 +31,7 @@ const NATIVE_DECISION_COMMANDS = [
 export const NATIVE_RECOVER_CAPACITY_COMMAND = 'recover-capacity';
 export const NATIVE_END_GOVERNANCE_COMMAND = 'end-governance';
 export const NATIVE_DEBUG_EXPORT_COMMAND = 'debug-export';
+export const NATIVE_DIAGNOSTICS_COMMAND = 'diagnostics';
 
 /** Native commands represented in the installed-command catalogue. */
 export const NATIVE_CATALOGUED_COMMANDS = [
@@ -48,6 +49,7 @@ export const NATIVE_PLUGIN_COMMANDS = [
   NATIVE_RECOVER_CAPACITY_COMMAND,
   NATIVE_END_GOVERNANCE_COMMAND,
   NATIVE_DEBUG_EXPORT_COMMAND,
+  NATIVE_DIAGNOSTICS_COMMAND,
 ] as const;
 
 /**

@@ -14,7 +14,8 @@ Use `/status`, `/finish`, `/help`, and `/commands` to inspect the current
 session without changing it. `flowguard_status` provides that session view to
 scripts; `flowguard inspect` instead reports workspace sessions and their
 audit/compliance data. `/debug-export` and `flowguard debug-export` create a
-bounded, redacted diagnostic snapshot for incident analysis; they are not
+bounded, redacted diagnostic snapshot for incident analysis; `/diagnostics`
+renders the same read-only facts as portable Markdown views. Neither is
 governance evidence or a replacement for the governed `/export`.
 
 ## Recovery Summary
@@ -54,6 +55,7 @@ Template commands invoke their corresponding tools; native callbacks such as
 | `/recover-capacity`                                            | native review-assurance   | Explicitly releases a proven terminal reviewer capacity lock; not a model tool and not an automatic unlock                                                                             |
 | `/end-governance`                                              | native activation         | Ends opt-in governance after safe closure; distinct from `/finish` and `/abort`                                                                                                        |
 | `/debug-export`                                                | native diagnostics        | Read-only diagnostic snapshot for the current session and known reviewer children; works before ACTIVE governance and never authorizes or repairs                                      |
+| `/diagnostics`                                                 | native diagnostics        | Read-only Session Explorer, review subject/findings, bounded file-log tail and notification-capability views; never evidence, approval or a decision control                           |
 | `/validate`                                                    | `flowguard_run_check`     | Explicit baseline validation through the same evidence path as automatic validation                                                                                                    |
 | `/check`                                                       | native scoped command     | Runs the canonical verification/review turn under the build agent, then clears scope and restores the prior agent; not a VALIDATE alias                                                |
 | `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                                                                                              |
@@ -677,3 +679,44 @@ silently truncated.
 
 A diagnostic snapshot is not an authorization certificate and never replaces
 the governed `/export`.
+
+### `/diagnostics` — Portable read-only diagnostic views
+
+Native `/diagnostics` renders bounded Markdown over existing authorities. It is
+available before ACTIVE governance, writes no artifact, starts or hydrates
+nothing, and is never evidence, approval or authorization.
+
+```text
+/diagnostics explorer
+/diagnostics review
+/diagnostics logs
+/diagnostics logs level=warn,error session=<id> trace=<id> since=<iso> until=<iso> limit=<n>
+/diagnostics notifications
+```
+
+- **explorer** projects the root session and only positively linked reviewer
+  children. Ambiguous or foreign-parent candidates stay visible as
+  `lineage: not_verified` and are not read. Obligation, attempt, dispatch and
+  invocation IDs are shown with their canonical statuses. Known sessions are
+  never removed from the denominator; the session cap is reported explicitly.
+- **review** shows the displayed subject kind, revision and exact content or
+  record digest, the verbatim plan/ADR/implementation-diff material within a
+  byte budget, reviewer verdict and findings, and ProofGraph declarations versus
+  evaluation and certificate binding. A stale findings version or mismatched
+  subject digest is reported as `PARTIAL`, not smoothed over. Decision authority
+  is explicitly `NOT GRANTED`; decision controls remain owned by the
+  revision-bound interaction contract in
+  [ADR-011](./decisions/011-post-cutover-diagnostics-contract.md) and #1196.
+- **logs** reads only the newest tail of the existing
+  `.opencode/logs/flowguard-*.log` JSONL files. Level, session, trace and time
+  filters are applied after bounded reading; byte, file and line truncation plus
+  missing session/trace correlation and malformed lines are reported explicitly.
+  Sensitive field names are masked and central diagnostic redaction is applied.
+  No second logger or persistent view state is created.
+- **notifications** reports delivery as `NOT_VERIFIED`/`unsupported`, names the
+  missing installed pinned-host proof and keeps the file logs as the complete
+  fallback. It never calls a toast or panel API and never performs a governance
+  action.
+
+The portable Markdown/file fallback remains complete: `/debug-export` still
+writes the versioned snapshot, and `/diagnostics` only projects the same facts.

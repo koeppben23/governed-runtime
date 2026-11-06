@@ -8,14 +8,14 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-11-05):
+(counts updated 2026-11-06):
 
-- `root-composition`: 33 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 34 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 7 named files (`host-mutation-observation.ts`,
   `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 55 root production files
+- total: 56 root production files
 
 The bounded P0-10 audit removes `plugin-orchestrator.ts`, which only forwarded
 the `OrchestratorDeps` type to one production caller. That caller now imports
@@ -84,6 +84,12 @@ composition boundary. It registers native `/debug-export` and delegates to the
 read-only diagnostic collector; it adds no governance, activation, approval,
 evidence or recovery authority. Composition grows by one and the total root
 matrix grows to 55.
+
+The #1202 diagnostic views add `plugin-diagnostics-command.ts` beside
+`plugin-debug-export-command.ts`. It registers native `/diagnostics` and
+delegates to the bounded read-only view projections; it writes no artifact and
+adds no governance, activation, approval, evidence or recovery authority.
+Composition grows by one and the total root matrix grows to 56.
 
 MUT4 (#1172) adds `plugin-mutation-reconciliation.ts` at the composition boundary
 to connect asynchronous host notifications and the synchronous pre-implement

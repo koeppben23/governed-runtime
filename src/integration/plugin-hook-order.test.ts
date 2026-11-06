@@ -280,6 +280,7 @@ describe('single-owner native hook composition', () => {
       'end-governance',
       'check',
       'debug-export',
+      'diagnostics',
     ]);
   });
 });
