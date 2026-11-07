@@ -2,11 +2,29 @@
 
 <!-- prettier-ignore-start -->
 
-**Status:** DESIGN BASELINE / IMPLEMENTATION NOT YET VERIFIED  
+**Status:** Implemented native Review Workbench; original Desktop 2.2.6 artifact installed-verified, compact revision awaiting new installed proof.  
 **Capability probe:** Panel + `session.header` Slot `PASS` on installed OpenCode Desktop 2.2.6 (2026-11-07); pinned 2.2.5 remains `NOT_VERIFIED`.  
-**Primary target:** OpenCode Desktop 2.2.5 (installed production UI required)  
+**Primary target:** OpenCode Desktop 2.2.6 (installed native UI required); 2.2.5 remains NOT_VERIFIED.  
 **Related:** #1196, #1203 diagnostics, #1204 portable chooser, #1205 TUI chooser, #1206 native decisions/Desktop chooser, ADR-011  
 **Contract owner:** existing FlowGuard governance and diagnostic projections; no UI authorization
+
+## Same-PR delivery amendment (2026-11-07)
+
+The user explicitly chose to retain the remaining native Desktop product-UX work
+on the existing **Draft PR #1207**, instead of splitting it after the first
+installed proof. The earlier “PR Design-0 / Proof-1 / Slice-2” progression below
+is a logical validation sequence, **not** a requirement to open separate PRs.
+
+The prior GUI bundle was installed-verified on Desktop 2.2.6 for READY,
+PLAN_REVIEW (including canonical decision and stale rejection), EVIDENCE_REVIEW,
+BLOCKED diagnostics, keyboard and light/dark. The newer **compact progressive-
+disclosure UI** is implemented on #1207 but has **no installed PASS yet**.
+The previous evidence and SHA remain historical and cannot be attributed to the
+newer bundle. Keep #1207 Draft until the updated installed UX and tests pass.
+
+Further visual product work such as evidence drill-down, timeline, session
+context and usability measurements will use #1207 too; each new UI build
+requires version-bound evidence and preservation of the canonical safety path.
 
 ## Product decision
 
