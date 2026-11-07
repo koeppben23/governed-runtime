@@ -338,6 +338,7 @@ function renderWorkbench(ctx, props) {
     const session = props.session;
     if (!session || !isCurrentSession(ctx, session) ||
         !currentView || !currentReview ||
+        currentView.sessionID !== session.id || currentReview.sessionID !== session.id ||
         currentView.kind !== 'decision_required' ||
         !currentView.decisionBinding ||
         currentReview.status !== 'COMPLETE' ||
@@ -355,11 +356,9 @@ function renderWorkbench(ctx, props) {
     currentView = null;
     currentReview = null;
     chooserButton.disabled = true;
-    summary.replaceChildren();
-    reviewSection.replaceChildren();
-    evidenceSection.replaceChildren();
-    decisionSection.replaceChildren();
-    recoverySection.replaceChildren();
+    for (const card of [summary, reviewSection, evidenceSection, decisionSection, recoverySection]) {
+      while (card.childNodes.length > 1) card.removeChild(card.lastChild);
+    }
   }
 
   function line(parent, label, value) {
