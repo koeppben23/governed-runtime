@@ -575,19 +575,7 @@ function renderWorkbench(ctx, props) {
 
 module.exports = Plugin.define({
   setup(ctx) {
-    // A dedicated language prevents interference with regular Markdown.
-    // Invalid or incomplete cards fall back to highlighted source.
-    if (CodeBlock) {
-      try {
-        ctx.add(CodeBlock, {
-          languages: ['flowguard-live'],
-          render: (props) => props.code.trim() === 'v1' && props.session ?
-            renderFlowGuardChatCard(ctx, props) : undefined,
-        });
-      } catch (error) {
-        console.warn('[FlowGuard] Inline chat cards are unavailable in this Desktop build.', error);
-      }
-    }
+    registerFlowGuardChatContributions(ctx, Command, CodeBlock);
     const probeTab = {
       id: 'workbench-probe',
       title: 'FlowGuard Workbench',
@@ -640,28 +628,6 @@ module.exports = Plugin.define({
           console.warn('[FlowGuard] Desktop Panel/Slot probe could not be opened.', error);
           toast(ctx, 'Native FlowGuard probe unavailable in this Desktop build.', 'error');
         }
-      },
-    });
-    ctx.add(Command, {
-      id: 'show-chat-card',
-      title: 'FlowGuard: show live status in chat (experimental)',
-      description: 'Insert a read-only FlowGuard live status card into the current chat.',
-      group: 'FlowGuard',
-      slash: { name: 'flowguard-inline' },
-      run: () => {
-        const session = ctx.sessions.current();
-        if (!session) {
-          toast(ctx, 'Open a session before requesting a FlowGuard chat card.', 'default');
-          return;
-        }
-        void session.server.client.session.command({
-          sessionID: session.id,
-          name: 'flowguard-card',
-          text: '',
-        }).catch((error) => {
-          console.warn('[FlowGuard] Inline chat card command unavailable.', error);
-          toast(ctx, 'Could not insert FlowGuard card; use /status instead.', 'error');
-        });
       },
     });
     ctx.add(Command, {
