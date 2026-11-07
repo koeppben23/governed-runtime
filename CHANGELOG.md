@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Refine the native OpenCode Desktop Review Workbench in #1207 with compact
+  phase orientation, prominent but canonical next-action/decision entry, native
+  keyboard-accessible expandable review/evidence/recovery sections, forensic
+  binding details on demand, and responsive density for narrower windows.
+  No separate decision authority or automatic workflow transition is introduced.
+  The previous installed 2.2.6 evidence covers the earlier GUI bundle only;
+  this UI revision needs a new installed visual/keyboard acceptance.
+
 - Add the first native Desktop Review Workbench slice to #1196: a bounded
   `GetWorkbenchReview` RPC projects the exact persisted review subject, verdict,
   findings, missing verification and ProofGraph summary without raw subject
