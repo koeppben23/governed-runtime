@@ -571,7 +571,7 @@ function renderWorkbench(ctx, props) {
 
 module.exports = Plugin.define({
   setup(ctx) {
-    registerFlowGuardChatContributions(ctx, Command, CodeBlock);
+    registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPill);
     const probeTab = {
       id: 'workbench-probe',
       title: 'FlowGuard Workbench',
