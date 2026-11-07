@@ -22,6 +22,8 @@ export const GUI_PLUGIN_BUNDLE = `\
 const { Plugin, Command, Panel, Slot } = require('@opencode/plugin/gui');
 
 const RPC_ID = 'flowguard-governance';
+// Diagnostic completion, distinct from workflow terminal-phase membership.
+const REVIEW_STATUS_COMPLETE = 'COMPLETE';
 
 function location(session) {
   const directory = session.location && session.location.directory;
@@ -341,7 +343,7 @@ function renderWorkbench(ctx, props) {
         currentView.sessionID !== session.id || currentReview.sessionID !== session.id ||
         currentView.kind !== 'decision_required' ||
         !currentView.decisionBinding ||
-        currentReview.status !== 'COMPLETE' ||
+        currentReview.status !== REVIEW_STATUS_COMPLETE ||
         currentReview.subject.subjectBinding !== 'matched' ||
         currentReview.subject.digest !== currentView.decisionBinding.subjectDigest) {
       toast(ctx, 'The review binding is missing, incomplete or stale. Refresh before deciding.', 'error');
@@ -418,7 +420,7 @@ function renderWorkbench(ctx, props) {
     if (next.kind === 'decision_required') {
       const binding = next.decisionBinding;
       const matches = review && binding &&
-        review.status === 'COMPLETE' &&
+        review.status === REVIEW_STATUS_COMPLETE &&
         review.subject.subjectBinding === 'matched' &&
         review.subject.digest === binding.subjectDigest &&
         review.subject.reviewedSubjectDigest === binding.subjectDigest;
