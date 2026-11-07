@@ -358,8 +358,8 @@ describe('installed Desktop GUI bundle', () => {
       const node = panel.render({ session });
       await vi.waitFor(() => expect(node.textContent).toContain('Plan v1'));
       const cards = node.children.filter((child) => child.tagName === 'details');
-      expect(cards).toHaveLength(5);
-      expect(cards.map((card) => card.open)).toEqual([true, true, false, true, false]);
+      expect(cards).toHaveLength(6);
+      expect(cards.map((card) => card.open)).toEqual([true, true, false, true, false, false]);
       const forensic = node.find('summary', 'Technical binding details');
       expect(forensic).toBeDefined();
       expect(node.find('button', 'Review operator decisions')?.disabled).toBe(false);
@@ -420,9 +420,93 @@ describe('installed Desktop GUI bundle', () => {
       const node = panel.render({ session });
       await vi.waitFor(() => expect(node.textContent).toContain('No reviewable subject recorded'));
       const cards = node.children.filter((child) => child.tagName === 'details');
-      expect(cards.map((card) => card.open)).toEqual([true, false, false, false, false]);
+      expect(cards.map((card) => card.open)).toEqual([true, false, false, false, false, false]);
       expect(node.find('button', 'Choose workflow')?.disabled).toBe(false);
       expect(loaded.commandCalls).toHaveLength(0);
+      expect(loaded.rpcCalls.map((call) => call['method'])).toEqual([
+        'GetNextAction',
+        'GetWorkbenchReview',
+      ]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('shows bounded persisted review transport events and proof provenance without mutation', async () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    vi.stubGlobal('document', { createElement: (tag: string) => new FakeDomNode(tag) });
+    try {
+      const panel = loaded.additions.find((item) => item.registry === 'panel')?.value as {
+        render: (props: { session: Record<string, unknown> }) => FakeDomNode;
+      };
+      loaded.views.push(
+        {
+          sessionID: 'ses_root',
+          kind: 'system_work',
+          phase: 'PLAN',
+          stateDigest: 'a'.repeat(64),
+          actions: [],
+          blocker: null,
+        },
+        {
+          sessionID: 'ses_root',
+          phase: 'PLAN',
+          status: 'PARTIAL',
+          subject: {
+            kind: 'plan',
+            label: 'Plan v2',
+            revision: 'v2',
+            digest: 'b'.repeat(64),
+            contentVerified: 'verified',
+            subjectBinding: 'not_verified',
+            reviewerVerdict: null,
+            reviewedSubjectDigest: null,
+            findings: [],
+            findingsTotal: 0,
+            findingsTruncated: false,
+            missingVerification: [],
+            missingVerificationTruncated: false,
+            unboundReviewReason: null,
+            historicalReview: false,
+          },
+          proof: {
+            claimsTotal: 1,
+            claims: [{
+              statement: 'Retry is safe',
+              critical: true,
+              verificationState: 'NOT_VERIFIED',
+              evidenceCount: 0,
+              counterexampleCount: 2,
+              certificateBinding: 'stale_or_unbound',
+            }],
+            claimsTruncated: false,
+            coverageGapCount: 1,
+          },
+          timeline: {
+            source: 'review_assurance',
+            status: 'truncated',
+            total: 52,
+            events: [{
+              at: '2026-11-07T11:34:05.930Z',
+              kind: 'dispatch',
+              label: 'Reviewer dispatch authorized',
+              state: 'outcome_unknown',
+            }],
+          },
+          warningCodes: ['REVIEWER_CAPTURE_PROVENANCE_INVALID'],
+          warningsTruncated: false,
+        },
+      );
+      const node = panel.render({ session });
+      await vi.waitFor(() => expect(node.textContent).toContain('Reviewer dispatch authorized'));
+      expect(node.textContent).toContain('Counterexample references: 2');
+      expect(node.textContent).toContain('Certificate binding: stale_or_unbound');
+      expect(node.textContent).toContain('outcome_unknown');
+      expect(node.textContent).toContain('52 (partial - newest entries only)');
+      expect(node.find('button', 'Review operator decisions')?.disabled).not.toBe(false);
+      expect(loaded.commandCalls).toEqual([]);
       expect(loaded.rpcCalls.map((call) => call['method'])).toEqual([
         'GetNextAction',
         'GetWorkbenchReview',
