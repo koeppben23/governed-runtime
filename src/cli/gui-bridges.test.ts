@@ -94,6 +94,51 @@ describe('Desktop GUI client and host bridges', () => {
     ]);
   });
 
+  it('reconciles only visible current sidecar sessions and releases its timer', () => {
+    const ticks: Array<() => void> = [];
+    const clear = vi.fn();
+    const schedule = vi.fn((callback: () => void, period: number) => {
+      expect(period).toBe(30_000);
+      ticks.push(callback);
+      return 7;
+    });
+    const factory = new Function(
+      'setInterval',
+      'clearInterval',
+      'document',
+      GUI_HOST_BRIDGE_BUNDLE + '\\nreturn createFlowGuardStatusReconciler;',
+    );
+    const visibility = { visibilityState: 'visible' };
+    let current = { id: 'session-a', server: { id: 'sidecar' } };
+    const notify = vi.fn();
+    const create = factory(schedule, clear, visibility) as (
+      context: unknown,
+      callback: (session: unknown) => void,
+    ) => { begin(): void; stop(): void };
+    const controller = create({ sessions: { current: () => current } }, notify);
+    expect(schedule).not.toHaveBeenCalled();
+    controller.begin();
+    controller.begin();
+    expect(schedule).toHaveBeenCalledTimes(1);
+    visibility.visibilityState = 'hidden';
+    ticks[0]?.();
+    expect(notify).not.toHaveBeenCalled();
+    visibility.visibilityState = 'visible';
+    current = { id: 'session-a', server: { id: 'remote' } };
+    ticks[0]?.();
+    expect(notify).not.toHaveBeenCalled();
+    current = { id: 'session-a', server: { id: 'sidecar' } };
+    ticks[0]?.();
+    expect(notify).toHaveBeenCalledOnce();
+    expect(notify).toHaveBeenCalledWith(current);
+    controller.stop();
+    ticks[0]?.();
+    expect(notify).toHaveBeenCalledOnce();
+    expect(clear).toHaveBeenCalledWith(7);
+    controller.begin();
+    expect(schedule).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['serverEndpoints', 'servers'])(
     'subscribes to the supported %s lookup, with no foreign-session callback',
     (name) => {
