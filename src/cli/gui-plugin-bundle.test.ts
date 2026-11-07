@@ -190,11 +190,13 @@ describe('installed Desktop GUI bundle', () => {
       const rendered = card.render({ code: 'v1', session });
       expect(rendered?.attributes.get('role')).toBe('region');
       expect(rendered?.attributes.get('aria-label')).toBe('FlowGuard live status card');
-      const announcements = rendered?.children.filter((child) =>
-        child.attributes.get('aria-live') === 'polite',
+      const announcements = rendered?.children.filter(
+        (child) => child.attributes.get('aria-live') === 'polite',
       );
       expect(announcements).toHaveLength(2);
-      expect(announcements?.every((child) => child.attributes.get('aria-atomic') === 'true')).toBe(true);
+      expect(announcements?.every((child) => child.attributes.get('aria-atomic') === 'true')).toBe(
+        true,
+      );
       expect(rendered?.textContent).toContain('NOT_VERIFIED');
       expect(rendered?.textContent).toContain('not a historical decision');
       expect(loaded.commandCalls).toHaveLength(0);
@@ -244,9 +246,7 @@ describe('installed Desktop GUI bundle', () => {
       id: string;
       server: { client: { rpc: { call: (input: unknown) => Promise<unknown> } } };
     };
-    session.server.client.rpc.call = vi.fn(
-      () => new Promise((resolve) => pending.push(resolve)),
-    );
+    session.server.client.rpc.call = vi.fn(() => new Promise((resolve) => pending.push(resolve)));
     const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
       show: (input: { session: typeof session }) => {
         rows: Array<{ id: string; run?: () => void }>;
@@ -259,8 +259,14 @@ describe('installed Desktop GUI bundle', () => {
     refresh?.();
     expect(pending).toHaveLength(1);
     const response = {
-      output: { kind: 'system_work', sessionID: session.id, stateDigest: 'a',
-        phase: 'PLAN', title: 'Plan running', actions: [] },
+      output: {
+        kind: 'system_work',
+        sessionID: session.id,
+        stateDigest: 'a',
+        phase: 'PLAN',
+        title: 'Plan running',
+        actions: [],
+      },
     };
     pending[0]?.(response);
     await vi.waitFor(() => expect(pending).toHaveLength(2));

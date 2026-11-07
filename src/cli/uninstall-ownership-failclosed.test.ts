@@ -111,13 +111,15 @@ describe('uninstall ownership fail-closed', () => {
     await fs.writeFile(cfg, customerContent, 'utf8');
     const result = await uninstall(repoArgs({ action: 'uninstall' }));
     expect(result.errors).toEqual([]);
-    expect(result.ops).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        path: cfg,
-        action: 'skipped',
-        reason: 'configuration ownership not proven',
-      }),
-    ]));
+    expect(result.ops).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: realpathSync(cfg),
+          action: 'skipped',
+          reason: 'configuration ownership not proven',
+        }),
+      ]),
+    );
     expect(result.warnings.join('\\n')).toContain('configuration ownership is not proven');
     expect(await fs.readFile(cfg, 'utf8')).toBe(customerContent);
   });
@@ -128,21 +130,26 @@ describe('uninstall ownership fail-closed', () => {
     const entry = path.join(target, PLUGIN_RELATIVE_PATH);
     await fs.mkdir(path.dirname(entry), { recursive: true });
     await fs.writeFile(entry, PLUGIN_WRAPPER);
-    await writeInstallOwnershipManifest(target, deriveInstallOwnershipManifest({
-      platform: 'opencode',
-      scope: 'repo',
-      packageJsonExisted: false,
-      packageJsonCurrentContent: JSON.stringify({
-        dependencies: { '@flowguard/core': 'file:./vendor/flowguard-core-2.0.0.tgz' },
+    await writeInstallOwnershipManifest(
+      target,
+      deriveInstallOwnershipManifest({
+        platform: 'opencode',
+        scope: 'repo',
+        packageJsonExisted: false,
+        packageJsonCurrentContent: JSON.stringify({
+          dependencies: { '@flowguard/core': 'file:./vendor/flowguard-core-2.0.0.tgz' },
+        }),
       }),
-    }));
+    );
     const result = await uninstall(repoArgs({ action: 'uninstall' }));
     expect(result.errors).toEqual([]);
     expect(existsSync(entry)).toBe(false);
-    expect(result.notices).toContainEqual(expect.objectContaining({
-      kind: 'next',
-      message: expect.stringContaining('File removal alone is not proof of unload'),
-    }));
+    expect(result.notices).toContainEqual(
+      expect.objectContaining({
+        kind: 'next',
+        message: expect.stringContaining('File removal alone is not proof of unload'),
+      }),
+    );
   });
 
   it('preserves package.json byte-for-byte when dependency ownership is not proven', async () => {

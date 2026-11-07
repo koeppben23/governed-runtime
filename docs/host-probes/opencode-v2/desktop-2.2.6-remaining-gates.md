@@ -23,12 +23,12 @@ A PASS in one category never upgrades another category to PASS.
 
 ## A. Current-session refresh coverage
 
-| Source | Behaviour | What it does **not** prove |
-| --- | --- | --- |
-| `session.execution.succeeded` | Immediate read-only inspection for the current sidecar session | Every state mutation emits this event |
-| 30-second visible-session reconciliation | On a mounted, visible sidecar session, re-read `GetNextAction` and, at an eligible gate, `GetWorkbenchReview` | Real-time latency, host disconnected, hidden windows, automatic updates without any GUI |
-| Explicit Refresh and palette | Operator requests a canonical read | A historical/audited snapshot |
-| Session switch, stale reply, plugin reload | Identity and generation fencing; previous results must not authorize a decision | A replayable/durable event stream |
+| Source                                     | Behaviour                                                                                                     | What it does **not** prove                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `session.execution.succeeded`              | Immediate read-only inspection for the current sidecar session                                                | Every state mutation emits this event                                                   |
+| 30-second visible-session reconciliation   | On a mounted, visible sidecar session, re-read `GetNextAction` and, at an eligible gate, `GetWorkbenchReview` | Real-time latency, host disconnected, hidden windows, automatic updates without any GUI |
+| Explicit Refresh and palette               | Operator requests a canonical read                                                                            | A historical/audited snapshot                                                           |
+| Session switch, stale reply, plugin reload | Identity and generation fencing; previous results must not authorize a decision                               | A replayable/durable event stream                                                       |
 
 The reconciler is created once per plugin GUI root, starts only when a composer
 pill is shown, does not call RPC at registration or on the first render, and
@@ -37,8 +37,8 @@ servers. At most one inspection is in flight; concurrent events/ticks coalesce
 into one follow-up read. These bounds prevent a slow host from accumulating
 unbounded requests. Completion events remain useful fast-path hints.
 
-**Truthful scope:** active, visible, connected sessions gain *bounded
-best-effort eventual reconciliation*. It is NOT a guarantee for every
+**Truthful scope:** active, visible, connected sessions gain _bounded
+best-effort eventual reconciliation_. It is NOT a guarantee for every
 transition at a fixed deadline: the host may disconnect, a request may fail,
 the renderer may be closed, and live events have no replay. There is no
 durable approval notification or audit feed.
@@ -106,7 +106,7 @@ in-service restart guard. An installer invoked **inside** the running service
 cannot be treated as a successful zero-restart upgrade merely because files
 on disk changed and the GUI hot-reloaded.
 
-Required isolated proof before claiming *zero-restart upgrade*:
+Required isolated proof before claiming _zero-restart upgrade_:
 
 1. Boot a private service with a pinned known **revision A** and record its
    exact PID and RPC-visible behaviour (not just on-disk file hashes).
