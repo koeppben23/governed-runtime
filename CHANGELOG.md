@@ -16,7 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `flowguard-live` `CodeBlock` renderer supports intentionally authored
   fenced blocks in existing chat messages. The earlier synthetic-message
   prototype was removed because those messages could enter model context.
-  Installed Desktop 2.2.6 acceptance of this updated GUI bundle is pending.
+  Installed Desktop 2.2.6 acceptance on artifact `e054159a` covers placement
+  above the composer, manual `last read` refresh at EVIDENCE_REVIEW/READY/PLAN,
+  honest `NOT_VERIFIED`, session switching, renderer reload, light/dark,
+  keyboard operation, a rendered `flowguard-live` `v1` card, `v2` fallback and
+  unchanged demo state (44 messages, `approve` decision, activation generation 1,
+  72 verified audit events). The acceptance also records the separate
+  autonomous-start synthetic report as remaining model-context exposure.
 
 - Add read-only native Session Explorer and verified audit-chain chronology to
   Desktop PR #1207, preserving unverified reviewer lineage, bounded audit

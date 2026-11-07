@@ -412,6 +412,97 @@ The 24-session and 100-event caps remain enforced; this run used three sessions
 and 72 events. The previously noted active-profile uninstall limitation remains
 `PARTIAL`.
 
+## Inline chat and composer status — PR #1207 continuation
+
+**Status: PASS on installed OpenCode Desktop 2.2.6** for the native
+`ComposerPill` status surface and the `flowguard-live` `CodeBlock` renderer.
+This section supersedes the earlier "not installed-verified" note for these
+contributions. The earlier Workbench evidence remains valid only for its own
+artifact.
+
+### Installed acceptance record (artifact `e054159a`)
+
+| Field                | Observed value                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Git HEAD             | `e054159a00f6b61dc631983efbf95c042c7511d3`                                                                           |
+| Packed tarball       | `flowguard-core-2.0.0-tp.2.tgz`, SHA-256 `1ae6d10acae2fd95fb7f801c6201cb39e3feb08e4bf77b755bf019c5f3f48c0a`          |
+| Installed GUI bundle | `plugins/flowguard/gui-experimental.cjs`, SHA-256 `8468c4c2af6ed90153ffff167f47e19851fc953a7dfb7ed9e79f31ac8325f98c` |
+| Host                 | managed Desktop service, OpenCode `2.2.6`, loopback port `49374`                                                     |
+
+**Install/refresh boundary:** `flowguard install --no-restart-host` wrote 26
+managed files, merged 3 and installed the exact GUI bundle hash above. Its
+post-install host-refresh verification then returned an explicit `failed`
+outcome because the installer was running inside the service and could not
+prove an out-of-service restart; it did not rewrite governance authority. The
+running Desktop host hot-reloaded the plugin, and a renderer reload confirmed
+the pill was registered. No automatic restart was performed. This is not a
+zero-restart upgrade proof.
+
+**Observed installed results:**
+
+- **Placement and registration:** the pill appears in the host's
+  `session-plugin-pills` group immediately above the composer with
+  `aria-label="FlowGuard · chat status (read-only)"`. Plugin registration shows
+  only `FlowGuard · inspect`; no status RPC is issued until the user acts.
+- **Manual refresh:** opening the pill and choosing `Inspect canonical status`
+  reads `GetNextAction`; at a decision gate it additionally reads
+  `GetWorkbenchReview`. The label then ends in `· last read`. There is no
+  polling or event-driven refresh in this slice.
+- **EVIDENCE_REVIEW** (`ses_e4a2f2017ffeZ3TubHNAc5kV0C`): pill
+  `FlowGuard · EVIDENCE_REVIEW · last read`; the menu shows
+  `Independent review: accept · Findings: 0 · Operator decision still required (not approved).`
+  It offers only status and refresh rows, never a decision action.
+- **READY** (`ses_e49fd0fd5ffeVbWxcVVddTUwFC`): pill
+  `FlowGuard · READY · last read`; menu `Choose a workflow` with
+  `/task, /architecture, /review`.
+- **PLAN** (`ses_e4a74c86fffena7zCUUzN3F4kb`): pill
+  `FlowGuard · PLAN · last read`; menu `Independent plan review in progress.`
+- **Unavailable state:** an ordinary/ungoverned session and the disposable
+  renderer fixture both displayed `NOT_VERIFIED · Canonical state is unavailable. Use /status.`
+- **Session switching:** snapshots are keyed by server and session. Switching
+  sessions resets the pill to `FlowGuard · inspect`; no stale value crosses
+  sessions, and a switched-away read is discarded.
+- **Plugin reload:** a renderer reload re-registered the pill and menu. No
+  `[FlowGuard]` warning was logged; the only console error was a transient host
+  transport error during reconnect.
+- **Light/dark:** the app-level light color scheme and the restored dark scheme
+  both rendered the pill and menu readably.
+- **Keyboard and accessibility:** the pill is a native button with an ARIA
+  label, `aria-haspopup` and `aria-expanded`. Focus plus `Return` opened the
+  menu, focus moved into the menu, and `Escape` closed it. No separate
+  screenreader session was available.
+- **`CodeBlock` renderer:** in a disposable fixture session, an assistant
+  message containing a fenced `flowguard-live` `v1` block rendered the live
+  status card. A `v2` block fell back to an ordinary code block. The renderer
+  created no session message, prompt or decision. The fixture session was
+  deleted after the run; the product path never creates that message.
+- **No governance or model mutation:** the demo session message count remained
+  44, its `reviewDecision` (`approve`, `2026-11-07T11:48:48.960Z`) was
+  unchanged, activation generation remained `1`, the phase remained
+  `EVIDENCE_REVIEW`, and the verified audit chronology remained 72 events under
+  `PARTIAL`. Only `GetNextAction` and `GetWorkbenchReview` were read.
+- **Not induced on the live host:** a mid-read phase/state change (`STALE`).
+  The renderer fails closed on that path and the bundled GUI tests cover
+  inconsistent review data, but no live transition was executed because the
+  outstanding evidence-review decision must remain unexecuted.
+
+**Residual model-context note:** this chat/composer display path inserts no
+synthetic message. A separate pre-existing path, the autonomous
+`StartGovernance` RPC in `src/integration/plugin-start-command.ts`, still posts
+a non-resuming synthetic host status report. It is not this display and does not
+create review authority, but because synthetic messages can reach later model
+context it remains an explicitly scoped exposure for a separate product
+decision. The interactive `/start` prompt path is unchanged.
+
+Evidence:
+[pill above the composer](./desktop-2.2.6-chat-pill-initial.png),
+[EVIDENCE_REVIEW with reviewer summary](./desktop-2.2.6-chat-pill-review.png),
+[READY](./desktop-2.2.6-chat-pill-ready.png),
+[PLAN](./desktop-2.2.6-chat-pill-plan.png),
+[light scheme](./desktop-2.2.6-chat-pill-light.png),
+[`flowguard-live` v1 card](./desktop-2.2.6-chat-codeblock-v1.png), and
+[unsupported v2 fallback](./desktop-2.2.6-chat-codeblock-v2.png).
+
 ## Artifact to certify
 
 Record the exact Git HEAD, packed `@flowguard/core` tarball SHA-256, installed

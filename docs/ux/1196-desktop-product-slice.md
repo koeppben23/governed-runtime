@@ -2,7 +2,7 @@
 
 <!-- prettier-ignore-start -->
 
-**Status:** Implemented native Review Workbench; original Desktop 2.2.6 artifact installed-verified, compact revision awaiting new installed proof.  
+**Status:** Implemented native Review Workbench, compact disclosure, reviewer timeline/ProofGraph, Session Explorer/audit chronology, and the read-only chat/composer status surface; installed-verified on Desktop 2.2.6 artifacts through `e054159a`. The complete #1196 product, including automatic refresh and full product/accessibility acceptance, remains open.  
 **Capability probe:** Panel + `session.header` Slot `PASS` on installed OpenCode Desktop 2.2.6 (2026-11-07); pinned 2.2.5 remains `NOT_VERIFIED`.  
 **Primary target:** OpenCode Desktop 2.2.6 (installed native UI required); 2.2.5 remains NOT_VERIFIED.  
 **Related:** #1196, #1203 diagnostics, #1204 portable chooser, #1205 TUI chooser, #1206 native decisions/Desktop chooser, ADR-011  
@@ -13,7 +13,8 @@
 The official OpenCode V2 GUI SDK documents the `CodeBlock` registry
 for explicitly authored Markdown blocks and `ComposerPill` immediately
 above the session composer. The latter is **not** part of the model transcript.
-Neither surface is yet installed-verified for this new OpenCode 2.2.6 bundle.
+Both surfaces are installed-verified on Desktop 2.2.6 artifact `e054159a`
+(see the [acceptance record](../host-probes/opencode-v2/desktop-2.2.6-workbench-acceptance.md#inline-chat-and-composer-status--pr-1207-continuation)).
 
 - The palette action **FlowGuard: inspect status beside chat** (`flowguard-inline`)
   refreshes one session-bound status pill by calling the existing read-only
@@ -34,10 +35,17 @@ Neither surface is yet installed-verified for this new OpenCode 2.2.6 bundle.
   occurs from the pill or block. Existing `/status` portable fallback remains.
 - Unsupported GUI contributions must degrade without disabling other parts of
   FlowGuard. TUI/headless and existing command templates are unchanged.
-- GO requires an installed Desktop 2.2.6 test of actual pill placement,
-  code-block rendering, phase changes, session switching, plugin reload,
-  light/dark, accessibility and absence of model/workflow/decision calls.
-  Previously captured Workbench acceptance does not prove this new build.
+- Installed Desktop 2.2.6 acceptance on artifact `e054159a` covers actual pill
+  placement above the composer, manual refresh at EVIDENCE_REVIEW, phase changes
+  to READY and PLAN, session switching, renderer reload, light/dark, keyboard
+  opening/closing, a rendered `flowguard-live` `v1` card and `v2` fallback, and
+  the absence of prompt, workflow, decision, hydrate or audit mutation. A
+  mid-read phase race (`STALE`) was not induced live; bundled tests cover the
+  fail-closed path. No separate screenreader session was available.
+- A separate, pre-existing autonomous `StartGovernance` path still posts a
+  non-resuming synthetic host status report. It is not this chat/composer
+  display, but synthetic messages can reach later model context; that residual
+  exposure needs its own product decision.
 
 Official SDK: https://opencode.ai/v2/docs/build/plugins/gui/
 
