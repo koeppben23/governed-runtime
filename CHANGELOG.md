@@ -21,9 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   native `/approve` advancing to `IMPLEMENTATION`, a stale binding rejected with
   `DECISION_BINDING_STALE`, and BLOCKED guided recovery for `aea39b90`. The
   stuck session's dispatch is diagnosed as `outcome_unknown` even though its
-  child review completed; no ledger was reset. Layout/theme and installed
-  uninstall remain `NOT_VERIFIED`. A service restart is required to load the new
-  RPC in a long-running service.
+  child review completed; no ledger was reset. Narrow layout and keyboard
+  activation are verified; light mode, decision-dialog keyboard and
+  active-profile uninstall remain `NOT_VERIFIED`. A service restart is required
+  to load the new RPC in a long-running service.
 
 - Add an opt-in, read-only OpenCode Desktop Panel/Slot capability probe to #1196, with
   a native FlowGuard side tab, manual status refresh, and an opt-in session-header

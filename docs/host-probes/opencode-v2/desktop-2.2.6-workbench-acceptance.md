@@ -3,9 +3,9 @@
 **Status:** `PASS` for the core installed Review Workbench on OpenCode Desktop
 2.2.6: READY, real PLAN-pending fail-closed, complete bound PLAN_REVIEW, native
 revision-bound approval, stale-decision rejection and BLOCKED recovery.
-`NOT_VERIFIED` remains for layout/theme/keyboard and installed uninstall. The
-prior Panel/Slot evidence for `52d0a3bd` remains valid for that earlier artifact
-only.
+`NOT_VERIFIED` remains for light mode, full decision-dialog keyboard
+accessibility and active-profile uninstall. The prior Panel/Slot evidence for
+`52d0a3bd` remains valid for that earlier artifact only.
 
 ## Installed verification record — 2026-11-07
 
@@ -166,6 +166,28 @@ decision when it starts with a fresh assurance ledger.
 - [`desktop-2.2.6-workbench-plan-pending.png`](./desktop-2.2.6-workbench-plan-pending.png)
   — the earlier pending-review fail-closed state.
 
+### Residual installed checks
+
+- **Narrow layout: PASS.** At a `900x900` logical window the Workbench panel and
+  header remained visible and the panel text remained readable; the window was
+  restored to `1920x1050`.
+  Evidence:
+  [`desktop-2.2.6-workbench-narrow.png`](./desktop-2.2.6-workbench-narrow.png).
+- **Keyboard: PARTIAL.** A real `Return` key event activated the focused
+  Workbench `Refresh state` button, and a real `Cmd+K` / `Escape` pair opened
+  and closed the command palette. Decision-dialog Tab/Enter navigation was not
+  separately exercised.
+- **Light mode: NOT_VERIFIED.** Setting Electron `nativeTheme.themeSource` to
+  `light` did not change the app's rendered theme in this build; the app
+  remained dark. An app-level appearance switch remains untested.
+- **Install/uninstall: PARTIAL.** The active profile install from the packed
+  artifact matched the template hashes. In an isolated `OPENCODE_CONFIG_DIR`,
+  install wrote 29 managed files and doctor reported `HEALTHY_WITH_WARNINGS`;
+  uninstall removed those 29 managed files and preserved `node_modules`
+  because exclusive dependency ownership was not proven. Host-refresh
+  verification failed in the isolated config because no running service record
+  existed there. Active-profile uninstall was not run.
+
 ## Artifact to certify
 
 Record the exact Git HEAD, packed `@flowguard/core` tarball SHA-256, installed
@@ -212,8 +234,9 @@ Desktop. Record version/sha in the evidence report, not just screenshots.
 | PLAN pending-review fail-closed display       | `PASS` (exact plan revision/digest; `REVIEW_VERDICT_NOT_RECORDED`; chooser disabled)                      |
 | Bound decision and stale-denial negative run  | `PASS` (native `/approve`; old binding rejected with `DECISION_BINDING_STALE`; state unchanged)           |
 | Stuck-session diagnosis                       | `PASS` (dispatch `outcome_unknown`; child review completed; no ledger reset)                              |
-| Layout, theme and keyboard tests              | `NOT_VERIFIED`                                                                                            |
-| Installed package lifecycle and hashes        | `PARTIAL` (install and hashes passed; uninstall not run)                                                  |
+| Narrow layout and keyboard activation         | `PASS` (900x900; real `Return` refresh; real `Cmd+K`/`Escape` palette)                                    |
+| Light mode and decision-dialog keyboard       | `NOT_VERIFIED`                                                                                            |
+| Installed package lifecycle and hashes        | `PARTIAL` (active install/hashes; isolated uninstall removed managed files; active uninstall not run)     |
 
 **Accept only with artifact-bound, redacted installed evidence.** CI unit tests
 and older Panel/Slot screenshots do not close this checklist. The complete
