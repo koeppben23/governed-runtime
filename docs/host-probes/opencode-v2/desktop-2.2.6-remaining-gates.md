@@ -138,6 +138,10 @@ It now additionally verifies the host PID and liveness remain unchanged
 across reload and uninstall, the remaining observer plugin stays active,
 foreign dependency sentinels retain byte identity, all known managed entry
 files disappear and the customer's `opencode.jsonc` remains byte-exact.
+The CLI additionally preserves an existing `flowguard.json` with no valid
+scope-matched ownership manifest and emits a post-uninstall notice that
+managed file removal is **not** proof of running-host unload. Check both
+negative cases before attempting any active-profile operation.
 A test failure must not trigger cleanup of a user's actual profile.
 
 With OpenCode 2.2.6 available on the runner, execute in an isolated
