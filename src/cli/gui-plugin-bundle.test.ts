@@ -94,6 +94,7 @@ class FakeDomNode {
   readonly style: Record<string, string> = {};
   readonly listeners = new Map<string, () => void>();
   disabled = false;
+  open = false;
   type = '';
   private text = '';
 
@@ -304,6 +305,126 @@ describe('installed Desktop GUI bundle', () => {
       expect(node.find('button', 'Open canonical decisions')?.disabled).toBe(true);
       expect(loaded.rpcCalls).toHaveLength(2);
       expect(loaded.commandCalls).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps the Workbench compact and expands review details only when needed', async () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    vi.stubGlobal('document', { createElement: (tag: string) => new FakeDomNode(tag) });
+    try {
+      const panel = loaded.additions.find((item) => item.registry === 'panel')?.value as {
+        render: (props: { session: Record<string, unknown> }) => FakeDomNode;
+      };
+      loaded.views.push(
+        {
+          sessionID: 'ses_root',
+          kind: 'decision_required',
+          phase: 'PLAN_REVIEW',
+          decisionBinding: { subjectDigest: 'b'.repeat(64) },
+          actions: [{ invocation: '/approve' }],
+        },
+        {
+          sessionID: 'ses_root',
+          phase: 'PLAN_REVIEW',
+          status: 'COMPLETE',
+          subject: {
+            kind: 'plan',
+            label: 'Plan v1',
+            revision: 'v1',
+            digest: 'b'.repeat(64),
+            subjectBinding: 'matched',
+            reviewerVerdict: 'accept',
+            reviewedSubjectDigest: 'b'.repeat(64),
+            contentVerified: 'verified',
+            findings: [],
+            findingsTotal: 0,
+            findingsTruncated: false,
+            missingVerification: [],
+            missingVerificationTruncated: false,
+            unboundReviewReason: null,
+            historicalReview: false,
+          },
+          proof: { claims: [], claimsTotal: 0, claimsTruncated: false, coverageGapCount: 0 },
+          warningCodes: [],
+          warningsTruncated: false,
+        },
+      );
+      const node = panel.render({ session });
+      await vi.waitFor(() => expect(node.textContent).toContain('Plan v1'));
+      const cards = node.children.filter((child) => child.tagName === 'details');
+      expect(cards).toHaveLength(5);
+      expect(cards.map((card) => card.open)).toEqual([true, true, false, true, false]);
+      const forensic = node.find('summary', 'Technical binding details');
+      expect(forensic).toBeDefined();
+      expect(node.find('button', 'Review operator decisions')?.disabled).toBe(false);
+      const expand = node.find('button', 'Expand all details');
+      expect(expand).toBeDefined();
+      expand?.listeners.get('click')?.();
+      expect(cards.every((card) => card.open)).toBe(true);
+      expand?.listeners.get('click')?.();
+      expect(cards.every((card) => !card.open)).toBe(true);
+      expect(loaded.commandCalls).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps READY minimal while linking only to the canonical workflow chooser', async () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    vi.stubGlobal('document', { createElement: (tag: string) => new FakeDomNode(tag) });
+    try {
+      const panel = loaded.additions.find((item) => item.registry === 'panel')?.value as {
+        render: (props: { session: Record<string, unknown> }) => FakeDomNode;
+      };
+      loaded.views.push(
+        {
+          sessionID: 'ses_root',
+          kind: 'choose_flow',
+          phase: 'READY',
+          stateDigest: 'a'.repeat(64),
+          actions: [{ invocation: '/task' }],
+        },
+        {
+          sessionID: 'ses_root',
+          phase: 'READY',
+          status: 'NOT_VERIFIED',
+          subject: {
+            label: 'No reviewable subject recorded',
+            kind: 'none',
+            revision: null,
+            digest: null,
+            subjectBinding: 'unavailable',
+            reviewerVerdict: null,
+            contentVerified: 'unavailable',
+            findings: [],
+            findingsTotal: 0,
+            findingsTruncated: false,
+            missingVerification: [],
+            missingVerificationTruncated: false,
+            unboundReviewReason: null,
+            historicalReview: false,
+          },
+          proof: { claims: [], claimsTotal: 0, claimsTruncated: false, coverageGapCount: 0 },
+          warningCodes: [],
+          warningsTruncated: false,
+        },
+      );
+      const node = panel.render({ session });
+      await vi.waitFor(() => expect(node.textContent).toContain('No reviewable subject recorded'));
+      const cards = node.children.filter((child) => child.tagName === 'details');
+      expect(cards.map((card) => card.open)).toEqual([true, false, false, false, false]);
+      expect(node.find('button', 'Choose workflow')?.disabled).toBe(false);
+      expect(loaded.commandCalls).toHaveLength(0);
+      expect(loaded.rpcCalls.map((call) => call['method'])).toEqual([
+        'GetNextAction',
+        'GetWorkbenchReview',
+      ]);
     } finally {
       vi.unstubAllGlobals();
     }
