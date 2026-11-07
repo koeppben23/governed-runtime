@@ -9,10 +9,11 @@
 
 The deliverable is a coherent, genuinely usable **native desktop product experience**: orientation → a review workbench → an authorized decision **or** guided recovery. An architecture-only PR, command palette, markdown transcript, screenshots of mocks or test-stubbed UI cannot satisfy #1196's first product milestone.
 
-The interface is *host-native*, not a custom skin of the complete OpenCode application. OpenCode-specific components are adapters over existing canonical view and interaction semantics. TUI remains tailored to terminal capabilities. Cursor and VS Code will initially be read-only and must be verified separately. Never infer enforcement support from extension API compatibility.
+The interface is _host-native_, not a custom skin of the complete OpenCode application. OpenCode-specific components are adapters over existing canonical view and interaction semantics. TUI remains tailored to terminal capabilities. Cursor and VS Code will initially be read-only and must be verified separately. Never infer enforcement support from extension API compatibility.
 
 ## Verified starting point and unknowns
 
+<!-- prettier-ignore -->
 | Surface / mechanism                                | Evidence in repository                                                        | First-slice implication                                                |
 | -------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | Portable /start, /status, /why, /help, /finish     | Canonical workflow choice and status projections (PR #1204)                   | Mandatory semantic fallback                                            |
@@ -84,6 +85,7 @@ The compact orientation should be one small host-native surface **only if that s
 
 ### Progressive disclosure
 
+<!-- prettier-ignore -->
 | Level    | What is visible                                                                                                              | Explicitly not shown by default            |
 | -------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | Compact  | Root/session shorthand; ACTIVE/INACTIVE; phase; current work; one next action or main blocker                                | Audit IDs, digests, raw JSON               |
@@ -92,6 +94,7 @@ The compact orientation should be one small host-native surface **only if that s
 
 ### Screen-state inventory
 
+<!-- prettier-ignore -->
 | State                                       | Heading / primary content                                            | Primary available interaction                   | Failure/edge behavior                            |
 | ------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------ |
 | READY                                       | “Choose a workflow”; three exact choices                             | Explicit `/task`, `/architecture` or `/review`  | Cancel → no transition                           |
@@ -120,8 +123,9 @@ The compact orientation should be one small host-native surface **only if that s
 
 ## Capability proof plan (before choosing the renderer)
 
-Run on the *actually installed* OpenCode Desktop build and exact packaged FlowGuard artifact. Record host version/OS, artifact and wrapper SHA-256, setup registration, visible UI, session switch, cleanup/unload, and package checksum.
+Run on the _actually installed_ OpenCode Desktop build and exact packaged FlowGuard artifact. Record host version/OS, artifact and wrapper SHA-256, setup registration, visible UI, session switch, cleanup/unload, and package checksum.
 
+<!-- prettier-ignore -->
 | Candidate                              | Required proof                                                                                        | If unavailable                                                                                         |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `session.header` / compact status slot | Visible compact state; updates after READY→TICKET; different session shows different data             | Mark NOT_SUPPORTED/NOT_VERIFIED; use native on-demand workbench and Markdown                           |
