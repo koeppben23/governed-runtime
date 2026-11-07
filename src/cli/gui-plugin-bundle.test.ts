@@ -256,14 +256,18 @@ describe('installed Desktop GUI bundle', () => {
       policyDigest: binding.policyDigest,
       decisionBinding: binding,
       title: 'Decision required',
-      actions: [{
-        invocation: '/override-approve',
-        description: 'Override an exhausted gate.',
-        visibility: 'available',
-      }],
+      actions: [
+        {
+          invocation: '/override-approve',
+          description: 'Override an exhausted gate.',
+          visibility: 'available',
+        },
+      ],
     };
     loaded.views.push(view, view);
-    (ctx.dialogs as { select: ReturnType<typeof vi.fn> }).select.mockResolvedValueOnce('/override-approve');
+    (ctx.dialogs as { select: ReturnType<typeof vi.fn> }).select.mockResolvedValueOnce(
+      '/override-approve',
+    );
     (ctx.dialogs as { prompt: ReturnType<typeof vi.fn> }).prompt.mockImplementationOnce(
       async () => {
         (ctx.sessions as { current: () => unknown }).current = () => ({
@@ -284,5 +288,4 @@ describe('installed Desktop GUI bundle', () => {
     expect(loaded.rpcCalls.filter((call) => call['method'] === 'SubmitDecision')).toEqual([]);
     expect(loaded.commandCalls).toEqual([]);
   });
-
 });
