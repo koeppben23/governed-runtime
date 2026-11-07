@@ -102,6 +102,25 @@ describe('uninstall ownership fail-closed', () => {
     expect(await fs.readFile(sentinelPath, 'utf-8')).toBe('customer-owned\n');
   });
 
+  it('preserves runtime configuration byte-for-byte when no installer manifest proves ownership', async () => {
+    const target = path.join(tmpDir, '.opencode');
+    await fs.mkdir(target, { recursive: true });
+    const cfg = path.join(target, 'flowguard.json');
+    const customerContent = '{ "custom": true, "policy": "customer-authored" }\\n';
+    await fs.writeFile(cfg, customerContent, 'utf8');
+    const result = await uninstall(repoArgs({ action: 'uninstall' }));
+    expect(result.errors).toEqual([]);
+    expect(result.ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: cfg,
+        action: 'skipped',
+        reason: 'configuration ownership not proven',
+      }),
+    ]));
+    expect(result.warnings.join('\\n')).toContain('configuration ownership is not proven');
+    expect(await fs.readFile(cfg, 'utf8')).toBe(customerContent);
+  });
+
   it('preserves package.json byte-for-byte when dependency ownership is not proven', async () => {
     const target = path.join(tmpDir, '.opencode');
     await fs.mkdir(target, { recursive: true });
