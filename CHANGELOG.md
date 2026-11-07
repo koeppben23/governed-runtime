@@ -12,10 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add an opt-in, read-only OpenCode Desktop Panel/Slot capability probe to #1196, with
   a native FlowGuard side tab, manual status refresh, and an opt-in session-header
   display consuming the existing `GetNextAction` projection. Existing native
-  chooser and decision authority remain unchanged. Native Desktop 2.2.5 Panel/Slot
-  visibility is `NOT_VERIFIED` pending installed visual acceptance; the probe
-  is not the finished Review Workbench. Add Desktop product UX specification,
-  pinned-host acceptance checklist, adapter regression tests and bundle hash.
+  chooser and decision authority remain unchanged. Installed OpenCode Desktop
+  2.2.6 paints the Panel and `session.header` Slot, keeps the session-specific
+  `READY` projection current through manual refresh and session switches, and
+  registers no duplicate controls after reload; the pinned 2.2.5 Desktop build
+  remains `NOT_VERIFIED`. The probe is not the finished Review Workbench. Add
+  Desktop product UX specification, pinned-host acceptance checklist, adapter
+  regression tests and bundle hash.
 
 - Add the optional Desktop GUI companion for #1196 as an installed prebuilt
   `plugins/flowguard/gui-experimental.cjs` bundle. It exposes the same

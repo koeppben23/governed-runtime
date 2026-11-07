@@ -3,6 +3,7 @@
 <!-- prettier-ignore-start -->
 
 **Status:** DESIGN BASELINE / IMPLEMENTATION NOT YET VERIFIED  
+**Capability probe:** Panel + `session.header` Slot `PASS` on installed OpenCode Desktop 2.2.6 (2026-11-07); pinned 2.2.5 remains `NOT_VERIFIED`.  
 **Primary target:** OpenCode Desktop 2.2.5 (installed production UI required)  
 **Related:** #1196, #1203 diagnostics, #1204 portable chooser, #1205 TUI chooser, #1206 native decisions/Desktop chooser, ADR-011  
 **Contract owner:** existing FlowGuard governance and diagnostic projections; no UI authorization
@@ -24,7 +25,7 @@ The interface is _host-native_, not a custom skin of the complete OpenCode appli
 | OpenCode Desktop on-demand chooser                 | Installed GUI bundle; operator-reported visual flow after #1206               | Baseline interaction exists; archive version + package hash separately |
 | Persistent Desktop Next Action                     | No `session.header` registration in #1206 bundle                              | **NOT_IMPLEMENTED**, not a shipped feature                             |
 | TUI permanent status slot                          | Earlier pinned probe reports NOT_SUPPORTED                                    | Maintain alternative entrypoint                                        |
-| Native Desktop panel/slot/route for full workbench | Extension API descriptions only, no pinned visible proof yet                  | **NOT_VERIFIED**: first concrete host-capability probe                 |
+| Native Desktop panel/slot/route for full workbench | Installed 2.2.6 probe: Panel + header Slot paint, manual refresh and session switch; pinned 2.2.5 not tested | **PARTIAL**: host capability proven on 2.2.6; full workbench remains pending |
 | Review/diagnostics/session/proof views             | Existing ADR-011 diagnostic projections                                       | Compose; no new review/ProofGraph authority                            |
 
 Do not confuse an observed Desktop chooser with a proven persistent Desktop panel. `GetNextAction.actions[].visibility` indicates presentation priority, **not** executable eligibility.
