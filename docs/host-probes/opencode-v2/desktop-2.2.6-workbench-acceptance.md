@@ -18,7 +18,7 @@ Desktop. Record version/sha in the evidence report, not just screenshots.
 - [ ] READY shows correct session, phase, action and a nonmisleading empty
       review state. No workflow starts on opening or refresh.
 - [ ] At a canonical PLAN_REVIEW, ARCH_REVIEW or EVIDENCE_REVIEW gate: exact
-      subject kind, revision/digest and *independent* reviewer verdict are shown.
+      subject kind, revision/digest and _independent_ reviewer verdict are shown.
       The text “Reviewer ACCEPT” never implies approval.
 - [ ] Findings, missing verification, ProofGraph claims, coverage gaps and
       truncation/NOT_VERIFIED are visible and readable. Missing evidence is

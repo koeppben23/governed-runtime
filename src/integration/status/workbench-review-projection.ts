@@ -129,9 +129,7 @@ export function projectWorkbenchReview(view: ReviewView, sessionID: string): Wor
       certificateCount: view.proof?.certificates.length ?? 0,
     },
     reviewAttempts: view.reviewLinks?.attempts.length ?? 0,
-    warningCodes: view.warnings
-      .slice(0, MAX_WARNINGS)
-      .map((warning) => bounded(warning.code, 100)),
+    warningCodes: view.warnings.slice(0, MAX_WARNINGS).map((warning) => bounded(warning.code, 100)),
     warningsTruncated: view.warnings.length > MAX_WARNINGS,
     decisionAuthority: 'not_granted',
   });
