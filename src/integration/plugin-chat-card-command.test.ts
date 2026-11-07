@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { addChatCardCommand, FLOWGUARD_CHAT_CARD_MARKDOWN } from './plugin-chat-card-command.js';
+import { addChatCardCommand, FLOWGUARD_CHAT_CARD_MARKDOWN } from './plugin-start-command.js';
 import type { Plugin } from '@opencode/plugin';
 
 describe('native read-only chat card', () => {
