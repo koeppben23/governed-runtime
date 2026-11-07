@@ -1,3 +1,33 @@
+## Inline chat cards — optional Desktop extension (PR #1207)
+
+The official OpenCode V2 GUI extension surface documents a `CodeBlock` registry
+with `languages` and `render({ code, language, session })`, supported in
+assistant-message and tool-output timelines. The interface is **host-documented**,
+but still **NOT_VERIFIED on installed Desktop 2.2.6** for the new card extension.
+
+- Native `/flowguard-card` explicitly publishes one synthetic message with
+  `resume: false`; it does not run the agent or start/advance governance.
+- The message contains a strictly versioned, payload-free
+  `flowguard-live` fenced block (`v1`). The GUI contribution recognizes
+  **only** that exact payload, otherwise retains highlighted code.
+- The rendered card loads the current mounted session's `GetNextAction` and,
+  only at a decision gate, `GetWorkbenchReview`. It never uses chat content
+  as authority, and never calls `SubmitDecision`, commands, hydration or audit.
+- The display is a **live read-only view, not a historical snapshot**. It
+  labels reviewer acceptance separately from operator decision, keeps all
+  decisions in the canonical native chooser, and fails closed to
+  `NOT_VERIFIED` on absent or mismatched evidence.
+- No registered GUI surface or TUI/headless use: show the message and the
+  existing portable `/status` / Workbench instructions instead.
+- Existing `/start`, `/status`, `/why` and other command outputs are
+  intentionally unchanged; cards are opt-in, never automatically injected.
+- A Desktop installed test on the **final code bundle** must verify actual
+  timeline rendering, session switch, reload, missing host registry, theme,
+  accessibility and absence of model/tool/workflow calls before GO. Unit
+  tests and earlier Workbench installed evidence are **not** a substitute.
+
+Official specification: https://opencode.ai/v2/docs/build/plugins/gui/
+
 # FlowGuard Desktop UX — first native product slice (#1196)
 
 <!-- prettier-ignore-start -->
