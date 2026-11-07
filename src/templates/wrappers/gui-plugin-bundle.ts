@@ -1,3 +1,5 @@
+import { GUI_DIAGNOSTICS_BUNDLE } from './gui-diagnostics-bundle.js';
+
 export const GUI_PLUGIN_BUNDLE = `\
 /** FlowGuard optional OpenCode Desktop GUI; never a governance authority. */
 const { Plugin, Command, Panel, Slot } = require('@opencode/plugin/gui');
@@ -256,6 +258,8 @@ function renderProbe(ctx, props, compact) {
  * comes from canonical ReviewView via GetWorkbenchReview. Native decisions
  * remain solely in the already installed, server-bound chooser.
  */
+${GUI_DIAGNOSTICS_BUNDLE}
+
 function renderWorkbench(ctx, props) {
   const { createEffect, createSignal, onCleanup } = require('solid-js');
   const root = document.createElement('section');
@@ -322,8 +326,11 @@ function renderWorkbench(ctx, props) {
   const evidenceSection = section('Findings and evidence', root);
   const decisionSection = section('Safe decision or next action', root);
   const timelineSection = section('Review transport timeline', root);
+  const sessionSection = section('Session explorer', root);
+  const auditSection = section('Verified audit chronology', root);
   const recoverySection = section('Guided recovery', root);
-  const cards = [summary, reviewSection, evidenceSection, decisionSection, timelineSection, recoverySection];
+  const cards = [summary, reviewSection, evidenceSection, decisionSection, timelineSection,
+    sessionSection, auditSection, recoverySection];
   const foot = element('p',
     'Reviewer ACCEPT is not operator approval. All decisions use canonical server authority.',
     root);
@@ -389,7 +396,7 @@ function renderWorkbench(ctx, props) {
     element('p', label + ': ' + (value === null || value === undefined ? 'NOT_VERIFIED' : value), parent);
   }
 
-  function display(next, review) {
+  function display(next, review, diagnostics) {
     resetForLoad();
     currentView = next;
     currentReview = review;
@@ -400,6 +407,8 @@ function renderWorkbench(ctx, props) {
     evidenceSection.open = false;
     decisionSection.open = Boolean(next && next.kind === 'decision_required');
     timelineSection.open = false;
+    sessionSection.open = false;
+    auditSection.open = false;
     // A decision gate carries a question in blocker; only a true blocked
     // directive should surface the recovery section by default.
     recoverySection.open = Boolean(next && next.kind === 'blocked' && next.blocker);
@@ -492,6 +501,8 @@ function renderWorkbench(ctx, props) {
       element('p', 'Review transport timeline NOT_VERIFIED.', timelineSection);
     }
 
+    renderDiagnosticsSections(element, line, sessionSection, auditSection, diagnostics);
+
     if (next.kind === 'decision_required') {
       const binding = next.decisionBinding;
       const matches = review && binding &&
@@ -538,16 +549,19 @@ function renderWorkbench(ctx, props) {
     void Promise.allSettled([
       getView(session),
       call(session, 'GetWorkbenchReview', { sessionID: session.id }),
+      call(session, 'GetWorkbenchDiagnostics', { sessionID: session.id }),
     ]).then((results) => {
       if (disposed || request !== generation || probeSessionKey(props.session) !== key) return;
       const next = results[0].status === 'fulfilled' ? results[0].value : null;
       const review = results[1].status === 'fulfilled' ? results[1].value : null;
+      let diagnostics = results[2].status === 'fulfilled' ? results[2].value : null;
+      if (diagnostics && diagnostics.sessionID !== session.id) diagnostics = null;
       if (next && review && (next.sessionID !== session.id || review.sessionID !== session.id ||
           (next.phase !== review.phase && review.phase !== null))) {
-        display(next, null);
+        display(next, null, null);
         return;
       }
-      display(next, review);
+      display(next, review, diagnostics);
     });
   });
 
