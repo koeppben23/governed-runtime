@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Extend #1207's native Desktop Workbench with a bounded, read-only review
+  transport timeline built from canonical reviewer-assurance timestamps, and
+  ProofGraph claim cards showing positive/counterexample references plus
+  certificate binding. The timeline is explicitly not a full audit timeline;
+  missing or truncated history stays visible. Installed host acceptance for
+  the revised GUI bundle remains pending.
+
 - Refine the native OpenCode Desktop Review Workbench in #1207 with compact
   phase orientation, prominent but canonical next-action/decision entry, native
   keyboard-accessible expandable review/evidence/recovery sections, forensic
