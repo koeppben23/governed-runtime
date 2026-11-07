@@ -548,6 +548,8 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/status/status-why-finish.ts', owner: 'status' },
   { file: 'integration/status/next-action-projection.ts', owner: 'status' },
   { file: 'integration/status/workbench-review-projection.ts', owner: 'status' },
+  { file: 'integration/status/workbench-diagnostics-projection.ts', owner: 'status' },
+  { file: 'integration/status/workbench-diagnostics-reader.ts', owner: 'status' },
   { file: 'integration/status/decision-binding.ts', owner: 'status' },
   { file: 'integration/status/status.ts', owner: 'status' },
   { file: 'integration/status/why-presentation.ts', owner: 'status' },
