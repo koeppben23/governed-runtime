@@ -161,7 +161,7 @@ function registerAutonomousStart(
         await buildReviewView({
           root: ctx.location.directory,
           sessionId: request.sessionID,
-          maxSubjectBytes: 0,
+          maxSubjectBytes: 32768,
         }),
         request.sessionID,
       ),
