@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { install, uninstall, resolveTarget } from './install.js';
 import { INSTALL_OWNERSHIP_FILENAME } from './install-ownership.js';
+import { PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './templates.js';
 import {
   deriveInstallOwnershipManifest,
   writeInstallOwnershipManifest,
@@ -119,6 +120,29 @@ describe('uninstall ownership fail-closed', () => {
     ]));
     expect(result.warnings.join('\\n')).toContain('configuration ownership is not proven');
     expect(await fs.readFile(cfg, 'utf8')).toBe(customerContent);
+  });
+
+  it('reports that removed native files do not prove a running host was unloaded', async () => {
+    const target = path.join(tmpDir, '.opencode');
+    await fs.mkdir(path.join(target, 'plugins'), { recursive: true });
+    const entry = path.join(target, PLUGIN_RELATIVE_PATH);
+    await fs.mkdir(path.dirname(entry), { recursive: true });
+    await fs.writeFile(entry, PLUGIN_WRAPPER);
+    await writeInstallOwnershipManifest(target, deriveInstallOwnershipManifest({
+      platform: 'opencode',
+      scope: 'repo',
+      packageJsonExisted: false,
+      packageJsonCurrentContent: JSON.stringify({
+        dependencies: { '@flowguard/core': 'file:./vendor/flowguard-core-2.0.0.tgz' },
+      }),
+    }));
+    const result = await uninstall(repoArgs({ action: 'uninstall' }));
+    expect(result.errors).toEqual([]);
+    expect(existsSync(entry)).toBe(false);
+    expect(result.notices).toContainEqual(expect.objectContaining({
+      kind: 'next',
+      message: expect.stringContaining('File removal alone is not proof of unload'),
+    }));
   });
 
   it('preserves package.json byte-for-byte when dependency ownership is not proven', async () => {
