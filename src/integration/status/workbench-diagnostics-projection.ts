@@ -139,6 +139,7 @@ function projectAudit(snapshots: readonly WorkbenchAuditSnapshot[], explorer: Ex
   );
   const anyVerified = sessions.some((session) => session.integrity === 'verified');
   const complete = explorer.status === 'COMPLETE' &&
+    all.length <= MAX_EVENTS &&
     sessions.length === explorer.sessions.length &&
     sessions.every((session) => session.integrity === 'verified');
   return {
