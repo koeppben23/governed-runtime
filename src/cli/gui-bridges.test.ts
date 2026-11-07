@@ -106,7 +106,7 @@ describe('Desktop GUI client and host bridges', () => {
       'setInterval',
       'clearInterval',
       'document',
-      GUI_HOST_BRIDGE_BUNDLE + '\\nreturn createFlowGuardStatusReconciler;',
+      GUI_HOST_BRIDGE_BUNDLE + '\nreturn createFlowGuardStatusReconciler;',
     );
     const visibility = { visibilityState: 'visible' };
     let current = { id: 'session-a', server: { id: 'sidecar' } };
