@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GUI_RPC_CLIENT_BUNDLE } from '../templates/wrappers/gui-rpc-client-bundle.js';
 import { GUI_HOST_BRIDGE_BUNDLE } from '../templates/wrappers/gui-host-bridge-bundle.js';
-import type { FlowGuardGuiRpcClient } from '../templates/wrappers/gui-rpc-client-bundle.js';
+import type { FlowGuardGuiRpcClient } from '../integration/gui-rpc-client-contract.js';
 
 function rpcClient() {
   const calls: unknown[] = [];
