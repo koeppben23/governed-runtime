@@ -1,32 +1,17 @@
 import { GUI_DIAGNOSTICS_BUNDLE } from './gui-diagnostics-bundle.js';
 import { GUI_CHAT_CARD_BUNDLE } from './gui-chat-card-bundle.js';
+import { GUI_RPC_CLIENT_BUNDLE } from './gui-rpc-client-bundle.js';
+import { GUI_HOST_BRIDGE_BUNDLE } from './gui-host-bridge-bundle.js';
 
 export const GUI_PLUGIN_BUNDLE = `\
 /** FlowGuard optional OpenCode Desktop GUI; never a governance authority. */
 const { Plugin, Command, Panel, Slot, CodeBlock, ComposerPill } = require('@opencode/plugin/gui');
 
-const RPC_ID = 'flowguard-governance';
 // Diagnostic completion, distinct from workflow terminal-phase membership.
 const REVIEW_STATUS_COMPLETE = 'COMPLETE';
 
-function location(session) {
-  const directory = session.location && session.location.directory;
-  return directory ? { directory: directory } : undefined;
-}
-
-async function call(session, method, input) {
-  const result = await session.server.client.rpc.call({
-    rpcID: RPC_ID,
-    method: method,
-    location: location(session),
-    input: input,
-  });
-  return result.output;
-}
-
-function getView(session) {
-  return call(session, 'GetNextAction', { sessionID: session.id });
-}
+${GUI_RPC_CLIENT_BUNDLE}
+${GUI_HOST_BRIDGE_BUNDLE}
 
 function isCurrentSession(ctx, session) {
   const current = ctx.sessions.current();
@@ -154,8 +139,7 @@ async function choose(ctx, session) {
       toast(ctx, 'FlowGuard state or session changed; no decision was submitted.', 'error');
       return;
     }
-    const result = await call(session, 'SubmitDecision', {
-      sessionID: session.id,
+    const result = await flowguardGuiRpcClient(session).submitDecision({
       invocation: selected,
       expected: first.decisionBinding,
       ...(rationale === '' ? {} : { rationale: rationale }),
@@ -542,8 +526,8 @@ function renderWorkbench(ctx, props) {
     if (!key) return;
     void Promise.allSettled([
       getView(session),
-      call(session, 'GetWorkbenchReview', { sessionID: session.id }),
-      call(session, 'GetWorkbenchDiagnostics', { sessionID: session.id }),
+      flowguardGuiRpcClient(session).getWorkbenchReview(),
+      flowguardGuiRpcClient(session).getWorkbenchDiagnostics(),
     ]).then((results) => {
       if (disposed || request !== generation || probeSessionKey(props.session) !== key) return;
       const next = results[0].status === 'fulfilled' ? results[0].value : null;
