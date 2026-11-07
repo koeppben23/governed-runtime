@@ -13,8 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport timeline built from canonical reviewer-assurance timestamps, and
   ProofGraph claim cards showing positive/counterexample references plus
   certificate binding. The timeline is explicitly not a full audit timeline;
-  missing or truncated history stays visible. Installed host acceptance for
-  the revised GUI bundle remains pending.
+  missing or truncated history stays visible. Installed Desktop 2.2.6
+  acceptance on artifact `3e72f1f8` covers a 16-event review-assurance
+  timeline, a `PROVEN` claim with one evidence and one counterexample reference,
+  certificate binding `current`, READY `NOT_VERIFIED` when no history exists,
+  default-collapsed timeline disclosure and no renderer-induced mutation.
+  Acceptance corrected the pinned bundle hash from `1615f16a…` to the actual
+  built bytes `460eb485…` and fixed formatting plus projection complexity
+  before the installed run.
 
 - Refine the native OpenCode Desktop Review Workbench in #1207 with compact
   phase orientation, prominent but canonical next-action/decision entry, native

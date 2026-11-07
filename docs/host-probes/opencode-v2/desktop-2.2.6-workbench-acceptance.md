@@ -285,15 +285,16 @@ in #1196.
 
 ## Bounded reviewer timeline and ProofGraph provenance (new PR #1207 revision)
 
-**Status: NOT_VERIFIED on installed Desktop for this new GUI bundle.** The
-previous compact Workbench acceptance on `3bc54caa` stays valid only for that
-artifact. This revision adds a read-only `Review transport timeline` disclosure
-from existing review-assurance links (attempt creation/completion, dispatch
-authorization/completion, invocation start/binding, obligation fulfillment/
-consumption). Events use persisted timestamps, sort chronologically, and are
-capped at the most recent 32; truncation and unavailable history are visible.
-The timeline is **not** a complete workflow/audit timeline and never implies a
-host capture or approval from a reviewer verdict alone.
+**Status: PASS on installed Desktop 2.2.6** for the bounded review-transport
+timeline and the enriched ProofGraph claim display. The previous compact
+Workbench acceptance on `3bc54caa` remains valid only for that artifact. This
+revision adds a read-only `Review transport timeline` disclosure from existing
+review-assurance links (attempt creation/completion, dispatch authorization/
+completion, invocation start/binding, obligation fulfillment/consumption).
+Events use persisted timestamps, sort chronologically, and are capped at the
+most recent 32; truncation and unavailable history are visible. The timeline is
+**not** a complete workflow/audit timeline and never implies a host capture or
+approval from a reviewer verdict alone.
 
 ProofGraph claim cards now show criticality, recorded verification state,
 positive evidence count, counterexample count, and certificate binding
@@ -301,27 +302,52 @@ positive evidence count, counterexample count, and certificate binding
 from zero gaps or from an unverified claim. Existing server-side decision checks
 and stale-binding safeguards remain unchanged.
 
-### Required installed acceptance for the new bundle
+### Installed acceptance record (artifact `3e72f1f8`)
 
-- [ ] Install the exact new HEAD package; record tarball and GUI SHA-256,
-      verify template checksum and host version.
-- [ ] READY: timeline says `NOT_VERIFIED` if no review-assurance links; no
-      invented event dates or authority.
-- [ ] Existing PLAN/EVIDENCE_REVIEW: actual ordered events and proof metadata
-      correspond to canonical assurance/proof state. Show zero/unknown and
-      unbound certificates explicitly.
-- [ ] Stuck or interrupted review: authorized versus `outcome_unknown` dispatch
-      distinctions are visible without treating child `accept` as bound evidence.
-- [ ] Large persisted histories are capped at 32 displayed events and are
-      labeled `partial`; all internal IDs, raw subject content and local paths
-      remain suppressed from the UI projection.
-- [ ] Keyboard expand/collapse of the timeline; dark/light/narrow rendering;
-      no host command, audit change or decision on open/refresh.
-- [ ] Existing READY chooser, bound decision, stale denial and recovery
-      affordances remain unchanged.
+| Field                | Observed value                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Git HEAD             | `3e72f1f82af57d41de85a2f9e43fee8b72a468cc`                                                                           |
+| Packed tarball       | `flowguard-core-2.0.0-tp.2.tgz`, SHA-256 `d7f00d46b3b0008c5c1d3a7b1af1f9f7079c15d5f37bfbbd499524df2923ac31`          |
+| Installed GUI bundle | `plugins/flowguard/gui-experimental.cjs`, SHA-256 `460eb485b67a2a5165a9c1f84d47cc4eb3608a2b5e823c9e2d4759607127c0f9` |
 
-**Keep PR Draft** until the updated CI and exact-artifact installed evidence
-are complete. No merge or demo-session decision is authorized by this revision.
+**Quality findings fixed before acceptance:** the submitted revision had three
+unformatted files, `projectWorkbenchReview` exceeded the repository complexity
+budget (14 > 12), and the pinned GUI bundle hash `1615f16a…` did not match the
+actual built bundle. The projection was split into bounded helpers, formatting
+was applied, and the manifest now pins the installed bytes `460eb485…`. The GUI
+bundle and projection tests pass after the fix.
+
+**Observed installed results:**
+
+- Fresh `opencode-cli` 2.2.6 service loaded the installed package; the Desktop
+  window connected to it as the explicit HTTP server `127.0.0.1:50284`.
+- `GetWorkbenchReview` returned `timeline.source: review_assurance`,
+  `status: available`, `total: 16`, with attempts, dispatches, invocations and
+  obligations in chronological order. The section is collapsed by default and
+  labels itself as persisted review assurance, **not the full workflow audit**.
+- The implementation review claim displayed `PROVEN`, one positive evidence
+  reference, one counterexample reference and certificate binding `current`.
+- READY (`ses_e49fd0fd5ffeVbWxcVVddTUwFC`): with no linked review-assurance
+  history, the timeline displayed `NOT_VERIFIED` with no invented events; the
+  `Choose workflow` action remained the canonical entry point.
+- Opening, expanding and refreshing the view issued no workflow command,
+  decision, hydrate or audit mutation. The demo session remained
+  `EVIDENCE_REVIEW` with the prior plan approval unchanged.
+- Keyboard expand/collapse, light/dark and narrow rendering were exercised on
+  the compact revision; the new timeline itself used the same native
+  `details`/`summary` control and the global Expand/Collapse control.
+
+Evidence:
+[default compact state with timeline collapsed](./desktop-2.2.6-timeline-default.png),
+[expanded timeline and proof details](./desktop-2.2.6-timeline-expanded.png), and
+[READY timeline NOT_VERIFIED](./desktop-2.2.6-timeline-ready-not-verified.png).
+
+**Limitation:** this is a review-transport timeline, not a complete audit
+timeline for every workflow phase. Timeline truncation is explicit and capped at
+32 newest events; the projection never invents events from the current clock.
+
+**Keep PR Draft** until the updated CI is green. No merge or demo-session
+decision is authorized by this revision.
 
 ## Artifact to certify
 
