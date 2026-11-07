@@ -19,7 +19,6 @@ const WorkbenchSession = z
     phase: z.string().nullable(),
     binding: z.string(),
     warningCodes: z.array(z.string()),
-
   })
   .strict();
 
@@ -30,7 +29,6 @@ const WorkbenchReviewAttempt = z
     status: z.string(),
     dispatchStatus: z.string(),
     obligationStatus: z.string(),
-
   })
   .strict();
 
@@ -42,7 +40,6 @@ const WorkbenchAuditEvent = z
     recordedAt: z.string(),
     phase: z.string(),
     event: z.string(),
-
   })
   .strict();
 
@@ -52,7 +49,6 @@ const WorkbenchAuditSession = z
     integrity: z.enum(['verified', 'invalid', 'not_verified']),
     eventCount: z.number().int().nonnegative(),
     reasonCode: z.string().nullable(),
-
   })
   .strict();
 
