@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add the first native Desktop Review Workbench slice to #1196: a bounded
+  `GetWorkbenchReview` RPC projects the exact persisted review subject, verdict,
+  findings, missing verification and ProofGraph summary without raw subject
+  content or file paths. The installed side panel composes it with `GetNextAction`,
+  separates independent reviewer results from operator decisions, shows canonical
+  blocker recovery, and opens the existing revision-bound chooser only for a
+  matching, complete review. The 2.2.6 installed evidence remains valid for
+  the earlier Panel/Slot capability probe, not for this new Workbench build;
+  Workbench installed acceptance is still `NOT_VERIFIED`.
+
+
 - Add an opt-in, read-only OpenCode Desktop Panel/Slot capability probe to #1196, with
   a native FlowGuard side tab, manual status refresh, and an opt-in session-header
   display consuming the existing `GetNextAction` projection. Existing native
