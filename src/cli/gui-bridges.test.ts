@@ -9,12 +9,21 @@ function rpcClient() {
   const session = {
     id: 'session-bound',
     location: { directory: '/workspace/root' },
-    server: { client: { rpc: { call: vi.fn(async (input: unknown) => {
-      calls.push(input);
-      return { output: { kind: 'blocked' } };
-    }) } } },
+    server: {
+      client: {
+        rpc: {
+          call: vi.fn(async (input: unknown) => {
+            calls.push(input);
+            return { output: { kind: 'blocked' } };
+          }),
+        },
+      },
+    },
   };
-  const factory = new Function('session', GUI_RPC_CLIENT_BUNDLE + '\nreturn flowguardGuiRpcClient(session);');
+  const factory = new Function(
+    'session',
+    GUI_RPC_CLIENT_BUNDLE + '\nreturn flowguardGuiRpcClient(session);',
+  );
   const client = factory(session) as FlowGuardGuiRpcClient;
   return { client, calls };
 }
@@ -42,13 +51,27 @@ describe('Desktop GUI client and host bridges', () => {
       },
     });
     expect(calls).toEqual([
-      { rpcID: 'flowguard-governance', method: 'GetNextAction',
-        location: { directory: '/workspace/root' }, input: { sessionID: 'session-bound' } },
-      { rpcID: 'flowguard-governance', method: 'GetWorkbenchReview',
-        location: { directory: '/workspace/root' }, input: { sessionID: 'session-bound' } },
-      { rpcID: 'flowguard-governance', method: 'GetWorkbenchDiagnostics',
-        location: { directory: '/workspace/root' }, input: { sessionID: 'session-bound' } },
-      { rpcID: 'flowguard-governance', method: 'SubmitDecision',
+      {
+        rpcID: 'flowguard-governance',
+        method: 'GetNextAction',
+        location: { directory: '/workspace/root' },
+        input: { sessionID: 'session-bound' },
+      },
+      {
+        rpcID: 'flowguard-governance',
+        method: 'GetWorkbenchReview',
+        location: { directory: '/workspace/root' },
+        input: { sessionID: 'session-bound' },
+      },
+      {
+        rpcID: 'flowguard-governance',
+        method: 'GetWorkbenchDiagnostics',
+        location: { directory: '/workspace/root' },
+        input: { sessionID: 'session-bound' },
+      },
+      {
+        rpcID: 'flowguard-governance',
+        method: 'SubmitDecision',
         location: { directory: '/workspace/root' },
         input: {
           invocation: '/approve',
@@ -66,7 +89,8 @@ describe('Desktop GUI client and host bridges', () => {
             iteration: 1,
           },
           sessionID: 'session-bound',
-        } },
+        },
+      },
     ]);
   });
 
@@ -81,20 +105,22 @@ describe('Desktop GUI client and host bridges', () => {
       });
       const onCleanup = vi.fn((handler: () => void) => handler());
       const requireStub = (module: string) => {
-        if (module === '@opencode/plugin/gui') return {
-          createKeyed: (resolve: () => unknown, setup: (value: unknown) => void) =>
-            setup(resolve()),
-        };
+        if (module === '@opencode/plugin/gui')
+          return {
+            createKeyed: (resolve: () => unknown, setup: (value: unknown) => void) =>
+              setup(resolve()),
+          };
         if (module === 'solid-js') return { onCleanup };
         throw new Error(module);
       };
       const subscribe = new Function(
-        'require', GUI_HOST_BRIDGE_BUNDLE + '\nreturn subscribeFlowGuardSessionCompletion;',
+        'require',
+        GUI_HOST_BRIDGE_BUNDLE + '\nreturn subscribeFlowGuardSessionCompletion;',
       )(requireStub) as (ctx: unknown, callback: (session: unknown) => void) => boolean;
       const session = { id: 'session-a', server: { id: 'sidecar' } };
       const ctx = {
         sessions: { current: () => session },
-        [name]: { get: (id: string) => id === 'sidecar' ? { data: { on } } : null },
+        [name]: { get: (id: string) => (id === 'sidecar' ? { data: { on } } : null) },
       };
       const handler = vi.fn();
       expect(subscribe(ctx, handler)).toBe(true);
