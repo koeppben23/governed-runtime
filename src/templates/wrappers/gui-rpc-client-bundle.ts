@@ -1,26 +1,7 @@
-/** Typed, host-neutral contract for the optional Desktop GUI RPC projection.
- * The installed GUI is a CommonJS string template. Its runtime bridge below is
- * tested against this contract; types do not confer governance authority.
+/** Embedded OpenCode Desktop GUI transport adapter.
+ * Public TypeScript port: src/integration/gui-rpc-client-contract.ts.
+ * No reverse dependency from templates to integration.
  */
-import type { NextActionResult } from '../../integration/status/next-action-projection.js';
-import type { WorkbenchReviewResult } from '../../integration/status/workbench-review-projection.js';
-import type { WorkbenchDiagnosticsResult } from '../../integration/status/workbench-diagnostics-projection.js';
-import type {
-  NextActionDecisionRequest,
-  NextActionDecisionResult,
-} from '../../integration/opencode-governance-rpc.js';
-
-export interface FlowGuardGuiRpcClient {
-  getNextAction(): Promise<NextActionResult>;
-  getWorkbenchReview(): Promise<WorkbenchReviewResult>;
-  getWorkbenchDiagnostics(): Promise<WorkbenchDiagnosticsResult>;
-  /** The host session supplies sessionID; the UI cannot override it. */
-  submitDecision(
-    decision: Omit<NextActionDecisionRequest, 'sessionID'>,
-  ): Promise<NextActionDecisionResult>;
-}
-
-/** Only this bridge knows the RPC ID, method names and native client shape. */
 export const GUI_RPC_CLIENT_BUNDLE = `
 const FLOWGUARD_GUI_RPC_ID = 'flowguard-governance';
 
