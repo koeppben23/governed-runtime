@@ -3,7 +3,7 @@ import { GUI_CHAT_CARD_BUNDLE } from './gui-chat-card-bundle.js';
 
 export const GUI_PLUGIN_BUNDLE = `\
 /** FlowGuard optional OpenCode Desktop GUI; never a governance authority. */
-const { Plugin, Command, Panel, Slot, CodeBlock } = require('@opencode/plugin/gui');
+const { Plugin, Command, Panel, Slot, CodeBlock, ComposerPill } = require('@opencode/plugin/gui');
 
 const RPC_ID = 'flowguard-governance';
 // Diagnostic completion, distinct from workflow terminal-phase membership.
