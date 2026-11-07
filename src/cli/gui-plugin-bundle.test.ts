@@ -209,8 +209,7 @@ describe('installed Desktop GUI bundle', () => {
     expect(loaded.rpcCalls[0]?.method).toBe('GetNextAction');
     expect(loaded.commandCalls).toHaveLength(0);
     const action = loaded.additions.find(
-      (item) =>
-        item.registry === 'command' && (item.value as FakeCommand).id === 'show-chat-card',
+      (item) => item.registry === 'command' && (item.value as FakeCommand).id === 'show-chat-card',
     )?.value as FakeCommand;
     expect(action).toBeDefined();
     action.run();
