@@ -283,6 +283,46 @@ The compact Workbench is not the finished product UX; timeline, deeper
 ProofGraph views, session context and full usability/accessibility review remain
 in #1196.
 
+## Bounded reviewer timeline and ProofGraph provenance (new PR #1207 revision)
+
+**Status: NOT_VERIFIED on installed Desktop for this new GUI bundle.** The
+previous compact Workbench acceptance on `3bc54caa` stays valid only for that
+artifact. This revision adds a read-only `Review transport timeline` disclosure
+from existing review-assurance links (attempt creation/completion, dispatch
+authorization/completion, invocation start/binding, obligation fulfillment/
+consumption). Events use persisted timestamps, sort chronologically, and are
+capped at the most recent 32; truncation and unavailable history are visible.
+The timeline is **not** a complete workflow/audit timeline and never implies a
+host capture or approval from a reviewer verdict alone.
+
+ProofGraph claim cards now show criticality, recorded verification state,
+positive evidence count, counterexample count, and certificate binding
+(`current`, `stale_or_unbound`, `not_recorded`). The UI does not infer proof
+from zero gaps or from an unverified claim. Existing server-side decision checks
+and stale-binding safeguards remain unchanged.
+
+### Required installed acceptance for the new bundle
+
+- [ ] Install the exact new HEAD package; record tarball and GUI SHA-256,
+      verify template checksum and host version.
+- [ ] READY: timeline says `NOT_VERIFIED` if no review-assurance links; no
+      invented event dates or authority.
+- [ ] Existing PLAN/EVIDENCE_REVIEW: actual ordered events and proof metadata
+      correspond to canonical assurance/proof state. Show zero/unknown and
+      unbound certificates explicitly.
+- [ ] Stuck or interrupted review: authorized versus `outcome_unknown` dispatch
+      distinctions are visible without treating child `accept` as bound evidence.
+- [ ] Large persisted histories are capped at 32 displayed events and are
+      labeled `partial`; all internal IDs, raw subject content and local paths
+      remain suppressed from the UI projection.
+- [ ] Keyboard expand/collapse of the timeline; dark/light/narrow rendering;
+      no host command, audit change or decision on open/refresh.
+- [ ] Existing READY chooser, bound decision, stale denial and recovery
+      affordances remain unchanged.
+
+**Keep PR Draft** until the updated CI and exact-artifact installed evidence
+are complete. No merge or demo-session decision is authorized by this revision.
+
 ## Artifact to certify
 
 Record the exact Git HEAD, packed `@flowguard/core` tarball SHA-256, installed
