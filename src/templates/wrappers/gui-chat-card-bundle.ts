@@ -136,9 +136,11 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   // The official ComposerPill surface is part of the chat screen but not
   // the conversation transcript. No agent/model content is created.
   if (!ComposerPill) return;
-  const { createSignal } = require('solid-js');
+  const { createSignal, onCleanup } = require('solid-js');
   const [snapshot, setSnapshot] = createSignal(null);
   let readGeneration = 0;
+  const reconciler = createFlowGuardStatusReconciler(ctx, (session) => { void inspect(session); });
+  onCleanup(() => reconciler.stop());
 
   async function inspect(session) {
     const key = probeSessionKey(session);
@@ -213,6 +215,7 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
       show: (input) => {
         const key = probeSessionKey(input.session);
         if (!key || !isCurrentSession(ctx, input.session)) return undefined;
+        reconciler.begin();
         const state = snapshot();
         const matched = state && state.key === key;
         const label = matched ? state.label + ' · last read' : 'FlowGuard · inspect';
