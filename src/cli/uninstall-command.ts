@@ -409,8 +409,16 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
         : args.installScope === 'global'
           ? globalConfigPath()
           : join(resolve('.'), '.opencode', 'flowguard.json');
-    const removedCfg = await safeUnlink(cfgPath);
-    ops.push({ path: cfgPath, action: removedCfg ? 'removed' : 'not_found' });
+    // A same-named runtime config is user data unless a valid, scope-matched
+    // installation manifest establishes that FlowGuard provisioned this scope.
+    // Do not turn an orphaned/partial install into destructive config cleanup.
+    if (ownership === null && existsSync(cfgPath)) {
+      warnings.push(`${cfgPath}: configuration ownership is not proven — preserved`);
+      ops.push({ path: cfgPath, action: 'skipped', reason: 'configuration ownership not proven' });
+    } else {
+      const removedCfg = await safeUnlink(cfgPath);
+      ops.push({ path: cfgPath, action: removedCfg ? 'removed' : 'not_found' });
+    }
 
     const removedManifest = await safeUnlink(manifestPath);
     ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
