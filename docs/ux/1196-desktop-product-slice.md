@@ -26,6 +26,15 @@ Further visual product work such as evidence drill-down, timeline, session
 context and usability measurements will use #1207 too; each new UI build
 requires version-bound evidence and preservation of the canonical safety path.
 
+## Native Session Explorer + audit chronology continuation
+
+The same Draft PR #1207 now implements a read-only native session lineage
+view and verified audit-chain chronology composed from the canonical Explorer
+and audit verifier. Installed Desktop acceptance is pending for this artifact;
+previous GUI evidence does not authorize promotion. This is not a host
+transcript replay or causal proof; missing/invalid/large audits remain
+NOT_VERIFIED or invalid.
+
 ## Product decision
 
 The deliverable is a coherent, genuinely usable **native desktop product experience**: orientation → a review workbench → an authorized decision **or** guided recovery. An architecture-only PR, command palette, markdown transcript, screenshots of mocks or test-stubbed UI cannot satisfy #1196's first product milestone.
