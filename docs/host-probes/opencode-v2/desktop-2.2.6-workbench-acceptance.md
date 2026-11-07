@@ -1,10 +1,11 @@
 # OpenCode Desktop 2.2.6 — Review Workbench installed acceptance
 
-**Status:** `PASS` for the core installed Review Workbench on OpenCode Desktop
-2.2.6: READY, real PLAN-pending fail-closed, complete bound PLAN_REVIEW, native
-revision-bound approval, stale-decision rejection and BLOCKED recovery.
-`NOT_VERIFIED` remains for light mode, full decision-dialog keyboard
-accessibility and active-profile uninstall. The prior Panel/Slot evidence for
+**Status:** `PASS` for the installed Review Workbench on OpenCode Desktop 2.2.6:
+READY, real PLAN-pending fail-closed, complete bound PLAN_REVIEW, native
+revision-bound approval, stale-decision rejection, implementation/evidence
+review, BLOCKED recovery, narrow layout, light mode and decision-dialog keyboard
+navigation. The active-profile uninstall was deliberately not run; the isolated
+install/uninstall exercise remains `PARTIAL`. The prior Panel/Slot evidence for
 `52d0a3bd` remains valid for that earlier artifact only.
 
 ## Installed verification record — 2026-11-07
@@ -198,13 +199,18 @@ decision when it starts with a fresh assurance ledger.
   restored to `1920x1050`.
   Evidence:
   [`desktop-2.2.6-workbench-narrow.png`](./desktop-2.2.6-workbench-narrow.png).
-- **Keyboard: PARTIAL.** A real `Return` key event activated the focused
+- **Keyboard: PASS.** A real `Return` key event activated the focused
   Workbench `Refresh state` button, and a real `Cmd+K` / `Escape` pair opened
-  and closed the command palette. Decision-dialog Tab/Enter navigation was not
-  separately exercised.
-- **Light mode: NOT_VERIFIED.** Setting Electron `nativeTheme.themeSource` to
-  `light` did not change the app's rendered theme in this build; the app
-  remained dark. An app-level appearance switch remains untested.
+  and closed the command palette. In the native decision dialog, real
+  `ArrowDown`/`ArrowUp` events moved the selected option between `/approve`,
+  `/request-changes` and `/reject`, and `Escape` closed the dialog without
+  executing a decision. Evidence:
+  [`desktop-2.2.6-workbench-decision-dialog-keyboard.png`](./desktop-2.2.6-workbench-decision-dialog-keyboard.png).
+- **Light mode: PASS.** The app-level `opencode-color-scheme` setting was set to
+  `light`; the root background rendered `rgb(250, 250, 250)` and the Workbench
+  text remained readable. The setting was restored to `dark` afterwards.
+  Evidence:
+  [`desktop-2.2.6-workbench-light.png`](./desktop-2.2.6-workbench-light.png).
 - **Install/uninstall: PARTIAL.** The active profile install from the packed
   artifact matched the template hashes. In an isolated `OPENCODE_CONFIG_DIR`,
   install wrote 29 managed files and doctor reported `HEALTHY_WITH_WARNINGS`;
@@ -261,7 +267,8 @@ Desktop. Record version/sha in the evidence report, not just screenshots.
 | Implementation/evidence-review display        | `PASS` (implementation subject/digest, `accept` verdict, `PROVEN` claim, decision available)              |
 | Stuck-session diagnosis                       | `PASS` (dispatch `outcome_unknown`; child review completed; no ledger reset)                              |
 | Narrow layout and keyboard activation         | `PASS` (900x900; real `Return` refresh; real `Cmd+K`/`Escape` palette)                                    |
-| Light mode and decision-dialog keyboard       | `NOT_VERIFIED`                                                                                            |
+| Decision-dialog keyboard navigation           | `PASS` (ArrowDown/ArrowUp moved selection; Escape closed without a decision)                              |
+| Light mode                                    | `PASS` (app-level light scheme; readable Workbench; dark restored)                                        |
 | Installed package lifecycle and hashes        | `PARTIAL` (active install/hashes; isolated uninstall removed managed files; active uninstall not run)     |
 
 **Accept only with artifact-bound, redacted installed evidence.** CI unit tests
