@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { addChatCardCommand, FLOWGUARD_CHAT_CARD_MARKDOWN } from './plugin-start-command.js';
 import type { Plugin } from '@opencode/plugin';
+
+import { addChatCardCommand, FLOWGUARD_CHAT_CARD_MARKDOWN } from './plugin-start-command.js';
 
 describe('native read-only chat card', () => {
   it('publishes a bounded marker with no state, digest, or approval payload', () => {
@@ -24,7 +25,9 @@ describe('native read-only chat card', () => {
     addChatCardCommand(context, editor);
     expect(commands).toHaveLength(1);
     expect(commands[0]?.name).toBe('flowguard-card');
-    await commands[0]!.execute({ sessionID: 'ses_root', prompt: { text: '' } });
+    const command = commands[0];
+    if (!command) throw new Error('No chat-card command registered');
+    await command.execute({ sessionID: 'ses_root', prompt: { text: '' } });
     expect(synthetic).toHaveBeenCalledTimes(1);
     expect(synthetic).toHaveBeenCalledWith({
       sessionID: 'ses_root',
