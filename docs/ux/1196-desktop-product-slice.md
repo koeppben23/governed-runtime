@@ -1,5 +1,7 @@
 # FlowGuard Desktop UX — first native product slice (#1196)
 
+<!-- prettier-ignore-start -->
+
 **Status:** DESIGN BASELINE / IMPLEMENTATION NOT YET VERIFIED  
 **Primary target:** OpenCode Desktop 2.2.5 (installed production UI required)  
 **Related:** #1196, #1203 diagnostics, #1204 portable chooser, #1205 TUI chooser, #1206 native decisions/Desktop chooser, ADR-011  
@@ -173,3 +175,5 @@ Installed tests must include **actual visibility and interaction**, not merely a
 ## Out of scope for this design PR
 
 Implementation of any unverified native extension API, an OpenCode fork, synthetic persisted Next Action, an independent authorization engine, mock screenshots presented as proof, full client-side replacement UI, a Cursor governance adapter, and any change to active PR #1206.
+
+<!-- prettier-ignore-end -->
