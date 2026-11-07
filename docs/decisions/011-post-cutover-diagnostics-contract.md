@@ -272,6 +272,13 @@ Implemented in this repository state:
   artifact and creates no second store, logger or authority.
 - Cross-surface tests keep the exported `session-graph.json`, the explorer
   projection and the rendered Markdown facts aligned.
+- Revision-bound native review decisions now use the `GetNextAction` binding:
+  at a review gate the projection carries the current obligation, subject
+  digest, activation identity/generation, policy digest, state digest and
+  phase. `SubmitDecision` accepts only canonical native decision commands,
+  re-reads that binding immediately before the existing decision boundary and
+  refuses stale or mismatched views with `DECISION_BINDING_STALE`. TUI
+  decision dialogs require an explicit rationale for governance overrides.
 - The optional TUI companion now provides the #1196 workflow chooser. It reads a
   read-only `GetNextAction` RPC projection with session, phase, policy,
   state-digest and canonical activation identity/generation binding, opens the
@@ -280,9 +287,10 @@ Implemented in this repository state:
   command, and rejects late dialog results after plugin unload. An installed
   pinned-host PTY proof covers open, cancel without transition, `/task`
   selection through `session.command`, and the canonical READY → TICKET
-  transition. It handles only `CHOOSE_FLOW`; native approval/override decisions
-  and persistent status remain separate. Desktop GUI delivery remains
-  `NOT_VERIFIED` without an installed proof.
+  transition. It opens only on an explicit `/choose-workflow` request and
+  installs no persistent status surface. Native approval/override decisions
+  remain separate; Desktop GUI delivery remains `NOT_VERIFIED` without an
+  installed proof.
 
 Still not implemented or not verified:
 

@@ -107,7 +107,7 @@ export function createV2Host(directory: string) {
   const synthetic = vi.fn(async (_input: unknown) => ({ id: 'synthetic', type: 'synthetic' }));
   const switchAgent = vi.fn(async (_input: unknown) => {});
   const context = {
-    app: { name: 'opencode', version: '2.2.4', channel: 'stable' },
+    app: { name: 'opencode', version: '2.2.5', channel: 'stable' },
     location: { directory, project: { id: 'project', directory, canonical: directory } },
     options: {},
     storage: activation.store,

@@ -11,6 +11,21 @@ import { projectNextActionResult } from './next-action-projection.js';
 
 const team = getPolicyPreset('team');
 
+function gateState() {
+  const state = makeProgressedState('PLAN_REVIEW');
+  return {
+    ...state,
+    reviewAssurance: {
+      ...state.reviewAssurance!,
+      obligations: state.reviewAssurance!.obligations.map((obligation) => ({
+        ...obligation,
+        status: 'fulfilled' as const,
+        consumedAt: null,
+      })),
+    },
+  };
+}
+
 describe('next-action RPC projection', () => {
   it('projects CHOOSE_FLOW with the three canonical actions and a durable state digest', () => {
     const state = makeState('READY');
@@ -73,6 +88,24 @@ describe('next-action RPC projection', () => {
     const terminal = projectNextActionResult(makeProgressedState('COMPLETE'), team);
     expect(terminal.kind).toBe('terminal');
     expect(terminal.actions).toEqual([]);
+  });
+
+  it('projects the exact review decision binding at a human gate', () => {
+    const state = gateState();
+    const view = projectNextActionResult(state, team, {
+      activationId: '11111111-1111-4111-8111-111111111111',
+      generation: 4,
+    });
+
+    expect(view.kind).toBe('decision_required');
+    expect(view.decisionBinding).toMatchObject({
+      sessionID: state.binding.hostSessionId,
+      activationId: '11111111-1111-4111-8111-111111111111',
+      activationGeneration: 4,
+      phase: 'PLAN_REVIEW',
+      reviewType: 'plan',
+    });
+    expect(view.decisionBinding?.obligationId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('preserves the exhausted override decision set', () => {

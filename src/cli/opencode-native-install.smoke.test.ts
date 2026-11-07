@@ -8,11 +8,14 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { OpenCode } from '@opencode/client';
+import { Host } from '@opencode/plugin/host';
 import {
   PLUGIN_RELATIVE_PATH,
   PLUGIN_WRAPPER,
   TUI_PLUGIN_RELATIVE_PATH,
   TUI_PLUGIN_WRAPPER,
+  GUI_PLUGIN_BUNDLE,
+  GUI_PLUGIN_RELATIVE_PATH,
 } from './templates.js';
 import { hashBuffer } from '../shared/hashing.js';
 import { nativeOpenCodeCandidate } from './opencode-live-host-test-helpers.js';
@@ -139,6 +142,10 @@ describe.skipIf(!LIVE)('packed native V2 installation and lifecycle', () => {
     const target = join(project, '.opencode');
     expect(await readFile(join(target, PLUGIN_RELATIVE_PATH), 'utf8')).toBe(PLUGIN_WRAPPER);
     expect(await readFile(join(target, TUI_PLUGIN_RELATIVE_PATH), 'utf8')).toBe(TUI_PLUGIN_WRAPPER);
+    expect(await readFile(join(target, GUI_PLUGIN_RELATIVE_PATH), 'utf8')).toBe(GUI_PLUGIN_BUNDLE);
+    expect(Host.resolve({ directory: join(target, 'plugins/flowguard') }).gui).toMatch(
+      /gui-experimental\.cjs$/,
+    );
     expect(existsSync(join(target, 'tools/flowguard.ts'))).toBe(false);
     expect(existsSync(join(target, 'plugins/flowguard-audit.ts'))).toBe(false);
     expect(await readFile(join(project, 'opencode.jsonc'), 'utf8')).toBe(customer);
@@ -260,6 +267,7 @@ export default Plugin.define({ id: 'flowguard-test-inventory', async setup(ctx) 
     for (const file of foreignFiles) expect(await readFile(file)).toEqual(foreignBytes);
     expect(existsSync(join(target, PLUGIN_RELATIVE_PATH))).toBe(false);
     expect(existsSync(join(target, TUI_PLUGIN_RELATIVE_PATH))).toBe(false);
+    expect(existsSync(join(target, GUI_PLUGIN_RELATIVE_PATH))).toBe(false);
     expect(existsSync(join(target, 'package.json'))).toBe(false);
     await client.location.reload({ signal: AbortSignal.timeout(60_000) });
     await awaitLocationActivation(client, location);

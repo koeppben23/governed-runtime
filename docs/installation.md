@@ -7,7 +7,7 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 - Node.js 20+
 - npm
-- OpenCode V2 (native API candidate: 2.2.4; complete product acceptance remains NO-GO)
+- OpenCode V2 (native API candidate: 2.2.5; complete product acceptance remains NO-GO)
 
 ## Installation Steps
 
@@ -66,16 +66,20 @@ operation must be preserved; see [ADR-010](./decisions/010-host-neutral-opt-in-g
 
 ### Native V2 layout and fresh-install boundary
 
-The installer writes the server plugin at `plugins/flowguard/index.ts` and an
-optional TUI companion at `plugins/flowguard/tui.ts` under the selected OpenCode
-directory. The server plugin owns native tool registrations; the TUI companion
-is a progressive-enhancement workflow chooser and never a governance authority.
+The installer writes the server plugin at `plugins/flowguard/index.ts`, an
+optional TUI companion at `plugins/flowguard/tui.ts`, and an optional prebuilt
+Desktop GUI bundle at `plugins/flowguard/gui-experimental.cjs` under the selected
+OpenCode directory. The server plugin owns native tool registrations; the TUI
+and Desktop companions are progressive-enhancement workflow choosers and never a
+governance authority.
 No `tools/flowguard.ts` or V1 plugin wrapper is installed. Existing OpenCode
 JSON/JSONC, comments, instructions, model/variant selection and permissions are
 preserved byte-for-byte. An absent config remains absent.
 `flowguard-mandates.md` is a passive managed artifact, **not** registered in
 `instructions[]`; installing files does not activate a session. A host without
-TUI support or without the TUI wrapper uses the complete Markdown chooser.
+TUI/Desktop support or without the companion wrapper uses the complete Markdown
+chooser. Desktop visual acceptance remains `NOT_VERIFIED` until an installed
+pinned-host proof is recorded.
 
 The installer publishes the watched native plugin entrypoint only after its
 dependency tree is live. This prevents a running host from importing the fresh

@@ -2,9 +2,10 @@
 
 This Quick Start applies to OpenCode, the primary V2 host. The ACTIVE V2
 integration is still Draft/NO-GO. The bounded OpenCode 2.2.4 CLI/server parity
-matrix passes 65/65 on Linux, macOS and Windows; see the
-[P0-00 evidence](./host-probes/opencode-v2/p0-00-inactive-parity.md).
-Installed Desktop 2.2.4 and whole-PR acceptance remain open. R4 is a documented
+matrix remains historical evidence (65/65 on Linux, macOS and Windows); see the
+[P0-00 evidence](./host-probes/opencode-v2/p0-00-inactive-parity.md). The current
+native candidate pin is OpenCode 2.2.5; installed Desktop 2.2.5 and whole-PR
+acceptance remain open. R4 is a documented
 `NOT_SUPPORTED` trusted-plugin limitation: untrusted co-installed plugins are
 outside the supported V2 security boundary, and no receipt claims
 tool-result-byte attestation. Use this guide for evaluation, not as a GA release

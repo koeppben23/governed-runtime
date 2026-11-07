@@ -35,6 +35,8 @@ import {
   PLUGIN_RELATIVE_PATH,
   TUI_PLUGIN_WRAPPER,
   TUI_PLUGIN_RELATIVE_PATH,
+  GUI_PLUGIN_BUNDLE,
+  GUI_PLUGIN_RELATIVE_PATH,
   extractManagedBody,
   extractManagedDigest,
   isManagedArtifact,
@@ -95,6 +97,7 @@ async function mayRemoveMandate(fullPath: string, warnings: string[]): Promise<b
 function expectedOpenCodeFile(relPath: string): string | null {
   if (relPath === PLUGIN_RELATIVE_PATH) return PLUGIN_WRAPPER;
   if (relPath === TUI_PLUGIN_RELATIVE_PATH) return TUI_PLUGIN_WRAPPER;
+  if (relPath === GUI_PLUGIN_RELATIVE_PATH) return GUI_PLUGIN_BUNDLE;
   const reviewer = reviewerDefinitionForPlatform('opencode');
   if (relPath === reviewer.relativePath) return reviewer.content;
   if (relPath.startsWith('commands/')) return COMMANDS[basename(relPath)] ?? null;
