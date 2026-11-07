@@ -360,7 +360,16 @@ describe('installed Desktop GUI bundle', () => {
       await vi.waitFor(() => expect(node.textContent).toContain('Plan v1'));
       const cards = node.children.filter((child) => child.tagName === 'details');
       expect(cards).toHaveLength(8);
-      expect(cards.map((card) => card.open)).toEqual([true, true, false, true, false, false, false, false]);
+      expect(cards.map((card) => card.open)).toEqual([
+        true,
+        true,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+      ]);
       const forensic = node.find('summary', 'Technical binding details');
       expect(forensic).toBeDefined();
       expect(node.find('button', 'Review operator decisions')?.disabled).toBe(false);
@@ -421,7 +430,16 @@ describe('installed Desktop GUI bundle', () => {
       const node = panel.render({ session });
       await vi.waitFor(() => expect(node.textContent).toContain('No reviewable subject recorded'));
       const cards = node.children.filter((child) => child.tagName === 'details');
-      expect(cards.map((card) => card.open)).toEqual([true, false, false, false, false, false, false, false]);
+      expect(cards.map((card) => card.open)).toEqual([
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+      ]);
       expect(node.find('button', 'Choose workflow')?.disabled).toBe(false);
       expect(loaded.commandCalls).toHaveLength(0);
       expect(loaded.rpcCalls.map((call) => call['method'])).toEqual([
@@ -434,7 +452,7 @@ describe('installed Desktop GUI bundle', () => {
     }
   });
 
-  it('shows bounded persisted review transport events and proof provenance without mutation', async () => {
+  it('renders reviewer timeline and proof details', async () => {
     const ctx = {} as Record<string, unknown>;
     const session = {} as Record<string, unknown>;
     const loaded = load(ctx, session);
@@ -523,7 +541,7 @@ describe('installed Desktop GUI bundle', () => {
     }
   });
 
-  it('renders verified session lineage and bounded audit chronology without invoking actions', async () => {
+  it('renders session lineage and verified audit without mutation', async () => {
     const ctx = {} as Record<string, unknown>;
     const session = {} as Record<string, unknown>;
     const loaded = load(ctx, session);
