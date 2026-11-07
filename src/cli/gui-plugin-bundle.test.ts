@@ -276,6 +276,38 @@ describe('installed Desktop GUI bundle', () => {
     expect(loaded.commandCalls).toHaveLength(0);
   });
 
+  it('ignores a late status response after plugin disposal', async () => {
+    const loaded = load({}, {});
+    const pending: Array<(result: unknown) => void> = [];
+    const session = loaded.host.sessions.current() as {
+      id: string;
+      server: { client: { rpc: { call: (input: unknown) => Promise<unknown> } } };
+    };
+    session.server.client.rpc.call = vi.fn(() => new Promise((resolve) => pending.push(resolve)));
+    const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+      show: (input: { session: typeof session }) => {
+        rows: Array<{ id: string; label: string; run?: () => void }>;
+      };
+    };
+    const surface = pill.show({ session });
+    surface.rows.find((row) => row.id === 'refresh')?.run?.();
+    expect(pending).toHaveLength(1);
+    for (const cleanup of pluginCleanups.splice(0).reverse()) cleanup();
+    pending[0]?.({
+      output: {
+        kind: 'system_work',
+        sessionID: session.id,
+        stateDigest: 'a',
+        phase: 'PLAN',
+        title: 'Late response must not apply',
+        actions: [],
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pill.show({ session }).rows.some((row) => row.label.includes('PLAN'))).toBe(false);
+    expect(loaded.commandCalls).toHaveLength(0);
+  });
+
   it('subscribes to the sidecar completion event and refreshes only the current session', async () => {
     const callbacks = new Map<string, (event: unknown) => void>();
     const unsubscribe = vi.fn();

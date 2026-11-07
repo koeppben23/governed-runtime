@@ -647,18 +647,73 @@ across every governance transition, zero-restart upgrade, and active-profile
 uninstall (`PARTIAL`). This is a source-layer refactor, not a new host target or
 authority path.
 
-## Subsequent optional GUI reconciliation and accessibility revision
+## Bounded reconciliation, accessibility semantics and isolated teardown
 
-**NOT INSTALLED-VERIFIED for the new bundle hash.** The prior
-`e8e1e90d` installed evidence and snapshots remain valid for their exact
-artifact only. PR #1207 subsequently added a visible-session 30-second,
-read-only reconciliation fallback, request coalescing, explicit accessibility
-regions/status announcements and stricter isolated-host teardown checks.
-The bundle must be repacked and reinstalled before asserting a new PASS.
+**Status: PASS on installed Desktop 2.2.6 for the visible-session reconciliation
+and static accessibility semantics; isolated active-uninstall smoke PASS.**
+The prior `e8e1e90d` evidence remains valid only for its own artifact. This
+section records the later GUI bundle at hash `bb8c8cd2…b06ff81e`.
 
-See [remaining gate protocol](./desktop-2.2.6-remaining-gates.md) for
-version-bound VoiceOver, all-phase reconciliation, distinct-revision
-zero-restart upgrade and isolated active-uninstall verification.
+### Installed acceptance record (artifact `f9c53e8f`)
+
+| Field                | Observed value                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Git HEAD             | `f9c53e8f33df32a244af167495b4770899f1524c` (GUI code head `7569bb89`)                                                |
+| Packed tarball       | `flowguard-core-2.0.0-tp.2.tgz`, SHA-256 `ebbc23ba219a188acc1d48b9a90522618c9e2db765b2a39704ff90fecc7c4cc4`          |
+| Installed GUI bundle | `plugins/flowguard/gui-experimental.cjs`, SHA-256 `bb8c8cd2581b2a52f38d77ddaaa538f4323d2bbed60730799f4a1b09b06ff81e` |
+| Host                 | managed Desktop service, OpenCode `2.2.6`, loopback port `49374`                                                     |
+
+**Observed installed results:**
+
+- **Visible-session reconciliation:** a disposable fixture opened at
+  `FlowGuard · inspect` with no RPC on registration. After a 34-second wait
+  (observed at approximately 37 seconds after opening), the pill changed to
+  `FlowGuard · NOT_VERIFIED · last read` without a click and without any model
+  execution. The fixture remained at zero messages.
+- **Completion fast path retained:** a second disposable fixture completed a
+  normal prompt at `1794078112673`; the pill changed to
+  `NOT_VERIFIED · last read` by `1794078117841` (about 5.2 seconds), well before
+  the 30-second tick.
+- **Chat card:** the assistant `flowguard-live` `v1` block rendered the live
+  card. The card exposed `role="region"`, `aria-label="FlowGuard live status
+card"`, and two `aria-live="polite"`/`aria-atomic="true"` announcement
+  nodes. It created no message, prompt or decision.
+- **Workbench:** the panel exposed `role="region"`,
+  `aria-label="FlowGuard Review Workbench"`; its status line exposed
+  `role="status"`, `aria-live="polite"` and `aria-atomic="true"`. The
+  EVIDENCE_REVIEW read still showed reviewer `accept`, zero findings,
+  16 timeline events, three Explorer sessions and 72 verified audit events.
+- **Coalescing and disposal:** the bundled execution tests cover at most one
+  in-flight read plus one catch-up read, late-response rejection after plugin
+  cleanup, and timer cleanup/stop. Hidden-window skipping is contract-tested
+  but was not separately exercised in the installed GUI.
+- **Isolated active uninstall:** the opt-in
+  `opencode-native-install.smoke.test.ts` passed 1/1 in 56.52 seconds against
+  the exact packed artifact and the repository-pinned native CLI candidate
+  `2.2.5`. It verified the same live host PID and liveness across
+  `location.reload` and uninstall, the independent observer plugin remained
+  active, foreign sentinels and the customer `opencode.jsonc` stayed
+  byte-exact, and the managed FlowGuard plugin files disappeared. The real
+  active user profile was **not** uninstalled.
+- **No governance mutation:** the demo remained at 44 messages (zero synthetic),
+  the existing `approve` decision (`2026-11-07T11:48:48.960Z`), activation
+  generation `1`, `EVIDENCE_REVIEW`, and 72 verified audit events under
+  `PARTIAL`. All fixtures were deleted.
+
+**Install/refresh boundary:** the installer wrote the exact GUI bundle hash
+above and then returned its explicit in-service host-refresh failure because it
+ran inside the managed service. No automatic restart was performed; the host
+hot-reloaded the plugin and a renderer reload re-registered it. This is not a
+zero-restart upgrade proof.
+
+**Still NOT_VERIFIED:** independent VoiceOver/screenreader acceptance, a
+distinct revision-A-to-revision-B runtime fingerprint for zero-restart upgrade,
+and uninstall of a real non-disposable active profile. See the
+[remaining gate protocol](./desktop-2.2.6-remaining-gates.md).
+
+Evidence:
+[Workbench and accessibility semantics](./desktop-2.2.6-reconcile-workbench.png)
+and [chat card with completion refresh](./desktop-2.2.6-reconcile-chat-card.png).
 
 ## Artifact to certify
 

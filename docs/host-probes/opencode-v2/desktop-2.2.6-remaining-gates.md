@@ -2,7 +2,11 @@
 
 **PR:** #1207 (Draft). **Change under test:** optional GUI status reconciliation
 and accessibility semantics, plus native installed lifecycle regression hardening.
-**No installed PASS is asserted for the new GUI bundle by this document.**
+**Installed evidence update (artifact `f9c53e8f`):** bounded current-session
+reconciliation and static ARIA semantics PASS; the isolated active-uninstall
+smoke test PASSed against the exact artifact with the pinned native CLI
+candidate. VoiceOver, zero-restart and live-profile uninstall remain
+`NOT_VERIFIED`. This document still defines the full gate matrix.
 
 ## Evidence discipline
 
@@ -63,8 +67,15 @@ Run the installed checks against disposable sessions:
    Capture actual observed transitions; do not claim a phase PASS from
    another phase's screenshot.
 
-**Result:** Code-level adapter and reconciliation tests are supplied; a
-fresh installed pass for this new GUI bundle is required.
+**Installed result (artifact `f9c53e8f`):** a disposable fixture opened at
+`FlowGuard · inspect`; after a 34-second wait (observed at roughly 37 seconds)
+the pill reconciled to `FlowGuard · NOT_VERIFIED · last read` without a click
+or execution. A second fixture's completion refreshed the pill about 5.2
+seconds after idle, proving the event fast path remains active. Coalescing,
+late-response-after-dispose and timer cleanup are covered by the bundled
+execution tests; hidden-window skipping and a live out-of-order race were not
+separately induced in the installed GUI. No fixture created a message,
+decision or audit mutation.
 
 ## B. Accessibility — VoiceOver acceptance
 
@@ -95,9 +106,12 @@ On macOS with OpenCode Desktop 2.2.6 and the exact new GUI hash:
 7. Record observed spoken strings, focus order, screenshots and the
    fail-closed results. A tester must mark PASS/FAIL/PARTIAL individually.
 
-**Result:** Static accessibility semantics and executable DOM assertions
-are present. Independent VoiceOver result remains **NOT_VERIFIED** until
-performed on installed Desktop.
+**Installed result (artifact `f9c53e8f`):** the Workbench exposed
+`role="region"`, `aria-label="FlowGuard Review Workbench"` and a
+`role="status"`/`aria-live="polite"`/`aria-atomic="true"` status line. The chat
+card exposed `role="region"`, its named label and two polite atomic
+announcement nodes. Independent VoiceOver remains **NOT_VERIFIED**; static
+semantics are not a screenreader PASS.
 
 ## C. Upgrade while the service is running
 
@@ -144,8 +158,10 @@ managed file removal is **not** proof of running-host unload. Check both
 negative cases before attempting any active-profile operation.
 A test failure must not trigger cleanup of a user's actual profile.
 
-With OpenCode 2.2.6 available on the runner, execute in an isolated
-test environment:
+The isolated lifecycle smoke test is pinned to the repository's native CLI
+candidate (`2.2.5` in `.sdk-baselines/opencode/cli-candidate.json`); the
+Desktop GUI target remains 2.2.6. Execute with the pinned candidate in an
+isolated test environment:
 
 ```sh
 FLOWGUARD_OPENCODE_HOST_E2E=1 \
@@ -158,10 +174,13 @@ The test is skipped in ordinary CI unless the live-host opt-in environment
 is set. Verify the exact platform tarball and allow the test to create and
 clean only its temporary home.
 
-**Result:** Source-level test is hardened. A new successful run against the
-exact PR artifact is required for isolated PASS. Uninstall of a real,
-non-disposable active user profile stays explicitly **NOT_EXECUTED** and must
-not be performed for acceptance.
+**Isolated result (artifact `f9c53e8f`):** `opencode-native-install.smoke.test.ts`
+passed 1/1 in 56.52 seconds using the exact packed tarball and the
+repository-pinned native CLI candidate `2.2.5`. The same live host PID stayed
+alive across reload and uninstall, the observer plugin remained active, managed
+plugin files disappeared, and customer sentinels/`opencode.jsonc` stayed
+byte-exact. Uninstall of a real, non-disposable active user profile remains
+explicitly **NOT_EXECUTED** and must not be performed for acceptance.
 
 ## Abnahmeentscheidung
 

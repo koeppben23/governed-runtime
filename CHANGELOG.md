@@ -15,16 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   old plugin loaded until its location is reloaded or the service restarts.
   Regression tests cover byte-exact config retention and the unload notice.
 
-
 - Add optional 30-second visible-sidecar-session read-only reconciliation to
   the Desktop composer status. Host completion events remain fast-path hints,
   missed transitions are reconciled best-effort when the GUI is visible and
   connected, and concurrent refreshes are coalesced. Expose named regions and
   polite atomic status announcements in the Workbench and chat card. Extend
   isolated running-host uninstall regression with PID/liveness and unaffected
-  observer checks. This does not establish a screenreader PASS, a distinct
+  observer checks. Installed Desktop 2.2.6 acceptance on artifact `f9c53e8f`
+  observed the 30-second visible-session reconciliation without a click or
+  event, retained the immediate completion refresh, and confirmed the ARIA
+  semantics without governance mutation. The isolated active-uninstall smoke
+  test passed against the exact packed artifact with the pinned native CLI
+  candidate `2.2.5`. This does not establish a screenreader PASS, a distinct
   revision zero-restart upgrade, or live-profile uninstall acceptance.
-
 
 - Isolate the OpenCode Desktop sidecar lifecycle and `serverEndpoints` /
   `servers` compatibility into a host bridge. Route all GUI RPC calls

@@ -73,16 +73,21 @@ hard latency guarantee for every governance transition. Missing data remains
 `NOT_VERIFIED`; no state, decision or audit mutation is introduced.
 
 Chat cards and the Workbench now expose named regions with polite, atomic
-status announcements. This is static accessibility hardening, **not**
-VoiceOver/screenreader acceptance. The native isolated uninstall E2E was
-tightened to pin the same service PID and an unaffected observer plugin;
-it remains opt-in and has not been executed here for the new artifact.
-Zero-restart upgrade still requires an external revision-A-to-B runtime
-fingerprint proof; the installer self-restart guard remains untouched.
+status announcements. Installed Desktop 2.2.6 acceptance on artifact
+`f9c53e8f` confirms the visible-session 30-second reconciliation, the retained
+completion fast path, the ARIA region/live semantics and no governance
+mutation. This remains **static accessibility hardening**, not
+VoiceOver/screenreader acceptance; VoiceOver is still `NOT_VERIFIED`.
+
+The native isolated uninstall E2E pins the same live host PID and an unaffected
+observer plugin. It passed 1/1 against the exact packed artifact with the
+repository-pinned native CLI candidate `2.2.5`; the real active profile was not
+uninstalled. Zero-restart upgrade still requires an external revision-A-to-B
+runtime fingerprint proof; the installer self-restart guard remains untouched.
 
 The full evidence checklist and negative test matrix are maintained in
 [Desktop remaining gates](../host-probes/opencode-v2/desktop-2.2.6-remaining-gates.md).
-**A fresh installed Desktop acceptance is mandatory for the new GUI SHA.**
+The installed GUI evidence applies only to bundle `bb8c8cd2…b06ff81e`.
 
 ## Desktop host and RPC adapter isolation (PR #1207)
 
