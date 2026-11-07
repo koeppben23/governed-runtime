@@ -38,6 +38,7 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
         Command: 'command',
         Panel: 'panel',
         Slot: 'slot',
+        CodeBlock: 'code-block',
         ComposerPill: 'composer-pill',
       };
     }
@@ -155,6 +156,34 @@ describe('installed Desktop GUI bundle', () => {
     const loaded = load(ctx, session);
 
     expect(loaded.command.id).toBe('choose-workflow');
+  });
+
+  it('registers a dedicated read-only inline CodeBlock renderer', async () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    const card = loaded.additions.find((item) => item.registry === 'code-block')?.value as {
+      languages: string[];
+      render: (input: { code: string; session?: Record<string, unknown> }) => FakeDomNode | undefined;
+    };
+    expect(card.languages).toEqual(['flowguard-live']);
+    expect(card.render({ code: 'unsupported', session })).toBeUndefined();
+    expect(card.render({ code: 'v1' })).toBeUndefined();
+    vi.stubGlobal('document', { createElement: (tag: string) => new FakeDomNode(tag) });
+    try {
+      const rendered = card.render({ code: 'v1', session });
+      expect(rendered?.textContent).toContain('NOT_VERIFIED');
+      expect(rendered?.textContent).toContain('not a historical decision');
+      expect(loaded.commandCalls).toHaveLength(0);
+      await vi.waitFor(() => expect(loaded.rpcCalls.length).toBeGreaterThan(0));
+      expect(loaded.rpcCalls.every((item) => {
+        const rpc = item as { method?: string };
+        return rpc.method === 'GetNextAction' || rpc.method === 'GetWorkbenchReview';
+      })).toBe(true);
+      expect(loaded.commandCalls).toHaveLength(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('registers a native panel but no slot until the experimental command is invoked', () => {
