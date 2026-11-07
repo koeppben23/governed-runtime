@@ -219,6 +219,49 @@ decision when it starts with a fresh assurance ledger.
   verification failed in the isolated config because no running service record
   existed there. Active-profile uninstall was not run.
 
+## Compact progressive-disclosure Workbench revision (post-4fcd55c3)
+
+**Status: NOT_VERIFIED on installed Desktop.** The prior screenshots and successful
+host evidence are valid for the previous GUI bundle
+`c9b4f6d6655433e1fb770c11fd4b9a73df289325516691493cb816a4f57bad2e`.
+PR #1207 now also contains a newer, compact native Workbench GUI bundle;
+do **not** carry forward visual/keyboard PASS from the old bundle to the new one.
+
+The newer Workbench implements a compact overview with the existing canonical
+chooser above the expandable sections; native `details`/`summary` headings
+provide keyboard and focus semantics. The current-work section starts expanded;
+independent review and safe decisions expand automatically at review decision
+gates; evidence expands for findings, missing verification, coverage gaps or
+warnings; recovery expands for an actual canonical blocker. An inner
+`Technical binding details` section hides full digests until requested.
+The `Expand all details` control is view-only.
+
+### Additional installed acceptance required for the new bundle
+
+- [ ] Install exact updated PR tarball with recorded SHA-256 and confirm its
+      `guiPluginBundle` hash matches the installed bytes.
+- [ ] READY starts compact with the current-work section open and the
+      `Choose workflow` action linked only to the canonical chooser; opening,
+      expanding, collapsing and refreshing cause **no mutation**.
+- [ ] PLAN_REVIEW with bound review expands review and safe-decision sections;
+      the chooser remains revision-bound and stale-binding rejection unchanged.
+- [ ] EVIDENCE_REVIEW displays the actual ProofGraph evidence and any findings;
+      evidence details expand when they require attention, with no fabricated
+      assurance when claims are missing or unverified.
+- [ ] BLOCKED expands recovery and does not offer a bypass. Confirm canonical
+      error code and recovery text.
+- [ ] Keyboard: `Tab`/`Enter`/`Space` open and close native expandable
+      sections, `Expand all details` toggles without executing a workflow,
+      and `Escape` dismisses the chooser without recording a decision.
+- [ ] Light and dark mode, 900x900 narrow window, clipped/long findings,
+      text wrapping, visible focus, and session switch tested on the **new**
+      installed UI bundle.
+- [ ] Regression: native on-demand chooser, installed package lifecycle,
+      panel reopen/reload and stale response fencing remain functional.
+
+**No merge GO solely from the old screenshots.** Keep the PR Draft until
+the new bundle's installed acceptance and CI complete.
+
 ## Artifact to certify
 
 Record the exact Git HEAD, packed `@flowguard/core` tarball SHA-256, installed
