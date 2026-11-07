@@ -17,10 +17,7 @@ import {
 const MAX_AUDIT_BYTES = 2 * 1024 * 1024;
 const MAX_AUDIT_SESSIONS = 24;
 
-async function verifiedAudit(
-  root: string,
-  sessionID: string,
-): Promise<WorkbenchAuditSnapshot> {
+async function verifiedAudit(root: string, sessionID: string): Promise<WorkbenchAuditSnapshot> {
   const fallback = (reasonCode: string): WorkbenchAuditSnapshot => ({
     sessionID,
     integrity: 'not_verified',
