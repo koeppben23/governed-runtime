@@ -247,7 +247,7 @@ describe('installed Desktop GUI bundle', () => {
       expect(node.textContent).toContain('Reviewer verdict (not approval): ACCEPT');
       expect(node.textContent).toContain('Coverage gaps: 1');
       expect(node.textContent).toContain('NOT_VERIFIED');
-      expect(node.find('button', 'Open canonical decisions')?.disabled).toBe(false);
+      expect(node.find('button', 'Review operator decisions')?.disabled).toBe(false);
       expect(loaded.rpcCalls.map((call) => call['method'])).toEqual([
         'GetNextAction',
         'GetWorkbenchReview',
@@ -302,7 +302,7 @@ describe('installed Desktop GUI bundle', () => {
       );
       const node = panel.render({ session });
       await vi.waitFor(() => expect(node.textContent).toContain('Decision unavailable'));
-      expect(node.find('button', 'Open canonical decisions')?.disabled).toBe(true);
+      expect(node.find('button', 'Review operator decisions')?.disabled).toBe(true);
       expect(loaded.rpcCalls).toHaveLength(2);
       expect(loaded.commandCalls).toEqual([]);
     } finally {
