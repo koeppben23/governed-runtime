@@ -40,6 +40,10 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
         Slot: 'slot',
         CodeBlock: 'code-block',
         ComposerPill: 'composer-pill',
+        createKeyed: (get: () => unknown, setup: (data: unknown) => void) => {
+          const data = get();
+          if (data) setup(data);
+        },
       };
     }
     if (name === 'solid-js') {
@@ -214,6 +218,27 @@ describe('installed Desktop GUI bundle', () => {
     expect(action).toBeDefined();
     action.run();
     await vi.waitFor(() => expect(loaded.rpcCalls.length).toBeGreaterThan(1));
+    expect(loaded.commandCalls).toHaveLength(0);
+  });
+
+  it('subscribes to the sidecar completion event and refreshes only the current session', async () => {
+    const callbacks = new Map<string, (event: unknown) => void>();
+    const unsubscribe = vi.fn();
+    const on = vi.fn((type: string, callback: (event: unknown) => void) => {
+      callbacks.set(type, callback);
+      return unsubscribe;
+    });
+    const loaded = load(
+      { servers: { get: (id: string) => (id === 'sidecar' ? { data: { on } } : undefined) } },
+      {},
+    );
+    expect(on).toHaveBeenCalledWith('session.execution.succeeded', expect.any(Function));
+    expect(loaded.rpcCalls).toHaveLength(0);
+    callbacks.get('session.execution.succeeded')?.({ data: { sessionID: 'other' } });
+    expect(loaded.rpcCalls).toHaveLength(0);
+    callbacks.get('session.execution.succeeded')?.({ data: { sessionID: 'ses_root' } });
+    await vi.waitFor(() => expect(loaded.rpcCalls.length).toBeGreaterThan(0));
+    expect(loaded.rpcCalls[0]?.method).toBe('GetNextAction');
     expect(loaded.commandCalls).toHaveLength(0);
   });
 
