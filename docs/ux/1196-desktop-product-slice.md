@@ -8,6 +8,43 @@
 **Related:** #1196, #1203 diagnostics, #1204 portable chooser, #1205 TUI chooser, #1206 native decisions/Desktop chooser, ADR-011  
 **Contract owner:** existing FlowGuard governance and diagnostic projections; no UI authorization
 
+## Continued hardening after installed artifact e054159a (2026-11-07)
+
+**Status: implementation and regression probes only; new final installed Desktop
+acceptance required.** Do not reuse the older bundle acceptance for a changed
+bundle or claim a zero-restart installer proof.
+
+1. Autonomous `StartGovernance` now returns its existing authoritative RPC
+   result without a `session.synthetic` transcript message. Audit confirmation,
+   actor assurance, activation revision and `GetNextAction` remain unchanged;
+   native host-command `/start` still publishes its existing report.
+   A product-composition regression checks first and repeated autonomous
+   Start create neither `prompt` nor `synthetic` messages.
+2. The composer pill optionally subscribes to the officially documented
+   sidecar `session.execution.succeeded` event with `createKeyed` and cleanup.
+   A completion for the **current session only** triggers the same read-only RPC
+   projection as manual Refresh. Each request has a generation fence; older
+   responses cannot overwrite newer results. Missing event support, disconnects
+   and missed events retain the explicit Refresh fallback.
+3. The existing title/rows provide the host-native accessible name and
+   keyboard interaction. **Independent screenreader testing remains pending.**
+   Required installed tests: VoiceOver on macOS and, if supported, a second
+   screenreader; focus order, name/role/value, live updates, stale and blocked
+   verbalization, keyboard-only menu use, and reduced-motion/zoom behavior.
+4. Installer host lifecycle is deliberately **not relaxed** when launched
+   inside the managed service. Byte-exact artifact write and hot reload do
+   not prove a clean post-install restart; `--no-restart-host` plus an
+   out-of-process verification/restart is the non-destructive operator path.
+   The active-profile uninstall remains PARTIAL; no destructive uninstall was
+   attempted against the live demo. A disposable ownership-matched fixture,
+   followed by an isolated running-host unload/reload proof, is required
+   before changing that status.
+
+No claim of completed #1196 automatic updates across *all* governance
+transitions is made. The completion event is an incremental read-only signal,
+not a guaranteed durable subscription or an audit feed. The plugin never
+interprets missing events as approval.
+
 ## Inline chat and composer status — optional Desktop extension (PR #1207)
 
 The official OpenCode V2 GUI SDK documents the `CodeBlock` registry
@@ -20,7 +57,7 @@ Both surfaces are installed-verified on Desktop 2.2.6 artifact `e054159a`
   refreshes one session-bound status pill by calling the existing read-only
   `GetNextAction` and, for review gates, `GetWorkbenchReview` RPCs.
 - The pill also exposes **Inspect/Refresh canonical status**. Nothing is
-  fetched on plugin registration. Only user action performs the RPC reads.
+  fetched on plugin registration. User action or an observed current-session\n  execution-completed event performs the RPC reads.
 - No synthetic message is inserted. An earlier prototype used
   `session.synthetic({ resume: false })`, but that could introduce
   otherwise non-authoritative UI notices into future model context.
