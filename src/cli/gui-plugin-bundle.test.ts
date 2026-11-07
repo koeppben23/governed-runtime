@@ -186,6 +186,21 @@ describe('installed Desktop GUI bundle', () => {
     }
   });
 
+  it('opens a chat card only when explicitly chosen from the Desktop palette', async () => {
+    const loaded = load({} as Record<string, unknown>, {} as Record<string, unknown>);
+    const action = loaded.additions.find(
+      (item) => item.registry === 'command' &&
+        (item.value as FakeCommand).id === 'show-chat-card',
+    )?.value as FakeCommand;
+    expect(action).toBeDefined();
+    expect(loaded.commandCalls).toHaveLength(0);
+    action.run();
+    expect(loaded.commandCalls).toEqual([
+      { sessionID: 'ses_root', name: 'flowguard-card', text: '' },
+    ]);
+    expect(loaded.rpcCalls).toHaveLength(0);
+  });
+
   it('registers a native panel but no slot until the experimental command is invoked', () => {
     const ctx = {} as Record<string, unknown>;
     const session = {} as Record<string, unknown>;
