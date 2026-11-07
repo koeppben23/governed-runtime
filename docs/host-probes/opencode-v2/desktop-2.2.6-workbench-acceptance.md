@@ -306,16 +306,18 @@ and stale-binding safeguards remain unchanged.
 
 | Field                | Observed value                                                                                                       |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Git HEAD             | `3e72f1f82af57d41de85a2f9e43fee8b72a468cc`                                                                           |
-| Packed tarball       | `flowguard-core-2.0.0-tp.2.tgz`, SHA-256 `d7f00d46b3b0008c5c1d3a7b1af1f9f7079c15d5f37bfbbd499524df2923ac31`          |
+| Git HEAD             | `8ef2cc11e8455c4c8465f0ca3165ba24120dd185`                                                                           |
+| Packed tarball       | `flowguard-core-2.0.0-tp.2.tgz`, SHA-256 `9b0a4af57f5f0d1e68a74bdc82895e39d8546b17c18408debc0325b538075633`          |
 | Installed GUI bundle | `plugins/flowguard/gui-experimental.cjs`, SHA-256 `460eb485b67a2a5165a9c1f84d47cc4eb3608a2b5e823c9e2d4759607127c0f9` |
 
 **Quality findings fixed before acceptance:** the submitted revision had three
 unformatted files, `projectWorkbenchReview` exceeded the repository complexity
-budget (14 > 12), and the pinned GUI bundle hash `1615f16a…` did not match the
-actual built bundle. The projection was split into bounded helpers, formatting
-was applied, and the manifest now pins the installed bytes `460eb485…`. The GUI
-bundle and projection tests pass after the fix.
+budget (14 > 12), the wrapper file exceeded the 650-LOC production budget
+(657 LOC), and the pinned GUI bundle hash `1615f16a…` did not match the actual
+built bundle. The projection was split into bounded helpers, the GUI bundle was
+extracted to `gui-plugin-bundle.ts` (byte-identical bundle hash `460eb485…`),
+formatting was applied, and the manifest now pins the installed bytes. The GUI
+bundle, projection and architecture/file-size tests pass after the fix.
 
 **Observed installed results:**
 
