@@ -9,16 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add opt-in native `/flowguard-card` and the Desktop palette action
-  **FlowGuard: show live status in chat (experimental)**. The versioned
-  `flowguard-live` fenced marker is rendered by the official GUI `CodeBlock`
-  extension as a read-only live session card using canonical `GetNextAction`
-  and `GetWorkbenchReview` RPCs. A synthetic message with `resume: false`
-  prevents an agent turn. No renderer-initiated workflow, hydration, evidence,
-  decision or audit operations are introduced; unsupported surfaces retain
-  Markdown and `/status` fallback. The installed Desktop 2.2.6 acceptance of
-  **this new bundle** is pending and must not inherit prior Workbench evidence.
-
+- Add optional read-only FlowGuard status beside the Desktop chat composer via
+  the official `ComposerPill` API, with an explicit palette refresh action.
+  Reuse canonical `GetNextAction` and `GetWorkbenchReview`; no workflow
+  commands, decisions, audit writes or model turns are initiated. A
+  `flowguard-live` `CodeBlock` renderer supports intentionally authored
+  fenced blocks in existing chat messages. The earlier synthetic-message
+  prototype was removed because those messages could enter model context.
+  Installed Desktop 2.2.6 acceptance of this updated GUI bundle is pending.
 
 - Add read-only native Session Explorer and verified audit-chain chronology to
   Desktop PR #1207, preserving unverified reviewer lineage, bounded audit
