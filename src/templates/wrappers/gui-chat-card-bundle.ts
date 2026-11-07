@@ -138,14 +138,18 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   if (!ComposerPill) return;
   const { createSignal } = require('solid-js');
   const [snapshot, setSnapshot] = createSignal(null);
+  let readGeneration = 0;
 
   async function inspect(session) {
     const key = probeSessionKey(session);
     if (!key || !isCurrentSession(ctx, session)) return;
+    const generation = ++readGeneration;
+    const currentRead = () => generation === readGeneration &&
+      isCurrentSession(ctx, session) && probeSessionKey(ctx.sessions.current()) === key;
     setSnapshot({ key: key, status: 'loading', label: 'FlowGuard · reading', note: 'Read-only query' });
     try {
       const next = await getView(session);
-      if (!isCurrentSession(ctx, session) || probeSessionKey(ctx.sessions.current()) !== key) return;
+      if (!currentRead()) return;
       if (!next || next.sessionID !== session.id || !next.stateDigest) {
         setSnapshot({ key: key, status: 'not_verified', label: 'FlowGuard · NOT_VERIFIED',
           note: 'Canonical state unavailable. Use /status.' });
@@ -170,7 +174,7 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         note: 'Reviewer evidence NOT_VERIFIED · operator decision not recorded.' };
       setSnapshot(notVerified);
       const review = await call(session, 'GetWorkbenchReview', { sessionID: session.id });
-      if (!isCurrentSession(ctx, session) || probeSessionKey(ctx.sessions.current()) !== key) return;
+      if (!currentRead()) return;
       const subject = review && review.subject;
       const binding = next.decisionBinding;
       const matches = review && review.sessionID === session.id && review.phase === next.phase &&
@@ -179,7 +183,7 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         subject.reviewedSubjectDigest === binding.subjectDigest;
       if (!matches) return;
       const fresh = await getView(session);
-      if (!isCurrentSession(ctx, session) || probeSessionKey(ctx.sessions.current()) !== key) return;
+      if (!currentRead()) return;
       if (!fresh || fresh.sessionID !== next.sessionID || fresh.kind !== next.kind ||
           fresh.phase !== next.phase || fresh.stateDigest !== next.stateDigest ||
           fresh.policyDigest !== next.policyDigest ||
@@ -193,10 +197,36 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
           ' · Findings: ' + subject.findingsTotal +
           ' · Operator decision still required (not approved).' });
     } catch (error) {
-      if (isCurrentSession(ctx, session) && probeSessionKey(ctx.sessions.current()) === key) {
+      if (currentRead()) {
         setSnapshot({ key: key, status: 'not_verified', label: 'FlowGuard · NOT_VERIFIED',
           note: 'Read-only status unavailable; use /status.' });
       }
+    }
+  }
+
+  // Host-documented sidecar session completion event. Subscriptions are
+  // optional, scoped to the active GUI root and removed on plugin unload.
+  // A disconnected or unsupported host keeps explicit Refresh available.
+  if (ctx.servers && typeof ctx.servers.get === 'function') {
+    try {
+      const { createKeyed } = require('@opencode/plugin/gui');
+      if (typeof createKeyed === 'function') {
+        const { onCleanup } = require('solid-js');
+        createKeyed(
+          () => ctx.servers.get('sidecar')?.data,
+          (data) => {
+            if (!data || typeof data.on !== 'function') return;
+            const unsubscribe = data.on('session.execution.succeeded', (event) => {
+              const session = ctx.sessions.current();
+              if (!session || !event || !event.data || event.data.sessionID !== session.id) return;
+              void inspect(session);
+            });
+            onCleanup(unsubscribe);
+          },
+        );
+      }
+    } catch (error) {
+      console.warn('[FlowGuard] Optional chat status event refresh unavailable.', error);
     }
   }
 
