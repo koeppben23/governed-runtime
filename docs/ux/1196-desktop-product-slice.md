@@ -13,16 +13,16 @@ The interface is *host-native*, not a custom skin of the complete OpenCode appli
 
 ## Verified starting point and unknowns
 
-| Surface / mechanism | Evidence in repository | First-slice implication |
-| --- | --- | --- |
-| Portable /start, /status, /why, /help, /finish | Canonical workflow choice and status projections (PR #1204) | Mandatory semantic fallback |
-| OpenCode TUI chooser | Installed PTY integration with READY→TICKET (PR #1205) | Preserve as independent surface |
-| Native review decisions | GetNextAction + DecisionBinding + SubmitDecision; server re-checks (PR #1206) | Reuse; never implement a UI decision engine |
-| OpenCode Desktop on-demand chooser | Installed GUI bundle; operator-reported visual flow after #1206 | Baseline interaction exists; archive version + package hash separately |
-| Persistent Desktop Next Action | No `session.header` registration in #1206 bundle | **NOT_IMPLEMENTED**, not a shipped feature |
-| TUI permanent status slot | Earlier pinned probe reports NOT_SUPPORTED | Maintain alternative entrypoint |
-| Native Desktop panel/slot/route for full workbench | Extension API descriptions only, no pinned visible proof yet | **NOT_VERIFIED**: first concrete host-capability probe |
-| Review/diagnostics/session/proof views | Existing ADR-011 diagnostic projections | Compose; no new review/ProofGraph authority |
+| Surface / mechanism                                | Evidence in repository                                                        | First-slice implication                                                |
+| -------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Portable /start, /status, /why, /help, /finish     | Canonical workflow choice and status projections (PR #1204)                   | Mandatory semantic fallback                                            |
+| OpenCode TUI chooser                               | Installed PTY integration with READY→TICKET (PR #1205)                        | Preserve as independent surface                                        |
+| Native review decisions                            | GetNextAction + DecisionBinding + SubmitDecision; server re-checks (PR #1206) | Reuse; never implement a UI decision engine                            |
+| OpenCode Desktop on-demand chooser                 | Installed GUI bundle; operator-reported visual flow after #1206               | Baseline interaction exists; archive version + package hash separately |
+| Persistent Desktop Next Action                     | No `session.header` registration in #1206 bundle                              | **NOT_IMPLEMENTED**, not a shipped feature                             |
+| TUI permanent status slot                          | Earlier pinned probe reports NOT_SUPPORTED                                    | Maintain alternative entrypoint                                        |
+| Native Desktop panel/slot/route for full workbench | Extension API descriptions only, no pinned visible proof yet                  | **NOT_VERIFIED**: first concrete host-capability probe                 |
+| Review/diagnostics/session/proof views             | Existing ADR-011 diagnostic projections                                       | Compose; no new review/ProofGraph authority                            |
 
 Do not confuse an observed Desktop chooser with a proven persistent Desktop panel. `GetNextAction.actions[].visibility` indicates presentation priority, **not** executable eligibility.
 
@@ -84,27 +84,27 @@ The compact orientation should be one small host-native surface **only if that s
 
 ### Progressive disclosure
 
-| Level | What is visible | Explicitly not shown by default |
-| --- | --- | --- |
-| Compact | Root/session shorthand; ACTIVE/INACTIVE; phase; current work; one next action or main blocker | Audit IDs, digests, raw JSON |
-| Expanded | Subject version; review outcome; findings counts; missing verification; safe choices and recovery | Full event payloads and verbose internals |
+| Level    | What is visible                                                                                                              | Explicitly not shown by default            |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Compact  | Root/session shorthand; ACTIVE/INACTIVE; phase; current work; one next action or main blocker                                | Audit IDs, digests, raw JSON               |
+| Expanded | Subject version; review outcome; findings counts; missing verification; safe choices and recovery                            | Full event payloads and verbose internals  |
 | Forensic | Full subject binding; activation ID/generation; policy/state digests; attempts; audit chain; session lineage; log references | Never hide uncertainty or incomplete paths |
 
 ### Screen-state inventory
 
-| State | Heading / primary content | Primary available interaction | Failure/edge behavior |
-| --- | --- | --- | --- |
-| READY | “Choose a workflow”; three exact choices | Explicit `/task`, `/architecture` or `/review` | Cancel → no transition |
-| TICKET | “Task captured”; bound ticket digest | Canonical `/plan` | Display captured subject/revision |
-| PLAN_REVIEW / ARCH_REVIEW / EVIDENCE_REVIEW | “Decision required”; exact reviewed subject and independent findings | Bound `SubmitDecision` only where authorized | Stale subject blocks; review ACCEPT not approval |
-| REVIEW_PENDING or other system work | “Review in progress”; no premature decision buttons | Inspect details/status | No fake approval or progress |
-| BLOCKED / RECOVERY | “Action blocked”; impact and canonical recovery | Only actual safe action / read-only instruction | outcome_unknown not auto-resolved |
-| TERMINAL | “Workflow complete”; actual evidence/readiness | View/export if canonically allowed | No next-step mutation inventing |
-| INACTIVE | “FlowGuard not active” | `/start` by explicit user | Read-only view never hydrates |
-| EMPTY / LOADING | Clear asynchronous state | Cancel/back | No ghost action while loading |
-| STALE | “State changed”; refresh/open again | Refresh | Disable previous action immediately |
-| DISCONNECTED / DENIED | Reason + next safe diagnostic step | Retry/read-only | No optimistic success |
-| EVIDENCE INCOMPLETE | Coverage/verification missing marker | Inspect missing claims | No green approved indicator |
+| State                                       | Heading / primary content                                            | Primary available interaction                   | Failure/edge behavior                            |
+| ------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------ |
+| READY                                       | “Choose a workflow”; three exact choices                             | Explicit `/task`, `/architecture` or `/review`  | Cancel → no transition                           |
+| TICKET                                      | “Task captured”; bound ticket digest                                 | Canonical `/plan`                               | Display captured subject/revision                |
+| PLAN_REVIEW / ARCH_REVIEW / EVIDENCE_REVIEW | “Decision required”; exact reviewed subject and independent findings | Bound `SubmitDecision` only where authorized    | Stale subject blocks; review ACCEPT not approval |
+| REVIEW_PENDING or other system work         | “Review in progress”; no premature decision buttons                  | Inspect details/status                          | No fake approval or progress                     |
+| BLOCKED / RECOVERY                          | “Action blocked”; impact and canonical recovery                      | Only actual safe action / read-only instruction | outcome_unknown not auto-resolved                |
+| TERMINAL                                    | “Workflow complete”; actual evidence/readiness                       | View/export if canonically allowed              | No next-step mutation inventing                  |
+| INACTIVE                                    | “FlowGuard not active”                                               | `/start` by explicit user                       | Read-only view never hydrates                    |
+| EMPTY / LOADING                             | Clear asynchronous state                                             | Cancel/back                                     | No ghost action while loading                    |
+| STALE                                       | “State changed”; refresh/open again                                  | Refresh                                         | Disable previous action immediately              |
+| DISCONNECTED / DENIED                       | Reason + next safe diagnostic step                                   | Retry/read-only                                 | No optimistic success                            |
+| EVIDENCE INCOMPLETE                         | Coverage/verification missing marker                                 | Inspect missing claims                          | No green approved indicator                      |
 
 ## Native design language — implementation guidance
 
@@ -122,13 +122,13 @@ The compact orientation should be one small host-native surface **only if that s
 
 Run on the *actually installed* OpenCode Desktop build and exact packaged FlowGuard artifact. Record host version/OS, artifact and wrapper SHA-256, setup registration, visible UI, session switch, cleanup/unload, and package checksum.
 
-| Candidate | Required proof | If unavailable |
-| --- | --- | --- |
-| `session.header` / compact status slot | Visible compact state; updates after READY→TICKET; different session shows different data | Mark NOT_SUPPORTED/NOT_VERIFIED; use native on-demand workbench and Markdown |
-| Native Session Panel / named route | Real rendered workbench; keyboard focus; normal/narrow layout; open/close/reload | Identify supported host route or downgrade scope explicitly; **cannot** close #1196 on chooser-only UX |
-| Review decision control | Displayed exact frozen subject, `SubmitDecision` stale/duplicate rejection, no action on cancellation | Read-only decision guidance with canonical commands |
-| Host theme and accessibility APIs | Light/dark and keyboard interaction visible and observable in installed app | Preserve host-native styles, report unsupported functionality |
-| TUI equivalent | Independent installed proof; no assumption that GUI controls work in TUI | Preserve the TUI chooser / portable fallback |
+| Candidate                              | Required proof                                                                                        | If unavailable                                                                                         |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `session.header` / compact status slot | Visible compact state; updates after READY→TICKET; different session shows different data             | Mark NOT_SUPPORTED/NOT_VERIFIED; use native on-demand workbench and Markdown                           |
+| Native Session Panel / named route     | Real rendered workbench; keyboard focus; normal/narrow layout; open/close/reload                      | Identify supported host route or downgrade scope explicitly; **cannot** close #1196 on chooser-only UX |
+| Review decision control                | Displayed exact frozen subject, `SubmitDecision` stale/duplicate rejection, no action on cancellation | Read-only decision guidance with canonical commands                                                    |
+| Host theme and accessibility APIs      | Light/dark and keyboard interaction visible and observable in installed app                           | Preserve host-native styles, report unsupported functionality                                          |
+| TUI equivalent                         | Independent installed proof; no assumption that GUI controls work in TUI                              | Preserve the TUI chooser / portable fallback                                                           |
 
 Installed tests must include **actual visibility and interaction**, not merely an exported SDK type, successful CJS evaluation or a stubbed `ctx.add`.
 
