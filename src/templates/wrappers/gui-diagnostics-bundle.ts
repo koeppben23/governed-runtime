@@ -1,5 +1,5 @@
 /** Inline native Desktop diagnostic renderer. No host authority or mutations. */
-export const GUI_DIAGNOSTICS_BUNDLE = `\\
+export const GUI_DIAGNOSTICS_BUNDLE = `
 function renderDiagnosticsSections(element, line, sessionSection, auditSection, diagnostics) {
   if (!diagnostics) {
     element('p', 'Session lineage NOT_VERIFIED - diagnostic RPC unavailable.', sessionSection);
