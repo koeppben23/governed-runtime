@@ -19,7 +19,7 @@ import {
   sha256,
   toCliError,
 } from './install-helpers.js';
-import type { CliArgs, CliError, CliResult, FileOp, InstallPlatform } from './install-types.js';
+import type { CliArgs, CliError, CliNotice, CliResult, FileOp, InstallPlatform } from './install-types.js';
 import { FLOWGUARD_OWNED_FILES, FLOWGUARD_TARBALL_PATTERN } from './install-types.js';
 import {
   ownershipManifestPath,
@@ -431,5 +431,11 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
     errorDetails.push(toCliError(err));
   }
 
-  return { target, ops, errors, errorDetails, warnings, notices: [] };
+  const removedNativePlugin = installPlatform === 'opencode' && errors.length === 0 &&
+    ops.some((op) => op.path === join(target, PLUGIN_RELATIVE_PATH) && op.action === 'removed');
+  const notices: CliNotice[] = removedNativePlugin ? [{
+    kind: 'next',
+    message: 'Managed files were removed, but a running OpenCode service may still have the plugin loaded. After safely completing active work, reload that location or restart the service and verify FlowGuard is absent from the live plugin list. File removal alone is not proof of unload.',
+  }] : [];
+  return { target, ops, errors, errorDetails, warnings, notices };
 }
