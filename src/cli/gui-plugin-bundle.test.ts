@@ -1,8 +1,13 @@
 /** The installed Desktop entry is a CommonJS template; this test executes it
  * with host-shaped stubs before an installed Desktop run. */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GUI_PLUGIN_BUNDLE } from './templates.js';
+
+const pluginCleanups: Array<() => void> = [];
+afterEach(() => {
+  for (const cleanup of pluginCleanups.splice(0).reverse()) cleanup();
+});
 
 interface FakeCommand {
   readonly id: string;
@@ -53,7 +58,7 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
           let value = initial;
           return [() => value, (next: unknown) => (value = next)];
         },
-        onCleanup: () => {},
+        onCleanup: (cleanup: () => void) => pluginCleanups.push(cleanup),
       };
     }
     throw new Error(`unexpected require: ${name}`);
