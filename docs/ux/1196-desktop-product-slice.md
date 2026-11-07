@@ -68,8 +68,9 @@ reaching into OpenCode compatibility details or spelling RPC method strings:
   Other UI components request `subscribeFlowGuardSessionCompletion`.
 - `gui-rpc-client-bundle.ts` owns the RPC identifier, native
   `rpc.call` envelope and four canonical methods. Its exported
-  `FlowGuardGuiRpcClient` TypeScript interface reuses the authoritative
-  RPC input/output types. Presentation code calls `getNextAction`,
+  TypeScript `FlowGuardGuiRpcClient` port is owned by
+  `src/integration/gui-rpc-client-contract.ts` and reuses canonical
+  RPC input/output types. No `templates -> integration` dependency exists. Presentation code calls `getNextAction`,
   `getWorkbenchReview`, `getWorkbenchDiagnostics`, or
   `submitDecision` without knowing RPC transport names.
 - `submitDecision` always injects the mounted session ID after the
