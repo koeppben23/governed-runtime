@@ -14,8 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keyboard-accessible expandable review/evidence/recovery sections, forensic
   binding details on demand, and responsive density for narrower windows.
   No separate decision authority or automatic workflow transition is introduced.
-  The previous installed 2.2.6 evidence covers the earlier GUI bundle only;
-  this UI revision needs a new installed visual/keyboard acceptance.
+  Installed Desktop 2.2.6 acceptance on artifact `3bc54caa` covers READY,
+  EVIDENCE_REVIEW and BLOCKED states, native details/summary keyboard operation,
+  global expand/collapse, light/dark mode and a `900x900` window. Acceptance
+  found and fixed an initial compact-revision defect where the recovery section
+  opened at a decision gate; recovery now opens only for a true blocked state.
+  Active-profile uninstall remains `PARTIAL`.
 
 - Add the first native Desktop Review Workbench slice to #1196: a bounded
   `GetWorkbenchReview` RPC projects the exact persisted review subject, verdict,

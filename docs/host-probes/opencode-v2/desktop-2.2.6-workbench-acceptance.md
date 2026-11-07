@@ -221,46 +221,67 @@ decision when it starts with a fresh assurance ledger.
 
 ## Compact progressive-disclosure Workbench revision (post-4fcd55c3)
 
-**Status: NOT_VERIFIED on installed Desktop.** The prior screenshots and successful
-host evidence are valid for the previous GUI bundle
-`c9b4f6d6655433e1fb770c11fd4b9a73df289325516691493cb816a4f57bad2e`.
-PR #1207 now also contains a newer, compact native Workbench GUI bundle;
-do **not** carry forward visual/keyboard PASS from the old bundle to the new one.
+**Status: PASS on installed Desktop 2.2.6 (artifact `3bc54caa`).** The prior
+screenshots for bundle `c9b4f6d6655433e1fb770c11fd4b9a73df289325516691493cb816a4f57bad2e`
+apply only to the previous bundle. The compact bundle was installed and exercised
+on Desktop 2.2.6 macOS arm64.
 
-The newer Workbench implements a compact overview with the existing canonical
-chooser above the expandable sections; native `details`/`summary` headings
-provide keyboard and focus semantics. The current-work section starts expanded;
-independent review and safe decisions expand automatically at review decision
-gates; evidence expands for findings, missing verification, coverage gaps or
-warnings; recovery expands for an actual canonical blocker. An inner
-`Technical binding details` section hides full digests until requested.
-The `Expand all details` control is view-only.
+### Installed compact-revision acceptance
 
-### Additional installed acceptance required for the new bundle
+| Field                | Observed value                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Git HEAD             | `3bc54caa5f8b2034fa4605456a84aa0da5a649aa`                                                                           |
+| Packed tarball       | `flowguard-core-2.0.0-tp.2.tgz`, SHA-256 `6439f4fb31333154a893eeddc3f16a82bc2cd9c53936e5fd1191914a7c4050f4`          |
+| Installed GUI bundle | `plugins/flowguard/gui-experimental.cjs`, SHA-256 `b577a14e512629b31072c17410c3bc7db80c66140e76c9d3b6039d29d0a20689` |
 
-- [ ] Install exact updated PR tarball with recorded SHA-256 and confirm its
-      `guiPluginBundle` hash matches the installed bytes.
-- [ ] READY starts compact with the current-work section open and the
-      `Choose workflow` action linked only to the canonical chooser; opening,
-      expanding, collapsing and refreshing cause **no mutation**.
-- [ ] PLAN_REVIEW with bound review expands review and safe-decision sections;
-      the chooser remains revision-bound and stale-binding rejection unchanged.
-- [ ] EVIDENCE_REVIEW displays the actual ProofGraph evidence and any findings;
-      evidence details expand when they require attention, with no fabricated
-      assurance when claims are missing or unverified.
-- [ ] BLOCKED expands recovery and does not offer a bypass. Confirm canonical
-      error code and recovery text.
-- [ ] Keyboard: `Tab`/`Enter`/`Space` open and close native expandable
-      sections, `Expand all details` toggles without executing a workflow,
-      and `Escape` dismisses the chooser without recording a decision.
-- [ ] Light and dark mode, 900x900 narrow window, clipped/long findings,
-      text wrapping, visible focus, and session switch tested on the **new**
-      installed UI bundle.
-- [ ] Regression: native on-demand chooser, installed package lifecycle,
-      panel reopen/reload and stale response fencing remain functional.
+**Defect found during acceptance and fixed before this evidence:** the first
+compact revision (`daec8bf0`) opened `Guided recovery` automatically at a
+decision gate because the decision question is carried in `next.blocker`. That
+contradicted the intended context-sensitive behavior. `3bc54caa` opens recovery
+only for `next.kind === 'blocked'`; the GUI bundle test now feeds a decision-gate
+blocker and asserts recovery stays collapsed.
 
-**No merge GO solely from the old screenshots.** Keep the PR Draft until
-the new bundle's installed acceptance and CI complete.
+**Observed results:**
+
+- **READY** (`ses_e49fd0fd5ffeVbWxcVVddTUwFC`): header
+  `FlowGuard | READY | Next: /task`; only `Current work` expanded; `Choose
+workflow` enabled; all other top-level sections collapsed; no mutation.
+- **EVIDENCE_REVIEW** (existing demo session `ses_e4a2f2017ffeZ3TubHNAc5kV0C`):
+  header `FlowGuard | EVIDENCE_REVIEW | Decision required (not approved)`;
+  `Independent review` and `Safe decision` expanded; `Technical binding details`
+  and `Findings and evidence` collapsed; `Guided recovery` collapsed after the
+  fix; `Review operator decisions` enabled. The canonical chooser opened with
+  `/approve`, `/request-changes`, `/reject` and was dismissed with Escape; the
+  session remained `EVIDENCE_REVIEW` and the plan-approval decision was unchanged.
+- **BLOCKED** (`ses_e4aec7c6dffePt3hl7wqTic1y9`): `Guided recovery` expanded
+  with `SESSION_STATE_ABSENT` and canonical recovery; the decision affordance was
+  hidden; no bypass was offered.
+- **Keyboard:** `Space` toggled the native `Independent review` summary;
+  `Space` on `Expand all details` opened all top-level sections and changed the
+  label to `Collapse details`; a second `Space` collapsed them. The decision
+  chooser was opened from `Review operator decisions` by keyboard and dismissed
+  with `Escape`; no decision was recorded.
+- **Light/dark and narrow:** the app-level light scheme rendered the Workbench
+  readably (`rgb(250, 250, 250)` root); dark was restored. At `900x900` logical
+  size the panel and header remained visible and readable.
+- **Regression:** the pre-decision plan binding was re-submitted after the later
+  phase transition and was rejected with `DECISION_BINDING_STALE`; the session
+  remained `EVIDENCE_REVIEW`. No server decision authority changed in this
+  GUI-only revision.
+- **Scope limit:** active-profile uninstall remains `PARTIAL`; the isolated
+  install/uninstall exercise is recorded above.
+
+Evidence:
+[READY](./desktop-2.2.6-compact-ready.png),
+[EVIDENCE_REVIEW](./desktop-2.2.6-compact-evidence-review.png),
+[BLOCKED](./desktop-2.2.6-compact-blocked.png),
+[decision dialog](./desktop-2.2.6-compact-decision-dialog.png),
+[light mode](./desktop-2.2.6-compact-light.png), and
+[narrow layout](./desktop-2.2.6-compact-narrow.png).
+
+The compact Workbench is not the finished product UX; timeline, deeper
+ProofGraph views, session context and full usability/accessibility review remain
+in #1196.
 
 ## Artifact to certify
 
