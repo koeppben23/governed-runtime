@@ -154,10 +154,23 @@ async function executeDecisionSelection(
           placeholder: 'Compensating verification and accepted residual risk',
         })
       : '';
+  const afterRationale = currentOrNull(deps, sessionID, latest.stateDigest);
+  if (afterRationale !== null) return afterRationale;
   if (rationale === undefined) return { status: 'cancelled', stateDigest: view.stateDigest };
   if (selected === '/override-approve' && rationale.trim() === '') {
     deps.notify('A governance override requires a non-empty rationale.', 'warning');
     return { status: 'cancelled', stateDigest: view.stateDigest };
+  }
+  // Rationale collection is another asynchronous interaction. It can outlive
+  // the displayed review or activation, so refresh before requesting authority.
+  if (selected === '/override-approve') {
+    const refreshed = await deps.getView(sessionID);
+    const afterRefresh = currentOrNull(deps, sessionID, refreshed.stateDigest);
+    if (afterRefresh !== null) return afterRefresh;
+    if (!sameSelection(view, refreshed, selected)) {
+      deps.notify('FlowGuard state changed; no decision was submitted. Reopen the chooser.', 'warning');
+      return { status: 'stale', stateDigest: refreshed.stateDigest };
+    }
   }
   const result = await deps.submitDecision(sessionID, selected, binding, rationale);
   if (result.kind === 'blocked') {
