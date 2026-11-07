@@ -40,7 +40,6 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
         Slot: 'slot',
         CodeBlock: 'code-block',
         ComposerPill: 'composer-pill',
-        ComposerPill: 'composer-pill',
       };
     }
     if (name === 'solid-js') {
