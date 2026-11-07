@@ -647,6 +647,19 @@ across every governance transition, zero-restart upgrade, and active-profile
 uninstall (`PARTIAL`). This is a source-layer refactor, not a new host target or
 authority path.
 
+## Subsequent optional GUI reconciliation and accessibility revision
+
+**NOT INSTALLED-VERIFIED for the new bundle hash.** The prior
+`e8e1e90d` installed evidence and snapshots remain valid for their exact
+artifact only. PR #1207 subsequently added a visible-session 30-second,
+read-only reconciliation fallback, request coalescing, explicit accessibility
+regions/status announcements and stricter isolated-host teardown checks.
+The bundle must be repacked and reinstalled before asserting a new PASS.
+
+See [remaining gate protocol](./desktop-2.2.6-remaining-gates.md) for
+version-bound VoiceOver, all-phase reconciliation, distinct-revision
+zero-restart upgrade and isolated active-uninstall verification.
+
 ## Artifact to certify
 
 Record the exact Git HEAD, packed `@flowguard/core` tarball SHA-256, installed
@@ -674,8 +687,9 @@ Desktop. Record version/sha in the evidence report, not just screenshots.
       chooser or native decision is rejected by canonical authority.
 - [ ] BLOCKED phase displays canonical cause, code and legitimate recovery.
       An outcome_unknown condition has no speculative “fix automatically”.
-- [ ] Manual refresh updates after an actual phase transition. Automatic event-
-      driven refresh is NOT_IMPLEMENTED in this slice.
+- [ ] Manual refresh and current-session completion events update state;
+      separately verify bounded, visible-session reconciliation for missed
+      events. It does not guarantee all transitions when offline or hidden.
 - [ ] Keyboard-only/visible focus, escape/cancel, short and narrow panel widths,
       light/dark themes, screenreader or native text fallback checked.
 - [ ] Dispose, session switch, panel close/reopen and renderer reload do not
