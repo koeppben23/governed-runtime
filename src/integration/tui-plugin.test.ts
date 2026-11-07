@@ -329,6 +329,95 @@ describe('TUI workflow chooser', () => {
     );
   });
 
+  it('does not submit an override after the user switches session in the rationale dialog', async () => {
+    const view = decisionView({
+      actions: [
+        {
+          invocation: '/override-approve',
+          description: 'Accept with governance override.',
+          visibility: 'available',
+        },
+      ],
+    });
+    let activeSession = 'ses_root';
+    const d = deps({
+      view,
+      currentSessionID: () => activeSession,
+      select: vi.fn(async () => '/override-approve'),
+      promptRationale: vi.fn(async () => {
+        activeSession = 'ses_other';
+        return 'Valid rationale for a different session.';
+      }),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('stale');
+    expect(d.submitDecision).not.toHaveBeenCalled();
+    expect(d.command).not.toHaveBeenCalled();
+  });
+
+  it('does not submit an override if its review changed while rationale was entered', async () => {
+    const view = decisionView({
+      actions: [
+        {
+          invocation: '/override-approve',
+          description: 'Accept with governance override.',
+          visibility: 'available',
+        },
+      ],
+    });
+    let reads = 0;
+    const d = deps({
+      view,
+      select: vi.fn(async () => '/override-approve'),
+      getView: vi.fn(async () => {
+        reads += 1;
+        if (reads === 3) {
+          return decisionView({
+            ...view,
+            decisionBinding: { ...view.decisionBinding!, subjectDigest: 'f'.repeat(64) },
+          });
+        }
+        return view;
+      }),
+      promptRationale: vi.fn(async () => 'A documented override rationale.'),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('stale');
+    expect(d.submitDecision).not.toHaveBeenCalled();
+    expect(reads).toBe(3);
+  });
+
+  it('does not submit after the override dialog resolves on a disposed plugin', async () => {
+    const view = decisionView({
+      actions: [
+        {
+          invocation: '/override-approve',
+          description: 'Accept with governance override.',
+          visibility: 'available',
+        },
+      ],
+    });
+    let alive = true;
+    const d = deps({
+      view,
+      select: vi.fn(async () => '/override-approve'),
+      isAlive: () => alive,
+      promptRationale: vi.fn(async () => {
+        alive = false;
+        return 'This dialog completed after unloading.';
+      }),
+    });
+
+    const outcome = await chooseWorkflow(d, 'ses_root');
+
+    expect(outcome.status).toBe('disposed');
+    expect(d.submitDecision).not.toHaveBeenCalled();
+  });
+
   it('treats a blocked native decision as failure without executing a command', async () => {
     const view = decisionView();
     const d = deps({
