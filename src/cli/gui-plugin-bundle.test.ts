@@ -134,7 +134,7 @@ describe('installed Desktop GUI bundle', () => {
         { invocation: '/plan', description: 'Create the plan.', visibility: 'recommended' },
       ],
     };
-    loaded.views.push(view, view);
+    loaded.views.push(view, view, view);
     (ctx.dialogs as { select: ReturnType<typeof vi.fn> }).select.mockResolvedValueOnce('/plan');
 
     loaded.command.run();
