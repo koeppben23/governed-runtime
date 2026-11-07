@@ -281,9 +281,11 @@ function renderWorkbench(ctx, props) {
   root.setAttribute('data-flowguard-workbench', 'review-v1');
   root.setAttribute('aria-label', 'FlowGuard Review Workbench');
   root.style.display = 'grid';
-  root.style.gap = '12px';
-  root.style.padding = '16px';
+  root.style.gap = '10px';
+  root.style.padding = '12px';
   root.style.color = 'inherit';
+  root.style.fontFamily = 'inherit';
+  root.style.maxWidth = '100%';
   root.style.minWidth = '0';
 
   function element(tag, value, parent) {
@@ -294,39 +296,58 @@ function renderWorkbench(ctx, props) {
   }
 
   function section(title, parent) {
-    const card = element('section', null, parent);
-    card.style.border = '1px solid currentColor';
-    card.style.borderRadius = '10px';
-    card.style.padding = '12px';
+    // Native details/summary supplies keyboard, focus and screen-reader support.
+    const card = element('details', null, parent);
+    card.style.border = '1px solid color-mix(in srgb, currentColor 22%, transparent)';
+    card.style.borderRadius = '12px';
+    card.style.padding = '10px 14px';
     card.style.minWidth = '0';
     card.style.overflowWrap = 'anywhere';
-    element('h3', title, card).style.margin = '0 0 8px';
+    card.style.fontSize = '0.93em';
+    const header = element('summary', title, card);
+    header.style.cursor = 'pointer';
+    header.style.fontWeight = '600';
+    header.style.lineHeight = '1.5';
+    header.style.padding = '2px 0';
     return card;
   }
 
   const heading = element('h2', 'FlowGuard', root);
   heading.style.margin = '0';
+  heading.style.fontSize = '1.1rem';
   const status = element('p', 'Reading canonical governance state...', root);
+  status.style.margin = '0';
+  status.style.lineHeight = '1.5';
+  status.style.fontWeight = '500';
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
-  const summary = section('Current work', root);
-  const reviewSection = section('Review subject and independent reviewer', root);
-  const evidenceSection = section('Evidence and findings', root);
-  const decisionSection = section('Decision and safe next step', root);
-  const recoverySection = section('Guided recovery', root);
-  const foot = element('p',
-    'Read-only presentation. Reviewer ACCEPT is not operator approval. Decisions use canonical authority.',
-    root);
-  foot.style.fontSize = '0.85em';
+
+  // Keep the primary next action above the fold. Never execute from a render.
   const controls = element('div', null, root);
   controls.style.display = 'flex';
   controls.style.flexWrap = 'wrap';
   controls.style.gap = '8px';
-  const refreshButton = element('button', 'Refresh state', controls);
-  refreshButton.type = 'button';
   const chooserButton = element('button', 'Open canonical decisions', controls);
   chooserButton.type = 'button';
   chooserButton.disabled = true;
+  chooserButton.style.display = 'none';
+  const refreshButton = element('button', 'Refresh state', controls);
+  refreshButton.type = 'button';
+  const detailsButton = element('button', 'Expand all details', controls);
+  detailsButton.type = 'button';
+
+  const summary = section('Current work', root);
+  const reviewSection = section('Independent review', root);
+  const evidenceSection = section('Findings and evidence', root);
+  const decisionSection = section('Safe decision or next action', root);
+  const recoverySection = section('Guided recovery', root);
+  const cards = [summary, reviewSection, evidenceSection, decisionSection, recoverySection];
+  const foot = element('p',
+    'Reviewer ACCEPT is not operator approval. All decisions use canonical server authority.',
+    root);
+  foot.style.fontSize = '0.8em';
+  foot.style.opacity = '0.78';
+  foot.style.margin = '2px 0';
   const [revision, refresh] = createSignal(0);
   let disposed = false;
   let generation = 0;
@@ -339,26 +360,45 @@ function renderWorkbench(ctx, props) {
   const chooseHandler = () => {
     const session = props.session;
     if (!session || !isCurrentSession(ctx, session) ||
-        !currentView || !currentReview ||
-        currentView.sessionID !== session.id || currentReview.sessionID !== session.id ||
-        currentView.kind !== 'decision_required' ||
+        !currentView || currentView.sessionID !== session.id) {
+      toast(ctx, 'The session or FlowGuard state changed. Refresh before acting.', 'error');
+      return;
+    }
+    const isWorkflow = currentView.kind === 'choose_flow' || currentView.kind === 'next_action';
+    if (isWorkflow) {
+      if (currentView.stateDigest === null || !currentView.actions ||
+          currentView.actions.length === 0) {
+        toast(ctx, 'No canonical FlowGuard action is currently available.', 'error');
+        return;
+      }
+    } else if (currentView.kind !== 'decision_required' || !currentReview ||
+        currentReview.sessionID !== session.id ||
         !currentView.decisionBinding ||
         currentReview.status !== REVIEW_STATUS_COMPLETE ||
         currentReview.subject.subjectBinding !== 'matched' ||
-        currentReview.subject.digest !== currentView.decisionBinding.subjectDigest) {
+        currentReview.subject.digest !== currentView.decisionBinding.subjectDigest ||
+        currentReview.subject.reviewedSubjectDigest !== currentView.decisionBinding.subjectDigest) {
       toast(ctx, 'The review binding is missing, incomplete or stale. Refresh before deciding.', 'error');
       return;
     }
-    // Reuse exactly the installed chooser; this panel never executes a decision.
+    // The existing chooser re-reads the canonical state and validates the binding.
     void choose(ctx, session);
   };
   chooserButton.addEventListener('click', chooseHandler);
+
+  const detailsHandler = () => {
+    const expand = cards.some((card) => !card.open);
+    for (const card of cards) card.open = expand;
+    detailsButton.textContent = expand ? 'Collapse details' : 'Expand all details';
+  };
+  detailsButton.addEventListener('click', detailsHandler);
 
   function resetForLoad() {
     currentView = null;
     currentReview = null;
     chooserButton.disabled = true;
-    for (const card of [summary, reviewSection, evidenceSection, decisionSection, recoverySection]) {
+    chooserButton.style.display = 'none';
+    for (const card of cards) {
       while (card.childNodes.length > 1) card.removeChild(card.lastChild);
     }
   }
@@ -372,6 +412,13 @@ function renderWorkbench(ctx, props) {
     currentView = next;
     currentReview = review;
     status.textContent = next ? probeSummary(next) : 'FlowGuard state NOT_VERIFIED';
+    // Overview stays visible; substantive detail expands only for a live gate or blocker.
+    summary.open = true;
+    reviewSection.open = Boolean(next && next.kind === 'decision_required');
+    evidenceSection.open = false;
+    decisionSection.open = Boolean(next && next.kind === 'decision_required');
+    recoverySection.open = Boolean(next && next.blocker);
+    detailsButton.textContent = 'Expand all details';
     if (!next) {
       line(summary, 'Status', 'No canonical Next Action projection');
       return;
@@ -384,16 +431,26 @@ function renderWorkbench(ctx, props) {
       const subject = review.subject;
       line(reviewSection, 'Subject', subject.label);
       line(reviewSection, 'Kind / revision', subject.kind + ' / ' + (subject.revision || 'NOT_VERIFIED'));
-      line(reviewSection, 'Digest', subject.digest);
-      line(reviewSection, 'Content verification', subject.contentVerified);
-      line(reviewSection, 'Review binding', subject.subjectBinding);
       line(reviewSection, 'Reviewer verdict (not approval)', subject.reviewerVerdict);
       line(reviewSection, 'Review status', review.status);
+      const forensic = element('details', null, reviewSection);
+      forensic.style.marginTop = '8px';
+      const forensicSummary = element('summary', 'Technical binding details', forensic);
+      forensicSummary.style.cursor = 'pointer';
+      line(forensic, 'Digest', subject.digest);
+      line(forensic, 'Content verification', subject.contentVerified);
+      line(forensic, 'Review binding', subject.subjectBinding);
+      line(forensic, 'Reviewed digest', subject.reviewedSubjectDigest);
       if (subject.unboundReviewReason || subject.historicalReview) {
         element('p', 'Historical or unbound reviewer evidence must not be used as current approval.', reviewSection);
       }
       line(evidenceSection, 'Findings', subject.findingsTotal +
         (subject.findingsTruncated ? ' (partial)' : ''));
+      const needsAttention = subject.findingsTotal > 0 ||
+        subject.missingVerification.length > 0 ||
+        review.proof.coverageGapCount > 0 ||
+        review.warningCodes.length > 0;
+      evidenceSection.open = Boolean(next.kind === 'decision_required' && needsAttention);
       for (const finding of subject.findings) {
         line(evidenceSection, finding.severity + ' / ' + finding.category, finding.message);
       }
@@ -424,15 +481,23 @@ function renderWorkbench(ctx, props) {
         review.subject.subjectBinding === 'matched' &&
         review.subject.digest === binding.subjectDigest &&
         review.subject.reviewedSubjectDigest === binding.subjectDigest;
+      chooserButton.style.display = '';
+      chooserButton.textContent = 'Review operator decisions';
       chooserButton.disabled = !matches;
       element('p', matches
-        ? 'Decision available only through the existing revision-bound native chooser.'
+        ? 'Independent review complete. Operator approval is still required.'
         : 'Decision unavailable: reviewer evidence or subject revision is not verified.',
       decisionSection);
     } else {
+      const canChoose = (next.kind === 'choose_flow' || next.kind === 'next_action') &&
+        next.stateDigest !== null && next.actions && next.actions.length > 0;
+      chooserButton.style.display = canChoose ? '' : 'none';
+      chooserButton.textContent = next.kind === 'choose_flow' ?
+        'Choose workflow' : 'Open next action';
+      chooserButton.disabled = !canChoose;
       element('p', next.actions && next.actions.length ?
         'Next action: ' + next.actions.map((item) => item.invocation).join(', ') +
-        '. Use the existing native chooser or canonical command.' :
+        '. Open the canonical chooser or use the existing command.' :
         'No operator decision requested by the canonical directive.', decisionSection);
     }
     if (next.blocker) {
@@ -473,6 +538,7 @@ function renderWorkbench(ctx, props) {
     generation += 1;
     refreshButton.removeEventListener('click', refreshHandler);
     chooserButton.removeEventListener('click', chooseHandler);
+    detailsButton.removeEventListener('click', detailsHandler);
   });
   return root;
 }
