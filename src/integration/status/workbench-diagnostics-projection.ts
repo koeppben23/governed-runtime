@@ -5,67 +5,89 @@ import { z } from 'zod';
 import type { AuditEvent } from '../../state/evidence-audit.js';
 import type { ExplorerView } from '../diagnostics/types.js';
 
-export const WorkbenchDiagnosticsRequest = z.object({ sessionID: z.string().min(1) }).strict();
+export const WorkbenchDiagnosticsRequest = z
+  .object({ sessionID: z.string().min(1) })
+  .strict();
 
-const WorkbenchSession = z.object({
-  sessionID: z.string(),
-  parentSessionID: z.string().nullable(),
-  role: z.string(),
-  state: z.string(),
-  lineage: z.enum(['verified', 'not_verified']),
-  phase: z.string().nullable(),
-  binding: z.string(),
-  warningCodes: z.array(z.string()),
-}).strict();
-
-const WorkbenchReviewAttempt = z.object({
-  ordinal: z.number().int().nonnegative(),
-  childSessionID: z.string().nullable(),
-  status: z.string(),
-  dispatchStatus: z.string(),
-  obligationStatus: z.string(),
-}).strict();
-
-const WorkbenchAuditEvent = z.object({
-  sessionID: z.string(),
-  sequence: z.number().int().positive(),
-  at: z.string(),
-  recordedAt: z.string(),
-  phase: z.string(),
-  event: z.string(),
-}).strict();
-
-const WorkbenchAuditSession = z.object({
-  sessionID: z.string(),
-  integrity: z.enum(['verified', 'invalid', 'not_verified']),
-  eventCount: z.number().int().nonnegative(),
-  reasonCode: z.string().nullable(),
-}).strict();
-
-export const WorkbenchDiagnosticsResult = z.object({
-  schemaVersion: z.literal('workbench-diagnostics.v1'),
-  sessionID: z.string(),
-  explorer: z.object({
-    status: z.enum(['COMPLETE', 'PARTIAL', 'NOT_VERIFIED']),
-    lineage: z.enum(['complete', 'partial', 'not_verified']),
-    canonicalState: z.enum(['complete', 'partial', 'not_verified']),
-    sessions: z.array(WorkbenchSession),
-    sessionsTruncated: z.boolean(),
-    reviewAttempts: z.array(WorkbenchReviewAttempt),
-    reviewAttemptsTruncated: z.boolean(),
+const WorkbenchSession = z
+  .object({
+    sessionID: z.string(),
+    parentSessionID: z.string().nullable(),
+    role: z.string(),
+    state: z.string(),
+    lineage: z.enum(['verified', 'not_verified']),
+    phase: z.string().nullable(),
+    binding: z.string(),
     warningCodes: z.array(z.string()),
-  }).strict(),
-  audit: z.object({
-    status: z.enum(['COMPLETE', 'PARTIAL', 'NOT_VERIFIED']),
-    source: z.literal('verified_audit_chain_v3'),
-    totalEvents: z.number().int().nonnegative(),
-    eventsTruncated: z.boolean(),
-    events: z.array(WorkbenchAuditEvent),
-    sessions: z.array(WorkbenchAuditSession),
-    note: z.literal('Audit chronology is navigational; verified chains do not establish cross-session causality.'),
-  }).strict(),
-  decisionAuthority: z.literal('not_granted'),
-}).strict();
+
+  })
+  .strict();
+
+const WorkbenchReviewAttempt = z
+  .object({
+    ordinal: z.number().int().nonnegative(),
+    childSessionID: z.string().nullable(),
+    status: z.string(),
+    dispatchStatus: z.string(),
+    obligationStatus: z.string(),
+
+  })
+  .strict();
+
+const WorkbenchAuditEvent = z
+  .object({
+    sessionID: z.string(),
+    sequence: z.number().int().positive(),
+    at: z.string(),
+    recordedAt: z.string(),
+    phase: z.string(),
+    event: z.string(),
+
+  })
+  .strict();
+
+const WorkbenchAuditSession = z
+  .object({
+    sessionID: z.string(),
+    integrity: z.enum(['verified', 'invalid', 'not_verified']),
+    eventCount: z.number().int().nonnegative(),
+    reasonCode: z.string().nullable(),
+
+  })
+  .strict();
+
+export const WorkbenchDiagnosticsResult = z
+  .object({
+    schemaVersion: z.literal('workbench-diagnostics.v1'),
+    sessionID: z.string(),
+    explorer: z
+      .object({
+        status: z.enum(['COMPLETE', 'PARTIAL', 'NOT_VERIFIED']),
+        lineage: z.enum(['complete', 'partial', 'not_verified']),
+        canonicalState: z.enum(['complete', 'partial', 'not_verified']),
+        sessions: z.array(WorkbenchSession),
+        sessionsTruncated: z.boolean(),
+        reviewAttempts: z.array(WorkbenchReviewAttempt),
+        reviewAttemptsTruncated: z.boolean(),
+        warningCodes: z.array(z.string()),
+      })
+      .strict(),
+    audit: z
+      .object({
+        status: z.enum(['COMPLETE', 'PARTIAL', 'NOT_VERIFIED']),
+        source: z.literal('verified_audit_chain_v3'),
+        totalEvents: z.number().int().nonnegative(),
+        eventsTruncated: z.boolean(),
+        events: z.array(WorkbenchAuditEvent),
+        sessions: z.array(WorkbenchAuditSession),
+        note: z.literal(
+          'Audit chronology is navigational; verified chains do not establish cross-session causality.',
+        ),
+      })
+      .strict(),
+    decisionAuthority: z.literal('not_granted'),
+  })
+  .strict();
 export type WorkbenchDiagnosticsResult = z.infer<typeof WorkbenchDiagnosticsResult>;
 
 export type WorkbenchAuditSnapshot = {
@@ -104,12 +126,12 @@ function projectAttempts(view: ExplorerView) {
     childSessionID: item.childSessionId,
     status: safeToken(item.status),
     dispatchStatus: safeToken(
-      links.dispatches.find((dispatch) => dispatch.attemptId === item.attemptId)
-        ?.dispatchStatus ?? 'not_recorded',
+      links.dispatches.find((dispatch) => dispatch.attemptId === item.attemptId)?.dispatchStatus ??
+        'not_recorded',
     ),
     obligationStatus: safeToken(
-      links.obligations.find((obligation) => obligation.obligationId === item.obligationId)
-        ?.status ?? 'not_recorded',
+      links.obligations.find((obligation) => obligation.obligationId === item.obligationId)?.status ??
+        'not_recorded',
     ),
   }));
 }
@@ -133,12 +155,15 @@ function projectAudit(snapshots: readonly WorkbenchAuditSnapshot[], explorer: Ex
           event: safeToken(item.event),
         })),
   );
-  all.sort((a, b) =>
-    a.at.localeCompare(b.at) || a.sessionID.localeCompare(b.sessionID) ||
-    a.sequence - b.sequence,
+  all.sort(
+    (a, b) =>
+      a.at.localeCompare(b.at) ||
+      a.sessionID.localeCompare(b.sessionID) ||
+      a.sequence - b.sequence,
   );
   const anyVerified = sessions.some((session) => session.integrity === 'verified');
-  const complete = explorer.status !== 'PARTIAL' &&
+  const complete =
+    explorer.status !== 'PARTIAL' &&
     explorer.status !== 'NOT_VERIFIED' &&
     all.length <= MAX_EVENTS &&
     sessions.length === explorer.sessions.length &&
@@ -170,8 +195,8 @@ export function projectWorkbenchDiagnostics(
       sessions: projectSessions(view),
       sessionsTruncated: view.sessions.length > MAX_SESSIONS,
       reviewAttempts: projectAttempts(view),
-      reviewAttemptsTruncated: Boolean(view.reviewLinks?.truncated) ||
-        attempts.length > MAX_ATTEMPTS,
+      reviewAttemptsTruncated:
+        Boolean(view.reviewLinks?.truncated) || attempts.length > MAX_ATTEMPTS,
       warningCodes: view.warnings.slice(0, 20).map((item) => safeToken(item.code)),
     },
     audit: projectAudit(snapshots, view),
