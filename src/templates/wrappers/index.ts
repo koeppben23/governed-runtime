@@ -71,6 +71,7 @@ function toast(ctx, description, variant) {
 
 async function choose(ctx, session) {
   const first = await getView(session);
+  if (!isCurrentSession(ctx, session)) return;
   if (!first || first.stateDigest === null) {
     toast(ctx, 'No FlowGuard action is available for this session.', 'default');
     return;
@@ -128,6 +129,15 @@ async function choose(ctx, session) {
       cancel: 'Cancel',
     });
     if (!confirmed) return;
+    if (!isCurrentSession(ctx, session)) {
+      toast(ctx, 'Session changed; no FlowGuard action was executed.', 'error');
+      return;
+    }
+    const afterConfirmation = await getView(session);
+    if (!afterConfirmation || !sameView(first, afterConfirmation, selected) || !isCurrentSession(ctx, session)) {
+      toast(ctx, 'FlowGuard state or session changed after confirmation; no action was executed.', 'error');
+      return;
+    }
     await session.server.client.session.command({ sessionID: session.id, name: selected.replace(/^\\//, ''), text: commandText });
     toast(ctx, 'FlowGuard action requested.', 'success');
     return;
@@ -146,6 +156,17 @@ async function choose(ctx, session) {
         toast(ctx, 'A governance override requires a non-empty rationale.', 'error');
         return;
       }
+    }
+    // A rationale dialog can outlive the visible session or review. Re-read
+    // before crossing the canonical server-side decision authority boundary.
+    if (!isCurrentSession(ctx, session)) {
+      toast(ctx, 'Session changed; no FlowGuard decision was submitted.', 'error');
+      return;
+    }
+    const afterRationale = await getView(session);
+    if (!afterRationale || !sameView(first, afterRationale, selected) || !isCurrentSession(ctx, session)) {
+      toast(ctx, 'FlowGuard state or session changed; no decision was submitted.', 'error');
+      return;
     }
     const result = await call(session, 'SubmitDecision', {
       sessionID: session.id,
