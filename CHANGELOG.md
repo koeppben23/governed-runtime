@@ -17,7 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   acceptance of this later GUI bundle, zero-restart host upgrade,
   active-profile uninstall and separate screenreader coverage remain open.
 
-
 - Add optional read-only FlowGuard status beside the Desktop chat composer via
   the official `ComposerPill` API, with an explicit palette refresh action.
   Reuse canonical `GetNextAction` and `GetWorkbenchReview`; no workflow

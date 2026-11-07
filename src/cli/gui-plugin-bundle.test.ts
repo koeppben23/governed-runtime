@@ -72,6 +72,7 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
     id: 'ses_root',
     location: { directory: '/tmp/worktree' },
     server: {
+      id: 'sidecar',
       client: {
         rpc: {
           call: vi.fn(async (input: Record<string, unknown>) => {
@@ -229,13 +230,24 @@ describe('installed Desktop GUI bundle', () => {
       return unsubscribe;
     });
     const loaded = load(
-      { servers: { get: (id: string) => (id === 'sidecar' ? { data: { on } } : undefined) } },
+      {
+        serverEndpoints: {
+          get: (id: string) => (id === 'sidecar' ? { data: { on } } : undefined),
+        },
+      },
       {},
     );
     expect(on).toHaveBeenCalledWith('session.execution.succeeded', expect.any(Function));
     expect(loaded.rpcCalls).toHaveLength(0);
     callbacks.get('session.execution.succeeded')?.({ data: { sessionID: 'other' } });
     expect(loaded.rpcCalls).toHaveLength(0);
+    const current = loaded.host.sessions.current();
+    const server = current.server as Record<string, unknown>;
+    server.id = 'remote';
+    callbacks.get('session.execution.succeeded')?.({ data: { sessionID: 'ses_root' } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(loaded.rpcCalls).toHaveLength(0);
+    server.id = 'sidecar';
     callbacks.get('session.execution.succeeded')?.({ data: { sessionID: 'ses_root' } });
     await vi.waitFor(() => expect(loaded.rpcCalls.length).toBeGreaterThan(0));
     expect(loaded.rpcCalls[0]?.method).toBe('GetNextAction');

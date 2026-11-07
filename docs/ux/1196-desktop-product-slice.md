@@ -57,7 +57,8 @@ Both surfaces are installed-verified on Desktop 2.2.6 artifact `e054159a`
   refreshes one session-bound status pill by calling the existing read-only
   `GetNextAction` and, for review gates, `GetWorkbenchReview` RPCs.
 - The pill also exposes **Inspect/Refresh canonical status**. Nothing is
-  fetched on plugin registration. User action or an observed current-session\n  execution-completed event performs the RPC reads.
+  fetched on plugin registration. User action or an observed current-session
+  execution-completed event performs the RPC reads.
 - No synthetic message is inserted. An earlier prototype used
   `session.synthetic({ resume: false })`, but that could introduce
   otherwise non-authoritative UI notices into future model context.
