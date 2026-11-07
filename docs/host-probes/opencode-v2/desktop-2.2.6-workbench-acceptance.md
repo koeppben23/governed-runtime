@@ -1,6 +1,6 @@
 # OpenCode Desktop 2.2.6 — Review Workbench installed acceptance
 
-**Status:** NOT_VERIFIED — this document defines the required **new** installed-host proof.
+**Status:** NOT_VERIFIED — required installed-host evidence for the new workbench.
 The prior Desktop 2.2.6 Panel/Slot capability evidence on #1207 applies only to the
 earlier artifact `52d0a3bd`, not to the Review Workbench implementation.
 
@@ -43,13 +43,13 @@ Desktop. Record version/sha in the evidence report, not just screenshots.
 
 ## Evidence / results
 
-| Evidence category | Status |
-| --- | --- |
+| Evidence category                             | Status       |
+| --------------------------------------------- | ------------ |
 | Version-pinned installed Workbench screenshot | NOT_VERIFIED |
 | READY + Review + BLOCKED interaction captures | NOT_VERIFIED |
-| Bound decision and stale-denial negative run | NOT_VERIFIED |
-| Layout, theme and keyboard tests | NOT_VERIFIED |
-| Installed package lifecycle and hashes | NOT_VERIFIED |
+| Bound decision and stale-denial negative run  | NOT_VERIFIED |
+| Layout, theme and keyboard tests              | NOT_VERIFIED |
+| Installed package lifecycle and hashes        | NOT_VERIFIED |
 
 **Accept only with artifact-bound, redacted installed evidence.** CI unit tests
 and older Panel/Slot screenshots do not close this checklist. The complete
