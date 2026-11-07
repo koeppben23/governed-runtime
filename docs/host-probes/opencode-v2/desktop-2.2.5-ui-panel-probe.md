@@ -32,17 +32,17 @@ Use a disposable test workspace / profile. Record:
 
 ## Evidence table — fill only with actually observed results
 
-| Capability | Status | Evidence |
-| --- | --- | --- |
-| GUI companion resolves from packed install | `NOT_VERIFIED` for new probe | Attach install/log excerpt |
-| GUI command appears and launches | `NOT_VERIFIED` | Screenshot/trace |
-| Panel visible and session-specific | `NOT_VERIFIED` | Screenshot and session-switch trace |
-| `session.header` Slot visible | `NOT_VERIFIED` | Screenshot |
-| Manual refresh after transition | `NOT_VERIFIED` | READY → TICKET screenshots |
-| Automatic refresh after transition | `NOT_IMPLEMENTED` | Deliberately outside probe |
-| Narrow/light/dark layout | `NOT_VERIFIED` | Screenshots |
-| Reload/teardown and installed uninstall | `NOT_VERIFIED` | Redacted trace |
-| Native production Review Workbench | `NOT_IMPLEMENTED` | Tracked by #1196 |
+| Capability                                 | Status                       | Evidence                            |
+| ------------------------------------------ | ---------------------------- | ----------------------------------- |
+| GUI companion resolves from packed install | `NOT_VERIFIED` for new probe | Attach install/log excerpt          |
+| GUI command appears and launches           | `NOT_VERIFIED`               | Screenshot/trace                    |
+| Panel visible and session-specific         | `NOT_VERIFIED`               | Screenshot and session-switch trace |
+| `session.header` Slot visible              | `NOT_VERIFIED`               | Screenshot                          |
+| Manual refresh after transition            | `NOT_VERIFIED`               | READY → TICKET screenshots          |
+| Automatic refresh after transition         | `NOT_IMPLEMENTED`            | Deliberately outside probe          |
+| Narrow/light/dark layout                   | `NOT_VERIFIED`               | Screenshots                         |
+| Reload/teardown and installed uninstall    | `NOT_VERIFIED`               | Redacted trace                      |
+| Native production Review Workbench         | `NOT_IMPLEMENTED`            | Tracked by #1196                    |
 
 **PASS criterion:** Pinned installed build proves real visibility and basic interaction for Panel + Slot, with all failures and unsupported surfaces recorded separately. Unit tests of `ctx.add`, mock component rendering or `GetNextAction` do not count as visible-host evidence.
 
