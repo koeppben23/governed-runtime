@@ -13,14 +13,26 @@ function explorer(): ExplorerView {
     completeness: { lineage: 'partial', canonicalState: 'partial' },
     sessions: [
       {
-        sessionId: 'ses_root', parentSessionId: null, role: 'root',
-        discoveredBy: ['root'], state: 'captured', lineage: 'verified',
-        phase: 'PLAN_REVIEW', binding: 'verified', warningCodes: [],
+        sessionId: 'ses_root',
+        parentSessionId: null,
+        role: 'root',
+        discoveredBy: ['root'],
+        state: 'captured',
+        lineage: 'verified',
+        phase: 'PLAN_REVIEW',
+        binding: 'verified',
+        warningCodes: [],
       },
       {
-        sessionId: 'ses_child', parentSessionId: 'ses_root', role: 'reviewer',
-        discoveredBy: ['review_attempt'], state: 'unavailable', lineage: 'not_verified',
-        phase: null, binding: 'unknown', warningCodes: ['SESSION_LINEAGE_NOT_VERIFIED'],
+        sessionId: 'ses_child',
+        parentSessionId: 'ses_root',
+        role: 'reviewer',
+        discoveredBy: ['review_attempt'],
+        state: 'unavailable',
+        lineage: 'not_verified',
+        phase: null,
+        binding: 'unknown',
+        warningCodes: ['SESSION_LINEAGE_NOT_VERIFIED'],
       },
     ],
     reviewLinks: null,
@@ -42,10 +54,18 @@ function event(sequence: number, occurredAt: string): AuditEvent {
 describe('native Workbench session explorer and verified audit projection', () => {
   it('preserves unknown children without reading them or inventing positive integrity', () => {
     const result = projectWorkbenchDiagnostics(explorer(), [
-      { sessionID: 'ses_root', integrity: 'verified', reasonCode: null,
-        events: [event(1, '2026-11-07T12:00:00.000Z')] },
-      { sessionID: 'ses_child', integrity: 'not_verified',
-        reasonCode: 'SESSION_LINEAGE_OR_BINDING_NOT_VERIFIED', events: [] },
+      {
+        sessionID: 'ses_root',
+        integrity: 'verified',
+        reasonCode: null,
+        events: [event(1, '2026-11-07T12:00:00.000Z')],
+      },
+      {
+        sessionID: 'ses_child',
+        integrity: 'not_verified',
+        reasonCode: 'SESSION_LINEAGE_OR_BINDING_NOT_VERIFIED',
+        events: [],
+      },
     ]);
     expect(result.explorer.lineage).toBe('partial');
     expect(result.explorer.sessions[1]?.lineage).toBe('not_verified');
@@ -58,8 +78,12 @@ describe('native Workbench session explorer and verified audit projection', () =
 
   it('never shows events from an invalid audit chain', () => {
     const result = projectWorkbenchDiagnostics(explorer(), [
-      { sessionID: 'ses_root', integrity: 'invalid', reasonCode: 'CHAIN_BREAK',
-        events: [event(1, '2026-11-07T12:00:00.000Z')] },
+      {
+        sessionID: 'ses_root',
+        integrity: 'invalid',
+        reasonCode: 'CHAIN_BREAK',
+        events: [event(1, '2026-11-07T12:00:00.000Z')],
+      },
     ]);
     expect(result.audit.status).toBe('NOT_VERIFIED');
     expect(result.audit.events).toEqual([]);
@@ -75,7 +99,8 @@ describe('native Workbench session explorer and verified audit projection', () =
       sessions: [root.sessions[0]!],
     };
     const events = Array.from({ length: 120 }, (_, i) =>
-      event(i + 1, new Date(Date.UTC(2026, 10, 7, 12, 0, 119 - i)).toISOString()));
+      event(i + 1, new Date(Date.UTC(2026, 10, 7, 12, 0, 119 - i)).toISOString()),
+    );
     const result = projectWorkbenchDiagnostics(full, [
       { sessionID: 'ses_root', integrity: 'verified', reasonCode: null, events },
     ]);
