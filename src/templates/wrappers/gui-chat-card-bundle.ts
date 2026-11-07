@@ -207,13 +207,19 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   // Host-documented sidecar session completion event. Subscriptions are
   // optional, scoped to the active GUI root and removed on plugin unload.
   // A disconnected or unsupported host keeps explicit Refresh available.
-  if (ctx.serverEndpoints && typeof ctx.serverEndpoints.get === 'function') {
+  // Desktop 2.2.6 exposes the endpoint lookup as ctx.servers; newer plugin
+  // typings call the same lookup ctx.serverEndpoints. Prefer the documented
+  // name when present and fall back to the running host's actual surface.
+  const endpoints = ctx.serverEndpoints && typeof ctx.serverEndpoints.get === 'function'
+    ? ctx.serverEndpoints
+    : ctx.servers;
+  if (endpoints && typeof endpoints.get === 'function') {
     try {
       const { createKeyed } = require('@opencode/plugin/gui');
       if (typeof createKeyed === 'function') {
         const { onCleanup } = require('solid-js');
         createKeyed(
-          () => ctx.serverEndpoints.get('sidecar')?.data,
+          () => endpoints.get('sidecar')?.data,
           (data) => {
             if (!data || typeof data.on !== 'function') return;
             const unsubscribe = data.on('session.execution.succeeded', (event) => {

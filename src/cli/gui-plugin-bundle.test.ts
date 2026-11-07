@@ -231,7 +231,7 @@ describe('installed Desktop GUI bundle', () => {
     });
     const loaded = load(
       {
-        serverEndpoints: {
+        servers: {
           get: (id: string) => (id === 'sidecar' ? { data: { on } } : undefined),
         },
       },
@@ -252,6 +252,19 @@ describe('installed Desktop GUI bundle', () => {
     await vi.waitFor(() => expect(loaded.rpcCalls.length).toBeGreaterThan(0));
     expect(loaded.rpcCalls[0]?.method).toBe('GetNextAction');
     expect(loaded.commandCalls).toHaveLength(0);
+  });
+
+  it('also accepts the documented serverEndpoints lookup', () => {
+    const on = vi.fn(() => vi.fn());
+    load(
+      {
+        serverEndpoints: {
+          get: (id: string) => (id === 'sidecar' ? { data: { on } } : undefined),
+        },
+      },
+      {},
+    );
+    expect(on).toHaveBeenCalledWith('session.execution.succeeded', expect.any(Function));
   });
 
   it('registers a native panel but no slot until the experimental command is invoked', () => {
