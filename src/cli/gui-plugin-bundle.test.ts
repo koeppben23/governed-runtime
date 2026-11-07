@@ -104,6 +104,7 @@ class FakeDomNode {
   readonly children: FakeDomNode[] = [];
   readonly style: Record<string, string> = {};
   readonly listeners = new Map<string, () => void>();
+  readonly attributes = new Map<string, string>();
   disabled = false;
   open = false;
   type = '';
@@ -128,7 +129,9 @@ class FakeDomNode {
     return this.children.at(-1) ?? null;
   }
 
-  setAttribute(_name: string, _value: string): void {}
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value);
+  }
 
   appendChild(child: FakeDomNode): FakeDomNode {
     this.children.push(child);
@@ -185,6 +188,13 @@ describe('installed Desktop GUI bundle', () => {
     vi.stubGlobal('document', { createElement: (tag: string) => new FakeDomNode(tag) });
     try {
       const rendered = card.render({ code: 'v1', session });
+      expect(rendered?.attributes.get('role')).toBe('region');
+      expect(rendered?.attributes.get('aria-label')).toBe('FlowGuard live status card');
+      const announcements = rendered?.children.filter((child) =>
+        child.attributes.get('aria-live') === 'polite',
+      );
+      expect(announcements).toHaveLength(2);
+      expect(announcements?.every((child) => child.attributes.get('aria-atomic') === 'true')).toBe(true);
       expect(rendered?.textContent).toContain('NOT_VERIFIED');
       expect(rendered?.textContent).toContain('not a historical decision');
       expect(loaded.commandCalls).toHaveLength(0);
@@ -357,7 +367,8 @@ describe('installed Desktop GUI bundle', () => {
       };
       loaded.views.push(next, review);
       const node = panel.render({ session });
-
+      expect(node.attributes.get('role')).toBe('region');
+      expect(node.attributes.get('aria-label')).toBe('FlowGuard Review Workbench');
       await vi.waitFor(() => expect(node.textContent).toContain('Missing rollback proof'));
       expect(node.textContent).toContain('Reviewer verdict (not approval): ACCEPT');
       expect(node.textContent).toContain('Coverage gaps: 1');
