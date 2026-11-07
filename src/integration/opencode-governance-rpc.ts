@@ -5,7 +5,10 @@ import { POLICY_DIGEST_PATTERN } from '../state/evidence-identifiers.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
 import { DecisionBinding } from './status/decision-binding.js';
 import { NextActionRequest, NextActionResult } from './status/next-action-projection.js';
-import { WorkbenchReviewRequest, WorkbenchReviewResult } from './status/workbench-review-projection.js';
+import {
+  WorkbenchReviewRequest,
+  WorkbenchReviewResult,
+} from './status/workbench-review-projection.js';
 
 export const AutonomousStartRequest = z
   .object({
