@@ -5,9 +5,7 @@ import { z } from 'zod';
 import type { AuditEvent } from '../../state/evidence-audit.js';
 import type { ExplorerView } from '../diagnostics/types.js';
 
-export const WorkbenchDiagnosticsRequest = z
-  .object({ sessionID: z.string().min(1) })
-  .strict();
+export const WorkbenchDiagnosticsRequest = z.object({ sessionID: z.string().min(1) }).strict();
 
 const WorkbenchSession = z
   .object({
@@ -126,8 +124,9 @@ function projectAttempts(view: ExplorerView) {
         'not_recorded',
     ),
     obligationStatus: safeToken(
-      links.obligations.find((obligation) => obligation.obligationId === item.obligationId)?.status ??
-        'not_recorded',
+      links.obligations.find(
+        (obligation) => obligation.obligationId === item.obligationId,
+      )?.status ?? 'not_recorded',
     ),
   }));
 }
@@ -171,7 +170,8 @@ function projectAudit(snapshots: readonly WorkbenchAuditSnapshot[], explorer: Ex
     eventsTruncated: all.length > MAX_EVENTS,
     events: all.slice(-MAX_EVENTS),
     sessions,
-    note: 'Audit chronology is navigational; verified chains do not establish cross-session causality.' as const,
+    note:
+      'Audit chronology is navigational; verified chains do not establish cross-session causality.' as const,
   };
 }
 
