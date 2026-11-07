@@ -9,6 +9,7 @@ function renderFlowGuardChatCard(ctx, props) {
   const { createEffect, createSignal, onCleanup } = require('solid-js');
   const root = document.createElement('section');
   root.setAttribute('data-flowguard-chat-card', 'v1');
+  root.setAttribute('role', 'region');
   root.setAttribute('aria-label', 'FlowGuard live status card');
   root.style.border = '1px solid currentColor';
   root.style.borderRadius = '8px';
@@ -22,8 +23,12 @@ function renderFlowGuardChatCard(ctx, props) {
   note.style.opacity = '0.8';
   const status = document.createElement('p');
   status.setAttribute('role', 'status');
+  status.setAttribute('aria-live', 'polite');
+  status.setAttribute('aria-atomic', 'true');
   status.textContent = 'NOT_VERIFIED · Loading canonical status...';
   const reviewLine = document.createElement('p');
+  reviewLine.setAttribute('aria-live', 'polite');
+  reviewLine.setAttribute('aria-atomic', 'true');
   const refreshButton = document.createElement('button');
   refreshButton.type = 'button';
   refreshButton.textContent = 'Refresh live status';
@@ -139,10 +144,26 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   const { createSignal, onCleanup } = require('solid-js');
   const [snapshot, setSnapshot] = createSignal(null);
   let readGeneration = 0;
+  let reading = false;
+  let queuedSession = null;
+  function inspect(session) {
+    if (reading) {
+      // Collapse multiple host events/timer ticks into one later canonical read.
+      queuedSession = session;
+      return;
+    }
+    reading = true;
+    void inspectOnce(session).finally(() => {
+      reading = false;
+      const next = queuedSession;
+      queuedSession = null;
+      if (next && isCurrentSession(ctx, next)) inspect(next);
+    });
+  }
   const reconciler = createFlowGuardStatusReconciler(ctx, (session) => { void inspect(session); });
   onCleanup(() => reconciler.stop());
 
-  async function inspect(session) {
+  async function inspectOnce(session) {
     const key = probeSessionKey(session);
     if (!key || !isCurrentSession(ctx, session)) return;
     const generation = ++readGeneration;
