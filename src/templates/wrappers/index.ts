@@ -259,22 +259,8 @@ function renderProbe(ctx, props, compact) {
     );
   });
 
-  // Session changes are reactive; a completed host turn also refreshes the
-  // current session. The panel's button supplies a deterministic manual path.
-  createEffect(() => {
-    const session = props.session;
-    if (!session || !ctx.servers || typeof ctx.servers.get !== 'function') return;
-    const server = ctx.servers.get(session.server.id);
-    if (!server || !server.data || typeof server.data.on !== 'function') return;
-    const unsubscribe = server.data.on('session.execution.succeeded', (event) => {
-      if (event && event.data && event.data.sessionID === session.id) {
-        refresh((previous) => previous + 1);
-      }
-    });
-    onCleanup(() => {
-      if (typeof unsubscribe === 'function') unsubscribe();
-    });
-  });
+  // Session route changes are tracked by Solid. A manual refresh is provided
+  // because generic runtime-event subscriptions are not yet host-proved.
   onCleanup(() => {
     disposed = true;
     generation += 1;
