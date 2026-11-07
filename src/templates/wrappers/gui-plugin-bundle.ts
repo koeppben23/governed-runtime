@@ -307,7 +307,6 @@ function renderWorkbench(ctx, props) {
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
 
-  // Keep the primary next action above the fold. Never execute from a render.
   const controls = element('div', null, root);
   controls.style.display = 'flex';
   controls.style.flexWrap = 'wrap';
@@ -370,7 +369,6 @@ function renderWorkbench(ctx, props) {
       toast(ctx, 'The review binding is missing, incomplete or stale. Refresh before deciding.', 'error');
       return;
     }
-    // The existing chooser re-reads the canonical state and validates the binding.
     void choose(ctx, session);
   };
   chooserButton.addEventListener('click', chooseHandler);
@@ -409,9 +407,7 @@ function renderWorkbench(ctx, props) {
     timelineSection.open = false;
     sessionSection.open = false;
     auditSection.open = false;
-    // A decision gate carries a question in blocker; only a true blocked
-    // directive should surface the recovery section by default.
-    recoverySection.open = Boolean(next && next.kind === 'blocked' && next.blocker);
+      recoverySection.open = Boolean(next && next.kind === 'blocked' && next.blocker);
     detailsButton.textContent = 'Expand all details';
     if (!next) {
       line(summary, 'Status', 'No canonical Next Action projection');
