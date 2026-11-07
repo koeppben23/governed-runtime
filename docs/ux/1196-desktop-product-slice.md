@@ -79,7 +79,7 @@ Do not confuse an observed Desktop chooser with a proven persistent Desktop pane
   +---------------------------------------------+
         |             |              |
     Recovery       Timeline     Forensic detail
-  ```
+```
 
 The compact orientation should be one small host-native surface **only if that slot visibly renders in the pinned Desktop**. Otherwise the same opening context belongs in a discoverable, nonpersistent native workbench entry. A modal chooser alone is not the complete product requirement.
 
