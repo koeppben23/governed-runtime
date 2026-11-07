@@ -39,7 +39,9 @@ async function verifiedAudit(
     if (bytes > MAX_AUDIT_BYTES) return fallback('AUDIT_TOO_LARGE');
     const events = await readAuditTrail(authority.sessDir);
     if (events.length === 0) return fallback('AUDIT_EMPTY');
-    const verification = verifyChain(events);
+    const verification = verifyChain(events, {
+      expectedFlowguardSessionId: authority.state.flowguardSessionId,
+    });
     if (!verification.valid) {
       return { sessionID, integrity: 'invalid', reasonCode: verification.reason, events: [] };
     }
