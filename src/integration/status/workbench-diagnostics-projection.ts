@@ -138,13 +138,13 @@ function projectAudit(snapshots: readonly WorkbenchAuditSnapshot[], explorer: Ex
     a.sequence - b.sequence,
   );
   const anyVerified = sessions.some((session) => session.integrity === 'verified');
-  const complete = explorer.status === 'COMPLETE' &&
+  const complete = explorer.status !== 'PARTIAL' &&
+    explorer.status !== 'NOT_VERIFIED' &&
     all.length <= MAX_EVENTS &&
     sessions.length === explorer.sessions.length &&
     sessions.every((session) => session.integrity === 'verified');
   return {
-    status: (complete ? 'COMPLETE' : anyVerified ? 'PARTIAL' : 'NOT_VERIFIED') as
-      'COMPLETE' | 'PARTIAL' | 'NOT_VERIFIED',
+    status: complete ? 'COMPLETE' : anyVerified ? 'PARTIAL' : 'NOT_VERIFIED',
     source: 'verified_audit_chain_v3' as const,
     totalEvents: all.length,
     eventsTruncated: all.length > MAX_EVENTS,
