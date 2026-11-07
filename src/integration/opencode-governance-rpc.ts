@@ -5,6 +5,7 @@ import { POLICY_DIGEST_PATTERN } from '../state/evidence-identifiers.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
 import { DecisionBinding } from './status/decision-binding.js';
 import { NextActionRequest, NextActionResult } from './status/next-action-projection.js';
+import { WorkbenchDiagnosticsRequest, WorkbenchDiagnosticsResult } from './status/workbench-diagnostics-projection.js';
 import {
   WorkbenchReviewRequest,
   WorkbenchReviewResult,
@@ -62,6 +63,11 @@ export const FlowGuardGovernance = Rpc.define({
     GetWorkbenchReview: {
       input: WorkbenchReviewRequest,
       output: WorkbenchReviewResult,
+      errors: {},
+    },
+    GetWorkbenchDiagnostics: {
+      input: WorkbenchDiagnosticsRequest,
+      output: WorkbenchDiagnosticsResult,
       errors: {},
     },
     SubmitDecision: {
