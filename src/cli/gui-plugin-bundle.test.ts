@@ -17,7 +17,9 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
   const add = (registry: string, value: unknown) => additions.push({ registry, value });
   const host = {
     ...ctx,
+    id: 'flowguard',
     add,
+    layout: { open: vi.fn() },
     dialogs: {
       select: vi.fn(async () => '/task'),
       prompt: vi.fn(async () => 'Task description.'),
@@ -34,6 +36,8 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
       return {
         Plugin: { define: (value: unknown) => value },
         Command: 'command',
+        Panel: 'panel',
+        Slot: 'slot',
         ComposerPill: 'composer-pill',
       };
     }
@@ -75,7 +79,10 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
       },
     },
   });
-  return { command, rpcCalls, commandCalls, views, host };
+  const probeCommand = additions.find(
+    (entry) => entry.registry === 'command' && (entry.value as FakeCommand).id === 'ui-probe',
+  )?.value as FakeCommand;
+  return { command, probeCommand, additions, rpcCalls, commandCalls, views, host };
 }
 
 describe('installed Desktop GUI bundle', () => {
@@ -85,6 +92,31 @@ describe('installed Desktop GUI bundle', () => {
     const loaded = load(ctx, session);
 
     expect(loaded.command.id).toBe('choose-workflow');
+  });
+
+  it('registers a native panel but no slot until the experimental command is invoked', () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    expect(loaded.probeCommand.id).toBe('ui-probe');
+    expect(loaded.additions.filter((item) => item.registry === 'panel')).toHaveLength(1);
+    expect(loaded.additions.filter((item) => item.registry === 'slot')).toHaveLength(0);
+    expect(loaded.command.id).toBe('choose-workflow');
+  });
+
+  it('opens its native panel and registers its header slot only on explicit opt-in', () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    loaded.probeCommand.run();
+    loaded.probeCommand.run();
+
+    expect(loaded.additions.filter((item) => item.registry === 'slot')).toHaveLength(1);
+    expect(
+      (loaded.host.layout as { open: ReturnType<typeof vi.fn> }).open,
+    ).toHaveBeenCalledWith('flowguard:workbench-probe', session, { tab: 'select' });
+    expect(loaded.rpcCalls).toHaveLength(0);
+    expect(loaded.commandCalls).toHaveLength(0);
   });
 
   it('runs the selected workflow command after re-reading the same view', async () => {
