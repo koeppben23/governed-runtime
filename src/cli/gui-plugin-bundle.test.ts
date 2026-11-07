@@ -164,7 +164,10 @@ describe('installed Desktop GUI bundle', () => {
     const loaded = load(ctx, session);
     const card = loaded.additions.find((item) => item.registry === 'code-block')?.value as {
       languages: string[];
-      render: (input: { code: string; session?: Record<string, unknown> }) => FakeDomNode | undefined;
+      render: (input: {
+        code: string;
+        session?: Record<string, unknown>;
+      }) => FakeDomNode | undefined;
     };
     expect(card.languages).toEqual(['flowguard-live']);
     expect(card.render({ code: 'unsupported', session })).toBeUndefined();
@@ -176,10 +179,11 @@ describe('installed Desktop GUI bundle', () => {
       expect(rendered?.textContent).toContain('not a historical decision');
       expect(loaded.commandCalls).toHaveLength(0);
       await vi.waitFor(() => expect(loaded.rpcCalls.length).toBeGreaterThan(0));
-      expect(loaded.rpcCalls.every((item) => {
-        const rpc = item as { method?: string };
-        return rpc.method === 'GetNextAction' || rpc.method === 'GetWorkbenchReview';
-      })).toBe(true);
+      expect(
+        loaded.rpcCalls.every(
+          (item) => item.method === 'GetNextAction' || item.method === 'GetWorkbenchReview',
+        ),
+      ).toBe(true);
       expect(loaded.commandCalls).toHaveLength(0);
     } finally {
       vi.unstubAllGlobals();
@@ -187,17 +191,15 @@ describe('installed Desktop GUI bundle', () => {
   });
 
   it('opens a chat card only when explicitly chosen from the Desktop palette', async () => {
-    const loaded = load({} as Record<string, unknown>, {} as Record<string, unknown>);
+    const loaded = load({}, {});
     const action = loaded.additions.find(
-      (item) => item.registry === 'command' &&
-        (item.value as FakeCommand).id === 'show-chat-card',
+      (item) =>
+        item.registry === 'command' && (item.value as FakeCommand).id === 'show-chat-card',
     )?.value as FakeCommand;
     expect(action).toBeDefined();
     expect(loaded.commandCalls).toHaveLength(0);
     action.run();
-    expect(loaded.commandCalls).toEqual([
-      { sessionID: 'ses_root', name: 'flowguard-card', text: '' },
-    ]);
+    expect(loaded.commandCalls).toEqual([{ sessionID: 'ses_root', name: 'flowguard-card', text: '' }]);
     expect(loaded.rpcCalls).toHaveLength(0);
   });
 
