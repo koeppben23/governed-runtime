@@ -146,7 +146,9 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   let readGeneration = 0;
   let reading = false;
   let queuedSession = null;
+  let disposed = false;
   function inspect(session) {
+    if (disposed) return;
     if (reading) {
       // Collapse multiple host events/timer ticks into one later canonical read.
       queuedSession = session;
@@ -161,13 +163,18 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
     });
   }
   const reconciler = createFlowGuardStatusReconciler(ctx, (session) => { void inspect(session); });
-  onCleanup(() => reconciler.stop());
+  onCleanup(() => {
+    disposed = true;
+    readGeneration += 1;
+    queuedSession = null;
+    reconciler.stop();
+  });
 
   async function inspectOnce(session) {
     const key = probeSessionKey(session);
     if (!key || !isCurrentSession(ctx, session)) return;
     const generation = ++readGeneration;
-    const currentRead = () => generation === readGeneration &&
+    const currentRead = () => !disposed && generation === readGeneration &&
       isCurrentSession(ctx, session) && probeSessionKey(ctx.sessions.current()) === key;
     setSnapshot({ key: key, status: 'loading', label: 'FlowGuard · reading', note: 'Read-only query' });
     try {
