@@ -115,9 +115,11 @@ describe('installed Desktop GUI bundle', () => {
     loaded.probeCommand.run();
 
     expect(loaded.additions.filter((item) => item.registry === 'slot')).toHaveLength(1);
-    expect(
-      (loaded.host.layout as { open: ReturnType<typeof vi.fn> }).open,
-    ).toHaveBeenCalledWith('flowguard:workbench-probe', session, { tab: 'select' });
+    expect((loaded.host.layout as { open: ReturnType<typeof vi.fn> }).open).toHaveBeenCalledWith(
+      'flowguard:workbench-probe',
+      session,
+      { tab: 'select' },
+    );
     expect(loaded.rpcCalls).toHaveLength(0);
     expect(loaded.commandCalls).toHaveLength(0);
   });
