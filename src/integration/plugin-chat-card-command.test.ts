@@ -11,18 +11,20 @@ describe('native read-only chat card', () => {
 
   it('publishes once without starting the model or executing a workflow', async () => {
     const synthetic = vi.fn(async () => undefined);
-    let command:
-      | { name: string; execute: (input: { sessionID: string; prompt: { text: string } }) => Promise<void> }
-      | undefined;
+    const commands: Array<{
+      name: string;
+      execute: (input: { sessionID: string; prompt: { text: string } }) => Promise<void>;
+    }> = [];
     const context = { session: { synthetic } } as unknown as Plugin.Context;
     const editor = {
-      add: (entry: typeof command) => {
-        command = entry;
+      add: (entry: (typeof commands)[number]) => {
+        commands.push(entry);
       },
     } as unknown as Parameters<Parameters<Plugin.Context['command']['transform']>[0]>[0];
     addChatCardCommand(context, editor);
-    expect(command?.name).toBe('flowguard-card');
-    await command!.execute({ sessionID: 'ses_root', prompt: { text: '' } });
+    expect(commands).toHaveLength(1);
+    expect(commands[0]?.name).toBe('flowguard-card');
+    await commands[0]!.execute({ sessionID: 'ses_root', prompt: { text: '' } });
     expect(synthetic).toHaveBeenCalledTimes(1);
     expect(synthetic).toHaveBeenCalledWith({
       sessionID: 'ses_root',
