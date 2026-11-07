@@ -1,3 +1,13 @@
+# FlowGuard Desktop UX — first native product slice (#1196)
+
+<!-- prettier-ignore-start -->
+
+**Status:** Implemented native Review Workbench; original Desktop 2.2.6 artifact installed-verified, compact revision awaiting new installed proof.  
+**Capability probe:** Panel + `session.header` Slot `PASS` on installed OpenCode Desktop 2.2.6 (2026-11-07); pinned 2.2.5 remains `NOT_VERIFIED`.  
+**Primary target:** OpenCode Desktop 2.2.6 (installed native UI required); 2.2.5 remains NOT_VERIFIED.  
+**Related:** #1196, #1203 diagnostics, #1204 portable chooser, #1205 TUI chooser, #1206 native decisions/Desktop chooser, ADR-011  
+**Contract owner:** existing FlowGuard governance and diagnostic projections; no UI authorization
+
 ## Inline chat cards — optional Desktop extension (PR #1207)
 
 The official OpenCode V2 GUI extension surface documents a `CodeBlock` registry
@@ -5,7 +15,7 @@ with `languages` and `render({ code, language, session })`, supported in
 assistant-message and tool-output timelines. The interface is **host-documented**,
 but still **NOT_VERIFIED on installed Desktop 2.2.6** for the new card extension.
 
-- Native `/flowguard-card` explicitly publishes one synthetic message with
+- The Desktop palette action **FlowGuard: show live status in chat** requests\n  the same native `/flowguard-card` host command; nothing is injected on load.\n- Native `/flowguard-card` explicitly publishes one synthetic message with
   `resume: false`; it does not run the agent or start/advance governance.
 - The message contains a strictly versioned, payload-free
   `flowguard-live` fenced block (`v1`). The GUI contribution recognizes
@@ -28,15 +38,6 @@ but still **NOT_VERIFIED on installed Desktop 2.2.6** for the new card extension
 
 Official specification: https://opencode.ai/v2/docs/build/plugins/gui/
 
-# FlowGuard Desktop UX — first native product slice (#1196)
-
-<!-- prettier-ignore-start -->
-
-**Status:** Implemented native Review Workbench; original Desktop 2.2.6 artifact installed-verified, compact revision awaiting new installed proof.  
-**Capability probe:** Panel + `session.header` Slot `PASS` on installed OpenCode Desktop 2.2.6 (2026-11-07); pinned 2.2.5 remains `NOT_VERIFIED`.  
-**Primary target:** OpenCode Desktop 2.2.6 (installed native UI required); 2.2.5 remains NOT_VERIFIED.  
-**Related:** #1196, #1203 diagnostics, #1204 portable chooser, #1205 TUI chooser, #1206 native decisions/Desktop chooser, ADR-011  
-**Contract owner:** existing FlowGuard governance and diagnostic projections; no UI authorization
 
 ## Same-PR delivery amendment (2026-11-07)
 
