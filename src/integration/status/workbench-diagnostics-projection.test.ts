@@ -79,7 +79,7 @@ describe('native Workbench session explorer and verified audit projection', () =
     const result = projectWorkbenchDiagnostics(full, [
       { sessionID: 'ses_root', integrity: 'verified', reasonCode: null, events },
     ]);
-    expect(result.audit.status).toBe('COMPLETE');
+    expect(result.audit.status).toBe('PARTIAL');
     expect(result.audit.totalEvents).toBe(120);
     expect(result.audit.eventsTruncated).toBe(true);
     expect(result.audit.events).toHaveLength(100);
