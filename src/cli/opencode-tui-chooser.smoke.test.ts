@@ -15,6 +15,12 @@ import { TUI_PLUGIN_RELATIVE_PATH } from './templates.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
+
+/** Drop terminal control sequences so a split repaint reads as plain text. */
+const ANSI_CSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[ -/]*[@-~]`, 'g');
+function plain(text: string): string {
+  return text.replace(ANSI_CSI, '');
+}
 let probe: NativeHostProbe | undefined;
 let ui: ChildProcess | undefined;
 
@@ -188,6 +194,14 @@ describe.skipIf(!LIVE)('installed TUI workflow chooser', () => {
     output = '';
     await openChooser();
     tui.stdin?.write('\r');
+    await vi.waitFor(
+      () => {
+        expect(plain(output)).toMatch(/Describe[\s\S]*task,[\s\S]*--file/);
+      },
+      { timeout: 30_000 },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    tui.stdin?.write('Record the installed TUI chooser proof\r');
     await vi.waitFor(
       async () => {
         const view = await probe!.client
