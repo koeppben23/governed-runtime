@@ -28,4 +28,37 @@ function subscribeFlowGuardSessionCompletion(ctx, callback) {
     return false;
   }
 }
+/**
+ * Bounded reconciliation for transitions that do not emit a host completion
+ * event. A live event is an optimization, not an authoritative audit feed.
+ * Nothing is fetched at registration or on the first pill render.
+ */
+function createFlowGuardStatusReconciler(ctx, callback) {
+  const intervalMs = 30000;
+  let timer = null;
+  let disposed = false;
+  const tick = () => {
+    if (disposed) return;
+    // Hidden windows must not poll; an active session is the only scope.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const session = ctx.sessions.current();
+    if (!session || !session.server || session.server.id !== 'sidecar') return;
+    callback(session);
+  };
+  return {
+    begin: () => {
+      if (disposed || timer !== null) return;
+      timer = setInterval(tick, intervalMs);
+      if (timer && typeof timer.unref === 'function') timer.unref();
+    },
+    stop: () => {
+      disposed = true;
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    },
+  };
+}
+
 `;
