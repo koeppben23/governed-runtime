@@ -417,7 +417,9 @@ function renderWorkbench(ctx, props) {
     reviewSection.open = Boolean(next && next.kind === 'decision_required');
     evidenceSection.open = false;
     decisionSection.open = Boolean(next && next.kind === 'decision_required');
-    recoverySection.open = Boolean(next && next.blocker);
+    // A decision gate carries a question in blocker; only a true blocked
+    // directive should surface the recovery section by default.
+    recoverySection.open = Boolean(next && next.kind === 'blocked' && next.blocker);
     detailsButton.textContent = 'Expand all details';
     if (!next) {
       line(summary, 'Status', 'No canonical Next Action projection');

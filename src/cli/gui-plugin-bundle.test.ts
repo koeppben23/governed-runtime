@@ -274,6 +274,7 @@ describe('installed Desktop GUI bundle', () => {
           phase: 'PLAN_REVIEW',
           decisionBinding: { subjectDigest: 'b'.repeat(64) },
           actions: [{ invocation: '/approve' }],
+          blocker: { code: null, message: 'Awaiting plan review decision', recovery: null },
         },
         {
           sessionID: 'ses_root',
@@ -326,6 +327,7 @@ describe('installed Desktop GUI bundle', () => {
           phase: 'PLAN_REVIEW',
           decisionBinding: { subjectDigest: 'b'.repeat(64) },
           actions: [{ invocation: '/approve' }],
+          blocker: { code: null, message: 'Awaiting plan review decision', recovery: null },
         },
         {
           sessionID: 'ses_root',
