@@ -111,48 +111,56 @@ describe('Desktop workbench review projection', () => {
       {
         ...base,
         reviewLinks: {
-          obligations: [{
-            obligationId: 'secret-obligation',
-            obligationType: 'plan',
-            status: 'fulfilled',
-            iteration: 1,
-            reviewCycle: 1,
-            planVersion: 1,
-            subjectDigest: 'a'.repeat(64),
-            invocationId: null,
-            blockedCode: null,
-            fulfilledAt: '2026-11-07T11:00:04.000Z',
-            consumedAt: null,
-          }],
-          attempts: [{
-            attemptId: 'secret-attempt',
-            obligationId: 'secret-obligation',
-            status: 'completed',
-            ordinal: 1,
-            childSessionId: null,
-            subjectDigest: 'a'.repeat(64),
-            createdAt: '2026-11-07T11:00:00.000Z',
-            completedAt: '2026-11-07T11:00:03.000Z',
-          }],
-          dispatches: [{
-            dispatchId: 'secret-dispatch',
-            attemptId: 'secret-attempt',
-            obligationId: 'secret-obligation',
-            hostCallId: 'secret-host-call',
-            dispatchStatus: 'outcome_unknown',
-            dispatchAuthorizedAt: '2026-11-07T11:00:01.000Z',
-            completedAt: null,
-          }],
-          invocations: [{
-            invocationId: 'secret-invocation',
-            obligationId: 'secret-obligation',
-            attemptId: 'secret-attempt',
-            childSessionId: 'secret-child',
-            parentSessionId: 'ses_root',
-            capturedVerdict: 'accept',
-            invokedAt: '2026-11-07T11:00:02.000Z',
-            fulfilledAt: null,
-          }],
+          obligations: [
+            {
+              obligationId: 'secret-obligation',
+              obligationType: 'plan',
+              status: 'fulfilled',
+              iteration: 1,
+              reviewCycle: 1,
+              planVersion: 1,
+              subjectDigest: 'a'.repeat(64),
+              invocationId: null,
+              blockedCode: null,
+              fulfilledAt: '2026-11-07T11:00:04.000Z',
+              consumedAt: null,
+            },
+          ],
+          attempts: [
+            {
+              attemptId: 'secret-attempt',
+              obligationId: 'secret-obligation',
+              status: 'completed',
+              ordinal: 1,
+              childSessionId: null,
+              subjectDigest: 'a'.repeat(64),
+              createdAt: '2026-11-07T11:00:00.000Z',
+              completedAt: '2026-11-07T11:00:03.000Z',
+            },
+          ],
+          dispatches: [
+            {
+              dispatchId: 'secret-dispatch',
+              attemptId: 'secret-attempt',
+              obligationId: 'secret-obligation',
+              hostCallId: 'secret-host-call',
+              dispatchStatus: 'outcome_unknown',
+              dispatchAuthorizedAt: '2026-11-07T11:00:01.000Z',
+              completedAt: null,
+            },
+          ],
+          invocations: [
+            {
+              invocationId: 'secret-invocation',
+              obligationId: 'secret-obligation',
+              attemptId: 'secret-attempt',
+              childSessionId: 'secret-child',
+              parentSessionId: 'ses_root',
+              capturedVerdict: 'accept',
+              invokedAt: '2026-11-07T11:00:02.000Z',
+              fulfilledAt: null,
+            },
+          ],
           truncated: false,
         },
       },
@@ -161,7 +169,11 @@ describe('Desktop workbench review projection', () => {
     expect(output.timeline?.status).toBe('available');
     expect(output.timeline?.total).toBe(5);
     expect(output.timeline?.events.map((entry) => entry.kind)).toEqual([
-      'attempt', 'dispatch', 'invocation', 'attempt', 'obligation',
+      'attempt',
+      'dispatch',
+      'invocation',
+      'attempt',
+      'obligation',
     ]);
     expect(output.timeline?.events.some((entry) => entry.state === 'outcome_unknown')).toBe(true);
     expect(JSON.stringify(output)).not.toContain('secret-');
@@ -180,16 +192,19 @@ describe('Desktop workbench review projection', () => {
       createdAt: '2026-11-07T11:' + String(i).padStart(2, '0') + ':00.000Z',
       completedAt: '2026-11-07T11:' + String(i).padStart(2, '0') + ':30.000Z',
     }));
-    const result = projectWorkbenchReview({
-      ...base,
-      reviewLinks: {
-        attempts,
-        obligations: [],
-        dispatches: [],
-        invocations: [],
-        truncated: true,
+    const result = projectWorkbenchReview(
+      {
+        ...base,
+        reviewLinks: {
+          attempts,
+          obligations: [],
+          dispatches: [],
+          invocations: [],
+          truncated: true,
+        },
       },
-    }, 'ses_root');
+      'ses_root',
+    );
     expect(result.timeline?.status).toBe('truncated');
     expect(result.timeline?.total).toBe(60);
     expect(result.timeline?.events).toHaveLength(32);

@@ -473,14 +473,16 @@ describe('installed Desktop GUI bundle', () => {
           },
           proof: {
             claimsTotal: 1,
-            claims: [{
-              statement: 'Retry is safe',
-              critical: true,
-              verificationState: 'NOT_VERIFIED',
-              evidenceCount: 0,
-              counterexampleCount: 2,
-              certificateBinding: 'stale_or_unbound',
-            }],
+            claims: [
+              {
+                statement: 'Retry is safe',
+                critical: true,
+                verificationState: 'NOT_VERIFIED',
+                evidenceCount: 0,
+                counterexampleCount: 2,
+                certificateBinding: 'stale_or_unbound',
+              },
+            ],
             claimsTruncated: false,
             coverageGapCount: 1,
           },
@@ -488,12 +490,14 @@ describe('installed Desktop GUI bundle', () => {
             source: 'review_assurance',
             status: 'truncated',
             total: 52,
-            events: [{
-              at: '2026-11-07T11:34:05.930Z',
-              kind: 'dispatch',
-              label: 'Reviewer dispatch authorized',
-              state: 'outcome_unknown',
-            }],
+            events: [
+              {
+                at: '2026-11-07T11:34:05.930Z',
+                kind: 'dispatch',
+                label: 'Reviewer dispatch authorized',
+                state: 'outcome_unknown',
+              },
+            ],
           },
           warningCodes: ['REVIEWER_CAPTURE_PROVENANCE_INVALID'],
           warningsTruncated: false,

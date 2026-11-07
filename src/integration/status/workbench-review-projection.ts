@@ -101,6 +101,76 @@ function bounded(value: string, max = MAX_MESSAGE_CHARS): string {
   return value.length > max ? value.slice(0, max) + '...' : value;
 }
 
+type WorkbenchProof = NonNullable<ReviewView['proof']>;
+type WorkbenchClaimSource = WorkbenchProof['claims'][number];
+
+function projectSubject(subject: ReviewView['subject']) {
+  return {
+    kind: subject.kind,
+    label: bounded(subject.label, 150),
+    revision: subject.revision,
+    digest: subject.digest,
+    contentVerified: subject.contentVerified,
+    subjectBinding: subject.subjectBinding,
+    reviewerVerdict: subject.reviewerVerdict,
+    reviewCompletion: subject.reviewCompletion,
+    reviewedAt: subject.reviewedAt,
+    reviewedSubjectDigest: subject.reviewedSubjectDigest,
+    reviewedObligationId: subject.reviewedObligationId,
+    findings: subject.findings.slice(0, MAX_FINDINGS).map((finding) => ({
+      severity: bounded(finding.severity, 40),
+      category: bounded(finding.category, 80),
+      message: bounded(finding.message),
+    })),
+    findingsTotal: subject.findings.length,
+    findingsTruncated: subject.findingsTruncated || subject.findings.length > MAX_FINDINGS,
+    missingVerification: subject.missingVerification.slice(0, MAX_MISSING).map(bounded),
+    missingVerificationTruncated: subject.missingVerification.length > MAX_MISSING,
+    unboundReviewReason: subject.unboundReview?.reason ?? null,
+    historicalReview: subject.historicalImplReview !== null,
+  };
+}
+
+function certificateBindingFor(
+  certificates: WorkbenchProof['certificates'],
+  certificateId: string | null,
+): 'current' | 'stale_or_unbound' | 'not_recorded' {
+  if (certificateId === null) return 'not_recorded';
+  const current = certificates.some(
+    (certificate) =>
+      certificate.certificateId === certificateId && certificate.binding === 'current',
+  );
+  return current ? 'current' : 'stale_or_unbound';
+}
+
+function projectClaims(
+  claims: readonly WorkbenchClaimSource[],
+  certificates: WorkbenchProof['certificates'],
+) {
+  return claims.slice(0, MAX_CLAIMS).map((claim) => ({
+    statement: bounded(claim.statement),
+    critical: claim.critical,
+    verificationState: claim.verificationState,
+    evidenceCount: claim.evidenceRefCount,
+    counterexampleCount: claim.counterexampleRefCount,
+    certificateBinding: certificateBindingFor(certificates, claim.certificateId),
+  }));
+}
+
+function projectProof(
+  proof: ReviewView['proof'],
+  claims: readonly WorkbenchClaimSource[],
+  certificates: WorkbenchProof['certificates'],
+) {
+  return {
+    claimsTotal: claims.length,
+    claims: projectClaims(claims, certificates),
+    claimsTruncated: claims.length > MAX_CLAIMS,
+    coverageGapCount: proof?.coverageGaps.length ?? 0,
+    certificateCount: certificates.length,
+  };
+}
+
 function reviewTimeline(view: ReviewView): z.infer<typeof WorkbenchTimeline> {
   const links = view.reviewLinks;
   if (!links) {
@@ -118,14 +188,22 @@ function reviewTimeline(view: ReviewView): z.infer<typeof WorkbenchTimeline> {
   }
   for (const item of links.dispatches) {
     // An authorized release is not proof that execution was captured.
-    record(item.dispatchAuthorizedAt, 'dispatch', 'Reviewer dispatch authorized',
-      item.dispatchStatus);
+    record(
+      item.dispatchAuthorizedAt,
+      'dispatch',
+      'Reviewer dispatch authorized',
+      item.dispatchStatus,
+    );
     record(item.completedAt, 'dispatch', 'Reviewer dispatch ended', item.dispatchStatus);
   }
   for (const item of links.invocations) {
     record(item.invokedAt, 'invocation', 'Reviewer invocation started', 'recorded');
-    record(item.fulfilledAt, 'invocation', 'Reviewer invocation evidence bound',
-      item.capturedVerdict ?? 'verdict_not_recorded');
+    record(
+      item.fulfilledAt,
+      'invocation',
+      'Reviewer invocation evidence bound',
+      item.capturedVerdict ?? 'verdict_not_recorded',
+    );
   }
   for (const item of links.obligations) {
     record(item.fulfilledAt, 'obligation', 'Review obligation fulfilled', item.status);
@@ -136,7 +214,8 @@ function reviewTimeline(view: ReviewView): z.infer<typeof WorkbenchTimeline> {
   events.sort((left, right) =>
     left.at === right.at
       ? (left.kind + left.label).localeCompare(right.kind + right.label)
-      : left.at.localeCompare(right.at));
+      : left.at.localeCompare(right.at),
+  );
   const truncated = links.truncated || events.length > MAX_TIMELINE_EVENTS;
   return {
     source: 'review_assurance',
@@ -152,58 +231,15 @@ function reviewTimeline(view: ReviewView): z.infer<typeof WorkbenchTimeline> {
  * remains explicit instead of being converted into a successful review.
  */
 export function projectWorkbenchReview(view: ReviewView, sessionID: string): WorkbenchReviewResult {
-  const subject = view.subject;
   const claims = view.proof?.claims ?? [];
   const certificates = view.proof?.certificates ?? [];
-  const certificateBinding = (id: string | null) => {
-    if (id === null) return 'not_recorded';
-    const current = certificates.some((certificate) =>
-      certificate.certificateId === id && certificate.binding === 'current');
-    return current ? 'current' : 'stale_or_unbound';
-  };
   return WorkbenchReviewResult.parse({
     schemaVersion: 'workbench-review.v1',
     sessionID,
     status: view.status,
     phase: view.phase,
-    subject: {
-      kind: subject.kind,
-      label: bounded(subject.label, 150),
-      revision: subject.revision,
-      digest: subject.digest,
-      contentVerified: subject.contentVerified,
-      subjectBinding: subject.subjectBinding,
-      reviewerVerdict: subject.reviewerVerdict,
-      reviewCompletion: subject.reviewCompletion,
-      reviewedAt: subject.reviewedAt,
-      reviewedSubjectDigest: subject.reviewedSubjectDigest,
-      reviewedObligationId: subject.reviewedObligationId,
-      findings: subject.findings.slice(0, MAX_FINDINGS).map((finding) => ({
-        severity: bounded(finding.severity, 40),
-        category: bounded(finding.category, 80),
-        message: bounded(finding.message),
-      })),
-      findingsTotal: subject.findings.length,
-      findingsTruncated: subject.findingsTruncated || subject.findings.length > MAX_FINDINGS,
-      missingVerification: subject.missingVerification.slice(0, MAX_MISSING).map(bounded),
-      missingVerificationTruncated: subject.missingVerification.length > MAX_MISSING,
-      unboundReviewReason: subject.unboundReview?.reason ?? null,
-      historicalReview: subject.historicalImplReview !== null,
-    },
-    proof: {
-      claimsTotal: claims.length,
-      claims: claims.slice(0, MAX_CLAIMS).map((claim) => ({
-        statement: bounded(claim.statement),
-        critical: claim.critical,
-        verificationState: claim.verificationState,
-        evidenceCount: claim.evidenceRefCount,
-        counterexampleCount: claim.counterexampleRefCount,
-        certificateBinding: certificateBinding(claim.certificateId),
-      })),
-      claimsTruncated: claims.length > MAX_CLAIMS,
-      coverageGapCount: view.proof?.coverageGaps.length ?? 0,
-      certificateCount: view.proof?.certificates.length ?? 0,
-    },
+    subject: projectSubject(view.subject),
+    proof: projectProof(view.proof, claims, certificates),
     reviewAttempts: view.reviewLinks?.attempts.length ?? 0,
     timeline: reviewTimeline(view),
     warningCodes: view.warnings.slice(0, MAX_WARNINGS).map((warning) => bounded(warning.code, 100)),
