@@ -209,7 +209,7 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         if (!key || !isCurrentSession(ctx, input.session)) return undefined;
         const state = snapshot();
         const matched = state && state.key === key;
-        const label = matched ? state.label : 'FlowGuard · inspect';
+        const label = matched ? state.label + ' · last read' : 'FlowGuard · inspect';
         const rows = [{
           id: 'refresh',
           label: matched ? 'Refresh canonical status' : 'Inspect canonical status',
@@ -218,12 +218,12 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         }];
         if (matched && state.note) {
           rows.unshift({ id: 'status', label: state.note,
-            detail: state.actionHint || 'Live diagnostic (not durable evidence)' });
+            detail: state.actionHint || 'Last read only; refresh for current state' });
         }
         return {
           label: label,
           title: 'FlowGuard · chat status (read-only)',
-          icon: 'shield-check',
+          icon: 'shield',
           tone: matched && (state.status === 'blocked' || state.status === 'not_verified' ||
             state.status === 'stale') ? 'warning' : undefined,
           rows: rows,
