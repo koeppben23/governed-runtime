@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Isolate the OpenCode Desktop sidecar lifecycle and `serverEndpoints` /
+  `servers` compatibility into a host bridge. Route all GUI RPC calls
+  through a typed facade that reuses the canonical governance contracts,
+  binds to the mounted session and preserves the server-side decision gate.
+  No new authority or host-independent UI runtime is introduced. Installed
+  Desktop acceptance of the revised bundle remains pending.
+
+
 - Remove the separate autonomous StartGovernance synthetic status transcript
   (RPC result remains authoritative; interactive /start stays unchanged).
   Add an optional sidecar session-completion listener for read-only composer
