@@ -351,6 +351,44 @@ timeline for every workflow phase. Timeline truncation is explicit and capped at
 **Keep PR Draft** until the updated CI is green. No merge or demo-session
 decision is authorized by this revision.
 
+## Session Explorer and audit-chain chronology — PR #1207 continuation
+
+**Status: NOT_VERIFIED on installed OpenCode Desktop 2.2.6.** The previous
+timeline/proof screenshots and green CI apply to the older bundle. The new
+`GetWorkbenchDiagnostics` RPC composes the existing canonical Explorer
+(including unverified lineage) with read-only `audit-chain.v3` verification.
+
+Each positively linked session audit is bounded to 2 MiB before reading and
+checked through the canonical integrity verifier. The projection has a
+24-session cap and displays up to the newest 100 verified audit events. It
+does not display raw event detail, actor identities, file paths or unverifiable
+child audit records. It distinguishes `verified`, `invalid` and
+`not_verified` integrity, and does not equate chronological ordering with
+causality. A missing/truncated/invalid event chain never becomes a positive
+assurance statement. Audit-chain events are not host transcript events.
+
+### Required installed acceptance
+
+- [ ] Exact HEAD and installed GUI SHA recorded; `GetWorkbenchDiagnostics`
+      resolves through the actual installed Desktop host.
+- [ ] Root and reviewer children have actual verified linkage, correct
+      lineage status, phase, parent and review-attempt/dispatch summaries.
+- [ ] Unknown child stays visible but is not read as trusted evidence.
+- [ ] Verified audit chronology contains real persisted transition/events
+      with timestamps and sequence, no raw details or sensitive paths.
+- [ ] Missing, oversized and broken-chain audits show not-verified/invalid
+      states; partial denominator stays explicit.
+- [ ] 24-session and 100-event caps with honest truncated/partial display.
+- [ ] Native keyboard, narrow window, light/dark and session-switch behaviors
+      remain correct; opening/refreshing cannot hydrate or mutate.
+- [ ] Existing decision binding, stale rejection, compact recovery and
+      review-transport timeline remain unchanged.
+- [ ] Updated CI, hash manifest and architectural budgets pass.
+
+**Scope:** This is a verified persisted audit-chain chronology for the Explorer
+sessions, not host transcript replay or causal proof of multi-agent execution.
+The previously noted active-profile uninstall limitation remains PARTIAL.
+
 ## Artifact to certify
 
 Record the exact Git HEAD, packed `@flowguard/core` tarball SHA-256, installed
