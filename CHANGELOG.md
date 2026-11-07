@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add optional 30-second visible-sidecar-session read-only reconciliation to
+  the Desktop composer status. Host completion events remain fast-path hints,
+  missed transitions are reconciled best-effort when the GUI is visible and
+  connected, and concurrent refreshes are coalesced. Expose named regions and
+  polite atomic status announcements in the Workbench and chat card. Extend
+  isolated running-host uninstall regression with PID/liveness and unaffected
+  observer checks. This does not establish a screenreader PASS, a distinct
+  revision zero-restart upgrade, or live-profile uninstall acceptance.
+
+
 - Isolate the OpenCode Desktop sidecar lifecycle and `serverEndpoints` /
   `servers` compatibility into a host bridge. Route all GUI RPC calls
   through a typed facade that reuses the canonical governance contracts,
