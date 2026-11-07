@@ -8,36 +8,38 @@
 **Related:** #1196, #1203 diagnostics, #1204 portable chooser, #1205 TUI chooser, #1206 native decisions/Desktop chooser, ADR-011  
 **Contract owner:** existing FlowGuard governance and diagnostic projections; no UI authorization
 
-## Inline chat cards — optional Desktop extension (PR #1207)
+## Inline chat and composer status — optional Desktop extension (PR #1207)
 
-The official OpenCode V2 GUI extension surface documents a `CodeBlock` registry
-with `languages` and `render({ code, language, session })`, supported in
-assistant-message and tool-output timelines. The interface is **host-documented**,
-but still **NOT_VERIFIED on installed Desktop 2.2.6** for the new card extension.
+The official OpenCode V2 GUI SDK documents the `CodeBlock` registry
+for explicitly authored Markdown blocks and `ComposerPill` immediately
+above the session composer. The latter is **not** part of the model transcript.
+Neither surface is yet installed-verified for this new OpenCode 2.2.6 bundle.
 
-- The Desktop palette action **FlowGuard: show live status in chat** requests\n  the same native `/flowguard-card` host command; nothing is injected on load.\n- Native `/flowguard-card` explicitly publishes one synthetic message with
-  `resume: false`; it does not run the agent or start/advance governance.
-- The message contains a strictly versioned, payload-free
-  `flowguard-live` fenced block (`v1`). The GUI contribution recognizes
-  **only** that exact payload, otherwise retains highlighted code.
-- The rendered card loads the current mounted session's `GetNextAction` and,
-  only at a decision gate, `GetWorkbenchReview`. It never uses chat content
-  as authority, and never calls `SubmitDecision`, commands, hydration or audit.
-- The display is a **live read-only view, not a historical snapshot**. It
-  labels reviewer acceptance separately from operator decision, keeps all
-  decisions in the canonical native chooser, and fails closed to
-  `NOT_VERIFIED` on absent or mismatched evidence.
-- No registered GUI surface or TUI/headless use: show the message and the
-  existing portable `/status` / Workbench instructions instead.
-- Existing `/start`, `/status`, `/why` and other command outputs are
-  intentionally unchanged; cards are opt-in, never automatically injected.
-- A Desktop installed test on the **final code bundle** must verify actual
-  timeline rendering, session switch, reload, missing host registry, theme,
-  accessibility and absence of model/tool/workflow calls before GO. Unit
-  tests and earlier Workbench installed evidence are **not** a substitute.
+- The palette action **FlowGuard: inspect status beside chat** (`flowguard-inline`)
+  refreshes one session-bound status pill by calling the existing read-only
+  `GetNextAction` and, for review gates, `GetWorkbenchReview` RPCs.
+- The pill also exposes **Inspect/Refresh canonical status**. Nothing is
+  fetched on plugin registration. Only user action performs the RPC reads.
+- No synthetic message is inserted. An earlier prototype used
+  `session.synthetic({ resume: false })`, but that could introduce
+  otherwise non-authoritative UI notices into future model context.
+  **That implementation has been removed.**
+- The optional `CodeBlock` renderer recognizes the exact
+  `flowguard-live` fence with payload `v1` only. It renders an existing
+  message if one contains that marker; it never creates or posts a message.
+- These presentations are **live, read-only diagnostic views**, not historical
+  review snapshots, and never authorize decisions. Review digest/phase
+  consistency is re-read; missing or stale data fails closed.
+- No automatic host-command execution, decision RPC, hydration or audit write
+  occurs from the pill or block. Existing `/status` portable fallback remains.
+- Unsupported GUI contributions must degrade without disabling other parts of
+  FlowGuard. TUI/headless and existing command templates are unchanged.
+- GO requires an installed Desktop 2.2.6 test of actual pill placement,
+  code-block rendering, phase changes, session switching, plugin reload,
+  light/dark, accessibility and absence of model/workflow/decision calls.
+  Previously captured Workbench acceptance does not prove this new build.
 
-Official specification: https://opencode.ai/v2/docs/build/plugins/gui/
-
+Official SDK: https://opencode.ai/v2/docs/build/plugins/gui/
 
 ## Same-PR delivery amendment (2026-11-07)
 
