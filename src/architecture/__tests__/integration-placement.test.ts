@@ -152,9 +152,9 @@ describe('integration placement authority', () => {
       rootFiles.filter((entry) => entry.owner === owner).length;
 
     expect(countByOwner('root-composition')).toBe(36);
-    expect(countByOwner('root-host-runtime')).toBe(7);
+    expect(countByOwner('root-host-runtime')).toBe(8);
     expect(countByOwner('root-authority')).toBe(15);
-    expect(rootFiles.length).toBe(58);
+    expect(rootFiles.length).toBe(59);
   });
 
   it('freezes the host/runtime boundary set exactly', () => {
@@ -165,6 +165,7 @@ describe('integration placement authority', () => {
       .sort();
 
     expect(hostRuntimeFiles).toEqual([
+      'integration/gui-rpc-client-contract.ts',
       'integration/host-mutation-observation.ts',
       'integration/installed-commands.ts',
       'integration/opencode-governance-rpc.ts',
