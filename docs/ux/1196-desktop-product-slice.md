@@ -2,7 +2,7 @@
 
 <!-- prettier-ignore-start -->
 
-**Status:** Implemented native Review Workbench, compact disclosure, reviewer timeline/ProofGraph, Session Explorer/audit chronology, and the read-only chat/composer status surface; installed-verified on Desktop 2.2.6 artifacts through `e054159a`. The complete #1196 product, including automatic refresh and full product/accessibility acceptance, remains open.  
+**Status:** Implemented native Review Workbench, compact disclosure, reviewer timeline/ProofGraph, Session Explorer/audit chronology, and the read-only chat/composer status surface; installed-verified on Desktop 2.2.6 artifact `f9c53e8f` (GUI bundle `bb8c8cd2…b06ff81e`). VoiceOver, zero-restart and live-profile uninstall acceptance remain open.  
 **Capability probe:** Panel + `session.header` Slot `PASS` on installed OpenCode Desktop 2.2.6 (2026-11-07); pinned 2.2.5 remains `NOT_VERIFIED`.  
 **Primary target:** OpenCode Desktop 2.2.6 (installed native UI required); 2.2.5 remains NOT_VERIFIED.  
 **Related:** #1196, #1203 diagnostics, #1204 portable chooser, #1205 TUI chooser, #1206 native decisions/Desktop chooser, ADR-011  
