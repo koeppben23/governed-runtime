@@ -643,6 +643,28 @@ module.exports = Plugin.define({
       },
     });
     ctx.add(Command, {
+      id: 'show-chat-card',
+      title: 'FlowGuard: show live status in chat (experimental)',
+      description: 'Insert a read-only FlowGuard live status card into the current chat.',
+      group: 'FlowGuard',
+      slash: { name: 'flowguard-inline' },
+      run: () => {
+        const session = ctx.sessions.current();
+        if (!session) {
+          toast(ctx, 'Open a session before requesting a FlowGuard chat card.', 'default');
+          return;
+        }
+        void session.server.client.session.command({
+          sessionID: session.id,
+          name: 'flowguard-card',
+          text: '',
+        }).catch((error) => {
+          console.warn('[FlowGuard] Inline chat card command unavailable.', error);
+          toast(ctx, 'Could not insert FlowGuard card; use /status instead.', 'error');
+        });
+      },
+    });
+    ctx.add(Command, {
       id: 'choose-workflow',
       title: 'FlowGuard: choose workflow or decision',
       description: 'Open the canonical FlowGuard Next Action dialog.',
