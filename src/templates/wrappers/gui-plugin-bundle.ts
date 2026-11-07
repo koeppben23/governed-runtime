@@ -1,8 +1,9 @@
 import { GUI_DIAGNOSTICS_BUNDLE } from './gui-diagnostics-bundle.js';
+import { GUI_CHAT_CARD_BUNDLE } from './gui-chat-card-bundle.js';
 
 export const GUI_PLUGIN_BUNDLE = `\
 /** FlowGuard optional OpenCode Desktop GUI; never a governance authority. */
-const { Plugin, Command, Panel, Slot } = require('@opencode/plugin/gui');
+const { Plugin, Command, Panel, Slot, CodeBlock } = require('@opencode/plugin/gui');
 
 const RPC_ID = 'flowguard-governance';
 // Diagnostic completion, distinct from workflow terminal-phase membership.
@@ -259,6 +260,7 @@ function renderProbe(ctx, props, compact) {
  * remain solely in the already installed, server-bound chooser.
  */
 ${GUI_DIAGNOSTICS_BUNDLE}
+${GUI_CHAT_CARD_BUNDLE}
 
 function renderWorkbench(ctx, props) {
   const { createEffect, createSignal, onCleanup } = require('solid-js');
@@ -573,6 +575,19 @@ function renderWorkbench(ctx, props) {
 
 module.exports = Plugin.define({
   setup(ctx) {
+    // A dedicated language prevents interference with regular Markdown.
+    // Invalid or incomplete cards fall back to highlighted source.
+    if (CodeBlock) {
+      try {
+        ctx.add(CodeBlock, {
+          languages: ['flowguard-live'],
+          render: (props) => props.code.trim() === 'v1' && props.session ?
+            renderFlowGuardChatCard(ctx, props) : undefined,
+        });
+      } catch (error) {
+        console.warn('[FlowGuard] Inline chat cards are unavailable in this Desktop build.', error);
+      }
+    }
     const probeTab = {
       id: 'workbench-probe',
       title: 'FlowGuard Workbench',
