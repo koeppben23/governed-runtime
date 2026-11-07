@@ -225,7 +225,14 @@ describe('installed Desktop GUI bundle', () => {
         },
         proof: {
           claimsTotal: 1,
-          claims: [{ critical: true, statement: 'Rollback safe', verificationState: null, evidenceCount: 0 }],
+          claims: [
+            {
+              critical: true,
+              statement: 'Rollback safe',
+              verificationState: null,
+              evidenceCount: 0,
+            },
+          ],
           claimsTruncated: false,
           coverageGapCount: 1,
         },
