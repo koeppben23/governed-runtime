@@ -57,6 +57,32 @@ transitions is made. The completion event is an incremental read-only signal,
 not a guaranteed durable subscription or an audit feed. The plugin never
 interprets missing events as approval.
 
+## Desktop host and RPC adapter isolation (PR #1207)
+
+The Desktop view code now depends on two local semantic bridges rather than
+reaching into OpenCode compatibility details or spelling RPC method strings:
+
+- `gui-host-bridge-bundle.ts` owns the installed 2.2.6 `ctx.servers`
+  compatibility fallback for the typed `ctx.serverEndpoints` API, the
+  sidecar `session.execution.succeeded` filter and reactive cleanup.
+  Other UI components request `subscribeFlowGuardSessionCompletion`.
+- `gui-rpc-client-bundle.ts` owns the RPC identifier, native
+  `rpc.call` envelope and four canonical methods. Its exported
+  `FlowGuardGuiRpcClient` TypeScript interface reuses the authoritative
+  RPC input/output types. Presentation code calls `getNextAction`,
+  `getWorkbenchReview`, `getWorkbenchDiagnostics`, or
+  `submitDecision` without knowing RPC transport names.
+- `submitDecision` always injects the mounted session ID after the
+  caller's fields. This is transport session binding only, **not** new
+  decision authority. Server-side revision, actor and policy checks remain
+  mandatory and unchanged.
+
+This is a source-layer split inside the single installed Desktop plugin,
+**not** an independently deployable UI package or host-neutral implementation
+of other GUI targets. Contract/unit tests are required for the adapters.
+The changed GUI bundle needs a fresh installed Desktop 2.2.6 acceptance;
+earlier Workbench/pill screenshots cannot be reused as proof of this revision.
+
 ## Inline chat and composer status — optional Desktop extension (PR #1207)
 
 The official OpenCode V2 GUI SDK documents the `CodeBlock` registry
