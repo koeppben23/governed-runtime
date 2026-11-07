@@ -114,6 +114,28 @@ ledger. No ledger entries from the stuck session were copied or edited.
    `verdict: approve` at `2026-11-07T11:48:48.960Z`, and the Workbench reports
    one certificate. The Workbench itself did not call `SubmitDecision`.
 
+### Implementation / evidence-review path
+
+`/implement` on the approved session applied exactly the two approved file changes
+and reached `EVIDENCE_REVIEW`:
+
+- `TaskService.updateTask` throws `TaskNotFoundException(id)` before mutation
+  when `repository.findById(id)` is null.
+- `TaskControllerTest.update_taskNotFound_returns404` is enabled, asserts the
+  404 body's `taskId`, and its Javadoc describes active regression coverage.
+- FlowGuard validation: build check passed with 15 assertions and one skipped;
+  an independent `npm run test --` passed 16 tests, and `npm run build --`
+  passed 16 tests with `BUILD SUCCESS`.
+- The Workbench showed header `FlowGuard | EVIDENCE_REVIEW | Decision required
+(not approved)`, subject `Implementation
+b806035b-20b9-4086-a0b6-b1b80eed3304`, digest
+  `52d523d809c00ecad54f613ab20b44fda991698f5763ab04da8eb49087224837`,
+  reviewer verdict `accept`, review status `COMPLETE`, zero findings, zero
+  missing verification, and one critical ProofGraph claim marked `PROVEN` with
+  one evidence reference. The decision affordance was enabled.
+- The evidence-review decision itself was left for the operator; this run did
+  not execute it.
+
 ### Negative stale path
 
 The pre-decision binding (state digest
@@ -163,6 +185,9 @@ decision when it starts with a fresh assurance ledger.
   — bound PLAN_REVIEW with decision available.
 - [`desktop-2.2.6-workbench-approved.png`](./desktop-2.2.6-workbench-approved.png)
   — post-approval `IMPLEMENTATION` state with the persisted plan review.
+- [`desktop-2.2.6-workbench-evidence-review.png`](./desktop-2.2.6-workbench-evidence-review.png)
+  — implementation/evidence review with the `PROVEN` critical claim and the
+  next decision available.
 - [`desktop-2.2.6-workbench-plan-pending.png`](./desktop-2.2.6-workbench-plan-pending.png)
   — the earlier pending-review fail-closed state.
 
@@ -233,6 +258,7 @@ Desktop. Record version/sha in the evidence report, not just screenshots.
 | READY + Review + BLOCKED interaction captures | `PASS` (READY, real PLAN-pending fail-closed, bound PLAN_REVIEW decision and BLOCKED recovery)            |
 | PLAN pending-review fail-closed display       | `PASS` (exact plan revision/digest; `REVIEW_VERDICT_NOT_RECORDED`; chooser disabled)                      |
 | Bound decision and stale-denial negative run  | `PASS` (native `/approve`; old binding rejected with `DECISION_BINDING_STALE`; state unchanged)           |
+| Implementation/evidence-review display        | `PASS` (implementation subject/digest, `accept` verdict, `PROVEN` claim, decision available)              |
 | Stuck-session diagnosis                       | `PASS` (dispatch `outcome_unknown`; child review completed; no ledger reset)                              |
 | Narrow layout and keyboard activation         | `PASS` (900x900; real `Return` refresh; real `Cmd+K`/`Escape` palette)                                    |
 | Light mode and decision-dialog keyboard       | `NOT_VERIFIED`                                                                                            |
