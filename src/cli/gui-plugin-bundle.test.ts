@@ -40,6 +40,7 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
         Slot: 'slot',
         CodeBlock: 'code-block',
         ComposerPill: 'composer-pill',
+        ComposerPill: 'composer-pill',
       };
     }
     if (name === 'solid-js') {
@@ -190,17 +191,32 @@ describe('installed Desktop GUI bundle', () => {
     }
   });
 
-  it('opens a chat card only when explicitly chosen from the Desktop palette', async () => {
+  it('exposes read-only composer status without inserting a synthetic chat message', async () => {
     const loaded = load({}, {});
+    const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+      show: (input: { session: Record<string, unknown> }) => {
+        label: string;
+        rows: Array<{ id: string; run?: () => void }>;
+      };
+    };
+    expect(pill).toBeDefined();
+    const initial = pill.show({ session: loaded.host.sessions.current() });
+    expect(initial.label).toContain('FlowGuard');
+    expect(initial.rows).toHaveLength(1);
+    expect(loaded.rpcCalls).toHaveLength(0);
+    expect(loaded.commandCalls).toHaveLength(0);
+    initial.rows[0]?.run?.();
+    await vi.waitFor(() => expect(loaded.rpcCalls.length).toBeGreaterThan(0));
+    expect(loaded.rpcCalls[0]?.method).toBe('GetNextAction');
+    expect(loaded.commandCalls).toHaveLength(0);
     const action = loaded.additions.find(
       (item) =>
         item.registry === 'command' && (item.value as FakeCommand).id === 'show-chat-card',
     )?.value as FakeCommand;
     expect(action).toBeDefined();
-    expect(loaded.commandCalls).toHaveLength(0);
     action.run();
-    expect(loaded.commandCalls).toEqual([{ sessionID: 'ses_root', name: 'flowguard-card', text: '' }]);
-    expect(loaded.rpcCalls).toHaveLength(0);
+    await vi.waitFor(() => expect(loaded.rpcCalls.length).toBeGreaterThan(1));
+    expect(loaded.commandCalls).toHaveLength(0);
   });
 
   it('registers a native panel but no slot until the experimental command is invoked', () => {
