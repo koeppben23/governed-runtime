@@ -23,7 +23,8 @@ describe('native read-only chat card', () => {
     addChatCardCommand(context, editor);
     expect(command?.name).toBe('flowguard-card');
     await command!.execute({ sessionID: 'ses_root', prompt: { text: '' } });
-    expect(synthetic).toHaveBeenCalledExactlyOnceWith({
+    expect(synthetic).toHaveBeenCalledTimes(1);
+    expect(synthetic).toHaveBeenCalledWith({
       sessionID: 'ses_root',
       text: FLOWGUARD_CHAT_CARD_MARKDOWN,
       resume: false,
