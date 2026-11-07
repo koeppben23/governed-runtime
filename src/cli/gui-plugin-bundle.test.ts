@@ -88,6 +88,65 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
   return { command, probeCommand, additions, rpcCalls, commandCalls, views, host };
 }
 
+/** Minimal DOM test double: the installed host still owns actual visual acceptance. */
+class FakeDomNode {
+  readonly children: FakeDomNode[] = [];
+  readonly style: Record<string, string> = {};
+  readonly listeners = new Map<string, () => void>();
+  disabled = false;
+  type = '';
+  private text = '';
+
+  constructor(readonly tagName: string) {}
+
+  set textContent(value: string) {
+    this.text = value;
+    this.children.length = 0;
+  }
+
+  get textContent(): string {
+    return this.text + this.children.map((child) => child.textContent).join(' ');
+  }
+
+  get childNodes(): FakeDomNode[] {
+    return this.children;
+  }
+
+  get lastChild(): FakeDomNode | null {
+    return this.children.at(-1) ?? null;
+  }
+
+  setAttribute(_name: string, _value: string): void {}
+
+  appendChild(child: FakeDomNode): FakeDomNode {
+    this.children.push(child);
+    return child;
+  }
+
+  removeChild(child: FakeDomNode): FakeDomNode {
+    const index = this.children.indexOf(child);
+    if (index >= 0) this.children.splice(index, 1);
+    return child;
+  }
+
+  addEventListener(event: string, handler: () => void): void {
+    this.listeners.set(event, handler);
+  }
+
+  removeEventListener(event: string): void {
+    this.listeners.delete(event);
+  }
+
+  find(tag: string, label: string): FakeDomNode | undefined {
+    if (this.tagName === tag && this.textContent.includes(label)) return this;
+    for (const child of this.children) {
+      const result = child.find(tag, label);
+      if (result) return result;
+    }
+    return undefined;
+  }
+}
+
 describe('installed Desktop GUI bundle', () => {
   it('registers only the on-demand workflow command', () => {
     const ctx = {} as Record<string, unknown>;
@@ -122,6 +181,125 @@ describe('installed Desktop GUI bundle', () => {
     );
     expect(loaded.rpcCalls).toHaveLength(0);
     expect(loaded.commandCalls).toHaveLength(0);
+  });
+
+  it('renders independent review information without executing any decision', async () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    vi.stubGlobal('document', { createElement: (tag: string) => new FakeDomNode(tag) });
+    try {
+      const panel = loaded.additions.find((item) => item.registry === 'panel')?.value as {
+        render: (props: { session: Record<string, unknown> }) => FakeDomNode;
+      };
+      const next = {
+        sessionID: 'ses_root',
+        kind: 'decision_required',
+        phase: 'PLAN_REVIEW',
+        stateDigest: 'a'.repeat(64),
+        title: 'Plan decision required',
+        decisionBinding: { subjectDigest: 'b'.repeat(64) },
+        actions: [{ invocation: '/approve' }],
+        blocker: null,
+      };
+      const review = {
+        sessionID: 'ses_root',
+        phase: 'PLAN_REVIEW',
+        status: 'COMPLETE',
+        subject: {
+          kind: 'plan',
+          label: 'Frozen plan revision 3',
+          revision: '3',
+          digest: 'b'.repeat(64),
+          contentVerified: 'verified',
+          subjectBinding: 'matched',
+          reviewerVerdict: 'ACCEPT',
+          reviewedSubjectDigest: 'b'.repeat(64),
+          findings: [{ severity: 'high', category: 'rollback', message: 'Missing rollback proof' }],
+          findingsTotal: 1,
+          findingsTruncated: false,
+          missingVerification: [],
+          missingVerificationTruncated: false,
+          unboundReviewReason: null,
+          historicalReview: false,
+        },
+        proof: {
+          claimsTotal: 1,
+          claims: [{ critical: true, statement: 'Rollback safe', verificationState: null, evidenceCount: 0 }],
+          claimsTruncated: false,
+          coverageGapCount: 1,
+        },
+        warningCodes: [],
+        warningsTruncated: false,
+      };
+      loaded.views.push(next, review);
+      const node = panel.render({ session });
+
+      await vi.waitFor(() => expect(node.textContent).toContain('Missing rollback proof'));
+      expect(node.textContent).toContain('Reviewer verdict (not approval): ACCEPT');
+      expect(node.textContent).toContain('Coverage gaps: 1');
+      expect(node.textContent).toContain('NOT_VERIFIED');
+      expect(node.find('button', 'Open canonical decisions')?.disabled).toBe(false);
+      expect(loaded.rpcCalls.map((call) => call['method'])).toEqual([
+        'GetNextAction',
+        'GetWorkbenchReview',
+      ]);
+      expect(loaded.commandCalls).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps decision affordance disabled for stale or unverified review subjects', async () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    vi.stubGlobal('document', { createElement: (tag: string) => new FakeDomNode(tag) });
+    try {
+      const panel = loaded.additions.find((item) => item.registry === 'panel')?.value as {
+        render: (props: { session: Record<string, unknown> }) => FakeDomNode;
+      };
+      loaded.views.push(
+        {
+          sessionID: 'ses_root',
+          kind: 'decision_required',
+          phase: 'PLAN_REVIEW',
+          decisionBinding: { subjectDigest: 'b'.repeat(64) },
+          actions: [{ invocation: '/approve' }],
+        },
+        {
+          sessionID: 'ses_root',
+          phase: 'PLAN_REVIEW',
+          status: 'PARTIAL',
+          subject: {
+            kind: 'plan',
+            label: 'Unbound plan',
+            revision: '3',
+            digest: 'c'.repeat(64),
+            subjectBinding: 'mismatch',
+            reviewerVerdict: 'ACCEPT',
+            reviewedSubjectDigest: 'b'.repeat(64),
+            findings: [],
+            findingsTotal: 0,
+            findingsTruncated: false,
+            missingVerification: [],
+            missingVerificationTruncated: false,
+            unboundReviewReason: 'stale_revision',
+            historicalReview: false,
+          },
+          proof: { claims: [], claimsTotal: 0, claimsTruncated: false, coverageGapCount: 0 },
+          warningCodes: [],
+          warningsTruncated: false,
+        },
+      );
+      const node = panel.render({ session });
+      await vi.waitFor(() => expect(node.textContent).toContain('Decision unavailable'));
+      expect(node.find('button', 'Open canonical decisions')?.disabled).toBe(true);
+      expect(loaded.rpcCalls).toHaveLength(2);
+      expect(loaded.commandCalls).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('runs the selected workflow command after re-reading the same view', async () => {
