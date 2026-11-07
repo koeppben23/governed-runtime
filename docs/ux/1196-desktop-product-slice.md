@@ -10,9 +10,13 @@
 
 ## Continued hardening after installed artifact e054159a (2026-11-07)
 
-**Status: implementation and regression probes only; new final installed Desktop
-acceptance required.** Do not reuse the older bundle acceptance for a changed
-bundle or claim a zero-restart installer proof.
+**Status: installed Desktop 2.2.6 acceptance PASS for artifact `2651c0cb` on
+the optional current-session completion refresh. The autonomous-Start transcript
+removal is verified by code plus product-composition regression (no installed
+autonomous Start was run because it would mutate governance).** The older
+bundle acceptance remains valid only for its own artifact. Zero-restart
+installer proof, active-profile uninstall and independent screenreader coverage
+remain open.
 
 1. Autonomous `StartGovernance` now returns its existing authoritative RPC
    result without a `session.synthetic` transcript message. Audit confirmation,
@@ -20,12 +24,20 @@ bundle or claim a zero-restart installer proof.
    native host-command `/start` still publishes its existing report.
    A product-composition regression checks first and repeated autonomous
    Start create neither `prompt` nor `synthetic` messages.
-2. The composer pill optionally subscribes to the officially documented
-   sidecar `session.execution.succeeded` event with `createKeyed` and cleanup.
-   A completion for the **current session only** triggers the same read-only RPC
+2. The composer pill optionally subscribes to the sidecar
+   `session.execution.succeeded` event with `createKeyed` and cleanup. A
+   completion for the **current session only** triggers the same read-only RPC
    projection as manual Refresh. Each request has a generation fence; older
    responses cannot overwrite newer results. Missing event support, disconnects
-   and missed events retain the explicit Refresh fallback.
+   and missed events retain the explicit Refresh fallback. Installed Desktop
+   2.2.6 exposes the endpoint lookup as `ctx.servers`; newer plugin typings name
+   it `ctx.serverEndpoints`. The bundle prefers the documented name when
+   present and falls back to the running host surface. Acceptance on artifact
+   `2651c0cb` observed a disposable session change from `FlowGuard · inspect`
+   to `FlowGuard · NOT_VERIFIED · last read` after its execution succeeded,
+   without a user click, while a completion in another session left the open
+   demo pill at `FlowGuard · inspect`. The fixture was deleted; the demo
+   session stayed unchanged.
 3. The existing title/rows provide the host-native accessible name and
    keyboard interaction. **Independent screenreader testing remains pending.**
    Required installed tests: VoiceOver on macOS and, if supported, a second

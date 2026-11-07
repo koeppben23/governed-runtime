@@ -503,6 +503,77 @@ Evidence:
 [`flowguard-live` v1 card](./desktop-2.2.6-chat-codeblock-v1.png), and
 [unsupported v2 fallback](./desktop-2.2.6-chat-codeblock-v2.png).
 
+## Event-driven composer refresh and autonomous transcript removal
+
+**Status: PASS on installed Desktop 2.2.6 (artifact `2651c0cb`) for the
+current-session completion refresh.** The autonomous `StartGovernance`
+transcript removal is verified by code inspection and the product-composition
+regression suite; no installed autonomous Start was run because it would mutate
+governance. The older chat/composer acceptance applies only to artifact
+`e054159a`.
+
+### Installed acceptance record (artifact `2651c0cb`)
+
+| Field                | Observed value                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Git HEAD             | `2651c0cb7dade1292f332f1ed76be6d203527995`                                                                           |
+| Packed tarball       | `flowguard-core-2.0.0-tp.2.tgz`, SHA-256 `110571af91e0020cbc9b2fc87a3e834cc30a9abf0878036eee438e5637c97407`          |
+| Installed GUI bundle | `plugins/flowguard/gui-experimental.cjs`, SHA-256 `36b8f6f1cdcb42b781977f1df5c0bf3164ca994e4336cbc5942d9c50e9cd4f36` |
+| Host                 | managed Desktop service, OpenCode `2.2.6`, loopback port `49374`                                                     |
+
+**Host API finding:** the installed 2.2.6 GUI context exposes
+`ctx.servers` with `ctx.servers.get('sidecar').data.on(...)`. The checked-in
+`@opencode/plugin` typings name the same lookup `ctx.serverEndpoints`. An
+installed attempt that used only `ctx.serverEndpoints` did not subscribe; the
+final bundle prefers the documented name when present and falls back to
+`ctx.servers`, which the installed host exposes. This is a host-version adapter,
+not a change to FlowGuard governance semantics.
+
+**Observed installed results:**
+
+- A disposable fixture session (`ses_e48fe17e…`) opened at
+  `FlowGuard · inspect`. A normal user prompt completed with
+  `session.execution.succeeded`; **without any pill click**, the label changed
+  to `FlowGuard · NOT_VERIFIED · last read`. The fixture contained exactly the
+  user, assistant and idle messages; the pill created no message, prompt,
+  decision or audit write. The fixture was deleted.
+- **Foreign-session isolation:** while the demo session was open at
+  `FlowGuard · inspect`, a completion in the disposable fixture session did not
+  change the demo pill. It remained `FlowGuard · inspect`.
+- **Generation fence:** each `inspect` call increments a generation and only
+  the newest read may update the signal; a live out-of-order race was not
+  induced. The bundled GUI test covers the stale-response guard.
+- **Manual fallback:** the demo session still refreshes manually to
+  `FlowGuard · EVIDENCE_REVIEW · last read`, shows reviewer `accept`, zero
+  findings and “operator decision still required (not approved)”, and offers no
+  decision action.
+- **No governance mutation:** the demo session remained at 44 messages (zero
+  synthetic), the existing `approve` decision (`2026-11-07T11:48:48.960Z`),
+  activation generation `1`, phase `EVIDENCE_REVIEW`, and 72 verified
+  `audit-chain.v3` events under `PARTIAL`.
+- **Autonomous Start:** `plugin-start-command.ts` returns the authoritative RPC
+  result before building the interactive status report. Production no longer
+  calls `ctx.session.synthetic` or `ctx.session.prompt` on the autonomous path.
+  The product-composition regression exercises first and repeated autonomous
+  Start and asserts neither callback is called. Interactive `/start` still
+  publishes its existing prompt report.
+- **Install/refresh boundary:** the installer wrote the exact GUI bundle hash
+  above and then returned its explicit host-refresh failure because it ran
+  inside the managed service. No automatic restart was performed; the running
+  host hot-reloaded the plugin and a renderer reload re-registered the pill.
+  This is not a zero-restart upgrade proof.
+
+Evidence:
+[before completion](./desktop-2.2.6-chat-event-before.png) and
+[after automatic current-session refresh](./desktop-2.2.6-chat-event-after.png);
+[manual EVIDENCE_REVIEW refresh on the new bundle](./desktop-2.2.6-chat-pill-event-bundle.png).
+
+**Still open:** independent VoiceOver/screenreader testing, automatic refresh
+proof across every governance transition (the completion event is an
+incremental read-only signal, not an audit feed), zero-restart upgrade proof,
+and the active-profile uninstall (`PARTIAL`). No merge or Ready action is
+authorized.
+
 ## Artifact to certify
 
 Record the exact Git HEAD, packed `@flowguard/core` tarball SHA-256, installed

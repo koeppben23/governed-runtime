@@ -13,9 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (RPC result remains authoritative; interactive /start stays unchanged).
   Add an optional sidecar session-completion listener for read-only composer
   status refresh, bound to the current session and protected against
-  out-of-order RPC responses. Manual Refresh remains the fallback; installed
-  acceptance of this later GUI bundle, zero-restart host upgrade,
-  active-profile uninstall and separate screenreader coverage remain open.
+  out-of-order RPC responses. Manual Refresh remains the fallback. Installed
+  Desktop 2.2.6 acceptance on artifact `2651c0cb` observed a disposable
+  session change from `FlowGuard · inspect` to `FlowGuard · NOT_VERIFIED ·
+last read` without a click, while a completion in another session left the
+  open demo pill unchanged; the demo stayed at 44 messages, the existing
+  `approve` decision, generation 1 and 72 verified audit events. The installed
+  host exposes `ctx.servers`; newer plugin typings use `ctx.serverEndpoints`,
+  so the bundle supports both. The autonomous removal is covered by code and
+  product-composition regression; no installed autonomous Start was run.
+  Zero-restart host upgrade, active-profile uninstall, independent screenreader
+  coverage and automatic refresh across every governance transition remain
+  open.
 
 - Add optional read-only FlowGuard status beside the Desktop chat composer via
   the official `ComposerPill` API, with an explicit palette refresh action.
