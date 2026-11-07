@@ -1,0 +1,32 @@
+import { describe, expect, it, vi } from 'vitest';
+import { addChatCardCommand, FLOWGUARD_CHAT_CARD_MARKDOWN } from './plugin-chat-card-command.js';
+import type { Plugin } from '@opencode/plugin';
+
+describe('native read-only chat card', () => {
+  it('publishes a bounded marker with no state, digest, or approval payload', () => {
+    expect(FLOWGUARD_CHAT_CARD_MARKDOWN).toContain('```flowguard-live\nv1\n```');
+    expect(FLOWGUARD_CHAT_CARD_MARKDOWN).toContain('not a durable review');
+    expect(FLOWGUARD_CHAT_CARD_MARKDOWN).not.toContain('/approve');
+  });
+
+  it('publishes once without starting the model or executing a workflow', async () => {
+    const synthetic = vi.fn(async () => undefined);
+    let command:
+      | { name: string; execute: (input: { sessionID: string; prompt: { text: string } }) => Promise<void> }
+      | undefined;
+    const context = { session: { synthetic } } as unknown as Plugin.Context;
+    const editor = {
+      add: (entry: typeof command) => {
+        command = entry;
+      },
+    } as unknown as Parameters<Parameters<Plugin.Context['command']['transform']>[0]>[0];
+    addChatCardCommand(context, editor);
+    expect(command?.name).toBe('flowguard-card');
+    await command!.execute({ sessionID: 'ses_root', prompt: { text: '' } });
+    expect(synthetic).toHaveBeenCalledExactlyOnceWith({
+      sessionID: 'ses_root',
+      text: FLOWGUARD_CHAT_CARD_MARKDOWN,
+      resume: false,
+    });
+  });
+});
