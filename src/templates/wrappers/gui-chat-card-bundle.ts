@@ -46,7 +46,11 @@ function renderFlowGuardChatCard(ctx, props) {
     const request = { generation: ++generation, session: identity };
     status.textContent = identity ? 'NOT_VERIFIED · Loading canonical status...' : 'NOT_VERIFIED · No mounted session';
     reviewLine.textContent = '';
-    if (!identity || !isCurrentSession(ctx, session)) return;
+    if (!identity) return;
+    if (!isCurrentSession(ctx, session)) {
+      status.textContent = 'NOT_VERIFIED · This chat session is not current. Open it to inspect live state.';
+      return;
+    }
     void getView(session).then(async (next) => {
       if (!current(request)) return;
       if (!next || next.sessionID !== session.id || next.stateDigest === null) {
@@ -79,6 +83,19 @@ function renderFlowGuardChatCard(ctx, props) {
           subject.digest === binding.subjectDigest &&
           subject.reviewedSubjectDigest === binding.subjectDigest;
         if (!valid) return;
+        // Prevent two individually valid RPC responses from spanning a phase or
+        // evidence/state revision change. This renderer never authorizes a decision.
+        const fresh = await getView(session);
+        if (!current(request)) return;
+        if (!fresh || fresh.sessionID !== session.id ||
+            fresh.kind !== next.kind || fresh.phase !== next.phase ||
+            fresh.stateDigest !== next.stateDigest ||
+            fresh.policyDigest !== next.policyDigest ||
+            !sameBinding(fresh.decisionBinding, next.decisionBinding)) {
+          status.textContent = 'STALE · FlowGuard changed during the read. Refresh this card.';
+          reviewLine.textContent = 'Reviewer evidence NOT_VERIFIED for the current revision.';
+          return;
+        }
         reviewLine.textContent = 'Independent reviewer: ' + subject.reviewerVerdict +
           ' · Findings: ' + subject.findingsTotal +
           ' · Missing verification: ' + subject.missingVerification.length +
