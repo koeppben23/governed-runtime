@@ -1,5 +1,9 @@
 /** Read-only inline chat cards. Only official CodeBlock surface; no decision authority. */
 export const GUI_CHAT_CARD_BUNDLE = `
+function probeSessionKey(session) {
+  return session && session.server ? session.server.id + ':' + session.id : null;
+}
+
 /** Inline FlowGuard cards are live diagnostics, never historic approvals. */
 function renderFlowGuardChatCard(ctx, props) {
   const { createEffect, createSignal, onCleanup } = require('solid-js');
