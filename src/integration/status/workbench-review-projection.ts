@@ -4,9 +4,7 @@
 import { z } from 'zod';
 import type { ReviewView } from '../diagnostics/types.js';
 
-export const WorkbenchReviewRequest = z
-  .object({ sessionID: z.string().min(1) })
-  .strict();
+export const WorkbenchReviewRequest = z.object({ sessionID: z.string().min(1) }).strict();
 export type WorkbenchReviewRequest = z.infer<typeof WorkbenchReviewRequest>;
 
 const WorkbenchFinding = z
@@ -86,10 +84,7 @@ function bounded(value: string, max = MAX_MESSAGE_CHARS): string {
  * Suppress raw subject content and file paths. Missing and stale review evidence
  * remains explicit instead of being converted into a successful review.
  */
-export function projectWorkbenchReview(
-  view: ReviewView,
-  sessionID: string,
-): WorkbenchReviewResult {
+export function projectWorkbenchReview(view: ReviewView, sessionID: string): WorkbenchReviewResult {
   const subject = view.subject;
   const claims = view.proof?.claims ?? [];
   return WorkbenchReviewResult.parse({
@@ -134,7 +129,9 @@ export function projectWorkbenchReview(
       certificateCount: view.proof?.certificates.length ?? 0,
     },
     reviewAttempts: view.reviewLinks?.attempts.length ?? 0,
-    warningCodes: view.warnings.slice(0, MAX_WARNINGS).map((warning) => bounded(warning.code, 100)),
+    warningCodes: view.warnings
+      .slice(0, MAX_WARNINGS)
+      .map((warning) => bounded(warning.code, 100)),
     warningsTruncated: view.warnings.length > MAX_WARNINGS,
     decisionAuthority: 'not_granted',
   });
