@@ -1,10 +1,11 @@
 # OpenCode Desktop 2.2.6 — Review Workbench installed acceptance
 
-**Status:** `PARTIAL` — installed Desktop 2.2.6 visual proof exists for the READY
-workbench and a BLOCKED recovery state on artifact `aea39b90`. Review-gate
-subject/verdict, stale-decision denial, layout/theme and installed uninstall
-remain `NOT_VERIFIED`. The prior Panel/Slot evidence for `52d0a3bd` remains valid
-for that earlier artifact only.
+**Status:** `PASS` for the core installed Review Workbench on OpenCode Desktop
+2.2.6: READY, real PLAN-pending fail-closed, complete bound PLAN_REVIEW, native
+revision-bound approval, stale-decision rejection and BLOCKED recovery.
+`NOT_VERIFIED` remains for layout/theme/keyboard and installed uninstall. The
+prior Panel/Slot evidence for `52d0a3bd` remains valid for that earlier artifact
+only.
 
 ## Installed verification record — 2026-11-07
 
@@ -87,6 +88,84 @@ and [`desktop-2.2.6-workbench-palette.png`](./desktop-2.2.6-workbench-palette.pn
   fallback: `NOT_VERIFIED`.
 - Installed uninstall sequence: `NOT_VERIFIED`.
 
+## Review/decision verification — 2026-11-07
+
+A fresh isolated workflow was created under the installed OpenCode CLI `2.2.6`
+service (same config/data as the Desktop profile) with its own review-assurance
+ledger. No ledger entries from the stuck session were copied or edited.
+
+### Positive path
+
+1. New session `ses_e4a2f2017ffeZ3TubHNAc5kV0C`: `/start` → `READY`,
+   `/task --file TICKET.md` → `TICKET`, `/plan` → `PLAN_REVIEW`.
+2. `GetWorkbenchReview` returned `status: COMPLETE`, subject `Plan v1`,
+   revision `v1`, digest
+   `550796091ca25bdd9d25a2f411dbafe93d9d88d4f6392c65dff44758c6f9f990`,
+   `contentVerified: verified`, `subjectBinding: matched`,
+   `reviewerVerdict: accept`, `reviewCompletion: reviewer_accepted`, one minor
+   finding and two missing-verification entries.
+3. The Desktop Workbench rendered the same values, header
+   `FlowGuard | PLAN_REVIEW | Decision required (not approved)`, and enabled
+   `Open canonical decisions`.
+4. The existing native chooser opened with exactly `/approve`,
+   `/request-changes` and `/reject`; selecting `/approve` executed the existing
+   revision-bound `SubmitDecision` path.
+5. The session advanced to `IMPLEMENTATION`; the persisted decision is
+   `verdict: approve` at `2026-11-07T11:48:48.960Z`, and the Workbench reports
+   one certificate. The Workbench itself did not call `SubmitDecision`.
+
+### Negative stale path
+
+The pre-decision binding (state digest
+`86a3f88ded4b615ce6b056b64956c687c631be6b635cb1a2cc9e422822071afa`,
+phase `PLAN_REVIEW`, obligation `a171bdf7-e06d-460f-ac08-b201ecbf5dc7`) was
+submitted again after the approval. The canonical server refused it with:
+
+```
+kind: blocked
+code: DECISION_BINDING_STALE
+message: The workflow state changed.
+```
+
+The session remained in `IMPLEMENTATION` with the original decision unchanged;
+no ledger edit or manual repair was performed.
+
+### Path B — diagnosis of the stuck session
+
+The stuck session `ses_e4a74c86fffena7zCUUzN3F4kb` has obligation
+`81ad6fa7-90aa-434f-ba49-4794654a5061` (plan v1) with status `blocked` and code
+`REVIEWER_CAPTURE_PROVENANCE_INVALID`. Its attempt
+`890cfcc9-79ca-4095-9ef1-a3b940373195` used child session
+`ses_e4a3b2f75ffewgZEuoQqBFrACt` and dispatch
+`096f1732-f9f5-4b0b-9754-a9c8c3f663ad`, whose host call recorded
+`call_00_fOLuZHPjhlGrtw3pb7IV1921`, message
+`msg_1b5c4c5a4001K8A8R3ZH1HPC23` and the parent session — but the dispatch
+status remained `outcome_unknown`.
+
+The child execution is demonstrably complete: its repository observations were
+bound at `2026-11-07T11:34:05.930Z`, its final reviewer message at
+`2026-11-07T11:34:06.576Z` carried `overallVerdict: accept`, and the attempt
+completed at `2026-11-07T11:34:12.388Z`. Because the dispatch record never
+advanced from `outcome_unknown`, FlowGuard rejected the capture and blocked the
+obligation; the accept could not become a bindable approval. The second
+obligation `f2cfd720-8e29-4bec-b382-4b7a0afdea3f` (plan v2) has attempt
+`345ec240-d2fb-4214-b300-10849eb3574e` with no observations and no completed
+dispatch, so it remains pending and not bindable.
+
+No manual deletion or reset of the ledger was performed. The original session
+is left fail-closed; the fresh session above is the clean recovery path and
+demonstrates that the same installed build can bind a reviewer and execute the
+decision when it starts with a fresh assurance ledger.
+
+### Evidence
+
+- [`desktop-2.2.6-workbench-plan-review.png`](./desktop-2.2.6-workbench-plan-review.png)
+  — bound PLAN_REVIEW with decision available.
+- [`desktop-2.2.6-workbench-approved.png`](./desktop-2.2.6-workbench-approved.png)
+  — post-approval `IMPLEMENTATION` state with the persisted plan review.
+- [`desktop-2.2.6-workbench-plan-pending.png`](./desktop-2.2.6-workbench-plan-pending.png)
+  — the earlier pending-review fail-closed state.
+
 ## Artifact to certify
 
 Record the exact Git HEAD, packed `@flowguard/core` tarball SHA-256, installed
@@ -126,14 +205,15 @@ Desktop. Record version/sha in the evidence report, not just screenshots.
 
 ## Evidence / results
 
-| Evidence category                             | Status                                                                                |
-| --------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Version-pinned installed Workbench screenshot | `PASS` (artifact `aea39b90`, Desktop 2.2.6, READY, PLAN-pending and BLOCKED captures) |
-| READY + Review + BLOCKED interaction captures | `PARTIAL` (READY, real PLAN-pending review and BLOCKED; no bound review-gate result)  |
-| PLAN pending-review fail-closed display       | `PASS` (exact plan revision/digest; `REVIEW_VERDICT_NOT_RECORDED`; chooser disabled)  |
-| Bound decision and stale-denial negative run  | `NOT_VERIFIED` (host reviewer capture failed; no bound verdict was fabricated)        |
-| Layout, theme and keyboard tests              | `NOT_VERIFIED`                                                                        |
-| Installed package lifecycle and hashes        | `PARTIAL` (install and hashes passed; uninstall not run)                              |
+| Evidence category                             | Status                                                                                                    |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Version-pinned installed Workbench screenshot | `PASS` (artifact `aea39b90`, Desktop 2.2.6, READY, PLAN-pending, bound PLAN_REVIEW, approved and BLOCKED) |
+| READY + Review + BLOCKED interaction captures | `PASS` (READY, real PLAN-pending fail-closed, bound PLAN_REVIEW decision and BLOCKED recovery)            |
+| PLAN pending-review fail-closed display       | `PASS` (exact plan revision/digest; `REVIEW_VERDICT_NOT_RECORDED`; chooser disabled)                      |
+| Bound decision and stale-denial negative run  | `PASS` (native `/approve`; old binding rejected with `DECISION_BINDING_STALE`; state unchanged)           |
+| Stuck-session diagnosis                       | `PASS` (dispatch `outcome_unknown`; child review completed; no ledger reset)                              |
+| Layout, theme and keyboard tests              | `NOT_VERIFIED`                                                                                            |
+| Installed package lifecycle and hashes        | `PARTIAL` (install and hashes passed; uninstall not run)                                                  |
 
 **Accept only with artifact-bound, redacted installed evidence.** CI unit tests
 and older Panel/Slot screenshots do not close this checklist. The complete
