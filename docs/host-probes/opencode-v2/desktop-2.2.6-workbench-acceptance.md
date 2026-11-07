@@ -574,6 +574,79 @@ incremental read-only signal, not an audit feed), zero-restart upgrade proof,
 and the active-profile uninstall (`PARTIAL`). No merge or Ready action is
 authorized.
 
+## Desktop host/RPC adapter isolation — artifact `e8e1e90d`
+
+**Status: PASS on installed Desktop 2.2.6** for the host-bridge and typed RPC
+client split. The architecture change is source-layer isolation inside the
+single GUI bundle; it introduces no new governance authority, decision path or
+host-independent UI runtime. The code/architecture head is `e0b2faae`; the
+format-fix and evidence head is `e8e1e90d`.
+
+### Installed acceptance record (artifact `e8e1e90d`)
+
+| Field                | Observed value                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Git HEAD             | `e8e1e90db4728f4c67336a24b496b36c101d7029`                                                                           |
+| Packed tarball       | `flowguard-core-2.0.0-tp.2.tgz`, SHA-256 `30885cfa70e7e2114fde8699c72868728cd9a5ad28f9491c461c26ba832124b3`          |
+| Installed GUI bundle | `plugins/flowguard/gui-experimental.cjs`, SHA-256 `28bb61b2471617e50364ea62b8f455f6db3bb8c593c9bfe5913f8f39ca0da810` |
+| Host                 | managed Desktop service, OpenCode `2.2.6`, loopback port `49374`                                                     |
+
+**Observed installed results:**
+
+- **Workbench through the typed client:** the native Workbench opened the demo
+  session at `FlowGuard | EVIDENCE_REVIEW | Decision required (not approved)`,
+  with reviewer `accept`, zero findings, one `PROVEN` critical claim and
+  certificate binding `current`. Expanding all details loaded the 16-event
+  review-assurance timeline, three Session Explorer sessions, two review
+  attempts and 72 verified `audit-chain.v3` events under `PARTIAL`.
+- **Decision boundary:** `Review operator decisions` opened the canonical
+  chooser with exactly `/approve`, `/request-changes` and `/reject`; Escape
+  closed it and no `SubmitDecision` was issued. The demo session stayed in
+  `EVIDENCE_REVIEW`.
+- **Pill:** manual refresh on the demo produced
+  `FlowGuard · EVIDENCE_REVIEW · last read` with reviewer `accept`, zero
+  findings and “operator decision still required (not approved)”; no decision
+  action was offered.
+- **Typed client / chat card:** a disposable fixture session received an
+  assistant `flowguard-live` `v1` block. The CodeBlock renderer called the
+  typed `getNextAction` path and rendered the live card; the fixture contained
+  only user/assistant/idle messages and was deleted.
+- **Completion event:** the same fixture opened at `FlowGuard · inspect` and,
+  after its execution succeeded, changed to
+  `FlowGuard · NOT_VERIFIED · last read` without a click. While the demo was
+  the open session, a completion in the fixture left the demo pill at
+  `FlowGuard · inspect`.
+- **Contract coverage:** `src/cli/gui-bridges.test.ts` passed 3/3. It pins the
+  four semantic client methods to the mounted session and the exact RPC
+  envelope, and exercises both the installed `ctx.servers` and the newer
+  `ctx.serverEndpoints` lookups, foreign-session/server rejection and cleanup.
+- **Architecture:** placement tests passed 554/554; the frozen root matrix now
+  has 59 files and eight `root-host-runtime` files, with the type-only
+  `gui-rpc-client-contract.ts` explicitly listed. No `templates -> integration`
+  dependency exists. The presentation layer no longer spells RPC method names
+  or performs host endpoint compatibility checks; those remain in the two
+  adapters.
+- **No governance mutation:** the demo session remained at 44 messages (zero
+  synthetic), the existing `approve` decision (`2026-11-07T11:48:48.960Z`),
+  activation generation `1`, phase `EVIDENCE_REVIEW`, and 72 verified audit
+  events under `PARTIAL`.
+
+**Install/refresh boundary:** the installer wrote the exact GUI bundle hash
+above and then returned its explicit host-refresh failure because it ran inside
+the managed service. No automatic restart was performed; the running host
+hot-reloaded the plugin and a renderer reload re-registered it. This is not a
+zero-restart upgrade proof.
+
+Evidence:
+[Workbench and diagnostics through the typed client](./desktop-2.2.6-bridge-workbench.png),
+[manual EVIDENCE_REVIEW pill](./desktop-2.2.6-bridge-pill-review.png), and
+[`flowguard-live` card plus completion refresh](./desktop-2.2.6-bridge-chat-card.png).
+
+**Still open:** independent VoiceOver/screenreader testing, automatic refresh
+across every governance transition, zero-restart upgrade, and active-profile
+uninstall (`PARTIAL`). This is a source-layer refactor, not a new host target or
+authority path.
+
 ## Artifact to certify
 
 Record the exact Git HEAD, packed `@flowguard/core` tarball SHA-256, installed

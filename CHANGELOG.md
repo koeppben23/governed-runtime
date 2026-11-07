@@ -14,8 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through a typed facade that reuses the canonical governance contracts,
   binds to the mounted session and preserves the server-side decision gate.
   No new authority or host-independent UI runtime is introduced. Installed
-  Desktop acceptance of the revised bundle remains pending.
-
+  Desktop 2.2.6 acceptance on artifact `e8e1e90d` covers the Workbench read
+  projections, manual and completion-driven pill refresh, a rendered
+  `flowguard-live` card, and an opened-then-dismissed canonical decision
+  chooser without mutation. The host bridge keeps the 2.2.6 `ctx.servers`
+  surface and the newer `ctx.serverEndpoints` typings; contract tests pin both.
+  Zero-restart upgrade, active-profile uninstall and screenreader coverage
+  remain open.
 
 - Remove the separate autonomous StartGovernance synthetic status transcript
   (RPC result remains authoritative; interactive /start stays unchanged).

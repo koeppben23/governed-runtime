@@ -81,8 +81,15 @@ reaching into OpenCode compatibility details or spelling RPC method strings:
 This is a source-layer split inside the single installed Desktop plugin,
 **not** an independently deployable UI package or host-neutral implementation
 of other GUI targets. Contract/unit tests are required for the adapters.
-The changed GUI bundle needs a fresh installed Desktop 2.2.6 acceptance;
-earlier Workbench/pill screenshots cannot be reused as proof of this revision.
+The changed GUI bundle has installed Desktop 2.2.6 acceptance on artifact
+`e8e1e90d`: the Workbench read the canonical review, timeline and diagnostics
+through the typed client; the pill refreshed manually at EVIDENCE_REVIEW; a
+disposable session auto-refreshed from `FlowGuard · inspect` to
+`FlowGuard · NOT_VERIFIED · last read` after completion; its
+`flowguard-live` `v1` assistant block rendered the live card; and the
+canonical decision chooser opened with `/approve`, `/request-changes`,
+`/reject` and was dismissed with Escape. Earlier screenshots remain valid only
+for their own artifacts.
 
 ## Inline chat and composer status — optional Desktop extension (PR #1207)
 
@@ -119,10 +126,10 @@ Both surfaces are installed-verified on Desktop 2.2.6 artifact `e054159a`
   the absence of prompt, workflow, decision, hydrate or audit mutation. A
   mid-read phase race (`STALE`) was not induced live; bundled tests cover the
   fail-closed path. No separate screenreader session was available.
-- A separate, pre-existing autonomous `StartGovernance` path still posts a
-  non-resuming synthetic host status report. It is not this chat/composer
-  display, but synthetic messages can reach later model context; that residual
-  exposure needs its own product decision.
+- The separate autonomous `StartGovernance` synthetic report was removed in
+  artifact `2651c0cb`; that path now returns only its authoritative RPC result.
+  The interactive `/start` report is unchanged. See the hardening section
+  above.
 
 Official SDK: https://opencode.ai/v2/docs/build/plugins/gui/
 
