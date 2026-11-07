@@ -197,15 +197,15 @@ function probeSummary(view) {
   const phase = view.phase;
   if (view.kind === 'blocked') {
     const message = view.blocker && view.blocker.message;
-    return 'FlowGuard · ' + phase + ' · BLOCKED: ' + (message || 'See /status for recovery.');
+    return 'FlowGuard | ' + phase + ' | BLOCKED: ' + (message || 'See /status for recovery.');
   }
   if (view.kind === 'decision_required') {
-    return 'FlowGuard · ' + phase + ' · Decision required (not approved)';
+    return 'FlowGuard | ' + phase + ' | Decision required (not approved)';
   }
-  if (view.kind === 'system_work') return 'FlowGuard · ' + phase + ' · System work in progress';
-  if (view.kind === 'terminal') return 'FlowGuard · ' + phase + ' · Terminal state';
+  if (view.kind === 'system_work') return 'FlowGuard | ' + phase + ' | System work in progress';
+  if (view.kind === 'terminal') return 'FlowGuard | ' + phase + ' | Terminal state';
   const action = view.actions && view.actions[0];
-  return 'FlowGuard · ' + phase + (action ? ' · Next: ' + action.invocation : '');
+  return 'FlowGuard | ' + phase + (action ? ' | Next: ' + action.invocation : '');
 }
 
 function renderProbe(ctx, props, compact) {
@@ -215,14 +215,14 @@ function renderProbe(ctx, props, compact) {
   node.setAttribute('role', 'status');
   node.setAttribute('aria-live', 'polite');
   const label = document.createElement(compact ? 'span' : 'p');
-  label.textContent = 'FlowGuard · Loading read-only state...';
+  label.textContent = 'FlowGuard | Loading read-only state...';
   let disposed = false;
   let generation = 0;
   const [revision, refresh] = createSignal(0);
 
   if (!compact) {
     const title = document.createElement('h2');
-    title.textContent = 'FlowGuard · Desktop UI capability probe';
+    title.textContent = 'FlowGuard | Desktop UI capability probe';
     const caption = document.createElement('p');
     caption.textContent =
       'Read-only GetNextAction projection. No decisions or workflow commands are issued by this panel.';
@@ -245,7 +245,7 @@ function renderProbe(ctx, props, compact) {
     revision();
     const request = ++generation;
     const identity = probeSessionKey(session);
-    label.textContent = identity ? 'FlowGuard · Loading ' + session.id + '...' : 'FlowGuard: no session';
+    label.textContent = identity ? 'FlowGuard | Loading ' + session.id + '...' : 'FlowGuard: no session';
     if (!identity) return;
     void getView(session).then(
       (view) => {
@@ -254,7 +254,7 @@ function renderProbe(ctx, props, compact) {
       },
       () => {
         if (disposed || request !== generation || probeSessionKey(props.session) !== identity) return;
-        label.textContent = 'FlowGuard · NOT_VERIFIED (status unavailable; use /status)';
+        label.textContent = 'FlowGuard | NOT_VERIFIED (status unavailable; use /status)';
       },
     );
   });
