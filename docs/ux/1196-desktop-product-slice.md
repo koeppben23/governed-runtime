@@ -57,6 +57,33 @@ transitions is made. The completion event is an incremental read-only signal,
 not a guaranteed durable subscription or an audit feed. The plugin never
 interprets missing events as approval.
 
+## Remaining gates continuation — bounded reconciliation and accessibility
+
+This PR extends the optional, read-only status path beyond
+`session.execution.succeeded`: after the composer pill has been rendered,
+a 30-second reconciler refreshes **only the visible current sidecar session**.
+It skips hidden windows, does not query at registration or first render and
+cleans up on GUI unload. Events and timer ticks are serialized and coalesced
+so a slow server cannot accumulate unbounded concurrent reads.
+
+The OpenCode SDK states that live RPC/event subscriptions do not replay
+missed notifications. Thus a 30-second reconciler is **best-effort eventual
+visibility while the GUI is visible and connected**, not an audit feed or a
+hard latency guarantee for every governance transition. Missing data remains
+`NOT_VERIFIED`; no state, decision or audit mutation is introduced.
+
+Chat cards and the Workbench now expose named regions with polite, atomic
+status announcements. This is static accessibility hardening, **not**
+VoiceOver/screenreader acceptance. The native isolated uninstall E2E was
+tightened to pin the same service PID and an unaffected observer plugin;
+it remains opt-in and has not been executed here for the new artifact.
+Zero-restart upgrade still requires an external revision-A-to-B runtime
+fingerprint proof; the installer self-restart guard remains untouched.
+
+The full evidence checklist and negative test matrix are maintained in
+[Desktop remaining gates](../host-probes/opencode-v2/desktop-2.2.6-remaining-gates.md).
+**A fresh installed Desktop acceptance is mandatory for the new GUI SHA.**
+
 ## Desktop host and RPC adapter isolation (PR #1207)
 
 The Desktop view code now depends on two local semantic bridges rather than
