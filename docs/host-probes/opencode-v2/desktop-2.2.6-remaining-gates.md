@@ -5,8 +5,9 @@ and accessibility semantics, plus native installed lifecycle regression hardenin
 **Installed evidence update (artifact `f9c53e8f`):** bounded current-session
 reconciliation and static ARIA semantics PASS; the isolated active-uninstall
 smoke test PASSed against the exact artifact with the pinned native CLI
-candidate. VoiceOver, zero-restart and live-profile uninstall remain
-`NOT_VERIFIED`. This document still defines the full gate matrix.
+candidate, and a one-off `2.2.6` version-override run also passed. VoiceOver,
+zero-restart and live-profile uninstall remain `NOT_VERIFIED`. This document
+still defines the full gate matrix.
 
 ## Evidence discipline
 
@@ -179,8 +180,12 @@ passed 1/1 in 56.52 seconds using the exact packed tarball and the
 repository-pinned native CLI candidate `2.2.5`. The same live host PID stayed
 alive across reload and uninstall, the observer plugin remained active, managed
 plugin files disappeared, and customer sentinels/`opencode.jsonc` stayed
-byte-exact. Uninstall of a real, non-disposable active user profile remains
-explicitly **NOT_EXECUTED** and must not be performed for acceptance.
+byte-exact. A one-off rerun with the installed Desktop `2.2.6` CLI (temporary
+candidate-version override, restored immediately afterwards) also passed 1/1
+in 27.47 seconds with the same assertions. The committed CI candidate remains
+`2.2.5`; the 2.2.6 run is version-bound evidence, not a new pinned gate.
+Uninstall of a real, non-disposable active user profile remains explicitly
+**NOT_EXECUTED** and must not be performed for acceptance.
 
 ## Abnahmeentscheidung
 

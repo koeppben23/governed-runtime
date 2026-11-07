@@ -26,8 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event, retained the immediate completion refresh, and confirmed the ARIA
   semantics without governance mutation. The isolated active-uninstall smoke
   test passed against the exact packed artifact with the pinned native CLI
-  candidate `2.2.5`. This does not establish a screenreader PASS, a distinct
-  revision zero-restart upgrade, or live-profile uninstall acceptance.
+  candidate `2.2.5`; a one-off rerun with the installed Desktop `2.2.6` CLI
+  (temporary candidate-version override, restored afterwards) also passed. This
+  does not establish a screenreader PASS, a distinct revision zero-restart
+  upgrade, or live-profile uninstall acceptance.
 
 - Isolate the OpenCode Desktop sidecar lifecycle and `serverEndpoints` /
   `servers` compatibility into a host bridge. Route all GUI RPC calls

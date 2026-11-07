@@ -693,8 +693,11 @@ card"`, and two `aria-live="polite"`/`aria-atomic="true"` announcement
   `2.2.5`. It verified the same live host PID and liveness across
   `location.reload` and uninstall, the independent observer plugin remained
   active, foreign sentinels and the customer `opencode.jsonc` stayed
-  byte-exact, and the managed FlowGuard plugin files disappeared. The real
-  active user profile was **not** uninstalled.
+  byte-exact, and the managed FlowGuard plugin files disappeared. A one-off
+  rerun with the installed Desktop `2.2.6` CLI (temporary candidate-version
+  override, restored immediately afterwards) also passed 1/1 in 27.47 seconds
+  with the same assertions. The real active user profile was **not**
+  uninstalled.
 - **No governance mutation:** the demo remained at 44 messages (zero synthetic),
   the existing `approve` decision (`2026-11-07T11:48:48.960Z`), activation
   generation `1`, `EVIDENCE_REVIEW`, and 72 verified audit events under
