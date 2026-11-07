@@ -118,7 +118,7 @@ describe('installed Desktop GUI bundle', () => {
     ]);
   });
 
-  it('renders the persistent next action and executes it after confirmation', async () => {
+  it('requests the on-demand next action only after confirmation and a fresh view', async () => {
     const ctx = {} as Record<string, unknown>;
     const session = {} as Record<string, unknown>;
     const loaded = load(ctx, session);
