@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separates independent reviewer results from operator decisions, shows canonical
   blocker recovery, and opens the existing revision-bound chooser only for a
   matching, complete review. Installed Desktop 2.2.6 evidence covers the READY
-  workbench shell and a BLOCKED guided-recovery state for `aea39b90`; live
-  review-gate, stale-decision, layout/theme and uninstall remain `NOT_VERIFIED`.
-  A service restart is required to load the new RPC in a long-running service.
+  workbench shell, a real PLAN-pending review that fails closed with
+  `REVIEW_VERDICT_NOT_RECORDED`, and a BLOCKED guided-recovery state for
+  `aea39b90`; a bound live review-gate decision, stale-decision visual run,
+  layout/theme and uninstall remain `NOT_VERIFIED`. A service restart is
+  required to load the new RPC in a long-running service.
 
 - Add an opt-in, read-only OpenCode Desktop Panel/Slot capability probe to #1196, with
   a native FlowGuard side tab, manual status refresh, and an opt-in session-header

@@ -45,24 +45,44 @@ service, not a zero-restart upgrade of the long-running service.
    - guided recovery: cause `No FlowGuard state exists for this session.`, code
      `SESSION_STATE_ABSENT`, canonical recovery `Start or hydrate a governed
 session, then retry.`
-4. Opening and refreshing the workbench issued no workflow command, decision,
+4. Real PLAN session `ses_e4a74c86fffena7zCUUzN3F4kb` after
+   `/task --file TICKET.md` and `/plan`:
+   - header: `FlowGuard | PLAN | System work in progress`
+   - review subject: `Plan v2`, revision `v2`, digest
+     `d368c7b452990036789525316c82065a51fce24b390ccc065a81f61c00250641`
+   - content verification: `verified`; review binding: `matched`
+   - reviewer verdict: `NOT_VERIFIED`; review status: `PARTIAL`; warning
+     `REVIEW_VERDICT_NOT_RECORDED`
+   - decision section: no operator decision requested; `Open canonical
+decisions` was disabled
+   - guided recovery: no active recovery instruction
+5. The independent reviewer child session produced an `accept` result, but the
+   host reviewer-capture path returned
+   `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`; FlowGuard did not bind the
+   verdict. The workbench correctly showed the unbound/pending state and kept
+   the decision disabled. This is a host review-capture blocker, not a
+   workbench approval.
+6. Opening and refreshing the workbench issued no workflow command, decision,
    hydrate, audit mutation or phase transition.
-5. The workbench rendered no raw subject content, file paths or claim ids; the
+7. The workbench rendered no raw subject content, file paths or claim ids; the
    RPC projection is bounded and the detail is read-only.
 
 Evidence:
 [`desktop-2.2.6-workbench-ready.png`](./desktop-2.2.6-workbench-ready.png),
 [`desktop-2.2.6-workbench-blocked.png`](./desktop-2.2.6-workbench-blocked.png),
+[`desktop-2.2.6-workbench-plan-pending.png`](./desktop-2.2.6-workbench-plan-pending.png),
 and [`desktop-2.2.6-workbench-palette.png`](./desktop-2.2.6-workbench-palette.png).
 
 ### Not exercised in this run
 
-- No `PLAN_REVIEW`, `ARCH_REVIEW` or `EVIDENCE_REVIEW` session was available, so
-  the exact subject/revision/digest/verdict and bound-decision affordance were
-  not exercised against a live gate. The projection and fail-closed logic are
-  covered by unit tests only.
+- A complete, subject-matched, bound review gate with a recorded reviewer
+  verdict was not available. A real PLAN session with a pending review was
+  displayed fail-closed; the host reviewer-capture path returned
+  `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`, so the bound decision and
+  stale-decision run remain `NOT_VERIFIED`.
 - Stale digest, unbound review, delayed response and session-switch negative
-  visual runs: `NOT_VERIFIED`.
+  visual runs: `NOT_VERIFIED` (projection and fail-closed logic are covered by
+  unit tests only).
 - Keyboard-only focus, narrow panel width, light/dark theme and screen-reader
   fallback: `NOT_VERIFIED`.
 - Installed uninstall sequence: `NOT_VERIFIED`.
@@ -106,13 +126,14 @@ Desktop. Record version/sha in the evidence report, not just screenshots.
 
 ## Evidence / results
 
-| Evidence category                             | Status                                                                  |
-| --------------------------------------------- | ----------------------------------------------------------------------- |
-| Version-pinned installed Workbench screenshot | `PASS` (artifact `aea39b90`, Desktop 2.2.6, READY and BLOCKED captures) |
-| READY + Review + BLOCKED interaction captures | `PARTIAL` (READY and BLOCKED; no live review-gate session available)    |
-| Bound decision and stale-denial negative run  | `NOT_VERIFIED` (projection/fail-closed logic covered by unit tests)     |
-| Layout, theme and keyboard tests              | `NOT_VERIFIED`                                                          |
-| Installed package lifecycle and hashes        | `PARTIAL` (install and hashes passed; uninstall not run)                |
+| Evidence category                             | Status                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Version-pinned installed Workbench screenshot | `PASS` (artifact `aea39b90`, Desktop 2.2.6, READY, PLAN-pending and BLOCKED captures) |
+| READY + Review + BLOCKED interaction captures | `PARTIAL` (READY, real PLAN-pending review and BLOCKED; no bound review-gate result)  |
+| PLAN pending-review fail-closed display       | `PASS` (exact plan revision/digest; `REVIEW_VERDICT_NOT_RECORDED`; chooser disabled)  |
+| Bound decision and stale-denial negative run  | `NOT_VERIFIED` (host reviewer capture failed; no bound verdict was fabricated)        |
+| Layout, theme and keyboard tests              | `NOT_VERIFIED`                                                                        |
+| Installed package lifecycle and hashes        | `PARTIAL` (install and hashes passed; uninstall not run)                              |
 
 **Accept only with artifact-bound, redacted installed evidence.** CI unit tests
 and older Panel/Slot screenshots do not close this checklist. The complete
