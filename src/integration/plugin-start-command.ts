@@ -38,6 +38,7 @@ import { hydrate, resolveHydratePolicy } from './tools/index.js';
 import { FlowGuardGovernance, type AutonomousStartRequest } from './opencode-governance-rpc.js';
 import { buildReviewView } from './diagnostics/review-view.js';
 import { projectWorkbenchReview } from './status/workbench-review-projection.js';
+import { buildWorkbenchDiagnostics } from './status/workbench-diagnostics-reader.js';
 import { getNextAction, submitDecision } from './plugin-next-action-command.js';
 import { addDecisionCommands } from './plugin-decision-command.js';
 import {
@@ -165,6 +166,10 @@ function registerAutonomousStart(
         }),
         request.sessionID,
       ),
+    GetWorkbenchDiagnostics: (request) => buildWorkbenchDiagnostics({
+      root: ctx.location.directory,
+      sessionID: request.sessionID,
+    }),
     SubmitDecision: (request) => deps.guard(() => submitDecision(ctx, deps, request)),
   });
 }
