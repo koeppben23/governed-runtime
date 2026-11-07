@@ -118,9 +118,9 @@ function renderFlowGuardChatCard(ctx, props) {
   });
   return root;
 }
-function registerFlowGuardChatContributions(ctx, Command, CodeBlock) {
-  // A dedicated language prevents interference with regular Markdown.
-  // Invalid or incomplete cards fall back to highlighted source.
+function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPill) {
+  // A dedicated code language enables future explicitly authored chat content.
+  // This hook only transforms existing messages; it never inserts a model turn.
   if (CodeBlock) {
     try {
       ctx.add(CodeBlock, {
@@ -129,29 +129,125 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock) {
           renderFlowGuardChatCard(ctx, props) : undefined,
       });
     } catch (error) {
-      console.warn('[FlowGuard] Inline chat cards are unavailable in this Desktop build.', error);
+      console.warn('[FlowGuard] Inline chat renderer unavailable.', error);
     }
   }
+
+  // The official ComposerPill surface is part of the chat screen but not
+  // the conversation transcript. No agent/model content is created.
+  if (!ComposerPill) return;
+  const { createSignal } = require('solid-js');
+  const [snapshot, setSnapshot] = createSignal(null);
+
+  async function inspect(session) {
+    const key = probeSessionKey(session);
+    if (!key || !isCurrentSession(ctx, session)) return;
+    setSnapshot({ key: key, status: 'loading', label: 'FlowGuard · reading', note: 'Read-only query' });
+    try {
+      const next = await getView(session);
+      if (!isCurrentSession(ctx, session) || probeSessionKey(ctx.sessions.current()) !== key) return;
+      if (!next || next.sessionID !== session.id || !next.stateDigest) {
+        setSnapshot({ key: key, status: 'not_verified', label: 'FlowGuard · NOT_VERIFIED',
+          note: 'Canonical state unavailable. Use /status.' });
+        return;
+      }
+      const base = { key: key, status: next.kind, label: 'FlowGuard · ' + (next.phase || 'NOT_VERIFIED') };
+      if (next.kind === 'blocked') {
+        const blocker = next.blocker;
+        setSnapshot({ ...base, status: 'blocked', note: blocker && blocker.code ?
+          blocker.code + ' · ' + (blocker.recovery || 'See /why') : 'BLOCKED · See /why' });
+        return;
+      }
+      if (next.kind !== 'decision_required') {
+        const actions = Array.isArray(next.actions) ? next.actions.slice(0, 3) : [];
+        setSnapshot({ ...base, note: next.title,
+          actionHint: actions.map((action) => action.invocation).join(', ') });
+        return;
+      }
+      // A review gate is NEVER an approval: cross-RPC binding and a repeat
+      // canonical read must agree before displaying independent reviewer info.
+      const notVerified = { ...base, status: 'not_verified',
+        note: 'Reviewer evidence NOT_VERIFIED · operator decision not recorded.' };
+      setSnapshot(notVerified);
+      const review = await call(session, 'GetWorkbenchReview', { sessionID: session.id });
+      if (!isCurrentSession(ctx, session) || probeSessionKey(ctx.sessions.current()) !== key) return;
+      const subject = review && review.subject;
+      const binding = next.decisionBinding;
+      const matches = review && review.sessionID === session.id && review.phase === next.phase &&
+        review.status === REVIEW_STATUS_COMPLETE && binding && subject &&
+        subject.subjectBinding === 'matched' && subject.digest === binding.subjectDigest &&
+        subject.reviewedSubjectDigest === binding.subjectDigest;
+      if (!matches) return;
+      const fresh = await getView(session);
+      if (!isCurrentSession(ctx, session) || probeSessionKey(ctx.sessions.current()) !== key) return;
+      if (!fresh || fresh.sessionID !== next.sessionID || fresh.kind !== next.kind ||
+          fresh.phase !== next.phase || fresh.stateDigest !== next.stateDigest ||
+          fresh.policyDigest !== next.policyDigest ||
+          !sameBinding(fresh.decisionBinding, next.decisionBinding)) {
+        setSnapshot({ ...base, status: 'stale',
+          note: 'STALE · state changed during diagnostic read; refresh.' });
+        return;
+      }
+      setSnapshot({ ...base, status: 'decision_required',
+        note: 'Independent review: ' + subject.reviewerVerdict +
+          ' · Findings: ' + subject.findingsTotal +
+          ' · Operator decision still required (not approved).' });
+    } catch (error) {
+      if (isCurrentSession(ctx, session) && probeSessionKey(ctx.sessions.current()) === key) {
+        setSnapshot({ key: key, status: 'not_verified', label: 'FlowGuard · NOT_VERIFIED',
+          note: 'Read-only status unavailable; use /status.' });
+      }
+    }
+  }
+
+  try {
+    ctx.add(ComposerPill, {
+      id: 'flowguard-chat-status',
+      order: 80,
+      show: (input) => {
+        const key = probeSessionKey(input.session);
+        if (!key || !isCurrentSession(ctx, input.session)) return undefined;
+        const state = snapshot();
+        const matched = state && state.key === key;
+        const label = matched ? state.label : 'FlowGuard · inspect';
+        const rows = [{
+          id: 'refresh',
+          label: matched ? 'Refresh canonical status' : 'Inspect canonical status',
+          detail: 'Read-only; no agent prompt or governance mutation',
+          run: () => void inspect(input.session),
+        }];
+        if (matched && state.note) {
+          rows.unshift({ id: 'status', label: state.note,
+            detail: state.actionHint || 'Live diagnostic (not durable evidence)' });
+        }
+        return {
+          label: label,
+          title: 'FlowGuard · chat status (read-only)',
+          icon: 'shield-check',
+          tone: matched && (state.status === 'blocked' || state.status === 'not_verified' ||
+            state.status === 'stale') ? 'warning' : undefined,
+          rows: rows,
+        };
+      },
+    });
+  } catch (error) {
+    console.warn('[FlowGuard] Composer status pill unavailable.', error);
+    return;
+  }
+
   ctx.add(Command, {
     id: 'show-chat-card',
-    title: 'FlowGuard: show live status in chat (experimental)',
-    description: 'Insert a read-only FlowGuard live status card into the current chat.',
+    title: 'FlowGuard: inspect status beside chat (experimental)',
+    description: 'Refresh the read-only composer status; never inserts a chat message.',
     group: 'FlowGuard',
     slash: { name: 'flowguard-inline' },
     run: () => {
       const session = ctx.sessions.current();
       if (!session) {
-        toast(ctx, 'Open a session before requesting a FlowGuard chat card.', 'default');
+        toast(ctx, 'Open a session before inspecting FlowGuard.', 'default');
         return;
       }
-      void session.server.client.session.command({
-        sessionID: session.id,
-        name: 'flowguard-card',
-        text: '',
-      }).catch((error) => {
-        console.warn('[FlowGuard] Inline chat card command unavailable.', error);
-        toast(ctx, 'Could not insert FlowGuard card; use /status instead.', 'error');
-      });
+      void inspect(session);
     },
   });
 }
