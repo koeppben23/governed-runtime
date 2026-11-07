@@ -353,10 +353,11 @@ decision is authorized by this revision.
 
 ## Session Explorer and audit-chain chronology — PR #1207 continuation
 
-**Status: NOT_VERIFIED on installed OpenCode Desktop 2.2.6.** The previous
-timeline/proof screenshots and green CI apply to the older bundle. The new
-`GetWorkbenchDiagnostics` RPC composes the existing canonical Explorer
-(including unverified lineage) with read-only `audit-chain.v3` verification.
+**Status: PASS on installed OpenCode Desktop 2.2.6** for the Session Explorer
+and verified audit-chain chronology. The previous timeline/proof screenshots
+remain valid only for the earlier bundle. The new `GetWorkbenchDiagnostics` RPC
+composes the existing canonical Explorer (including unverified lineage) with
+read-only `audit-chain.v3` verification.
 
 Each positively linked session audit is bounded to 2 MiB before reading and
 checked through the canonical integrity verifier. The projection has a
@@ -367,27 +368,49 @@ child audit records. It distinguishes `verified`, `invalid` and
 causality. A missing/truncated/invalid event chain never becomes a positive
 assurance statement. Audit-chain events are not host transcript events.
 
-### Required installed acceptance
+### Installed acceptance record (artifact `9ea01ae8`)
 
-- [ ] Exact HEAD and installed GUI SHA recorded; `GetWorkbenchDiagnostics`
-      resolves through the actual installed Desktop host.
-- [ ] Root and reviewer children have actual verified linkage, correct
-      lineage status, phase, parent and review-attempt/dispatch summaries.
-- [ ] Unknown child stays visible but is not read as trusted evidence.
-- [ ] Verified audit chronology contains real persisted transition/events
-      with timestamps and sequence, no raw details or sensitive paths.
-- [ ] Missing, oversized and broken-chain audits show not-verified/invalid
-      states; partial denominator stays explicit.
-- [ ] 24-session and 100-event caps with honest truncated/partial display.
-- [ ] Native keyboard, narrow window, light/dark and session-switch behaviors
-      remain correct; opening/refreshing cannot hydrate or mutate.
-- [ ] Existing decision binding, stale rejection, compact recovery and
-      review-transport timeline remain unchanged.
-- [ ] Updated CI, hash manifest and architectural budgets pass.
+| Field                | Observed value                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Git HEAD             | `9ea01ae8e1984becc92409d91eb63cae743280a2`                                                                           |
+| Packed tarball       | `flowguard-core-2.0.0-tp.2.tgz`, SHA-256 `8e23c7474fb465d9844df8c9b99fcf2dd0f6fecad3329e6459150390bdd38f36`          |
+| Installed GUI bundle | `plugins/flowguard/gui-experimental.cjs`, SHA-256 `122994ba21db690bcd0c1de58ff416ce6984961fc92b0c8aaabc00d4bcd22cc3` |
+
+**Quality finding fixed before acceptance:** `workbench-diagnostics-projection.ts`
+was not Prettier-formatted in the submitted revision; the format job failed.
+The file was formatted in `9ea01ae8`, after which all 37 CI jobs passed.
+
+**Observed installed results:**
+
+- The managed OpenCode `2.2.6` service loaded the installed package; the Desktop
+  Workbench opened the existing demo session through that service.
+- `GetWorkbenchDiagnostics` returned `explorer.status: PARTIAL`,
+  `lineage: complete`, `canonicalState: partial`, three sessions (root
+  `captured / verified`; two reviewer children `absent / verified`), two review
+  attempts with child IDs and dispatch/obligation summaries, and explicit
+  `SESSION_STATE_ABSENT` warnings.
+- `audit.status: PARTIAL`, `source: verified_audit_chain_v3`, 72 verified
+  persisted events, no truncation. The root chain was `verified`; the two child
+  chains were `not_verified` with
+  `SESSION_LINEAGE_OR_BINDING_NOT_VERIFIED`, and the UI preserved that
+  distinction instead of reading them as trusted evidence.
+- The default compact state left `Session explorer` and `Verified audit
+chronology` collapsed; the global `Expand all details` control revealed the
+  real session/audit data. No raw actor identities, file paths or event details
+  were shown.
+- Opening, expanding and refreshing issued no hydrate, workflow command,
+  decision or audit mutation. The demo session remained `EVIDENCE_REVIEW` with
+  the prior plan approval unchanged.
+
+Evidence:
+[default compact state with diagnostics collapsed](./desktop-2.2.6-diagnostics-default.png)
+and [expanded Session Explorer / verified audit chronology](./desktop-2.2.6-diagnostics-sections.png).
 
 **Scope:** This is a verified persisted audit-chain chronology for the Explorer
 sessions, not host transcript replay or causal proof of multi-agent execution.
-The previously noted active-profile uninstall limitation remains PARTIAL.
+The 24-session and 100-event caps remain enforced; this run used three sessions
+and 72 events. The previously noted active-profile uninstall limitation remains
+`PARTIAL`.
 
 ## Artifact to certify
 

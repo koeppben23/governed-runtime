@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add read-only native Session Explorer and verified audit-chain chronology to
   Desktop PR #1207, preserving unverified reviewer lineage, bounded audit
   integrity and evidence completeness, without introducing decision authority.
+  Installed Desktop 2.2.6 acceptance on artifact `9ea01ae8` shows the root
+  session `verified`, two reviewer children `not_verified` with explicit lineage
+  reasons, two review attempts, and 72 persisted `audit-chain.v3` events under
+  `PARTIAL` completeness. The new sections are collapsed by default and expanding
+  them issues no hydrate, workflow command or decision. Acceptance also fixed an
+  unformatted diagnostics projection before the 37/37 green CI run.
 
 - Extend #1207's native Desktop Workbench with a bounded, read-only review
   transport timeline built from canonical reviewer-assurance timestamps, and
