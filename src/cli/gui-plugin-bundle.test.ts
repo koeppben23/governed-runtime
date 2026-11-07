@@ -523,6 +523,90 @@ describe('installed Desktop GUI bundle', () => {
     }
   });
 
+  it('renders verified session lineage and bounded audit chronology without invoking actions', async () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    vi.stubGlobal('document', { createElement: (tag: string) => new FakeDomNode(tag) });
+    try {
+      const panel = loaded.additions.find((item) => item.registry === 'panel')?.value as {
+        render: (props: { session: Record<string, unknown> }) => FakeDomNode;
+      };
+      loaded.views.push(
+        {
+          sessionID: 'ses_root',
+          kind: 'system_work',
+          phase: 'PLAN',
+          stateDigest: 'a'.repeat(64),
+          actions: [],
+          blocker: null,
+        },
+        null,
+        {
+          sessionID: 'ses_root',
+          explorer: {
+            status: 'PARTIAL',
+            lineage: 'partial',
+            canonicalState: 'partial',
+            sessions: [
+              { sessionID: 'ses_root', parentSessionID: null, role: 'root',
+                state: 'captured', lineage: 'verified', phase: 'PLAN',
+                binding: 'verified', warningCodes: [] },
+              { sessionID: 'ses_child', parentSessionID: 'ses_root', role: 'reviewer',
+                state: 'unavailable', lineage: 'not_verified', phase: null,
+                binding: 'unknown', warningCodes: ['SESSION_LINEAGE_NOT_VERIFIED'] },
+            ],
+            sessionsTruncated: false,
+            reviewAttempts: [
+              { ordinal: 1, childSessionID: 'ses_child', status: 'stale',
+                dispatchStatus: 'outcome_unknown', obligationStatus: 'blocked' },
+            ],
+            reviewAttemptsTruncated: false,
+            warningCodes: ['SESSION_LINEAGE_NOT_VERIFIED'],
+          },
+          audit: {
+            source: 'verified_audit_chain_v3',
+            status: 'PARTIAL',
+            totalEvents: 1,
+            eventsTruncated: false,
+            sessions: [
+              { sessionID: 'ses_root', integrity: 'verified', eventCount: 1,
+                reasonCode: null },
+              { sessionID: 'ses_child', integrity: 'not_verified', eventCount: 0,
+                reasonCode: 'SESSION_LINEAGE_OR_BINDING_NOT_VERIFIED' },
+            ],
+            events: [
+              { sessionID: 'ses_root', sequence: 1, phase: 'PLAN',
+                event: 'transition:PLAN', at: '2026-11-07T14:00:00.000Z',
+                recordedAt: '2026-11-07T14:00:01.000Z' },
+            ],
+            note: 'Audit chronology is navigational; verified chains do not establish cross-session causality.',
+          },
+          decisionAuthority: 'not_granted',
+        },
+      );
+      const node = panel.render({ session });
+      await vi.waitFor(() => expect(node.textContent).toContain('SESSION_LINEAGE_NOT_VERIFIED'));
+      expect(node.textContent).toContain('outcome_unknown');
+      expect(node.textContent).toContain('transition:PLAN');
+      expect(node.textContent).toContain('cross-session causality');
+      expect(node.textContent).toContain('SESSION_LINEAGE_OR_BINDING_NOT_VERIFIED');
+      const cards = node.children.filter((child) => child.tagName === 'details');
+      expect(cards).toHaveLength(8);
+      expect(cards.map((card) => card.open)).toEqual([
+        true, false, false, false, false, false, false, false,
+      ]);
+      expect(loaded.rpcCalls.map((call) => call['method'])).toEqual([
+        'GetNextAction',
+        'GetWorkbenchReview',
+        'GetWorkbenchDiagnostics',
+      ]);
+      expect(loaded.commandCalls).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('runs the selected workflow command after re-reading the same view', async () => {
     const ctx = {} as Record<string, unknown>;
     const session = {} as Record<string, unknown>;
