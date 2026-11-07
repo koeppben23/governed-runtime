@@ -59,7 +59,9 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
     setup: (context: Record<string, unknown>) => void;
   };
   plugin.setup(host);
-  const command = additions.find((entry) => entry.registry === 'command')?.value as FakeCommand;
+  const command = additions.find(
+    (entry) => entry.registry === 'command' && (entry.value as FakeCommand).id === 'choose-workflow',
+  )?.value as FakeCommand;
   Object.assign(session, {
     id: 'ses_root',
     location: { directory: '/tmp/worktree' },
