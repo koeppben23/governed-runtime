@@ -77,7 +77,7 @@ function renderFlowGuardChatCard(ctx, props) {
       }
       reviewLine.textContent = 'Reviewer evidence NOT_VERIFIED · operator approval not recorded here.';
       try {
-        const review = await call(session, 'GetWorkbenchReview', { sessionID: session.id });
+        const review = await flowguardGuiRpcClient(session).getWorkbenchReview();
         if (!current(request)) return;
         const subject = review && review.subject;
         const binding = next.decisionBinding;
@@ -173,7 +173,7 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
       const notVerified = { ...base, status: 'not_verified',
         note: 'Reviewer evidence NOT_VERIFIED · operator decision not recorded.' };
       setSnapshot(notVerified);
-      const review = await call(session, 'GetWorkbenchReview', { sessionID: session.id });
+      const review = await flowguardGuiRpcClient(session).getWorkbenchReview();
       if (!currentRead()) return;
       const subject = review && review.subject;
       const binding = next.decisionBinding;
@@ -204,38 +204,7 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
     }
   }
 
-  // Host-documented sidecar session completion event. Subscriptions are
-  // optional, scoped to the active GUI root and removed on plugin unload.
-  // A disconnected or unsupported host keeps explicit Refresh available.
-  // Desktop 2.2.6 exposes the endpoint lookup as ctx.servers; newer plugin
-  // typings call the same lookup ctx.serverEndpoints. Prefer the documented
-  // name when present and fall back to the running host's actual surface.
-  const endpoints = ctx.serverEndpoints && typeof ctx.serverEndpoints.get === 'function'
-    ? ctx.serverEndpoints
-    : ctx.servers;
-  if (endpoints && typeof endpoints.get === 'function') {
-    try {
-      const { createKeyed } = require('@opencode/plugin/gui');
-      if (typeof createKeyed === 'function') {
-        const { onCleanup } = require('solid-js');
-        createKeyed(
-          () => endpoints.get('sidecar')?.data,
-          (data) => {
-            if (!data || typeof data.on !== 'function') return;
-            const unsubscribe = data.on('session.execution.succeeded', (event) => {
-              const session = ctx.sessions.current();
-              if (!session || session.server.id !== 'sidecar' ||
-                  !event || !event.data || event.data.sessionID !== session.id) return;
-              void inspect(session);
-            });
-            onCleanup(unsubscribe);
-          },
-        );
-      }
-    } catch (error) {
-      console.warn('[FlowGuard] Optional chat status event refresh unavailable.', error);
-    }
-  }
+  subscribeFlowGuardSessionCompletion(ctx, (session) => { void inspect(session); });
 
   try {
     ctx.add(ComposerPill, {
