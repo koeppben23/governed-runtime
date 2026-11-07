@@ -277,13 +277,19 @@ module.exports = Plugin.define({
       fallback: true,
       tabbable: true,
     };
+    let panelRegistered = false;
     if (Panel) {
-      ctx.add(Panel, {
-        id: 'workbench-probe',
-        region: 'side',
-        list: (input) => input.open.includes('workbench-probe') ? [probeTab] : [],
-        render: (props) => renderProbe(ctx, props, false),
-      });
+      try {
+        ctx.add(Panel, {
+          id: 'workbench-probe',
+          region: 'side',
+          list: (input) => input.open.includes('workbench-probe') ? [probeTab] : [],
+          render: (props) => renderProbe(ctx, props, false),
+        });
+        panelRegistered = true;
+      } catch (error) {
+        console.warn('[FlowGuard] Optional Desktop panel probe unavailable.', error);
+      }
     }
     let headerRegistered = false;
     ctx.add(Command, {
@@ -298,19 +304,24 @@ module.exports = Plugin.define({
           toast(ctx, 'Open a session before inspecting FlowGuard UI.', 'default');
           return;
         }
-        if (!Panel || !Slot || !ctx.layout || typeof ctx.layout.open !== 'function') {
-          toast(ctx, 'This Desktop build does not expose Panel/Slot/layout APIs.', 'error');
+        if (!panelRegistered || !Slot || !ctx.layout || typeof ctx.layout.open !== 'function') {
+          toast(ctx, 'This Desktop build does not support the FlowGuard Panel/Slot probe.', 'error');
           return;
         }
-        if (!headerRegistered) {
-          ctx.add(Slot, {
-            at: 'session.header',
-            order: 90,
-            render: (input) => renderProbe(ctx, input, true),
-          });
-          headerRegistered = true;
+        try {
+          if (!headerRegistered) {
+            ctx.add(Slot, {
+              at: 'session.header',
+              order: 90,
+              render: (input) => renderProbe(ctx, input, true),
+            });
+            headerRegistered = true;
+          }
+          ctx.layout.open(ctx.id + ':workbench-probe', session, { tab: 'select' });
+        } catch (error) {
+          console.warn('[FlowGuard] Desktop Panel/Slot probe could not be opened.', error);
+          toast(ctx, 'Native FlowGuard probe unavailable in this Desktop build.', 'error');
         }
-        ctx.layout.open(ctx.id + ':workbench-probe', session, { tab: 'select' });
       },
     });
     ctx.add(Command, {
