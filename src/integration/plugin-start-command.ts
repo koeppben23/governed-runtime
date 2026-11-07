@@ -166,10 +166,11 @@ function registerAutonomousStart(
         }),
         request.sessionID,
       ),
-    GetWorkbenchDiagnostics: (request) => buildWorkbenchDiagnostics({
-      root: ctx.location.directory,
-      sessionID: request.sessionID,
-    }),
+    GetWorkbenchDiagnostics: (request) =>
+      buildWorkbenchDiagnostics({
+        root: ctx.location.directory,
+        sessionID: request.sessionID,
+      }),
     SubmitDecision: (request) => deps.guard(() => submitDecision(ctx, deps, request)),
   });
 }
