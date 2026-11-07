@@ -251,6 +251,7 @@ describe('installed Desktop GUI bundle', () => {
       expect(loaded.rpcCalls.map((call) => call['method'])).toEqual([
         'GetNextAction',
         'GetWorkbenchReview',
+        'GetWorkbenchDiagnostics',
       ]);
       expect(loaded.commandCalls).toEqual([]);
     } finally {
@@ -304,7 +305,7 @@ describe('installed Desktop GUI bundle', () => {
       const node = panel.render({ session });
       await vi.waitFor(() => expect(node.textContent).toContain('Decision unavailable'));
       expect(node.find('button', 'Review operator decisions')?.disabled).toBe(true);
-      expect(loaded.rpcCalls).toHaveLength(2);
+      expect(loaded.rpcCalls).toHaveLength(3);
       expect(loaded.commandCalls).toEqual([]);
     } finally {
       vi.unstubAllGlobals();
@@ -358,8 +359,8 @@ describe('installed Desktop GUI bundle', () => {
       const node = panel.render({ session });
       await vi.waitFor(() => expect(node.textContent).toContain('Plan v1'));
       const cards = node.children.filter((child) => child.tagName === 'details');
-      expect(cards).toHaveLength(6);
-      expect(cards.map((card) => card.open)).toEqual([true, true, false, true, false, false]);
+      expect(cards).toHaveLength(8);
+      expect(cards.map((card) => card.open)).toEqual([true, true, false, true, false, false, false, false]);
       const forensic = node.find('summary', 'Technical binding details');
       expect(forensic).toBeDefined();
       expect(node.find('button', 'Review operator decisions')?.disabled).toBe(false);
@@ -420,12 +421,13 @@ describe('installed Desktop GUI bundle', () => {
       const node = panel.render({ session });
       await vi.waitFor(() => expect(node.textContent).toContain('No reviewable subject recorded'));
       const cards = node.children.filter((child) => child.tagName === 'details');
-      expect(cards.map((card) => card.open)).toEqual([true, false, false, false, false, false]);
+      expect(cards.map((card) => card.open)).toEqual([true, false, false, false, false, false, false, false]);
       expect(node.find('button', 'Choose workflow')?.disabled).toBe(false);
       expect(loaded.commandCalls).toHaveLength(0);
       expect(loaded.rpcCalls.map((call) => call['method'])).toEqual([
         'GetNextAction',
         'GetWorkbenchReview',
+        'GetWorkbenchDiagnostics',
       ]);
     } finally {
       vi.unstubAllGlobals();
@@ -514,6 +516,7 @@ describe('installed Desktop GUI bundle', () => {
       expect(loaded.rpcCalls.map((call) => call['method'])).toEqual([
         'GetNextAction',
         'GetWorkbenchReview',
+        'GetWorkbenchDiagnostics',
       ]);
     } finally {
       vi.unstubAllGlobals();
