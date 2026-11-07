@@ -19,7 +19,7 @@ export const GUI_PLUGIN_RELATIVE_PATH = 'plugins/flowguard/gui-experimental.cjs'
 
 export const GUI_PLUGIN_BUNDLE = `\
 /** FlowGuard optional OpenCode Desktop GUI; never a governance authority. */
-const { Plugin, Command } = require('@opencode/plugin/gui');
+const { Plugin, Command, Panel, Slot } = require('@opencode/plugin/gui');
 
 const RPC_ID = 'flowguard-governance';
 
@@ -183,8 +183,150 @@ async function choose(ctx, session) {
   toast(ctx, 'FlowGuard action requested.', 'success');
 }
 
+/**
+ * Opt-in native UI capability probe. A DOM Node is a valid Solid child.
+ * This deliberately avoids a new TSX/Vite production renderer before the
+ * pinned Desktop proves Panel/Slot visibility. Only GetNextAction is read.
+ */
+function probeSessionKey(session) {
+  return session && session.server ? session.server.id + ':' + session.id : null;
+}
+
+function probeSummary(view) {
+  if (!view || !view.phase) return 'FlowGuard: state unavailable / NOT_VERIFIED';
+  const phase = view.phase;
+  if (view.kind === 'blocked') {
+    const message = view.blocker && view.blocker.message;
+    return 'FlowGuard · ' + phase + ' · BLOCKED: ' + (message || 'See /status for recovery.');
+  }
+  if (view.kind === 'decision_required') {
+    return 'FlowGuard · ' + phase + ' · Decision required (not approved)';
+  }
+  if (view.kind === 'system_work') return 'FlowGuard · ' + phase + ' · System work in progress';
+  if (view.kind === 'terminal') return 'FlowGuard · ' + phase + ' · Terminal state';
+  const action = view.actions && view.actions[0];
+  return 'FlowGuard · ' + phase + (action ? ' · Next: ' + action.invocation : '');
+}
+
+function renderProbe(ctx, props, compact) {
+  const { createEffect, createSignal, onCleanup } = require('solid-js');
+  const node = document.createElement(compact ? 'span' : 'section');
+  node.setAttribute('data-flowguard-ui-probe', compact ? 'header' : 'panel');
+  node.setAttribute('role', 'status');
+  node.setAttribute('aria-live', 'polite');
+  const label = document.createElement(compact ? 'span' : 'p');
+  label.textContent = 'FlowGuard · Loading read-only state...';
+  let disposed = false;
+  let generation = 0;
+  const [revision, refresh] = createSignal(0);
+
+  if (!compact) {
+    const title = document.createElement('h2');
+    title.textContent = 'FlowGuard · Desktop UI capability probe';
+    const caption = document.createElement('p');
+    caption.textContent =
+      'Read-only GetNextAction projection. No decisions or workflow commands are issued by this panel.';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Refresh FlowGuard status';
+    const handleRefresh = () => refresh((previous) => previous + 1);
+    button.addEventListener('click', handleRefresh);
+    onCleanup(() => button.removeEventListener('click', handleRefresh));
+    node.appendChild(title);
+    node.appendChild(caption);
+    node.appendChild(label);
+    node.appendChild(button);
+  } else {
+    node.appendChild(label);
+  }
+
+  createEffect(() => {
+    const session = props.session;
+    revision();
+    const request = ++generation;
+    const identity = probeSessionKey(session);
+    label.textContent = identity ? 'FlowGuard · Loading ' + session.id + '...' : 'FlowGuard: no session';
+    if (!identity) return;
+    void getView(session).then(
+      (view) => {
+        if (disposed || request !== generation || probeSessionKey(props.session) !== identity) return;
+        label.textContent = probeSummary(view);
+      },
+      () => {
+        if (disposed || request !== generation || probeSessionKey(props.session) !== identity) return;
+        label.textContent = 'FlowGuard · NOT_VERIFIED (status unavailable; use /status)';
+      },
+    );
+  });
+
+  // Session changes are reactive; a completed host turn also refreshes the
+  // current session. The panel's button supplies a deterministic manual path.
+  createEffect(() => {
+    const session = props.session;
+    if (!session || !ctx.servers || typeof ctx.servers.get !== 'function') return;
+    const server = ctx.servers.get(session.server.id);
+    if (!server || !server.data || typeof server.data.on !== 'function') return;
+    const unsubscribe = server.data.on('session.execution.succeeded', (event) => {
+      if (event && event.data && event.data.sessionID === session.id) {
+        refresh((previous) => previous + 1);
+      }
+    });
+    onCleanup(() => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    });
+  });
+  onCleanup(() => {
+    disposed = true;
+    generation += 1;
+  });
+  return node;
+}
+
 module.exports = Plugin.define({
   setup(ctx) {
+    const probeTab = {
+      id: 'workbench-probe',
+      title: 'FlowGuard UI Probe',
+      closable: 'compact',
+      fallback: true,
+      tabbable: true,
+    };
+    if (Panel) {
+      ctx.add(Panel, {
+        id: 'workbench-probe',
+        region: 'side',
+        list: (input) => input.open.includes('workbench-probe') ? [probeTab] : [],
+        render: (props) => renderProbe(ctx, props, false),
+      });
+    }
+    let headerRegistered = false;
+    ctx.add(Command, {
+      id: 'ui-probe',
+      title: 'FlowGuard: inspect native UI (experimental)',
+      description: 'Opt in to a read-only Desktop panel and session-header status probe.',
+      group: 'FlowGuard',
+      slash: { name: 'flowguard-ui-probe' },
+      run: () => {
+        const session = ctx.sessions.current();
+        if (!session) {
+          toast(ctx, 'Open a session before inspecting FlowGuard UI.', 'default');
+          return;
+        }
+        if (!Panel || !Slot || !ctx.layout || typeof ctx.layout.open !== 'function') {
+          toast(ctx, 'This Desktop build does not expose Panel/Slot/layout APIs.', 'error');
+          return;
+        }
+        if (!headerRegistered) {
+          ctx.add(Slot, {
+            at: 'session.header',
+            order: 90,
+            render: (input) => renderProbe(ctx, input, true),
+          });
+          headerRegistered = true;
+        }
+        ctx.layout.open(ctx.id + ':workbench-probe', session, { tab: 'select' });
+      },
+    });
     ctx.add(Command, {
       id: 'choose-workflow',
       title: 'FlowGuard: choose workflow or decision',
