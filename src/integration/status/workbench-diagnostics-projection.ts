@@ -124,9 +124,8 @@ function projectAttempts(view: ExplorerView) {
         'not_recorded',
     ),
     obligationStatus: safeToken(
-      links.obligations.find(
-        (obligation) => obligation.obligationId === item.obligationId,
-      )?.status ?? 'not_recorded',
+      links.obligations.find((obligation) => obligation.obligationId === item.obligationId)
+        ?.status ?? 'not_recorded',
     ),
   }));
 }
@@ -152,9 +151,7 @@ function projectAudit(snapshots: readonly WorkbenchAuditSnapshot[], explorer: Ex
   );
   all.sort(
     (a, b) =>
-      a.at.localeCompare(b.at) ||
-      a.sessionID.localeCompare(b.sessionID) ||
-      a.sequence - b.sequence,
+      a.at.localeCompare(b.at) || a.sessionID.localeCompare(b.sessionID) || a.sequence - b.sequence,
   );
   const anyVerified = sessions.some((session) => session.integrity === 'verified');
   const complete =
@@ -170,8 +167,7 @@ function projectAudit(snapshots: readonly WorkbenchAuditSnapshot[], explorer: Ex
     eventsTruncated: all.length > MAX_EVENTS,
     events: all.slice(-MAX_EVENTS),
     sessions,
-    note:
-      'Audit chronology is navigational; verified chains do not establish cross-session causality.' as const,
+    note: 'Audit chronology is navigational; verified chains do not establish cross-session causality.' as const,
   };
 }
 
