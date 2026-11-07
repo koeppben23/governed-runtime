@@ -246,6 +246,7 @@ function renderWorkbench(ctx, props) {
   const { createEffect, createSignal, onCleanup } = require('solid-js');
   const root = document.createElement('section');
   root.setAttribute('data-flowguard-workbench', 'review-v1');
+  root.setAttribute('role', 'region');
   root.setAttribute('aria-label', 'FlowGuard Review Workbench');
   root.style.display = 'grid';
   root.style.gap = '10px';
@@ -288,6 +289,7 @@ function renderWorkbench(ctx, props) {
   status.style.fontWeight = '500';
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
+  status.setAttribute('aria-atomic', 'true');
 
   const controls = element('div', null, root);
   controls.style.display = 'flex';
