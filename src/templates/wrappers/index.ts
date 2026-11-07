@@ -340,8 +340,9 @@ function renderWorkbench(ctx, props) {
   const reviewSection = section('Independent review', root);
   const evidenceSection = section('Findings and evidence', root);
   const decisionSection = section('Safe decision or next action', root);
+  const timelineSection = section('Review transport timeline', root);
   const recoverySection = section('Guided recovery', root);
-  const cards = [summary, reviewSection, evidenceSection, decisionSection, recoverySection];
+  const cards = [summary, reviewSection, evidenceSection, decisionSection, timelineSection, recoverySection];
   const foot = element('p',
     'Reviewer ACCEPT is not operator approval. All decisions use canonical server authority.',
     root);
@@ -417,6 +418,7 @@ function renderWorkbench(ctx, props) {
     reviewSection.open = Boolean(next && next.kind === 'decision_required');
     evidenceSection.open = false;
     decisionSection.open = Boolean(next && next.kind === 'decision_required');
+    timelineSection.open = false;
     // A decision gate carries a question in blocker; only a true blocked
     // directive should surface the recovery section by default.
     recoverySection.open = Boolean(next && next.kind === 'blocked' && next.blocker);
@@ -462,18 +464,51 @@ function renderWorkbench(ctx, props) {
       line(evidenceSection, 'ProofGraph claims', review.proof.claimsTotal +
         (review.proof.claimsTruncated ? ' (partial)' : ''));
       for (const claim of review.proof.claims) {
-        line(evidenceSection, claim.critical ? 'Critical claim' : 'Claim',
-          claim.statement + ' [' + (claim.verificationState || 'NOT_VERIFIED') +
-          '; evidence ' + claim.evidenceCount + ']');
+        const claimCard = element('section', null, evidenceSection);
+        claimCard.style.borderLeft = '3px solid currentColor';
+        claimCard.style.paddingLeft = '10px';
+        claimCard.style.margin = '10px 0';
+        const claimLabel = claim.critical ? 'Critical claim' : 'Claim';
+        const claimState = claim.verificationState || 'NOT_VERIFIED';
+        const claimHeader = element('p', claimLabel + ' | ' + claimState, claimCard);
+        claimHeader.style.fontWeight = '600';
+        claimHeader.style.marginBottom = '4px';
+        element('p', claim.statement, claimCard);
+        line(claimCard, 'Positive evidence references', claim.evidenceCount);
+        if (claim.counterexampleCount !== undefined) {
+          line(claimCard, 'Counterexample references', claim.counterexampleCount);
+        }
+        if (claim.certificateBinding !== undefined) {
+          line(claimCard, 'Certificate binding', claim.certificateBinding);
+        }
       }
       line(evidenceSection, 'Coverage gaps', review.proof.coverageGapCount);
       if (review.warningCodes.length || review.warningsTruncated) {
         line(evidenceSection, 'Diagnostic warnings', review.warningCodes.join(', ') +
           (review.warningsTruncated ? ' (partial)' : ''));
       }
+      const timeline = review.timeline;
+      if (!timeline || timeline.status === 'not_available') {
+        element('p', 'Review transport events NOT_VERIFIED - no linked review-assurance history.', timelineSection);
+      } else {
+        line(timelineSection, 'Source', 'Persisted review assurance (not the full workflow audit)');
+        line(timelineSection, 'Events', timeline.total +
+          (timeline.status === 'truncated' ? ' (partial - newest entries only)' : ''));
+        const entries = element('ol', null, timelineSection);
+        entries.style.paddingLeft = '20px';
+        entries.style.margin = '8px 0';
+        for (const event of timeline.events) {
+          const item = element('li', null, entries);
+          element('strong', event.label + ' | ' + event.state, item);
+          const time = element('p', event.at, item);
+          time.style.margin = '2px 0 8px';
+          time.style.opacity = '0.75';
+        }
+      }
     } else {
       line(reviewSection, 'Review', 'NOT_VERIFIED - read-only review RPC unavailable');
       line(evidenceSection, 'Evidence', 'NOT_VERIFIED');
+      element('p', 'Review transport timeline NOT_VERIFIED.', timelineSection);
     }
 
     if (next.kind === 'decision_required') {
