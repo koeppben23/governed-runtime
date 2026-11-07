@@ -174,10 +174,6 @@ async function choose(ctx, session) {
  * This deliberately avoids a new TSX/Vite production renderer before the
  * pinned Desktop proves Panel/Slot visibility. Only GetNextAction is read.
  */
-function probeSessionKey(session) {
-  return session && session.server ? session.server.id + ':' + session.id : null;
-}
-
 function probeSummary(view) {
   if (!view || !view.phase) return 'FlowGuard: state unavailable / NOT_VERIFIED';
   const phase = view.phase;
