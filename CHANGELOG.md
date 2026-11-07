@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add the first native Desktop Review Workbench slice to #1196: a bounded
+  `GetWorkbenchReview` RPC projects the exact persisted review subject, verdict,
+  findings, missing verification and ProofGraph summary without raw subject
+  content or file paths. The installed side panel composes it with `GetNextAction`,
+  separates independent reviewer results from operator decisions, shows canonical
+  blocker recovery, and opens the existing revision-bound chooser only for a
+  matching, complete review. Installed Desktop 2.2.6 evidence covers READY, a
+  real PLAN-pending review that fails closed with `REVIEW_VERDICT_NOT_RECORDED`,
+  a complete bound PLAN_REVIEW with reviewer accept and one minor finding,
+  native `/approve` advancing to `IMPLEMENTATION`, a stale binding rejected with
+  `DECISION_BINDING_STALE`, and BLOCKED guided recovery for `aea39b90`. The
+  stuck session's dispatch is diagnosed as `outcome_unknown` even though its
+  child review completed; no ledger was reset. Narrow layout and keyboard
+  activation are verified; light mode, decision-dialog keyboard and
+  active-profile uninstall remain `NOT_VERIFIED`. A service restart is required
+  to load the new RPC in a long-running service.
+
+- Add an opt-in, read-only OpenCode Desktop Panel/Slot capability probe to #1196, with
+  a native FlowGuard side tab, manual status refresh, and an opt-in session-header
+  display consuming the existing `GetNextAction` projection. Existing native
+  chooser and decision authority remain unchanged. Installed OpenCode Desktop
+  2.2.6 paints the Panel and `session.header` Slot, keeps the session-specific
+  `READY` projection current through manual refresh and session switches, and
+  registers no duplicate controls after reload; the pinned 2.2.5 Desktop build
+  remains `NOT_VERIFIED`. The probe is not the finished Review Workbench. Add
+  Desktop product UX specification, pinned-host acceptance checklist, adapter
+  regression tests and bundle hash.
+
 - Add the optional Desktop GUI companion for #1196 as an installed prebuilt
   `plugins/flowguard/gui-experimental.cjs` bundle. It exposes the same
   `/choose-workflow` dialog only when explicitly requested; it installs no

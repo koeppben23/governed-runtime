@@ -36,6 +36,8 @@ import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { hydrate, resolveHydratePolicy } from './tools/index.js';
 import { FlowGuardGovernance, type AutonomousStartRequest } from './opencode-governance-rpc.js';
+import { buildReviewView } from './diagnostics/review-view.js';
+import { projectWorkbenchReview } from './status/workbench-review-projection.js';
 import { getNextAction, submitDecision } from './plugin-next-action-command.js';
 import { addDecisionCommands } from './plugin-decision-command.js';
 import {
@@ -154,6 +156,15 @@ function registerAutonomousStart(
         }
       }),
     GetNextAction: (request) => getNextAction(ctx, deps.governance, request),
+    GetWorkbenchReview: async (request) =>
+      projectWorkbenchReview(
+        await buildReviewView({
+          root: ctx.location.directory,
+          sessionId: request.sessionID,
+          maxSubjectBytes: 32768,
+        }),
+        request.sessionID,
+      ),
     SubmitDecision: (request) => deps.guard(() => submitDecision(ctx, deps, request)),
   });
 }
