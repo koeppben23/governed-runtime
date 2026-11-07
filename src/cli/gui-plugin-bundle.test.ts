@@ -60,7 +60,8 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
   };
   plugin.setup(host);
   const command = additions.find(
-    (entry) => entry.registry === 'command' && (entry.value as FakeCommand).id === 'choose-workflow',
+    (entry) =>
+      entry.registry === 'command' && (entry.value as FakeCommand).id === 'choose-workflow',
   )?.value as FakeCommand;
   Object.assign(session, {
     id: 'ses_root',
