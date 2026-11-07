@@ -221,6 +221,12 @@ async function runStart(
     );
   await confirmCommittedStartAudits(deps, input.sessionID, workflow, result.record);
   await presentCommittedStart(() => deps.publish(), 'catalogue', input.sessionID);
+  // Autonomous callers receive the authoritative RPC result and can query
+  // GetNextAction. A synthetic status notice would persist into later model
+  // context despite resume:false; never manufacture an agent-visible turn.
+  if (autonomous !== undefined) {
+    return { kind: result.kind, activationId: result.record.activationId };
+  }
   const status =
     result.kind === 'already_active'
       ? 'was already ACTIVE'
@@ -246,10 +252,7 @@ async function runStart(
     "This is a FlowGuard host status report. Do not select a workflow automatically; wait for the user's explicit command.",
   ].join('\n\n');
   await presentCommittedStart(
-    () =>
-      autonomous === undefined
-        ? ctx.session.prompt({ sessionID: input.sessionID, text })
-        : ctx.session.synthetic({ sessionID: input.sessionID, text, resume: false }),
+    () => ctx.session.prompt({ sessionID: input.sessionID, text }),
     'status report',
     input.sessionID,
   );
