@@ -168,7 +168,10 @@ async function executeDecisionSelection(
     const afterRefresh = currentOrNull(deps, sessionID, refreshed.stateDigest);
     if (afterRefresh !== null) return afterRefresh;
     if (!sameSelection(view, refreshed, selected)) {
-      deps.notify('FlowGuard state changed; no decision was submitted. Reopen the chooser.', 'warning');
+      deps.notify(
+        'FlowGuard state changed; no decision was submitted. Reopen the chooser.',
+        'warning',
+      );
       return { status: 'stale', stateDigest: refreshed.stateDigest };
     }
   }
