@@ -48,6 +48,7 @@ import {
 import { addCheckCommand } from './plugin-check-command.js';
 import { addDebugExportCommand } from './plugin-debug-export-command.js';
 import { addDiagnosticsCommand } from './plugin-diagnostics-command.js';
+import { addChatCardCommand } from './plugin-chat-card-command.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import {
   appendAuditEventAlreadyLocked,
@@ -124,6 +125,7 @@ function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Prom
     addCheckCommand(ctx, deps, editor);
     addDebugExportCommand(ctx, editor);
     addDiagnosticsCommand(ctx, editor);
+    addChatCardCommand(ctx, editor);
   });
 }
 
