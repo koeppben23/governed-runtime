@@ -28,8 +28,15 @@ describe('Desktop GUI client and host bridges', () => {
     await client.submitDecision({
       invocation: '/approve',
       expected: {
-        obligationId: 'test-obligation',
+        sessionID: 'session-bound',
+        activationId: '11111111-1111-4111-8111-111111111111',
+        activationGeneration: 1,
+        policyDigest: 'p'.repeat(64),
+        stateDigest: 's'.repeat(64),
+        phase: 'PLAN_REVIEW',
+        obligationId: '22222222-2222-4222-8222-222222222222',
         subjectDigest: 'a'.repeat(64),
+        reviewType: 'plan',
         reviewCycle: 1,
         iteration: 1,
       },
@@ -46,8 +53,15 @@ describe('Desktop GUI client and host bridges', () => {
         input: {
           invocation: '/approve',
           expected: {
-            obligationId: 'test-obligation',
+            sessionID: 'session-bound',
+            activationId: '11111111-1111-4111-8111-111111111111',
+            activationGeneration: 1,
+            policyDigest: 'p'.repeat(64),
+            stateDigest: 's'.repeat(64),
+            phase: 'PLAN_REVIEW',
+            obligationId: '22222222-2222-4222-8222-222222222222',
             subjectDigest: 'a'.repeat(64),
+            reviewType: 'plan',
             reviewCycle: 1,
             iteration: 1,
           },
