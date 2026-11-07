@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add read-only native Session Explorer and verified audit-chain chronology to
+  Desktop PR #1207, preserving unverified reviewer lineage, bounded audit
+  integrity and evidence completeness, without introducing decision authority.
+
 - Extend #1207's native Desktop Workbench with a bounded, read-only review
   transport timeline built from canonical reviewer-assurance timestamps, and
   ProofGraph claim cards showing positive/counterexample references plus
