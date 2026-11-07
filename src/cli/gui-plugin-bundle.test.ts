@@ -193,4 +193,96 @@ describe('installed Desktop GUI bundle', () => {
       expect.objectContaining({ variant: 'error' }),
     );
   });
+
+  it('does not execute a next action when the session switches during confirmation', async () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    const view = {
+      kind: 'next_action',
+      stateDigest: 'a'.repeat(64),
+      activationId: '11111111-1111-4111-8111-111111111111',
+      activationGeneration: 1,
+      policyDigest: 'b'.repeat(64),
+      decisionBinding: null,
+      title: 'Plan required',
+      actions: [{ invocation: '/plan', description: 'Create plan.', visibility: 'recommended' }],
+    };
+    loaded.views.push(view, view);
+    (ctx.dialogs as { select: ReturnType<typeof vi.fn> }).select.mockResolvedValueOnce('/plan');
+    (ctx.dialogs as { confirm: ReturnType<typeof vi.fn> }).confirm.mockImplementationOnce(
+      async () => {
+        (ctx.sessions as { current: () => unknown }).current = () => ({
+          id: 'ses_other',
+          server: { id: 'other_server' },
+        });
+        return true;
+      },
+    );
+
+    loaded.command.run();
+
+    await vi.waitFor(() =>
+      expect((ctx.toast as { show: ReturnType<typeof vi.fn> }).show).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: 'error' }),
+      ),
+    );
+    expect(loaded.commandCalls).toEqual([]);
+    expect(loaded.rpcCalls.filter((call) => call['method'] === 'SubmitDecision')).toEqual([]);
+  });
+
+  it('does not submit an override when the session switches during rationale input', async () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session);
+    const binding = {
+      sessionID: 'ses_root',
+      activationId: '11111111-1111-4111-8111-111111111111',
+      activationGeneration: 1,
+      policyDigest: 'b'.repeat(64),
+      stateDigest: 'a'.repeat(64),
+      phase: 'PLAN_REVIEW',
+      obligationId: '22222222-2222-4222-8222-222222222222',
+      subjectDigest: 'c'.repeat(64),
+      reviewType: 'plan',
+      reviewCycle: 1,
+      iteration: 1,
+    };
+    const view = {
+      kind: 'decision_required',
+      stateDigest: binding.stateDigest,
+      activationId: binding.activationId,
+      activationGeneration: binding.activationGeneration,
+      policyDigest: binding.policyDigest,
+      decisionBinding: binding,
+      title: 'Decision required',
+      actions: [{
+        invocation: '/override-approve',
+        description: 'Override an exhausted gate.',
+        visibility: 'available',
+      }],
+    };
+    loaded.views.push(view, view);
+    (ctx.dialogs as { select: ReturnType<typeof vi.fn> }).select.mockResolvedValueOnce('/override-approve');
+    (ctx.dialogs as { prompt: ReturnType<typeof vi.fn> }).prompt.mockImplementationOnce(
+      async () => {
+        (ctx.sessions as { current: () => unknown }).current = () => ({
+          id: 'ses_other',
+          server: { id: 'other_server' },
+        });
+        return 'Documented reason.';
+      },
+    );
+
+    loaded.command.run();
+
+    await vi.waitFor(() =>
+      expect((ctx.toast as { show: ReturnType<typeof vi.fn> }).show).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: 'error' }),
+      ),
+    );
+    expect(loaded.rpcCalls.filter((call) => call['method'] === 'SubmitDecision')).toEqual([]);
+    expect(loaded.commandCalls).toEqual([]);
+  });
+
 });
