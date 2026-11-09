@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update the CodeQL init step to 4.39.3 and align the analyze step to the
+  same action version.
+
 ### Added
 
 - Add the optional Desktop GUI companion for #1196 as an installed prebuilt
