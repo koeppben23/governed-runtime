@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Update the CodeQL analyze step to 4.39.3 and align the init step to the
-  same action version.
+- Refresh pinned GitHub Actions and production OpenTelemetry dependencies:
+  `actions/setup-java` 6.2.0, `github/codeql-action` 4.39.3, and
+  OpenTelemetry 0.301.0/3.1.0.
 
 ### Added
 
