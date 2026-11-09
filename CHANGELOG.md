@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bump the production OpenTelemetry dependencies to the next minor release
+  group: auto-instrumentations-node 0.83.0, OTLP HTTP exporters 0.301.0,
+  sdk-logs 3.1.0 and sdk-node 0.301.0.
+
 ### Added
 
 - Add the optional Desktop GUI companion for #1196 as an installed prebuilt
