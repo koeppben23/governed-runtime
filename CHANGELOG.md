@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump `actions/setup-java` from 6.1.0 to 6.2.0 in the CI and
-  proofgraph-live-controls workflows.
+- Refresh pinned GitHub Actions and production OpenTelemetry dependencies:
+  `actions/setup-java` 6.2.0, `github/codeql-action` 4.39.3, and
+  OpenTelemetry 0.301.0/3.1.0.
 
 ### Added
 
