@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bump `actions/setup-java` from 6.1.0 to 6.2.0 in the CI and
+  proofgraph-live-controls workflows.
+
 ### Added
 
 - Add the optional Desktop GUI companion for #1196 as an installed prebuilt
