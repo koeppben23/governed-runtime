@@ -61,6 +61,7 @@ jobs:
         run: npm ci
 
       - name: Initialize CodeQL
+        # Keep init and analyze on the same pinned CodeQL action version.
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # github/codeql-action v4.39.3
         with:
           languages: typescript
