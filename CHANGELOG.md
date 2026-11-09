@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Refresh pinned GitHub Actions and production OpenTelemetry dependencies:
-  `actions/setup-java` 6.2.0, `github/codeql-action` 4.39.3, and
-  OpenTelemetry 0.301.0/3.1.0.
-
 ### Added
 
 - Add the optional Desktop GUI companion for #1196 as an installed prebuilt
@@ -1679,6 +1673,10 @@ stop`, reviewer child reported it could not complete the falsification).
   the derived outcome (`applied`, `skipped`, or `failed`).
 
 ### Changed
+
+- Refresh pinned GitHub Actions and production OpenTelemetry dependencies:
+  `actions/setup-java` 6.2.0, `github/codeql-action` 4.39.3, and
+  OpenTelemetry 0.301.0/3.1.0.
 
 - Update `jose` from 6.2.14 to 6.2.15.
 - Update dev dependencies: `@vitest/coverage-v8` and `vitest` from 5.0.5 to 5.1.0, `eslint` from 10.13.0 to 10.14.0, and `knip` from 6.44.0 to 6.44.1.
