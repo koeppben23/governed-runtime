@@ -407,6 +407,37 @@ describe('diagnostic export', () => {
       ).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
+    it('marks the log source partial when the log artifact cannot be published', async () => {
+      await rootState();
+      await writeFlowGuardLog([
+        logEntry(ROOT_ID, { message: 'x'.repeat(50_000), traceId: 'trace-artifact' }),
+      ]);
+      const outputDir = path.join(ws.tmpDir, 'diag-log-artifact-limit');
+
+      const result = await writeDiagnosticExport(
+        request(outputDir, {
+          limits: {
+            maxSessions: 10,
+            maxFileBytes: 20_000,
+            maxTotalBytes: 10_000_000,
+            hostTimeoutMs: 1_000,
+            maxDurationMs: 60_000,
+          },
+        }),
+      );
+
+      expect(result.manifest.status).toBe('PARTIAL');
+      expect(result.manifest.sources.logs.status).toBe('partial');
+      expect(result.manifest.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: 'LOG_ARTIFACT_TOO_LARGE' })]),
+      );
+      const index = JSON.parse(
+        await readFile(path.join(outputDir, 'diagnostics', 'log-files.json'), 'utf8'),
+      );
+      expect(index.artifact).toBeNull();
+      expect(index.status).toBe('PARTIAL');
+    });
+
     it('reports an explicit artifact-limit warning instead of silently truncating', async () => {
       await rootState();
       const outputDir = path.join(ws.tmpDir, 'diag-total-limit');

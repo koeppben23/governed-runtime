@@ -159,6 +159,24 @@ describe('bounded FlowGuard log capture', () => {
     expect(raw.entries[0]?.fields).toMatchObject({ token: 'abcdef' });
   });
 
+  it('drops non-technical trace IDs in redacted mode without leaking their content', async () => {
+    await writeLines('flowguard-2026-01-01.log', [
+      entry('ses_root', {
+        traceId: 'token=supersecret/../../private/path',
+        message: 'trace redaction probe',
+      }),
+      entry('ses_root', { traceId: 'trace-valid_1' }),
+    ]);
+
+    const redacted = await captureLogs({ directory: logDir });
+    expect(redacted.entries[0]?.traceId).toBeNull();
+    expect(JSON.stringify(redacted)).not.toContain('supersecret');
+    expect(redacted.entries[1]?.traceId).toBe('trace-valid_1');
+
+    const raw = await captureLogs({ directory: logDir, redact: false });
+    expect(raw.entries[0]?.traceId).toBe('token=supersecret/../../private/path');
+  });
+
   it('validates filters and limits', async () => {
     await expect(
       captureLogs({ directory: logDir, filter: { levels: ['loud' as never] } }),

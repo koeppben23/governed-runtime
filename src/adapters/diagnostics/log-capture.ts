@@ -16,6 +16,7 @@ import { redactExtra, sanitizeDiagnosticString } from '../../logging/redact.js';
 const LOG_FILE_PATTERN = /^flowguard-\d{4}-\d{2}-\d{2}(?:\.\d+)?\.log$/;
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 const SENSITIVE_FIELD = /password|passwd|secret|token|api[_-]?key|authorization|cookie/i;
+const TECHNICAL_TRACE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 export const DEFAULT_LOG_CAPTURE_LIMITS: LogCaptureLimits = Object.freeze({
   maxFiles: 7,
@@ -214,10 +215,15 @@ function parseRecord(
     service:
       typeof parsed['service'] === 'string' ? safeString(parsed['service'], redact) : 'unknown',
     sessionId: typeof parsed['sessionId'] === 'string' ? parsed['sessionId'] : null,
-    traceId: typeof parsed['traceId'] === 'string' ? parsed['traceId'] : null,
+    traceId: typeof parsed['traceId'] === 'string' ? safeTraceId(parsed['traceId'], redact) : null,
     message: safeString(message, redact),
     fields,
   };
+}
+
+function safeTraceId(value: string, redact: boolean): string | null {
+  if (!redact) return value;
+  return TECHNICAL_TRACE_ID.test(value) ? value : null;
 }
 
 function safeString(value: string, redact: boolean): string {

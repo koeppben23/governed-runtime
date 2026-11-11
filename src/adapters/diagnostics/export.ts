@@ -20,8 +20,6 @@ import { validateSessionId } from '../workspace/types.js';
 import {
   DEFAULT_DIAGNOSTIC_LIMITS,
   DIAGNOSTIC_EXPORT_SCHEMA_VERSION,
-  DiagnosticCaptureStatus,
-  DiagnosticLogIndex,
   DiagnosticSessionGraph,
   DiagnosticTimeline,
   type DiagnosticExportLimits,
@@ -29,7 +27,7 @@ import {
 import { DiagnosticExportError } from './errors.js';
 import { manifestFor } from './manifest.js';
 import { writeAllSessionArtifacts, writeArtifact } from './artifact-writer.js';
-import { DEFAULT_LOG_CAPTURE_LIMITS, captureLogs, type LogCaptureResult } from './log-capture.js';
+import { captureAndWriteLogs } from './log-artifacts.js';
 import {
   warning,
   type CaptureAccumulator,
@@ -429,169 +427,6 @@ async function writeIndexArtifacts(
   );
 }
 
-async function writeLogArtifacts(
-  request: DiagnosticExportRequest,
-  acc: CaptureAccumulator,
-  logs: LogCaptureResult,
-): Promise<void> {
-  const artifact = `diagnostics/${request.redactionMode === 'none' ? 'logs' : 'logs.redacted'}.jsonl`;
-  let artifactWritten = false;
-  if (logs.entries.length > 0) {
-    artifactWritten = await writeArtifact(
-      request.outputDir,
-      artifact,
-      `${logs.entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
-      acc,
-    );
-    if (!artifactWritten) {
-      acc.warnings.push(
-        warning(
-          'LOG_ARTIFACT_TOO_LARGE',
-          'The bounded log artifact exceeded the capture budget and was not written.',
-          null,
-          'logs',
-        ),
-      );
-    }
-  }
-  const index = {
-    schemaVersion: 'diagnostic-log-index.v1' as const,
-    status: logs.status,
-    directory: logs.directory === null ? null : (request.logsDirectoryLabel ?? null),
-    sessionIds: [
-      ...new Set([
-        ...logs.correlation.sessionsWithoutEntries,
-        ...logs.entries
-          .map((entry) => entry.sessionId)
-          .filter((sessionId): sessionId is string => sessionId !== null),
-      ]),
-    ].sort(),
-    limits: logs.limits,
-    artifact: artifactWritten ? artifact : null,
-    files: logs.files,
-    filesSkipped: logs.filesSkipped,
-    skippedFiles: logs.skippedFiles,
-    counts: {
-      files: logs.files.length,
-      entriesRead: logs.files.reduce((count, file) => count + file.entriesRead, 0),
-      entriesIncluded: logs.entries.length,
-      parseErrors: logs.parseErrors,
-    },
-    correlation: logs.correlation,
-    truncationReasons: logs.truncationReasons,
-    hostLogs: {
-      status: 'not_verified' as const,
-      reason:
-        'Host process logs are not read by this exporter; only FlowGuard JSONL logs are captured.',
-    },
-    note: 'Diagnostics log capture is bounded and diagnostic only. Older entries outside the inspected budgets may exist; unreadable or uncorrelated entries are explicit gaps.',
-  };
-  await writeArtifact(
-    request.outputDir,
-    'diagnostics/log-files.json',
-    `${JSON.stringify(DiagnosticLogIndex.parse(index), null, 2)}\n`,
-    acc,
-  );
-}
-
-function emptyLogCapture(
-  directory: string | null,
-  sessionIds: readonly string[],
-): LogCaptureResult {
-  return {
-    status: 'NOT_VERIFIED',
-    directory,
-    entries: [],
-    files: [],
-    filesSkipped: 0,
-    skippedFiles: [],
-    bytesRead: 0,
-    parseErrors: 0,
-    truncated: false,
-    truncationReasons: ['log capture failed'],
-    correlation: {
-      withSessionId: 0,
-      withoutSessionId: 0,
-      withTraceId: 0,
-      withoutTraceId: 0,
-      missingFilteredSessionId: 0,
-      missingFilteredTraceId: 0,
-      sessionsWithEntries: 0,
-      sessionsWithoutEntries: sessionIds,
-    },
-    limits: DEFAULT_LOG_CAPTURE_LIMITS,
-  };
-}
-
-function recordLogWarnings(acc: CaptureAccumulator, logs: LogCaptureResult): void {
-  if (logs.status !== DiagnosticCaptureStatus.enum.COMPLETE) {
-    acc.warnings.push(
-      warning(
-        logs.status === DiagnosticCaptureStatus.enum.NOT_VERIFIED
-          ? 'LOG_SOURCE_NOT_VERIFIED'
-          : 'LOG_CAPTURE_PARTIAL',
-        logs.truncationReasons.length > 0
-          ? `FlowGuard log capture is ${logs.status}: ${logs.truncationReasons.join('; ')}`
-          : `FlowGuard log capture is ${logs.status}.`,
-        null,
-        'logs',
-      ),
-    );
-  }
-  if (logs.entries.length === 0 && logs.status === DiagnosticCaptureStatus.enum.COMPLETE) {
-    acc.warnings.push(
-      warning(
-        'LOG_NO_MATCHING_ENTRIES',
-        'FlowGuard logs were inspected but contained no entries for the requested verified sessions.',
-        null,
-        'logs',
-      ),
-    );
-  }
-  if (logs.correlation.sessionsWithoutEntries.length > 0) {
-    acc.warnings.push(
-      warning(
-        'LOG_SESSION_NO_ENTRIES',
-        `No FlowGuard log entries were found for ${logs.correlation.sessionsWithoutEntries.length} verified session(s).`,
-        null,
-        'logs',
-      ),
-    );
-  }
-}
-
-async function captureDiagnosticLogs(
-  request: DiagnosticExportRequest,
-  acc: CaptureAccumulator,
-): Promise<LogCaptureResult> {
-  const logDirectory = request.logsDirectory ?? null;
-  const sessionIds = acc.sessions
-    .filter((session) => session.lineage === 'verified')
-    .map((session) => session.sessionId);
-  let logs: LogCaptureResult;
-  try {
-    logs = await captureLogs({
-      directory: logDirectory,
-      filter: { sessionIds },
-      limits: DEFAULT_LOG_CAPTURE_LIMITS,
-      redact: request.redactionMode !== 'none',
-      ...(request.now === undefined ? {} : { now: request.now }),
-    });
-  } catch (error) {
-    acc.warnings.push(
-      warning(
-        'LOG_CAPTURE_FAILED',
-        `FlowGuard log capture failed: ${error instanceof Error ? error.message : String(error)}`,
-        null,
-        'logs',
-      ),
-    );
-    logs = emptyLogCapture(logDirectory, sessionIds);
-  }
-  recordLogWarnings(acc, logs);
-  return logs;
-}
-
 /**
  * Collect and publish one bounded diagnostic snapshot. The output directory is
  * created exclusively (`EEXIST` fails); every artifact is write-once.
@@ -622,8 +457,21 @@ export async function writeDiagnosticExport(
   const root = await collectSessions(request, limit, acc);
   await writeAllSessionArtifacts(request, acc, createdAt);
   await writeIndexArtifacts(request, root, acc, createdAt);
-  const logs = await captureDiagnosticLogs(request, acc);
-  await writeLogArtifacts(request, acc, logs);
+  const logs = await captureAndWriteLogs(
+    {
+      outputDir: request.outputDir,
+      redactionMode: request.redactionMode,
+      verifiedSessionIds: acc.sessions
+        .filter((session) => session.lineage === 'verified')
+        .map((session) => session.sessionId),
+      ...(request.logsDirectory === undefined ? {} : { logsDirectory: request.logsDirectory }),
+      ...(request.logsDirectoryLabel === undefined
+        ? {}
+        : { logsDirectoryLabel: request.logsDirectoryLabel }),
+      ...(request.now === undefined ? {} : { now: request.now }),
+    },
+    acc,
+  );
 
   const manifest = manifestFor({
     request,
