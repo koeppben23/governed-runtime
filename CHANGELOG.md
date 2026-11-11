@@ -777,6 +777,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep formatting and documentation checks deterministic by invoking the
+  installed Prettier and Vitest binaries directly. `check:doc-drift` and the
+  pre-push hook no longer depend on `npx` package resolution and fail only on
+  real formatting or inventory drift.
+
 - Reopen an author-resolved implementation review from the current
   **unsuperseded** stale attempt rather than failing when an earlier retry left a
   second historical stale attempt. The recovery refuses to run while an

@@ -90,13 +90,16 @@ Verified by \`npm run check:doc-drift\`.
   writeFileSync(target, output, 'utf-8');
   console.log(`docs/_inventory.generated.md written (${output.length} bytes)`);
 
-  // Format the generated file so it matches Prettier conventions.
+  // Format the generated file so it matches Prettier conventions. Use the
+  // installed CLI directly: `npx` can resolve a stray workspace/tarball
+  // dependency instead of the local binary in constrained environments.
   try {
-    const { execSync } = await import('node:child_process');
-    execSync('npx prettier --write docs/_inventory.generated.md', {
-      cwd: ROOT,
-      stdio: 'pipe',
-    });
+    const { execFileSync } = await import('node:child_process');
+    execFileSync(
+      process.execPath,
+      [join(ROOT, 'node_modules', 'prettier', 'bin', 'prettier.cjs'), '--write', target],
+      { cwd: ROOT, stdio: 'pipe' },
+    );
   } catch {
     // Prettier may not be available in all environments; non-fatal.
     console.warn('(prettier not available for generated file — format check may flag it)');
