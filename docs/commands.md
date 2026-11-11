@@ -193,8 +193,9 @@ preflight reasons, or canonical aliases are needed.
 ### /commands
 
 Read-only command listing for the current session. `/commands` shows currently
-relevant commands. `/commands --all` shows the complete installed command
-reference, including visible compatibility invocations.
+relevant commands. `/commands --all` shows the complete public command
+reference, including native-only, optional TUI and visible compatibility
+invocations.
 
 ## Daily Workflow
 

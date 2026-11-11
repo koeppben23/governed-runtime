@@ -17,6 +17,7 @@ import {
   DEFAULT_HELP_CAPABILITIES,
   commandAvailability,
   getCatalogCommand,
+  type CapabilityMap,
   type CommandCatalogEntry,
   type HelpCapabilities,
 } from './command-catalog.js';
@@ -87,6 +88,10 @@ export interface HelpResult {
   readonly directive: ProjectedCommand | null;
   readonly commands: readonly ProjectedCommand[];
   readonly commandScope: 'available' | 'all';
+  /** Capability snapshot used for this projection. */
+  readonly capabilities: CapabilityMap;
+  /** `host` when supplied by trusted host composition; `default` otherwise. */
+  readonly capabilitySource: 'host' | 'default';
   readonly artifacts: HelpArtifacts;
   readonly blocker: HelpBlocker | null;
 }
@@ -297,6 +302,7 @@ function buildCommandDetail(
   state: SessionState | null,
   requestedInvocation: string,
   capabilities: HelpCapabilities,
+  capabilitySource: 'host' | 'default',
 ): HelpResult {
   const entry = getCatalogCommand(requestedInvocation);
   const command = entry ? projectCatalogCommand(entry, state, capabilities, null) : null;
@@ -316,6 +322,8 @@ function buildCommandDetail(
     directive: null,
     commands: command ? [command] : [],
     commandScope: 'available',
+    capabilities,
+    capabilitySource,
     artifacts: EMPTY_ARTIFACTS,
     blocker: null,
   };
@@ -341,7 +349,10 @@ function noSessionDirective(capabilities: HelpCapabilities): ProjectedCommand | 
   return start.availability === 'available' ? start : null;
 }
 
-function buildNoSessionResult(capabilities: HelpCapabilities): HelpResult {
+function buildNoSessionResult(
+  capabilities: HelpCapabilities,
+  capabilitySource: 'host' | 'default',
+): HelpResult {
   return {
     phase: null,
     lifecycle: 'No active session',
@@ -361,12 +372,17 @@ function buildNoSessionResult(capabilities: HelpCapabilities): HelpResult {
       noSessionCommand('/status', capabilities, '/start'),
     ],
     commandScope: 'available',
+    capabilities,
+    capabilitySource,
     artifacts: EMPTY_ARTIFACTS,
     blocker: null,
   };
 }
 
-function buildNoSessionCatalogResult(capabilities: HelpCapabilities): HelpResult {
+function buildNoSessionCatalogResult(
+  capabilities: HelpCapabilities,
+  capabilitySource: 'host' | 'default',
+): HelpResult {
   const commands = COMMAND_CATALOG.filter((entry) => entry.public).map((entry) =>
     projectCatalogCommand(entry, null, capabilities, '/start'),
   );
@@ -386,6 +402,8 @@ function buildNoSessionCatalogResult(capabilities: HelpCapabilities): HelpResult
     directive: noSessionDirective(capabilities),
     commands,
     commandScope: 'all',
+    capabilities,
+    capabilitySource,
     artifacts: EMPTY_ARTIFACTS,
     blocker: null,
   };
@@ -419,6 +437,7 @@ interface SessionHelpOpts {
   readonly reportResolution: ReviewReportResolution | null;
   readonly includeArtifactContent: boolean;
   readonly capabilities: HelpCapabilities;
+  readonly capabilitySource: 'host' | 'default';
 }
 
 function projectHelpNext(
@@ -452,8 +471,16 @@ function projectHelpNext(
 }
 
 function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
-  const { state, policy, view, scope, reportResolution, includeArtifactContent, capabilities } =
-    opts;
+  const {
+    state,
+    policy,
+    view,
+    scope,
+    reportResolution,
+    includeArtifactContent,
+    capabilities,
+    capabilitySource,
+  } = opts;
   const currentReport = reportResolution?.status === 'current' ? reportResolution.report : null;
 
   const status = buildStatusProjection(state, policy);
@@ -482,6 +509,8 @@ function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
     directive: next.directive,
     commands: contextCommands,
     commandScope: scope,
+    capabilities,
+    capabilitySource,
     artifacts: buildArtifacts(state, includeArtifactContent, directiveLabel(status.directive.code)),
     blocker: buildBlocker(state, policy),
   };
@@ -500,12 +529,13 @@ export function buildHelpResult(
   },
 ): HelpResult {
   const capabilities = opts.capabilities ?? DEFAULT_HELP_CAPABILITIES;
+  const capabilitySource = opts.capabilities === undefined ? 'default' : 'host';
   if (opts.requestedInvocation)
-    return buildCommandDetail(state, opts.requestedInvocation, capabilities);
+    return buildCommandDetail(state, opts.requestedInvocation, capabilities, capabilitySource);
   if (!state || !policy) {
     return opts.view === 'commands' && (opts.scope ?? 'available') === 'all'
-      ? buildNoSessionCatalogResult(capabilities)
-      : buildNoSessionResult(capabilities);
+      ? buildNoSessionCatalogResult(capabilities, capabilitySource)
+      : buildNoSessionResult(capabilities, capabilitySource);
   }
 
   // After the early returns, view is always 'context' or 'commands'.
@@ -518,6 +548,7 @@ export function buildHelpResult(
     reportResolution: resolveReport(state, opts.reviewReport),
     includeArtifactContent: opts.includeArtifactContent ?? false,
     capabilities,
+    capabilitySource,
   });
 }
 

@@ -44,9 +44,10 @@ export interface HelpCapabilities {
 }
 
 /**
- * No host-specific support is inferred by default. The native plugin can add
- * `native: 'supported'` from its own registration composition; MCP and other
- * callers must leave it not_verified.
+ * No host-specific support is inferred by default. The portable surface is the
+ * installed command/help baseline that ships with this package. The native
+ * plugin can add `native: 'supported'` from its own registration composition;
+ * MCP and other callers must leave host-specific surfaces not_verified.
  */
 export const DEFAULT_HELP_CAPABILITIES: HelpCapabilities = {
   portable: 'supported',
@@ -69,7 +70,6 @@ export interface CommandCatalogEntry {
   readonly maturity: CommandMaturity;
   readonly visibility: InstalledCommandDefinition['visibility'];
   readonly presentationGroup: PresentationGroup;
-  readonly docsAnchor: string;
   readonly public: boolean;
   readonly installed?: InstalledCommandDefinition;
   readonly host?: HostCommandMetadata;
@@ -103,7 +103,6 @@ const INSTALLED_CATALOG: readonly CommandCatalogEntry[] = INSTALLED_COMMANDS.map
   maturity: 'stable',
   visibility: definition.visibility,
   presentationGroup: definition.presentationGroup,
-  docsAnchor: '#command-surface',
   public: true,
   installed: definition,
   alsoAvailableAs: visibleAliasesForDefinition(definition),
@@ -120,7 +119,6 @@ const NATIVE_ONLY_CATALOG: readonly CommandCatalogEntry[] = [
     maturity: 'stable',
     visibility: 'compatibility',
     presentationGroup: 'recovery',
-    docsAnchor: '#recover-capacity--release-reviewer-capacity-lock',
     public: true,
     host: { readOnly: false, requiresSession: true },
     alsoAvailableAs: [],
@@ -134,7 +132,6 @@ const NATIVE_ONLY_CATALOG: readonly CommandCatalogEntry[] = [
     maturity: 'stable',
     visibility: 'compatibility',
     presentationGroup: 'recovery',
-    docsAnchor: '#end-governance--end-opt-in-governance',
     public: true,
     host: { readOnly: false, requiresSession: true },
     alsoAvailableAs: [],
@@ -148,9 +145,8 @@ const NATIVE_ONLY_CATALOG: readonly CommandCatalogEntry[] = [
     maturity: 'stable',
     visibility: 'primary',
     presentationGroup: 'information',
-    docsAnchor: '#flowguard-debug-export--read-only-diagnostic-snapshot',
     public: true,
-    host: { readOnly: true, requiresSession: true },
+    host: { readOnly: false, requiresSession: false },
     alsoAvailableAs: [],
   },
   {
@@ -162,9 +158,8 @@ const NATIVE_ONLY_CATALOG: readonly CommandCatalogEntry[] = [
     maturity: 'stable',
     visibility: 'primary',
     presentationGroup: 'information',
-    docsAnchor: '#diagnostics--portable-read-only-diagnostic-views',
     public: true,
-    host: { readOnly: true, requiresSession: true },
+    host: { readOnly: true, requiresSession: false },
     alsoAvailableAs: [],
   },
 ];
@@ -179,7 +174,6 @@ const TUI_CATALOG: readonly CommandCatalogEntry[] = [
     maturity: 'stable',
     visibility: 'primary',
     presentationGroup: 'work',
-    docsAnchor: '#choose-workflow--optional-tui-workflow-chooser',
     public: true,
     host: { readOnly: false, requiresSession: true },
     alsoAvailableAs: [],

@@ -159,7 +159,7 @@ export function catalogPreflight(
     : { status: 'available', guarantee: 'eligible_to_attempt' };
 }
 
-export function visibilityForPreflight(preflightResult: CommandPreflight): HelpVisibility {
+function visibilityForPreflight(preflightResult: CommandPreflight): HelpVisibility {
   switch (preflightResult.status) {
     case 'available':
       return 'available';

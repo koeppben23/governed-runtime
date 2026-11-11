@@ -32,6 +32,10 @@ describe('command documentation alignment', () => {
     expect(read('docs/commands.md')).not.toContain('open Desktop PR');
   });
 
+  it('does not describe the merged V2 port as a Draft PR', () => {
+    expect(read('docs/installation.md')).not.toContain('PR #1190 remains Draft');
+  });
+
   it('documents native operator commands in the command reference', () => {
     const commands = read('docs/commands.md');
     expect(commands).toContain('### `/recover-capacity`');

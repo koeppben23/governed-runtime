@@ -909,6 +909,13 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Execute the read-only help projection through the inactive native path so
+  `/help` and `/commands --all` work before `/start` without activating
+  governance. Align native diagnostic readiness with the real no-session
+  handlers, distinguish file-writing `/debug-export` from read-only
+  `/diagnostics`, and expose capability provenance plus host readiness in
+  Markdown and JSON.
+
 - Keep formatting and documentation checks deterministic by invoking the
   installed Prettier and Vitest binaries directly. `check:doc-drift` and the
   pre-push hook no longer depend on `npx` package resolution and fail only on

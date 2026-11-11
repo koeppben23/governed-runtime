@@ -108,12 +108,13 @@ alone does not prove human identity.
 `/status` — current phase, next action, evidence summary. `/why` — explain and resolve blockers.
 
 **Advanced/canonical commands** (`/hydrate`, `/ticket`, `/review-decision`,
-`/validate`, `/architecture`, `/review`, `/export`, `/archive`, `/abort`, `/continue`)
-remain fully supported for scripts, CI, and power users.
+`/validate`, `/architecture`, `/review`, `/export`, `/archive`, `/abort`,
+`/continue`, `/reconcile-mutation-episode`,
+`/resolve-implementation-challenge`) remain fully supported for scripts, CI,
+and power users.
 
 **Native operator/diagnostic commands:** `/check`, `/debug-export`,
-`/diagnostics`, `/recover-capacity`, `/end-governance`,
-`/reconcile-mutation-episode`, `/resolve-implementation-challenge`.
+`/diagnostics`, `/recover-capacity`, `/end-governance`.
 The optional TUI companion adds `/choose-workflow`. The merged Desktop GUI
 companion is not yet represented in this command catalog slice; Desktop command
 metadata and ComposerPill documentation are a follow-up catalog change.

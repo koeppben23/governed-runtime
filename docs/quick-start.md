@@ -201,33 +201,33 @@ Or review a specific GitHub pull request:
 
 **Canonical commands:**
 
-| Command                              | Description                             |
-| ------------------------------------ | --------------------------------------- |
-| `/hydrate`                           | Legacy compatibility; not V2 activation |
-| `/ticket <text or URL>`              | Record task (supports external URLs)    |
-| `/plan`                              | Generate plan                           |
-| `/architecture`                      | Create/revise ADR                       |
-| `/implement`                         | Execute approved plan                   |
-| `/validate`                          | Run validation                          |
-| `/review <PR-URL or branch>`         | Start peer review flow                  |
-| `/continue`                          | Read-only next-action routing           |
-| `/review-decision approve`           | Approve                                 |
-| `/review-decision changes_requested` | Request changes                         |
-| `/review-decision reject`            | Reject                                  |
-| `/archive`                           | Archive completed session               |
-| `/abort`                             | Terminate session                       |
+| Command                              | Description                                            |
+| ------------------------------------ | ------------------------------------------------------ |
+| `/hydrate`                           | Legacy compatibility; not V2 activation                |
+| `/ticket <text or URL>`              | Record task (supports external URLs)                   |
+| `/plan`                              | Generate plan                                          |
+| `/architecture`                      | Create/revise ADR                                      |
+| `/implement`                         | Execute approved plan                                  |
+| `/validate`                          | Run validation                                         |
+| `/review <PR-URL or branch>`         | Start peer review flow                                 |
+| `/continue`                          | Read-only next-action routing                          |
+| `/review-decision approve`           | Approve                                                |
+| `/review-decision changes_requested` | Request changes                                        |
+| `/review-decision reject`            | Reject                                                 |
+| `/archive`                           | Archive completed session                              |
+| `/abort`                             | Terminate session                                      |
+| `/reconcile-mutation-episode`        | Resolve an unobservable host mutation episode          |
+| `/resolve-implementation-challenge`  | Record evidence addressing an implementation challenge |
 
 **Native operator/diagnostic commands:**
 
-| Command                             | Description                                                  |
-| ----------------------------------- | ------------------------------------------------------------ |
-| `/check`                            | Run the canonical scoped verification/review turn            |
-| `/debug-export`                     | Write a bounded, redacted diagnostic snapshot                |
-| `/diagnostics`                      | Read-only Explorer, review, log and notification views       |
-| `/recover-capacity`                 | Release a proven terminal reviewer capacity lock             |
-| `/end-governance`                   | End governance after safe workflow and audit closure         |
-| `/reconcile-mutation-episode`       | Resolve a host mutation episode with an unobservable outcome |
-| `/resolve-implementation-challenge` | Record evidence addressing an implementation challenge       |
+| Command             | Description                                            |
+| ------------------- | ------------------------------------------------------ |
+| `/check`            | Run the canonical scoped verification/review turn      |
+| `/debug-export`     | Write a bounded, redacted diagnostic snapshot          |
+| `/diagnostics`      | Read-only Explorer, review, log and notification views |
+| `/recover-capacity` | Release a proven terminal reviewer capacity lock       |
+| `/end-governance`   | End governance after safe workflow and audit closure   |
 
 The optional TUI companion adds `/choose-workflow`. The merged Desktop GUI
 companion is not yet represented in this command catalog slice; Desktop command

@@ -66,6 +66,8 @@ function renderHelpJson(result: HelpResult, verbose: boolean, includeContent: bo
     directive: result.directive ? renderCommandJson(result.directive, verbose) : null,
     commands: result.commands.map((command) => renderCommandJson(command, verbose)),
     commandScope: result.commandScope,
+    capabilities: result.capabilities,
+    capabilitySource: result.capabilitySource,
     artifacts: buildArtifactsJson(result, includeContent),
     ...(result.blocker
       ? { blocker: { reasonCode: result.blocker.reasonCode, message: result.blocker.message } }
@@ -145,6 +147,17 @@ export function buildHelpDocument(result: HelpResult, includeContent: boolean): 
             : { status: 'available' as const },
     })),
   });
+
+  if (result.commandScope === 'all') {
+    const capabilities = result.capabilities;
+    sections.push({
+      kind: 'text',
+      heading: 'Host capabilities',
+      content: normalizedMarkdown(
+        `portable=${capabilities.portable}; native=${capabilities.native}; tui=${capabilities.tui}; desktop=${capabilities.desktop}; source=${result.capabilitySource}`,
+      ),
+    });
+  }
 
   // HelpArtifact
   if (result.artifacts.status !== 'not_verified') {

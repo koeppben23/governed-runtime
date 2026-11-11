@@ -210,6 +210,8 @@ describe('buildHelpResult', () => {
   it('no-session /commands --all exposes the complete capability-aware catalog', () => {
     const result = buildHelpResult(null, null, { view: 'commands', scope: 'all' });
     expect(result.commandScope).toBe('all');
+    expect(result.capabilitySource).toBe('default');
+    expect(result.capabilities.native).toBe('not_verified');
     const byInvocation = new Map(result.commands.map((command) => [command.invocation, command]));
     expect(byInvocation.get('/start')).toMatchObject({
       surfaces: ['native'],
@@ -238,7 +240,7 @@ describe('buildHelpResult', () => {
     expect(byInvocation.get('/end-governance')).toBeDefined();
   });
 
-  it('native capabilities expose native-only commands while session readiness stays blocked', () => {
+  it('native capabilities expose native-only commands without inventing session state', () => {
     const capabilities = {
       portable: 'supported' as const,
       native: 'supported' as const,
@@ -250,8 +252,23 @@ describe('buildHelpResult', () => {
       scope: 'all',
       capabilities,
     });
-    const diagnostics = result.commands.find((command) => command.invocation === '/diagnostics');
-    expect(diagnostics).toMatchObject({
+    expect(result.capabilitySource).toBe('host');
+    expect(result.capabilities).toEqual(capabilities);
+    expect(result.commands.find((command) => command.invocation === '/diagnostics')).toMatchObject({
+      availability: 'available',
+      visibility: 'available',
+      preflight: { status: 'available', guarantee: 'read_only_available' },
+    });
+    expect(result.commands.find((command) => command.invocation === '/debug-export')).toMatchObject(
+      {
+        availability: 'available',
+        visibility: 'available',
+        preflight: { status: 'available', guarantee: 'eligible_to_attempt' },
+      },
+    );
+    expect(
+      result.commands.find((command) => command.invocation === '/recover-capacity'),
+    ).toMatchObject({
       availability: 'available',
       visibility: 'blocked_recoverable',
       preflight: { status: 'blocked', reasonCode: 'SESSION_REQUIRED' },
@@ -302,6 +319,16 @@ describe('buildHelpResult', () => {
       invocation: '/diagnostics',
       availability: 'not_verified',
     });
+  });
+
+  it('does not claim an unknown command is available', () => {
+    const result = buildHelpResult(null, null, {
+      view: 'command',
+      requestedInvocation: '/not-a-command',
+    });
+    expect(result.commands).toEqual([]);
+    expect(result.directive).toBeNull();
+    expect(result.nextActionSummary).toBe('Unknown FlowGuard command.');
   });
 
   it('/commands --all has a formal interface identity', () => {
@@ -648,6 +675,21 @@ describe('flowguard_help tool execute', () => {
     expect(out).not.toContain('/desktop-only');
   });
 
+  it('resolves native diagnostic detail without a session or activation', async () => {
+    const ctx = createToolContext({
+      helpCapabilities: {
+        portable: 'supported',
+        native: 'supported',
+        tui: 'not_verified',
+        desktop: 'not_verified',
+      },
+    });
+    const out = await help.execute({ view: 'command', command: 'diagnostics' }, ctx);
+    expect(out).toContain('`/diagnostics`');
+    expect(out).toContain('Render bounded, read-only Explorer');
+    expect(out).not.toContain('SESSION_REQUIRED');
+  });
+
   it('includeArtifactContent: true with no session still returns Markdown', async () => {
     const ctx = createToolContext({ worktree: '/tmp/test-worktree' });
     const out = await help.execute({ view: 'context', includeArtifactContent: true }, ctx);
@@ -753,6 +795,25 @@ describe('resume end-to-end via help.execute', () => {
 
     expect(out).toContain('[WARN] **Why blocked:**');
     expect(out).not.toContain('⚠ **Why blocked:**');
+  });
+
+  it('rejects helpCapabilities supplied through tool arguments', async () => {
+    const out = await help.execute(
+      {
+        view: 'commands',
+        scope: 'all',
+        helpCapabilities: {
+          portable: 'supported',
+          native: 'supported',
+          tui: 'supported',
+          desktop: 'supported',
+        },
+      },
+      ctx,
+    );
+    const parsed = JSON.parse(out as string);
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('HELP_ARGUMENTS_INVALID');
   });
 
   it('command view rejects includeArtifactContent via strict schema', async () => {

@@ -86,6 +86,28 @@ describe('command catalog', () => {
     expect(commandAvailability(chooser, DEFAULT_HELP_CAPABILITIES)).toBe('not_verified');
   });
 
+  it('treats native diagnostics as available without a session', () => {
+    const diagnostics = COMMAND_CATALOG.find((entry) => entry.invocation === '/diagnostics');
+    const debugExport = COMMAND_CATALOG.find((entry) => entry.invocation === '/debug-export');
+    if (!diagnostics || !debugExport) throw new TypeError('catalog fixture missing');
+    expect(catalogPreflight(diagnostics, null)).toEqual({
+      status: 'available',
+      guarantee: 'read_only_available',
+    });
+    // debug-export writes a diagnostic snapshot file; it is not read-only, even
+    // though it never mutates governance.
+    expect(catalogPreflight(debugExport, null)).toEqual({
+      status: 'available',
+      guarantee: 'eligible_to_attempt',
+    });
+    const recover = COMMAND_CATALOG.find((entry) => entry.invocation === '/recover-capacity');
+    if (!recover) throw new TypeError('catalog fixture missing: /recover-capacity');
+    expect(catalogPreflight(recover, null)).toMatchObject({
+      status: 'blocked',
+      reasonCode: 'SESSION_REQUIRED',
+    });
+  });
+
   it('fails closed when a catalog entry has no execution metadata', () => {
     const invalid: CommandCatalogEntry = {
       id: 'invalid',
@@ -96,7 +118,6 @@ describe('command catalog', () => {
       maturity: 'stable',
       visibility: 'primary',
       presentationGroup: 'information',
-      docsAnchor: '#command-surface',
       public: true,
       alsoAvailableAs: [],
     };

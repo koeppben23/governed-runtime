@@ -69,6 +69,8 @@ function noSessionResult(overrides?: Partial<HelpResult>): HelpResult {
       availability: 'available',
     },
     commandScope: 'available',
+    capabilities: defaultCapabilities,
+    capabilitySource: 'default',
     commands: [
       {
         id: 'start',
@@ -403,11 +405,16 @@ describe('renderHelp', () => {
     expect(out).toContain('- `/thing`');
   });
 
-  it('renders the all-scope reference heading and preserves the scope in JSON', () => {
+  it('renders the all-scope reference heading and preserves scope and capabilities', () => {
     const result = noSessionResult({ commandScope: 'all' });
-    expect(renderHelp(result, { format: 'markdown' })).toContain('## Command reference');
+    const markdown = renderHelp(result, { format: 'markdown' });
+    expect(markdown).toContain('## Command reference');
+    expect(markdown).toContain('## Host capabilities');
+    expect(markdown).toContain('source=default');
     const json = JSON.parse(renderHelp(result, { format: 'json' }));
     expect(json.commandScope).toBe('all');
+    expect(json.capabilities).toEqual(defaultCapabilities);
+    expect(json.capabilitySource).toBe('default');
   });
 
   it('preserves host availability states in Markdown and JSON', () => {
@@ -452,6 +459,55 @@ describe('renderHelp', () => {
       capabilities: defaultCapabilities,
     });
     expect(json.commands[1].visibility).toBe('host_unavailable');
+  });
+
+  it('renders not-applicable and experimental metadata without changing availability', () => {
+    const result = noSessionResult({
+      commands: [
+        {
+          id: 'na',
+          invocation: '/not-applicable',
+          label: 'Not applicable',
+          description: 'Not executable here',
+          visibility: 'not_applicable',
+          preflight: {
+            status: 'not_applicable',
+            guarantee: 'eligible_to_attempt',
+            reasonCode: 'SESSION_REQUIRED',
+            message: 'Not executable here',
+            recovery: 'Use the host-native command surface.',
+          },
+          alsoAvailableAs: [],
+          surfaces: [],
+          maturity: 'stable',
+          capabilities: defaultCapabilities,
+          availability: 'available',
+        },
+        {
+          id: 'experimental',
+          invocation: '/experimental',
+          label: 'Experimental',
+          description: 'Experimental but available',
+          visibility: 'available',
+          preflight: { status: 'available', guarantee: 'eligible_to_attempt' },
+          alsoAvailableAs: [],
+          surfaces: ['portable'],
+          maturity: 'experimental',
+          capabilities: defaultCapabilities,
+          availability: 'available',
+        },
+      ],
+      directive: null,
+    });
+    const markdown = renderHelp(result, { format: 'markdown' });
+    expect(markdown).toContain('(not applicable here)');
+    expect(markdown).toContain('(experimental)');
+    const json = JSON.parse(renderHelp(result, { format: 'json' }));
+    expect(json.commands[0].visibility).toBe('not_applicable');
+    expect(json.commands[1]).toMatchObject({
+      maturity: 'experimental',
+      availability: 'available',
+    });
   });
 
   it('omits hidden commands from Markdown but preserves the state in JSON', () => {

@@ -744,21 +744,53 @@ describe('native V2 entrypoint', () => {
     },
   );
 
-  it('executes inert help without activation or workflow access', async () => {
+  it('executes read-only help without activation or workflow access', async () => {
     const host = await setup([]);
-    await expect(
-      host.definitions.get('flowguard_help')!.execute(
-        { view: 'context' },
-        {
-          sessionID: 'ordinary',
-          messageID: 'message',
-          agent: 'build',
-          id: 'help',
-          signal: new AbortController().signal,
-        },
-      ),
-    ).resolves.toEqual({ content: tools.help.description, metadata: {} });
-    expect(h.resolve).not.toHaveBeenCalled();
+    h.resolve.mockResolvedValueOnce({
+      status: 'absent',
+      sessDir: '/session/ordinary',
+      worktreeRoot: process.cwd(),
+      fingerprint: 'abcdefabcdefabcdefabcdef',
+    });
+    const result = (await host.definitions.get('flowguard_help')!.execute(
+      { view: 'commands', scope: 'all' },
+      {
+        sessionID: 'ordinary',
+        messageID: 'message',
+        agent: 'build',
+        id: 'help',
+        signal: new AbortController().signal,
+      },
+    )) as { content: string; metadata: Record<string, unknown> };
+    expect(result.content).toContain('## Command reference');
+    expect(result.content).toContain('/diagnostics');
+    expect(result.content).toContain('/recover-capacity');
+    expect(result.content).toContain('not verified on this host');
+    expect(h.resolve).toHaveBeenCalledOnce();
+  });
+
+  it('resolves native command detail without activation', async () => {
+    const host = await setup([]);
+    h.resolve.mockResolvedValueOnce({
+      status: 'absent',
+      sessDir: '/session/ordinary',
+      worktreeRoot: process.cwd(),
+      fingerprint: 'abcdefabcdefabcdefabcdef',
+    });
+    const result = (await host.definitions.get('flowguard_help')!.execute(
+      { view: 'command', command: 'diagnostics' },
+      {
+        sessionID: 'ordinary',
+        messageID: 'message',
+        agent: 'build',
+        id: 'help',
+        signal: new AbortController().signal,
+      },
+    )) as { content: string; metadata: Record<string, unknown> };
+    expect(result.content).toContain('`/diagnostics`');
+    expect(result.content).toContain('Render bounded, read-only Explorer');
+    expect(result.content).not.toContain('SESSION_REQUIRED');
+    expect(h.resolve).toHaveBeenCalledOnce();
   });
 
   it('keeps compaction on the existing authority and scopes context to that session', async () => {
