@@ -411,6 +411,7 @@ describe('renderHelp', () => {
     expect(markdown).toContain('## Command reference');
     expect(markdown).toContain('## Host capabilities');
     expect(markdown).toContain('source=default');
+    expect(markdown).toContain('(portable; stable)');
     const json = JSON.parse(renderHelp(result, { format: 'json' }));
     expect(json.commandScope).toBe('all');
     expect(json.capabilities).toEqual(defaultCapabilities);

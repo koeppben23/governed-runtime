@@ -398,7 +398,10 @@ function renderDetailedCommandList(section: DetailedCommandListSection): string 
     const inv =
       item.visibility === 'recommended' ? `**\`${item.invocation}\`**` : `\`${item.invocation}\``;
     lines.push(
-      `  ${sym} ${inv} — ${item.description}${aliases}${detailedCommandMetadataSuffix(item)}`,
+      `  ${sym} ${inv} — ${item.description}${aliases}${detailedCommandMetadataSuffix(
+        item,
+        section.showProvenance === true,
+      )}`,
     );
     appendDetailedCommandPreflight(lines, item);
   }
@@ -421,17 +424,17 @@ function commandStatusNote(visibility: DetailedCommandItem['visibility']): strin
   }
 }
 
-function detailedCommandMetadataSuffix(item: DetailedCommandItem): string {
+function detailedCommandMetadataSuffix(item: DetailedCommandItem, showProvenance: boolean): string {
   if (item.visibility === 'hidden') return '';
   const notes: string[] = [];
-  if (
-    (item.visibility === 'not_verified' || item.visibility === 'unavailable') &&
-    item.surfaces &&
-    item.surfaces.length > 0
-  ) {
+  const surfaceNote =
+    showProvenance || item.visibility === 'not_verified' || item.visibility === 'unavailable';
+  if (surfaceNote && item.surfaces && item.surfaces.length > 0) {
     notes.push(item.surfaces.join(', '));
   }
-  if (item.maturity === 'experimental') notes.push('experimental');
+  if (item.maturity !== undefined && (showProvenance || item.maturity === 'experimental')) {
+    notes.push(item.maturity);
+  }
   const status = commandStatusNote(item.visibility);
   if (status) notes.push(status);
   return notes.length > 0 ? ` (${notes.join('; ')})` : '';

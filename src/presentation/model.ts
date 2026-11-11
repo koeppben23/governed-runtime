@@ -349,6 +349,8 @@ export interface DetailedCommandListSection {
   readonly heading?: string;
   /** Plain-text label — renderer wraps in `**...:**`. */
   readonly label?: string;
+  /** Show host surface and maturity metadata for every item (reference view). */
+  readonly showProvenance?: boolean;
   readonly items: readonly DetailedCommandItem[];
 }
 

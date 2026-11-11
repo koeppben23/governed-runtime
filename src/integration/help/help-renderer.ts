@@ -126,6 +126,7 @@ export function buildHelpDocument(result: HelpResult, includeContent: boolean): 
   sections.push({
     kind: 'detailedCommandList',
     heading: result.commandScope === 'all' ? 'Command reference' : 'Available commands',
+    showProvenance: result.commandScope === 'all',
     items: result.commands.map((cmd) => ({
       invocation: cmd.invocation,
       description: cmd.description,
