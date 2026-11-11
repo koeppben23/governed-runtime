@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { createTestWorkspace, type TestWorkspace } from '../integration/test-helpers.js';
@@ -44,6 +44,20 @@ async function createRootState(): Promise<void> {
       flowguardSessionId: STATE_ID,
       binding: { ...BINDING, hostSessionId: HOST_SESSION_ID, worktree: ws.tmpDir, fingerprint },
     }),
+  );
+  const logDir = path.join(ws.tmpDir, '.opencode', 'logs');
+  await mkdir(logDir, { recursive: true });
+  await writeFile(
+    path.join(logDir, 'flowguard-2026-01-01.log'),
+    `${JSON.stringify({
+      ts: '2026-01-01T00:00:00.000Z',
+      level: 'info',
+      service: 'flowguard',
+      sessionId: HOST_SESSION_ID,
+      traceId: 'trace-cli',
+      message: 'cli diagnostic',
+      fields: { phase: 'READY' },
+    })}\n`,
   );
 }
 

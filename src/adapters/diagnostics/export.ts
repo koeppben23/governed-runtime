@@ -27,6 +27,7 @@ import {
 import { DiagnosticExportError } from './errors.js';
 import { manifestFor } from './manifest.js';
 import { writeAllSessionArtifacts, writeArtifact } from './artifact-writer.js';
+import { captureAndWriteLogs } from './log-artifacts.js';
 import {
   warning,
   type CaptureAccumulator,
@@ -50,6 +51,10 @@ export interface DiagnosticExportRequest {
   readonly includeHost: boolean;
   readonly limits?: DiagnosticExportLimits;
   readonly hostReader?: DiagnosticHostReader;
+  /** Absolute FlowGuard log directory supplied by the host adapter. */
+  readonly logsDirectory?: string;
+  /** Safe workspace-relative label for the manifest; never an absolute path. */
+  readonly logsDirectoryLabel?: string;
   /** Deterministic test seam; production uses the current clock. */
   readonly now?: () => Date;
   readonly captureId?: string;
@@ -173,6 +178,7 @@ async function captureOne(
     role: SessionCapture['role'];
     discoveredBy: readonly DiscoverySource[];
     parentSessionId: string | null;
+    generation: number;
     lineage: SessionCapture['lineage'];
   },
 ): Promise<SessionCapture> {
@@ -196,6 +202,8 @@ async function captureOne(
   return {
     sessionId,
     parentSessionId: meta.parentSessionId,
+    generation: meta.generation,
+    captureStatus: 'captured',
     role: meta.role,
     discoveredBy: meta.discoveredBy,
     lineage: meta.lineage,
@@ -224,6 +232,8 @@ function uncapturedSession(
   return {
     sessionId,
     parentSessionId: discovery.parentSessionId,
+    generation: 1,
+    captureStatus: 'not_captured',
     role: 'reviewer',
     discoveredBy: discovery.sources,
     lineage: 'not_verified',
@@ -246,7 +256,9 @@ function graphFor(
     sessions: acc.sessions.map((item) => ({
       sessionId: item.sessionId,
       parentSessionId: item.parentSessionId,
+      generation: item.generation,
       role: item.role,
+      captureStatus: item.captureStatus,
       discoveredBy: [...item.discoveredBy],
       state:
         item.authority === null
@@ -334,6 +346,7 @@ async function collectSessions(
     role: 'root',
     discoveredBy: ['root'],
     parentSessionId: null,
+    generation: 0,
     lineage: 'verified',
   });
   acc.sessions.push(root);
@@ -384,6 +397,7 @@ async function collectSessions(
         role: 'reviewer',
         discoveredBy: discovery.sources,
         parentSessionId: discovery.parentSessionId,
+        generation: 1,
         lineage: discovery.lineage,
       }),
     );
@@ -409,21 +423,6 @@ async function writeIndexArtifacts(
     request.outputDir,
     'timeline.json',
     `${JSON.stringify(DiagnosticTimeline.parse(timeline), null, 2)}\n`,
-    acc,
-  );
-  await writeArtifact(
-    request.outputDir,
-    'diagnostics/log-files.json',
-    `${JSON.stringify(
-      {
-        schemaVersion: DIAGNOSTIC_EXPORT_SCHEMA_VERSION,
-        directory: null,
-        status: 'NOT_VERIFIED',
-        note: 'Host log files are not copied into a diagnostic snapshot; inspect them locally through the host surface.',
-      },
-      null,
-      2,
-    )}\n`,
     acc,
   );
 }
@@ -458,8 +457,30 @@ export async function writeDiagnosticExport(
   const root = await collectSessions(request, limit, acc);
   await writeAllSessionArtifacts(request, acc, createdAt);
   await writeIndexArtifacts(request, root, acc, createdAt);
+  const logs = await captureAndWriteLogs(
+    {
+      outputDir: request.outputDir,
+      redactionMode: request.redactionMode,
+      verifiedSessionIds: acc.sessions
+        .filter((session) => session.lineage === 'verified')
+        .map((session) => session.sessionId),
+      ...(request.logsDirectory === undefined ? {} : { logsDirectory: request.logsDirectory }),
+      ...(request.logsDirectoryLabel === undefined
+        ? {}
+        : { logsDirectoryLabel: request.logsDirectoryLabel }),
+      ...(request.now === undefined ? {} : { now: request.now }),
+    },
+    acc,
+  );
 
-  const manifest = manifestFor(request, root, acc, request.captureId ?? randomUUID(), createdAt);
+  const manifest = manifestFor({
+    request,
+    root,
+    acc,
+    captureId: request.captureId ?? randomUUID(),
+    createdAt,
+    logs,
+  });
   const manifestWritten = await writeArtifact(
     request.outputDir,
     'manifest.json',

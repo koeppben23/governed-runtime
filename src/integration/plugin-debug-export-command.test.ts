@@ -6,7 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { FlowGuardAuditPlugin } from './plugin.js';
@@ -86,6 +86,20 @@ describe('native /debug-export', () => {
     ]);
 
     await host.command('start', sessionId);
+    const logDir = path.join(ws.tmpDir, '.opencode', 'logs');
+    await mkdir(logDir, { recursive: true });
+    await writeFile(
+      path.join(logDir, 'flowguard-2026-01-01.log'),
+      `${JSON.stringify({
+        ts: '2026-01-01T00:00:00.000Z',
+        level: 'info',
+        service: 'flowguard',
+        sessionId,
+        traceId: 'trace-native',
+        message: 'native diagnostic',
+        fields: { phase: 'READY' },
+      })}\n`,
+    );
     await host.command('debug-export', sessionId);
 
     const outputDir = await latestExportDir();

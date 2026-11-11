@@ -101,8 +101,9 @@ re-derive a session directory from a fingerprint and session ID locally.
 ### D3. Completeness is explicit and denominator-preserving
 
 Every diagnostic snapshot and every projected view reports capture completeness
-as `COMPLETE`, `PARTIAL` or `NOT_VERIFIED`. Completeness is projected on three
-independent axes: `lineage`, `canonicalState` and `hostHistory`.
+as `COMPLETE`, `PARTIAL` or `NOT_VERIFIED`. The diagnostic-export manifest
+reports independent source status for `discovery`, `lineage`, `canonicalState`,
+`audit`, `hostHistory` and `logs`.
 
 `COMPLETE` means only that all declared sources and known descendants were
 captured within the declared boundary. It never means:
@@ -122,8 +123,13 @@ A known reviewer child without its own FlowGuard state is normal in the native
 host model, but it is not fully bound canonical state. The manifest therefore
 reports `canonicalState: partial` and the overall status cannot be `COMPLETE`
 unless the capture contract explicitly records an accepted gap. `COMPLETE`
-requires `lineage: complete`, `canonicalState: complete` and, when requested,
-`hostHistory: complete`.
+requires `discovery`, `lineage`, `canonicalState`, `audit` and `logs` to be
+complete, and `hostHistory` to be complete when requested.
+
+The log source is bounded to existing FlowGuard JSONL files. Missing or
+unreadable logs, malformed lines, file/byte/line truncation and uncorrelated
+entries are explicit gaps; they never silently disappear behind `COMPLETE`.
+OpenCode host process logs are not read or claimed by this exporter.
 
 ### D4. Content, privacy and export integrity
 
@@ -153,6 +159,14 @@ Privacy handling is schema-aware, not merely string-based:
 - File hashes and sizes describe the bytes actually written. Original audit
   verification and the redacted audit projection are reported separately; a
   redacted event must not be presented as an unchanged hash-chain original.
+- Diagnostic log capture reads only `.opencode/logs/flowguard-*.log` files for
+  verified session IDs. Rotated files are selected within explicit file, byte
+  and line budgets. Entries without a session ID are counted as an unattributed
+  gap and are not written into the snapshot.
+- `logs.redacted.jsonl` and `log-files.json` describe exactly the inspected
+  files, truncation reasons, parse failures, correlation counts and omissions.
+  `--raw` is explicit CLI consent; native `/debug-export` remains default
+  redacted.
 - A JSON export is a diagnostic artifact, not an authorization or evidence
   certificate, and remains separate from the governed `/export`.
 

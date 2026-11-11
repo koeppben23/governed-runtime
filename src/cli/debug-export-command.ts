@@ -226,6 +226,7 @@ function printManifest(manifest: DiagnosticManifest): void {
     `Sessions: known=${manifest.boundary.sessionsKnown} withState=${manifest.boundary.sessionsWithState} withoutState=${manifest.boundary.sessionsWithoutState} unavailable=${manifest.boundary.sessionsUnavailable}`,
     `Audit events: ${manifest.counts.auditEvents}`,
     `Host messages: ${manifest.counts.hostMessages} (${manifest.boundary.hostHistory})`,
+    `Logs: entries=${manifest.sources.logs.entriesIncluded} files=${manifest.sources.logs.filesInspected} (${manifest.sources.logs.status})`,
     `Warnings: ${manifest.counts.warnings}`,
   ];
   for (const warning of manifest.warnings) {
@@ -279,6 +280,8 @@ export async function debugExportMain(argv: readonly string[]): Promise<number> 
       redactionMode: redaction,
       includeHost,
       limits,
+      logsDirectory: path.join(worktreeRoot, '.opencode', 'logs'),
+      logsDirectoryLabel: '.opencode/logs',
       ...(hostReader === undefined ? {} : { hostReader }),
     });
     console.log(`Snapshot written to: ${result.outputDir}`);
