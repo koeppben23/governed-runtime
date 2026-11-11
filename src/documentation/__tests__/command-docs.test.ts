@@ -44,6 +44,8 @@ describe('command documentation alignment', () => {
     expect(desktop).toContain('ComposerPill');
     expect(desktop).toContain('read-only');
     expect(desktop).toContain('never inserts');
+    expect(desktop).toContain('chat card and Workbench expose named regions');
+    expect(desktop).not.toContain('The pill exposes named accessibility regions');
     expect(desktop).toContain('VoiceOver');
     expect(desktop).toContain('bb8c8cd2');
   });

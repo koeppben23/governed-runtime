@@ -27,9 +27,9 @@ existing server-side binding checks; it never approves, overrides or mutates
 governance by itself.
 
 These commands require an OpenCode **host session**, which is not the same as an
-activated FlowGuard **governance session**. The help projection can document the
-host-session precondition but cannot verify it; it only blocks on the FlowGuard
-session state where the command actually requires one.
+activated FlowGuard **governance session**. The command catalogue documents the
+host-session precondition; the help projection cannot verify it and only blocks
+on the FlowGuard session state where the command actually requires one.
 
 `/flowguard-ui-probe` and `/flowguard-inline` are experimental. The Workbench
 may be unavailable when the host lacks the optional `Panel` or `Slot` APIs; the
@@ -61,11 +61,13 @@ in the conversation transcript. It is a live, read-only diagnostic view.
   read. A best-effort 30-second reconciler refreshes only the visible current
   session while the GUI is connected.
 - A completion event is an optimization, not a durable audit feed. Missed
-  events, a stale read, an unavailable sidecar or an unsupported host surface
-  remain `NOT_VERIFIED` or `STALE`; `/status` remains the fallback.
+  events leave the last read visible until refresh; failed or unavailable reads
+  are marked `NOT_VERIFIED`, and a mid-read state change is marked `STALE`.
+  `/status` remains the fallback.
 - The pill never inserts a synthetic message into model context. The earlier
   synthetic-message prototype was removed.
-- The pill exposes named accessibility regions with polite, atomic status
+- The pill relies on the host's native button/menu semantics and exposed label.
+  The chat card and Workbench expose named regions with polite, atomic status
   announcements. Static accessibility hardening is installed-verified; an
   independent VoiceOver/screenreader acceptance remains open.
 

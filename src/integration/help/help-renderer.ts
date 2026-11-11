@@ -125,8 +125,13 @@ export function buildHelpDocument(result: HelpResult, includeContent: boolean): 
   // ## Available commands / ## Command reference
   sections.push({
     kind: 'detailedCommandList',
-    heading: result.commandScope === 'all' ? 'Command reference' : 'Available commands',
-    showProvenance: result.commandScope === 'all',
+    heading:
+      result.commandScope === 'all'
+        ? 'Command reference'
+        : result.commandScope === 'detail'
+          ? 'Command detail'
+          : 'Available commands',
+    showProvenance: result.commandScope !== 'available',
     items: result.commands.map((cmd) => ({
       invocation: cmd.invocation,
       description: cmd.description,
@@ -149,7 +154,7 @@ export function buildHelpDocument(result: HelpResult, includeContent: boolean): 
     })),
   });
 
-  if (result.commandScope === 'all') {
+  if (result.commandScope !== 'available') {
     const capabilities = result.capabilities;
     sections.push({
       kind: 'text',

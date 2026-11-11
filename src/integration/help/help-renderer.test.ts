@@ -419,6 +419,32 @@ describe('renderHelp', () => {
     expect(json.capabilitySource).toBe('default');
   });
 
+  it('preserves capability provenance for command detail in Markdown and JSON', () => {
+    const result = buildHelpResult(null, null, {
+      view: 'command',
+      requestedInvocation: '/flowguard-inline',
+      capabilities: {
+        portable: 'supported',
+        native: 'not_verified',
+        tui: 'not_verified',
+        desktop: 'supported',
+      },
+    });
+    const markdown = renderHelp(result, { format: 'markdown' });
+    expect(markdown).toContain('## Command detail');
+    expect(markdown).toContain('## Host capabilities');
+    expect(markdown).toContain('desktop=supported');
+    const json = JSON.parse(renderHelp(result, { format: 'json' }));
+    expect(json.commandScope).toBe('detail');
+    expect(json.capabilities.desktop).toBe('supported');
+    expect(json.commands[0]).toMatchObject({
+      invocation: '/flowguard-inline',
+      surfaces: ['desktop'],
+      maturity: 'experimental',
+      availability: 'available',
+    });
+  });
+
   it('preserves host availability states in Markdown and JSON', () => {
     const commands = [
       {

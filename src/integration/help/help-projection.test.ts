@@ -408,6 +408,7 @@ describe('buildHelpResult', () => {
       },
     });
     expect(result.commands).toHaveLength(1);
+    expect(result.commandScope).toBe('detail');
     expect(result.commands[0]).toMatchObject({
       invocation: '/flowguard-inline',
       surfaces: ['desktop'],
@@ -829,6 +830,22 @@ describe('flowguard_help tool execute', () => {
     expect(out).toContain('`/diagnostics`');
     expect(out).toContain('Render bounded, read-only Explorer');
     expect(out).not.toContain('SESSION_REQUIRED');
+  });
+
+  it('resolves Desktop command detail through the tool without a session', async () => {
+    const ctx = createToolContext({
+      helpCapabilities: {
+        portable: 'supported',
+        native: 'not_verified',
+        tui: 'not_verified',
+        desktop: 'supported',
+      },
+    });
+    const out = await help.execute({ view: 'command', command: 'flowguard-inline' }, ctx);
+    expect(out).toContain('`/flowguard-inline`');
+    expect(out).toContain('Refresh the read-only Desktop composer status');
+    expect(out).toContain('## Command detail');
+    expect(out).toContain('desktop=supported');
   });
 
   it('includeArtifactContent: true with no session still returns Markdown', async () => {

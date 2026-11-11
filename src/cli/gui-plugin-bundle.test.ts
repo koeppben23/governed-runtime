@@ -181,6 +181,12 @@ describe('installed Desktop GUI bundle', () => {
     expect(loaded.command.id).toBe('choose-workflow');
     expect(loaded.probeCommand.id).toBe('ui-probe');
     expect(loaded.inlineCommand?.id).toBe('show-chat-card');
+    expect(
+      loaded.additions
+        .filter((entry) => entry.registry === 'command')
+        .map((entry) => (entry.value as FakeCommand).id)
+        .sort(),
+    ).toEqual(['choose-workflow', 'show-chat-card', 'ui-probe']);
   });
 
   it('does not register the inline composer command without ComposerPill', () => {
