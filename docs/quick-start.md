@@ -1,10 +1,11 @@
 # Quick Start (OpenCode)
 
 This Quick Start applies to OpenCode, the primary V2 host, on the `develop`
-command surface. The V2 port is merged; installed Desktop UX and the remaining
-product/accessibility acceptance are tracked separately in #1196 and the open
-Desktop PR #1207. The bounded OpenCode 2.2.4 CLI/server parity matrix remains
-historical evidence (65/65 on Linux, macOS and Windows); see the
+command surface. The V2 port and the native Desktop Workbench (#1207) are
+merged; remaining product/accessibility acceptance is tracked in #1196. Desktop
+command-catalog metadata and ComposerPill documentation are a follow-up catalog
+change. The bounded OpenCode 2.2.4 CLI/server parity matrix remains historical
+evidence (65/65 on Linux, macOS and Windows); see the
 [P0-00 evidence](./host-probes/opencode-v2/p0-00-inactive-parity.md).
 R4 is a documented `NOT_SUPPORTED` trusted-plugin limitation: untrusted
 co-installed plugins are outside the supported V2 security boundary, and no
@@ -228,6 +229,6 @@ Or review a specific GitHub pull request:
 | `/reconcile-mutation-episode`       | Resolve a host mutation episode with an unobservable outcome |
 | `/resolve-implementation-challenge` | Record evidence addressing an implementation challenge       |
 
-The optional TUI companion adds `/choose-workflow`. Desktop-only commands are
-tracked in the open Desktop PR #1207 and are not part of this `develop`
-baseline.
+The optional TUI companion adds `/choose-workflow`. The merged Desktop GUI
+companion is not yet represented in this command catalog slice; Desktop command
+metadata and ComposerPill documentation are a follow-up catalog change.

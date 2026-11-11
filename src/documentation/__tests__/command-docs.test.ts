@@ -10,7 +10,9 @@ describe('command documentation alignment', () => {
     const readme = read('README.md');
     expect(readme).not.toContain('PR #1190 is Draft');
     expect(readme).not.toContain('installed V2 acceptance remains NOT_VERIFIED');
+    expect(readme).not.toContain('open Desktop PR');
     expect(readme).toContain('V2-only port');
+    expect(readme).toContain('#1207');
   });
 
   it('does not describe /continue as an auto-advance command', () => {
@@ -23,6 +25,11 @@ describe('command documentation alignment', () => {
 
   it('does not describe /check as a validation compatibility alias', () => {
     expect(read('docs/quick-start.md')).not.toContain('Compatibility: re-run validation');
+  });
+
+  it('does not describe the merged Desktop workbench as an open PR', () => {
+    expect(read('docs/quick-start.md')).not.toContain('open Desktop PR');
+    expect(read('docs/commands.md')).not.toContain('open Desktop PR');
   });
 
   it('documents native operator commands in the command reference', () => {

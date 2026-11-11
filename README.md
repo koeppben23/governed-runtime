@@ -4,12 +4,12 @@ Host-aware governance runtime for AI-assisted software delivery.
 
 > **Version:** 2.0.0-tp.2 | TypeScript | Host-aware | OpenCode synchronous enforcement path
 
-> **OpenCode V2 status:** the V2-only port (#1169/#1190) is merged on
-> `develop`. This README describes the command/tool surface that exists on
-> `develop`; installed Desktop UX and the remaining #1196 product and
-> accessibility gates are tracked separately in #1196 and the open Desktop PR
-> #1207. Command availability alone is not installed-host acceptance, and this is
-> not a GA release claim.
+> **OpenCode V2 status:** the V2-only port (#1169/#1190) and the native Desktop
+> Workbench (#1207) are merged on `develop`. Remaining #1196 product and
+> accessibility gates are tracked separately. This README describes the command
+> surface that exists on `develop`; Desktop command-catalog metadata and
+> ComposerPill documentation are a follow-up catalog change. Command availability
+> alone is not installed-host acceptance, and this is not a GA release claim.
 
 V2 must preserve V1 capabilities and governance guarantees, including
 policy-permitted autonomous workflows and fully automatic independent AI review.
@@ -31,7 +31,7 @@ FlowGuard is distributed as a pre-built proprietary release artifact via GitHub 
 
 1. Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
 2. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
-3. OpenCode V2 watches plugin/config changes; its native reload action forces rediscovery. Installation does not activate governance. Verify the installed host with `flowguard doctor`; full installed Desktop/product acceptance is tracked in #1196 and the open Desktop PR #1207.
+3. OpenCode V2 watches plugin/config changes; its native reload action forces rediscovery. Installation does not activate governance. Verify the installed host with `flowguard doctor`; remaining installed Desktop/product and accessibility acceptance is tracked in #1196.
 4. Verify: `npx --package ./flowguard-core-{version}.tgz flowguard doctor`
 
 If you installed with `--install-scope repo`, use the same flag for `doctor`.
@@ -114,8 +114,9 @@ remain fully supported for scripts, CI, and power users.
 **Native operator/diagnostic commands:** `/check`, `/debug-export`,
 `/diagnostics`, `/recover-capacity`, `/end-governance`,
 `/reconcile-mutation-episode`, `/resolve-implementation-challenge`.
-The optional TUI companion adds `/choose-workflow`; Desktop-only commands are
-tracked separately in the open Desktop PR #1207.
+The optional TUI companion adds `/choose-workflow`. The merged Desktop GUI
+companion is not yet represented in this command catalog slice; Desktop command
+metadata and ComposerPill documentation are a follow-up catalog change.
 
 See [docs/commands.md](./docs/commands.md) for the complete command reference and
 [docs/independent-review.md](./docs/independent-review.md) for review obligations,

@@ -9,10 +9,10 @@
  * Sources:
  * - INSTALLED_COMMANDS: installed/portable slash-command identities.
  * - NATIVE_PLUGIN_COMMANDS: native OpenCode plugin registrations.
- * - TUI companion metadata: optional TUI commands present in this baseline.
+ * - TUI companion metadata: optional TUI commands present in this catalog slice.
  *
- * Desktop commands are intentionally absent from this develop-baseline
- * catalogue; they are added only with the Desktop integration.
+ * Desktop command metadata is intentionally outside this catalog slice; it is
+ * added by the follow-up Desktop catalog change.
  */
 
 import {

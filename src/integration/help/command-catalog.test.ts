@@ -40,7 +40,9 @@ describe('command catalog', () => {
     }
   });
 
-  it('keeps the TUI chooser out of native and desktop surfaces in this baseline', () => {
+  it('keeps the TUI chooser out of native and desktop surfaces in this catalog slice', () => {
+    // The Desktop GUI is merged, but its command metadata is the follow-up
+    // catalog change; this slice must not claim Desktop support.
     const chooser = COMMAND_CATALOG.find((entry) => entry.invocation === '/choose-workflow');
     expect(chooser?.surfaces).toEqual(['tui']);
     expect(COMMAND_CATALOG.some((entry) => entry.surfaces.includes('desktop'))).toBe(false);
