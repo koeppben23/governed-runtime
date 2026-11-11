@@ -369,25 +369,50 @@ describe('diagnostic export', () => {
   });
 
   it('captures a verified root → child → grandchild invocation chain', async () => {
-    const { fingerprint } = await rootState(rootLinkedAssurance());
-    await writeReviewerState(
+    const { sessionDir: rootDir, fingerprint } = await rootState(rootLinkedAssurance());
+    const childDir = await writeReviewerState(
       CHILD_ID,
       CHILD_STATE_ID,
       fingerprint,
       linkedAssurance(CHILD_ID, GRANDCHILD_ID),
     );
-    await writeReviewerState(GRANDCHILD_ID, GRANDCHILD_STATE_ID, fingerprint);
+    const grandchildDir = await writeReviewerState(GRANDCHILD_ID, GRANDCHILD_STATE_ID, fingerprint);
+    for (const [sessionId, stateId, dir] of [
+      [ROOT_ID, ROOT_STATE_ID, rootDir],
+      [CHILD_ID, CHILD_STATE_ID, childDir],
+      [GRANDCHILD_ID, GRANDCHILD_STATE_ID, grandchildDir],
+    ] as const) {
+      await appendAuditEvent(dir, {
+        id: randomUUID(),
+        flowguardSessionId: stateId,
+        hostSessionId: sessionId,
+        phase: 'READY',
+        event: 'test:multilevel',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+        actor: 'machine',
+        detail: { sessionId },
+      });
+    }
     await writeFlowGuardLog([logEntry(ROOT_ID), logEntry(CHILD_ID), logEntry(GRANDCHILD_ID)]);
     const outputDir = path.join(ws.tmpDir, 'diag-multilevel');
 
-    const result = await writeDiagnosticExport(request(outputDir));
+    const result = await writeDiagnosticExport(
+      request(outputDir, {
+        includeHost: true,
+        hostReader: async (sessionId) => hostTranscript(sessionId),
+      }),
+    );
 
     expect(result.manifest.status).toBe('COMPLETE');
     expect(result.manifest.boundary.sessionsKnown).toBe(3);
     expect(result.manifest.boundary.sessionsWithState).toBe(3);
+    expect(result.manifest.counts.auditEvents).toBe(3);
+    expect(result.manifest.counts.hostMessages).toBe(3);
     expect(result.manifest.sources).toMatchObject({
       discovery: { status: 'complete', known: 3, verified: 3, unverified: 0 },
       lineage: { status: 'complete', verified: 3, unverified: 0 },
+      audit: { status: 'complete', validChains: 3, invalidChains: 0 },
+      hostHistory: { status: 'complete', captured: 3 },
     });
     const graph = JSON.parse(await readFile(path.join(outputDir, 'session-graph.json'), 'utf8'));
     expect(graph.sessions).toEqual([
@@ -405,12 +430,15 @@ describe('diagnostic export', () => {
         lineage: 'verified',
       }),
     ]);
-    expect(result.manifest.files.map((file) => file.path)).toEqual(
-      expect.arrayContaining([
-        `sessions/${CHILD_ID}/state.redacted.json`,
-        `sessions/${GRANDCHILD_ID}/state.redacted.json`,
-      ]),
-    );
+    for (const sessionId of [ROOT_ID, CHILD_ID, GRANDCHILD_ID]) {
+      expect(result.manifest.files.map((file) => file.path)).toEqual(
+        expect.arrayContaining([
+          `sessions/${sessionId}/state.redacted.json`,
+          `sessions/${sessionId}/audit.redacted.jsonl`,
+          `sessions/${sessionId}/host.transcript.redacted.json`,
+        ]),
+      );
+    }
   });
 
   it('keeps a known grandchild in the denominator when maxSessions is reached', async () => {
