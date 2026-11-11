@@ -7,7 +7,7 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 - Node.js 20+
 - npm
-- OpenCode V2 (native API candidate: 2.2.7; complete product acceptance remains NO-GO)
+- OpenCode V2 (native API baseline: 2.2.7; independently verified host smoke pin: 2.2.5; complete product acceptance remains NO-GO)
 
 ## Installation Steps
 

@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  isVersionAtMost,
   nativeOpenCodeCandidate,
   resolvePinnedOpenCodeHost,
 } from './opencode-live-host-test-helpers.js';
@@ -77,7 +78,7 @@ describe('current exact OpenCode candidate contract (nine ported cases)', () => 
     rejects('not-a-version');
   });
 
-  it('HAPPY: current candidate/API pins align while historical V1 evidence retains its original pin', () => {
+  it('HAPPY: the verified host candidate may lag the API baseline while historical V1 evidence retains its original pin', () => {
     const sdk = JSON.parse(
       readFileSync(new URL('../../.sdk-baselines/opencode/version.json', import.meta.url), 'utf8'),
     );
@@ -87,8 +88,13 @@ describe('current exact OpenCode candidate contract (nine ported cases)', () => 
         'utf8',
       ),
     );
-    expect(nativeOpenCodeCandidate.version).toBe(sdk.packages['@opencode/client']);
-    expect(nativeOpenCodeCandidate.version).toBe(sdk.packages['@opencode/plugin']);
+    expect(isVersionAtMost(nativeOpenCodeCandidate.version, sdk.packages['@opencode/client'])).toBe(
+      true,
+    );
+    expect(isVersionAtMost(nativeOpenCodeCandidate.version, sdk.packages['@opencode/plugin'])).toBe(
+      true,
+    );
+    expect(sdk.packages['@opencode/client']).toBe(sdk.packages['@opencode/plugin']);
     expect(historical.version).toBe('1.19.5');
     expect(historical.package).toBe('opencode-ai');
     expect(historical.version).not.toBe(nativeOpenCodeCandidate.version);

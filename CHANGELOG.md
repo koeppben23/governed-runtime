@@ -1833,7 +1833,8 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
-- Updated native OpenCode API packages and type baselines to 2.2.7; installed
+- Updated native OpenCode API packages and type baselines to 2.2.7; the
+  independently verified CLI host smoke pin remains 2.2.5, and installed
   Desktop/CLI support is not certified by this update.
 
 - Refresh pinned GitHub Actions and production OpenTelemetry dependencies:

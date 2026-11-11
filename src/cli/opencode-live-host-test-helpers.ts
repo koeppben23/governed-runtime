@@ -31,6 +31,27 @@ class NativeHostPinError extends Error {
   }
 }
 
+/** Compare exact three-part versions for the independently verified host pin. */
+export function isVersionAtMost(left: string, right: string): boolean {
+  const leftParts = left.split('.').map(Number);
+  const rightParts = right.split('.').map(Number);
+  if (leftParts.length !== 3 || rightParts.length !== 3) return false;
+  for (let index = 0; index < 3; index++) {
+    const leftPart = leftParts[index];
+    const rightPart = rightParts[index];
+    if (
+      leftPart === undefined ||
+      rightPart === undefined ||
+      Number.isNaN(leftPart) ||
+      Number.isNaN(rightPart)
+    )
+      return false;
+    if (leftPart < rightPart) return true;
+    if (leftPart > rightPart) return false;
+  }
+  return true;
+}
+
 export const nativeOpenCodeCandidate = JSON.parse(
   readFileSync(
     new URL('../../.sdk-baselines/opencode/cli-candidate.json', import.meta.url),
