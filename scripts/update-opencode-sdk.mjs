@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-/** Native API package update only. Never updates host certification, runtime
+/** Native API package update only. Aligns the exact API declarations and the
+ * CLI smoke-test candidate pin. Never updates host certification, runtime
  * support constants, historical probes or installed-product documentation pins. */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -16,6 +17,16 @@ export function validateTarget(version) {
   if (!/^2\.\d+\.\d+(?:-[\w.-]+)?$/.test(version))
     throw new SdkContractError(`Expected one exact OpenCode V2 version, received ${version}`);
   return version;
+}
+
+/** Align the smoke-test CLI candidate with the API baseline, never host certification. */
+export function syncCliCandidate(file, version) {
+  const candidate = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (candidate.package !== '@opencode/cli' || candidate.status !== 'candidate')
+    throw new SdkContractError('Invalid native OpenCode CLI candidate pin');
+  candidate.version = validateTarget(version);
+  fs.writeFileSync(file, `${JSON.stringify(candidate, null, 2)}\n`);
+  return candidate;
 }
 
 function main() {
@@ -40,6 +51,7 @@ function main() {
   for (const name of packages) validateTarget(pkg.dependencies[name]);
   run('npm', ['install', '--save-exact', ...packages.map((name, i) => `${name}@${targets[i]}`)]);
   run('node', ['scripts/sdk-type-snapshot.mjs', '--platform', 'opencode', '--update']);
+  syncCliCandidate(path.join(root, '.sdk-baselines/opencode/cli-candidate.json'), targets[0]);
   const updated = read('package.json');
   const lock = read('package-lock.json');
   const baseline = read('.sdk-baselines/opencode/version.json');

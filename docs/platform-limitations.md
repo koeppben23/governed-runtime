@@ -37,7 +37,8 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 
 For OpenCode V2.2.4/2.2.5, synchronous denial is not a universal host/OS
 containment guarantee. Native pre-prompt shell and other unobservable host paths
-are outside that claim. Under the untrusted co-installed plugins contract, the
+are outside that claim. The later 2.2.7 API baseline refresh does not re-certify
+this boundary; installed-host evidence remains version-bound. Under the untrusted co-installed plugins contract, the
 public APIs cannot guarantee final reviewer-input integrity: R4 is `NOT_SUPPORTED`.
 The 2026-11-06 operator decision accepts this as a documented host limitation
 under the trusted-plugin operating model; untrusted co-installed plugins are

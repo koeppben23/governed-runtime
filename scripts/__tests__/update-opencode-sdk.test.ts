@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateTarget } from '../update-opencode-sdk.mjs';
+import { syncCliCandidate, validateTarget } from '../update-opencode-sdk.mjs';
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -17,6 +17,32 @@ describe('native API updater target validation', () => {
       expect(() => validateTarget(version)).toThrow('Expected one exact OpenCode V2 version');
     },
   );
+
+  it('aligns the CLI smoke-test candidate without changing host certification', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'flowguard-cli-candidate-'));
+    const file = join(directory, 'cli-candidate.json');
+    try {
+      writeFileSync(
+        file,
+        JSON.stringify({
+          package: '@opencode/cli',
+          version: '2.2.5',
+          status: 'candidate',
+          scope:
+            'Native CLI/server smoke-test target only; not ACTIVE product or Desktop certification',
+        }),
+      );
+      const updated = syncCliCandidate(file, '2.2.7');
+      expect(updated.version).toBe('2.2.7');
+      expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({
+        package: '@opencode/cli',
+        version: '2.2.7',
+        status: 'candidate',
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 
   it('rejects the removed host argument before install or changing host provenance', () => {
     const files = [

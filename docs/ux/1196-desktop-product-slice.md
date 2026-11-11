@@ -90,10 +90,12 @@ The native isolated uninstall E2E pins the same live host PID and an unaffected
 observer plugin. It passed 1/1 against the exact packed artifact with the
 repository-pinned native CLI candidate `2.2.5`; a one-off rerun with the
 installed Desktop `2.2.6` CLI (temporary candidate-version override, restored
-afterwards) also passed 1/1. The committed CI pin remains `2.2.5`; the real
-active profile was not uninstalled. Zero-restart upgrade still requires an
-external revision-A-to-B runtime fingerprint proof; the installer self-restart
-guard remains untouched.
+afterwards) also passed 1/1. The recorded installed evidence remains
+version-bound to the `2.2.5` run; the repository's current native API/CLI
+candidate pin is `2.2.7`, and that API baseline update does not extend this
+evidence. The real active profile was not uninstalled. Zero-restart upgrade
+still requires an external revision-A-to-B runtime fingerprint proof; the
+installer self-restart guard remains untouched.
 
 The full evidence checklist and negative test matrix are maintained in
 [Desktop remaining gates](../host-probes/opencode-v2/desktop-2.2.6-remaining-gates.md).
