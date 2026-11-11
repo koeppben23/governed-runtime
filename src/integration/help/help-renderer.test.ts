@@ -434,9 +434,11 @@ describe('renderHelp', () => {
     expect(markdown).toContain('## Command detail');
     expect(markdown).toContain('## Host capabilities');
     expect(markdown).toContain('desktop=supported');
+    expect(markdown).toContain('source=host');
     const json = JSON.parse(renderHelp(result, { format: 'json' }));
     expect(json.commandScope).toBe('detail');
     expect(json.capabilities.desktop).toBe('supported');
+    expect(json.capabilitySource).toBe('host');
     expect(json.commands[0]).toMatchObject({
       invocation: '/flowguard-inline',
       surfaces: ['desktop'],
