@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add candidate-host validation-progress transport probes: live native tool
+  events, real TUI rendering of read-only command snapshots, session/location
+  isolation and consumer-disconnect controls. Record the normal-success versus
+  idle-resume counterexample explicitly; the complete progress-feature gate
+  remains blocked. No product runtime or validation behavior changes.
+
 - Complete FlowGuard command discoverability and help on `develop`: compose
   installed, native-only and optional TUI command metadata into a
   capability-aware catalog; make `/commands --all` meaningful without a session;

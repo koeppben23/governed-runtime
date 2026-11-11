@@ -22,6 +22,7 @@ regardless of this short path; see [AGENTS.md](../../AGENTS.md#verification).
 | --------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | [Developer Architecture Map](./architecture-map.md)                   | Change-type checklists, exact authorities, placement/zone/mutation procedure |
 | [Development and Debugging](./debugging.md)                           | Local setup, debugging, dogfood installation, isolated playgrounds           |
+| [Validation Progress Transport](./validation-progress-transport.md)   | Candidate-host probe evidence, lifecycle counterexample and feature gate     |
 | [Following a State-Changing Operation](./state-changing-operation.md) | Persisted workflow tracing and evidence                                      |
 | [Testing Strategy](../testing-strategy.md)                            | Test layers and the executable verification surface                          |
 | [CONTRIBUTING.md](../../CONTRIBUTING.md)                              | Branch naming, PR process, commit and verification contracts                 |
