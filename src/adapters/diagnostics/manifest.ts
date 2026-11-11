@@ -158,6 +158,19 @@ function statusFor(
   return 'COMPLETE';
 }
 
+const DISCOVERY_WARNING_CODES = new Set([
+  'DISCOVERY_TRUNCATED',
+  'SESSION_DISCOVERY_TRUNCATED',
+  'SESSION_LIMIT_TRUNCATED',
+  'CAPTURE_TIME_BUDGET_EXCEEDED',
+]);
+
+function discoveryWarningMessages(acc: CaptureAccumulator): string[] {
+  return acc.warnings
+    .filter((entry) => entry.source === 'capture' && DISCOVERY_WARNING_CODES.has(entry.code))
+    .map((entry) => sanitizeDiagnosticString(entry.message));
+}
+
 function discoverySource(acc: CaptureAccumulator, status: SourceStatus) {
   const verified = verifiedSessions(acc);
   return {
@@ -166,7 +179,7 @@ function discoverySource(acc: CaptureAccumulator, status: SourceStatus) {
     verified: verified.length,
     unverified: acc.sessions.length - verified.length,
     truncated: acc.discoveryTruncated,
-    reasons: [...new Set([...acc.discoveryReasons, ...warningMessagesFor(acc, 'capture')])],
+    reasons: [...new Set([...acc.discoveryReasons, ...discoveryWarningMessages(acc)])],
   };
 }
 
