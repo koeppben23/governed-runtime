@@ -36,6 +36,26 @@ describe('command documentation alignment', () => {
     expect(read('docs/installation.md')).not.toContain('PR #1190 remains Draft');
   });
 
+  it('documents Desktop commands and the read-only ComposerPill', () => {
+    const desktop = read('docs/desktop.md');
+    expect(desktop).toContain('/flowguard-ui-probe');
+    expect(desktop).toContain('/flowguard-inline');
+    expect(desktop).toContain('/choose-workflow');
+    expect(desktop).toContain('ComposerPill');
+    expect(desktop).toContain('read-only');
+    expect(desktop).toContain('never inserts');
+    expect(desktop).toContain('chat card and Workbench expose named regions');
+    expect(desktop).not.toContain('The pill exposes named accessibility regions');
+    expect(desktop).toContain('VoiceOver');
+    expect(desktop).toContain('bb8c8cd2');
+  });
+
+  it('does not describe the Desktop catalog as a follow-up change', () => {
+    for (const path of ['README.md', 'docs/quick-start.md', 'docs/commands.md']) {
+      expect(read(path), path).not.toContain('follow-up catalog change');
+    }
+  });
+
   it('documents native operator commands in the command reference', () => {
     const commands = read('docs/commands.md');
     expect(commands).toContain('### `/recover-capacity`');

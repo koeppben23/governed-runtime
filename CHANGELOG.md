@@ -13,9 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installed, native-only and optional TUI command metadata into a
   capability-aware catalog; make `/commands --all` meaningful without a session;
   and report host availability, maturity and readiness consistently in Markdown
-  and JSON. Desktop command-catalog metadata and ComposerPill documentation
-  remain a follow-up. No governance authority, phase transition or decision
-  permission is introduced.
+  and JSON. No governance authority, phase transition or decision permission is
+  introduced.
+
+- Add the Desktop command slice to the capability-aware catalog. `/choose-workflow`
+  is mapped to both TUI and Desktop; `/flowguard-ui-probe` and
+  `/flowguard-inline` are documented as experimental Desktop-only commands with
+  separate host-session and governance-session preconditions. Add user-facing
+  Desktop/ComposerPill documentation, including read-only refresh behavior,
+  optional GUI API degradation and artifact-bound installed evidence. The GUI
+  bundle bytes and installed bundle hash remain unchanged; Desktop availability
+  stays `not_verified` without trusted host capability evidence.
 
 - Harden OpenCode uninstall safety: preserve a runtime `flowguard.json` when
   no valid scope-matched install ownership manifest exists; after deleting

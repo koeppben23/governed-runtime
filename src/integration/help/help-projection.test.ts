@@ -233,8 +233,20 @@ describe('buildHelpResult', () => {
       availability: 'not_verified',
     });
     expect(byInvocation.get('/choose-workflow')).toMatchObject({
-      surfaces: ['tui'],
+      surfaces: ['tui', 'desktop'],
       availability: 'not_verified',
+    });
+    expect(byInvocation.get('/flowguard-ui-probe')).toMatchObject({
+      surfaces: ['desktop'],
+      maturity: 'experimental',
+      availability: 'not_verified',
+      visibility: 'not_verified',
+    });
+    expect(byInvocation.get('/flowguard-inline')).toMatchObject({
+      surfaces: ['desktop'],
+      maturity: 'experimental',
+      availability: 'not_verified',
+      visibility: 'not_verified',
     });
     expect(byInvocation.get('/debug-export')).toBeDefined();
     expect(byInvocation.get('/end-governance')).toBeDefined();
@@ -281,6 +293,128 @@ describe('buildHelpResult', () => {
     expect(
       result.commands.find((command) => command.invocation === '/choose-workflow')?.availability,
     ).toBe('not_verified');
+    for (const invocation of ['/flowguard-ui-probe', '/flowguard-inline']) {
+      expect(result.commands.find((command) => command.invocation === invocation)).toMatchObject({
+        availability: 'not_verified',
+        visibility: 'not_verified',
+        surfaces: ['desktop'],
+      });
+    }
+  });
+
+  it('desktop capabilities expose Desktop commands without a FlowGuard session', () => {
+    // Hypothetical trusted host snapshot. This proves projection behavior only;
+    // it does not prove the GUI bundle or its optional APIs are registered.
+    const capabilities = {
+      portable: 'supported' as const,
+      native: 'not_verified' as const,
+      tui: 'not_verified' as const,
+      desktop: 'supported' as const,
+    };
+    const result = buildHelpResult(null, null, {
+      view: 'commands',
+      scope: 'all',
+      capabilities,
+    });
+    expect(result.capabilitySource).toBe('host');
+    expect(
+      result.commands.find((command) => command.invocation === '/flowguard-ui-probe'),
+    ).toMatchObject({
+      availability: 'available',
+      visibility: 'available',
+      preflight: { status: 'available', guarantee: 'read_only_available' },
+    });
+    expect(
+      result.commands.find((command) => command.invocation === '/flowguard-inline'),
+    ).toMatchObject({
+      availability: 'available',
+      visibility: 'available',
+      preflight: { status: 'available', guarantee: 'read_only_available' },
+    });
+    expect(
+      result.commands.find((command) => command.invocation === '/choose-workflow'),
+    ).toMatchObject({
+      availability: 'available',
+      visibility: 'available',
+      preflight: { status: 'available', guarantee: 'eligible_to_attempt' },
+    });
+  });
+
+  it('marks Desktop commands host-unavailable when the Desktop surface is unsupported', () => {
+    const result = buildHelpResult(null, null, {
+      view: 'commands',
+      scope: 'all',
+      capabilities: {
+        portable: 'supported',
+        native: 'not_verified',
+        tui: 'not_verified',
+        desktop: 'unsupported',
+      },
+    });
+    for (const invocation of ['/flowguard-ui-probe', '/flowguard-inline']) {
+      expect(result.commands.find((command) => command.invocation === invocation)).toMatchObject({
+        availability: 'host_unavailable',
+        visibility: 'host_unavailable',
+      });
+    }
+    // TUI is still not_verified, so the shared chooser is not host-unavailable.
+    expect(
+      result.commands.find((command) => command.invocation === '/choose-workflow'),
+    ).toMatchObject({
+      availability: 'not_verified',
+      visibility: 'not_verified',
+    });
+  });
+
+  it('keeps no-session /commands minimal even with Desktop capability evidence', () => {
+    const result = buildHelpResult(null, null, {
+      view: 'context',
+      capabilities: {
+        portable: 'supported',
+        native: 'not_verified',
+        tui: 'not_verified',
+        desktop: 'supported',
+      },
+    });
+    expect(result.commands.map((command) => command.invocation)).toEqual(['/start', '/status']);
+    expect(result.commands.some((command) => command.surfaces.includes('desktop'))).toBe(false);
+  });
+
+  it('shows Desktop commands in an active /commands view when Desktop is supported', () => {
+    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
+      view: 'commands',
+      capabilities: {
+        portable: 'supported',
+        native: 'supported',
+        tui: 'not_verified',
+        desktop: 'supported',
+      },
+    });
+    const invocations = result.commands.map((command) => command.invocation);
+    expect(invocations).toContain('/flowguard-ui-probe');
+    expect(invocations).toContain('/flowguard-inline');
+    expect(invocations).toContain('/choose-workflow');
+  });
+
+  it('resolves Desktop command detail without a session', () => {
+    const result = buildHelpResult(null, null, {
+      view: 'command',
+      requestedInvocation: '/flowguard-inline',
+      capabilities: {
+        portable: 'supported',
+        native: 'not_verified',
+        tui: 'not_verified',
+        desktop: 'supported',
+      },
+    });
+    expect(result.commands).toHaveLength(1);
+    expect(result.commandScope).toBe('detail');
+    expect(result.commands[0]).toMatchObject({
+      invocation: '/flowguard-inline',
+      surfaces: ['desktop'],
+      maturity: 'experimental',
+      availability: 'available',
+    });
   });
 
   it('active /commands --all includes native metadata without claiming host support', () => {
@@ -304,6 +438,12 @@ describe('buildHelpResult', () => {
     expect(
       result.commands.find((command) => command.invocation === '/choose-workflow')?.visibility,
     ).toBe('not_verified');
+    for (const invocation of ['/flowguard-ui-probe', '/flowguard-inline']) {
+      expect(result.commands.find((command) => command.invocation === invocation)).toMatchObject({
+        visibility: 'not_verified',
+        availability: 'not_verified',
+      });
+    }
     expect(result.commands.some((command) => command.invocation === '/recover-capacity')).toBe(
       true,
     );
@@ -670,6 +810,8 @@ describe('flowguard_help tool execute', () => {
     });
     const out = await help.execute({ view: 'commands', scope: 'all' }, ctx);
     expect(out).toContain('/diagnostics');
+    expect(out).toContain('/flowguard-ui-probe');
+    expect(out).toContain('/flowguard-inline');
     expect(out).toContain('SESSION_REQUIRED');
     expect(out).toContain('not verified on this host');
     expect(out).not.toContain('/desktop-only');
@@ -688,6 +830,22 @@ describe('flowguard_help tool execute', () => {
     expect(out).toContain('`/diagnostics`');
     expect(out).toContain('Render bounded, read-only Explorer');
     expect(out).not.toContain('SESSION_REQUIRED');
+  });
+
+  it('resolves Desktop command detail through the tool without a session', async () => {
+    const ctx = createToolContext({
+      helpCapabilities: {
+        portable: 'supported',
+        native: 'not_verified',
+        tui: 'not_verified',
+        desktop: 'supported',
+      },
+    });
+    const out = await help.execute({ view: 'command', command: 'flowguard-inline' }, ctx);
+    expect(out).toContain('`/flowguard-inline`');
+    expect(out).toContain('Refresh the read-only Desktop composer status');
+    expect(out).toContain('## Command detail');
+    expect(out).toContain('desktop=supported');
   });
 
   it('includeArtifactContent: true with no session still returns Markdown', async () => {

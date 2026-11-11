@@ -410,12 +410,41 @@ describe('renderHelp', () => {
     const markdown = renderHelp(result, { format: 'markdown' });
     expect(markdown).toContain('## Command reference');
     expect(markdown).toContain('## Host capabilities');
+    expect(markdown).toContain('desktop=not_verified');
     expect(markdown).toContain('source=default');
     expect(markdown).toContain('(portable; stable)');
     const json = JSON.parse(renderHelp(result, { format: 'json' }));
     expect(json.commandScope).toBe('all');
     expect(json.capabilities).toEqual(defaultCapabilities);
     expect(json.capabilitySource).toBe('default');
+  });
+
+  it('preserves capability provenance for command detail in Markdown and JSON', () => {
+    const result = buildHelpResult(null, null, {
+      view: 'command',
+      requestedInvocation: '/flowguard-inline',
+      capabilities: {
+        portable: 'supported',
+        native: 'not_verified',
+        tui: 'not_verified',
+        desktop: 'supported',
+      },
+    });
+    const markdown = renderHelp(result, { format: 'markdown' });
+    expect(markdown).toContain('## Command detail');
+    expect(markdown).toContain('## Host capabilities');
+    expect(markdown).toContain('desktop=supported');
+    expect(markdown).toContain('source=host');
+    const json = JSON.parse(renderHelp(result, { format: 'json' }));
+    expect(json.commandScope).toBe('detail');
+    expect(json.capabilities.desktop).toBe('supported');
+    expect(json.capabilitySource).toBe('host');
+    expect(json.commands[0]).toMatchObject({
+      invocation: '/flowguard-inline',
+      surfaces: ['desktop'],
+      maturity: 'experimental',
+      availability: 'available',
+    });
   });
 
   it('preserves host availability states in Markdown and JSON', () => {
@@ -508,6 +537,37 @@ describe('renderHelp', () => {
     expect(json.commands[1]).toMatchObject({
       maturity: 'experimental',
       availability: 'available',
+    });
+  });
+
+  it('renders Desktop-only experimental commands with honest availability', () => {
+    const result = noSessionResult({
+      commands: [
+        {
+          id: 'desktop.ui-probe',
+          invocation: '/flowguard-ui-probe',
+          label: 'Open FlowGuard Workbench',
+          description: 'Open the read-only Desktop Workbench',
+          visibility: 'not_verified',
+          preflight: { status: 'available', guarantee: 'read_only_available' },
+          alsoAvailableAs: [],
+          surfaces: ['desktop'],
+          maturity: 'experimental',
+          capabilities: defaultCapabilities,
+          availability: 'not_verified',
+        },
+      ],
+      directive: null,
+    });
+    const markdown = renderHelp(result, { format: 'markdown' });
+    expect(markdown).toContain('(desktop; experimental; not verified on this host)');
+    const json = JSON.parse(renderHelp(result, { format: 'json' }));
+    expect(json.commands[0]).toMatchObject({
+      invocation: '/flowguard-ui-probe',
+      surfaces: ['desktop'],
+      maturity: 'experimental',
+      availability: 'not_verified',
+      visibility: 'not_verified',
     });
   });
 

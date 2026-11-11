@@ -6,9 +6,9 @@ Host-aware governance runtime for AI-assisted software delivery.
 
 > **OpenCode V2 status:** the V2-only port (#1169/#1190) and the native Desktop
 > Workbench (#1207) are merged on `develop`. Remaining #1196 product and
-> accessibility gates are tracked separately. This README describes the command
-> surface that exists on `develop`; Desktop command-catalog metadata and
-> ComposerPill documentation are a follow-up catalog change. Command availability
+> accessibility gates are tracked separately. Desktop commands and the
+> read-only ComposerPill are documented in the command surface; the GUI artifact
+> evidence remains bound to its installed bundle hash. Command availability
 > alone is not installed-host acceptance, and this is not a GA release claim.
 
 V2 must preserve V1 capabilities and governance guarantees, including
@@ -115,9 +115,13 @@ and power users.
 
 **Native operator/diagnostic commands:** `/check`, `/debug-export`,
 `/diagnostics`, `/recover-capacity`, `/end-governance`.
-The optional TUI companion adds `/choose-workflow`. The merged Desktop GUI
-companion is not yet represented in this command catalog slice; Desktop command
-metadata and ComposerPill documentation are a follow-up catalog change.
+
+**Companion commands:** the optional TUI companion adds `/choose-workflow`. The
+optional Desktop GUI adds `/choose-workflow`, `/flowguard-ui-probe` and
+`/flowguard-inline`. Desktop-only commands are never reported as available on
+TUI, headless or MCP hosts; without trusted Desktop capability evidence they
+remain `not_verified`. See [Desktop GUI Companion](./docs/desktop.md) for the
+read-only ComposerPill, optional API degradation and installed evidence scope.
 
 See [docs/commands.md](./docs/commands.md) for the complete command reference and
 [docs/independent-review.md](./docs/independent-review.md) for review obligations,
@@ -152,6 +156,7 @@ subagent attestation, and the `/review` evidence model.
 | [Installation](./docs/installation.md)                               | Install and configure FlowGuard                                        |
 | [Quick Start](./docs/quick-start.md)                                 | First governed OpenCode session and command walkthrough                |
 | [Commands](./docs/commands.md)                                       | Command reference                                                      |
+| [Desktop GUI Companion](./docs/desktop.md)                           | Desktop commands, Workbench and read-only ComposerPill                 |
 | [Phases](./docs/phases.md)                                           | Workflow phases and gates                                              |
 | [Policies](./docs/policies.md)                                       | Solo, Team, Team-CI, Regulated modes                                   |
 | [Independent Review](./docs/independent-review.md)                   | Review obligations, subagent attestation, and `/review` evidence model |

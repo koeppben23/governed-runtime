@@ -35,6 +35,8 @@ import { IntegrationInvariantError } from '../errors.js';
 
 export type { HelpVisibility, ProjectedCommand } from './command-projection.js';
 
+export type CommandScope = 'available' | 'all' | 'detail';
+
 export type Readiness = 'ready' | 'ready_with_warnings' | 'blocked' | 'not_verified' | 'none';
 
 export interface EvidenceCompleteness {
@@ -87,7 +89,7 @@ export interface HelpResult {
   readonly archiveVerification: ArchiveVerification;
   readonly directive: ProjectedCommand | null;
   readonly commands: readonly ProjectedCommand[];
-  readonly commandScope: 'available' | 'all';
+  readonly commandScope: CommandScope;
   /** Capability snapshot used for this projection. */
   readonly capabilities: CapabilityMap;
   /** `host` when supplied by trusted host composition; `default` otherwise. */
@@ -321,7 +323,7 @@ function buildCommandDetail(
     archiveVerification: buildArchiveVerification(state),
     directive: null,
     commands: command ? [command] : [],
-    commandScope: 'available',
+    commandScope: 'detail',
     capabilities,
     capabilitySource,
     artifacts: EMPTY_ARTIFACTS,

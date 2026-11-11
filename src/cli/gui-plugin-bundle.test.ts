@@ -14,7 +14,14 @@ interface FakeCommand {
   readonly run: () => void;
 }
 
-function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
+function load(
+  ctx: Record<string, unknown>,
+  session: Record<string, unknown>,
+  available: { panel?: boolean; slot?: boolean; composerPill?: boolean } = {},
+) {
+  const panel = available.panel ?? true;
+  const slot = available.slot ?? true;
+  const composerPill = available.composerPill ?? true;
   const additions: Array<{ registry: string; value: unknown }> = [];
   const rpcCalls: Array<Record<string, unknown>> = [];
   const commandCalls: Array<Record<string, unknown>> = [];
@@ -41,10 +48,10 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
       return {
         Plugin: { define: (value: unknown) => value },
         Command: 'command',
-        Panel: 'panel',
-        Slot: 'slot',
+        Panel: panel ? 'panel' : undefined,
+        Slot: slot ? 'slot' : undefined,
         CodeBlock: 'code-block',
-        ComposerPill: 'composer-pill',
+        ComposerPill: composerPill ? 'composer-pill' : undefined,
         createKeyed: (get: () => unknown, setup: (data: unknown) => void) => {
           const data = get();
           if (data) setup(data);
@@ -96,7 +103,10 @@ function load(ctx: Record<string, unknown>, session: Record<string, unknown>) {
   const probeCommand = additions.find(
     (entry) => entry.registry === 'command' && (entry.value as FakeCommand).id === 'ui-probe',
   )?.value as FakeCommand;
-  return { command, probeCommand, additions, rpcCalls, commandCalls, views, host };
+  const inlineCommand = additions.find(
+    (entry) => entry.registry === 'command' && (entry.value as FakeCommand).id === 'show-chat-card',
+  )?.value as FakeCommand | undefined;
+  return { command, probeCommand, inlineCommand, additions, rpcCalls, commandCalls, views, host };
 }
 
 /** Minimal DOM test double: the installed host still owns actual visual acceptance. */
@@ -163,12 +173,57 @@ class FakeDomNode {
 }
 
 describe('installed Desktop GUI bundle', () => {
-  it('registers only the on-demand workflow command', () => {
+  it('registers all three on-demand Desktop companion commands', () => {
     const ctx = {} as Record<string, unknown>;
     const session = {} as Record<string, unknown>;
     const loaded = load(ctx, session);
 
     expect(loaded.command.id).toBe('choose-workflow');
+    expect(loaded.probeCommand.id).toBe('ui-probe');
+    expect(loaded.inlineCommand?.id).toBe('show-chat-card');
+    expect(
+      loaded.additions
+        .filter((entry) => entry.registry === 'command')
+        .map((entry) => (entry.value as FakeCommand).id)
+        .sort(),
+    ).toEqual(['choose-workflow', 'show-chat-card', 'ui-probe']);
+  });
+
+  it('does not register the inline composer command without ComposerPill', () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session, { composerPill: false });
+
+    expect(loaded.command.id).toBe('choose-workflow');
+    expect(loaded.probeCommand.id).toBe('ui-probe');
+    expect(loaded.inlineCommand).toBeUndefined();
+  });
+
+  it('keeps the UI probe command registered but non-functional without Panel', () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session, { panel: false });
+    loaded.probeCommand.run();
+
+    expect(loaded.probeCommand.id).toBe('ui-probe');
+    expect(loaded.additions.filter((item) => item.registry === 'panel')).toHaveLength(0);
+    expect(loaded.host.toast.show).toHaveBeenCalledWith(
+      expect.objectContaining({ description: expect.stringContaining('does not support') }),
+    );
+    expect((loaded.host.layout as { open: ReturnType<typeof vi.fn> }).open).not.toHaveBeenCalled();
+  });
+
+  it('keeps the UI probe command registered but non-functional without Slot', () => {
+    const ctx = {} as Record<string, unknown>;
+    const session = {} as Record<string, unknown>;
+    const loaded = load(ctx, session, { slot: false });
+    loaded.probeCommand.run();
+
+    expect(loaded.probeCommand.id).toBe('ui-probe');
+    expect(loaded.host.toast.show).toHaveBeenCalledWith(
+      expect.objectContaining({ description: expect.stringContaining('does not support') }),
+    );
+    expect((loaded.host.layout as { open: ReturnType<typeof vi.fn> }).open).not.toHaveBeenCalled();
   });
 
   it('registers a dedicated read-only inline CodeBlock renderer', async () => {
