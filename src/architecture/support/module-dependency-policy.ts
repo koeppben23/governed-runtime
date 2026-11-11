@@ -84,7 +84,7 @@ export const MODULE_DEPENDENCY_POLICY: Readonly<
   telemetry: new Set(['logging', 'shared']),
   presentation: new Set(['config', 'machine', 'shared', 'state']),
   diagnostics: new Set(['presentation']),
-  hooks: new Set(['adapters', 'integration', 'shared', 'state']),
+  hooks: new Set(['adapters', 'config', 'integration', 'shared', 'state']),
   'mcp-server': new Set(['adapters', 'integration', 'logging', 'shared']),
   shared: new Set([]),
   providers: new Set(['shared', 'state']),

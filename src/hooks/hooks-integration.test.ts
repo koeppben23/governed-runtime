@@ -19,6 +19,7 @@ import {
   isSubagentAuthorized,
 } from './shared/phase-gate.js';
 import { benchmarkAsync } from '../test-policy.js';
+import { defaultReasonRegistry } from '../config/reasons.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -269,9 +270,10 @@ describe('Negative Path: Fail-closed behavior', () => {
     const output = formatDenyOutput(
       'PreToolUse',
       'SESSION_DIR_NOT_FOUND',
-      'Session directory does not exist. Run /hydrate to initialize.',
+      defaultReasonRegistry.format('SESSION_DIR_NOT_FOUND', { sessDir: '/missing/session' }).reason,
     );
     expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(output.hookSpecificOutput.permissionDecisionReason).not.toContain('Run /hydrate');
   });
 
   it('should produce deny for fingerprint failure', () => {
@@ -287,9 +289,10 @@ describe('Negative Path: Fail-closed behavior', () => {
     const output = formatDenyOutput(
       'PreToolUse',
       'STATE_MISSING',
-      'Session directory exists but contains no state file. Run /hydrate to initialize.',
+      defaultReasonRegistry.format('STATE_MISSING').reason,
     );
     expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(output.hookSpecificOutput.permissionDecisionReason).not.toContain('Run /hydrate');
   });
 });
 

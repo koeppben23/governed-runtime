@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { resolveSession } from './session-resolver.js';
 import type { SessionState } from '../../state/schema.js';
+import { defaultReasonRegistry } from '../../config/reasons.js';
 
 const mockResolveRoot = vi.hoisted(() => vi.fn());
 const mockComputeFingerprint = vi.hoisted(() => vi.fn());
@@ -420,7 +421,16 @@ describe('resolveSession', () => {
       const result = await resolve('/bound/worktree', 'sess-1');
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('SESSION_DIR_NOT_FOUND');
+      if (!result.ok) {
+        expect(result.code).toBe('SESSION_DIR_NOT_FOUND');
+        expect(result.reason).toBe(
+          defaultReasonRegistry.format(result.code, {
+            sessDir: '/derived/session/dir',
+          }).reason,
+        );
+        expect(result.reason).toContain('/derived/session/dir');
+        expect(result.reason).not.toContain('Run /hydrate');
+      }
     });
 
     it('returns STATE_MISSING when the canonical directory exists without state', async () => {
@@ -430,7 +440,11 @@ describe('resolveSession', () => {
       const result = await resolve('/bound/worktree', 'sess-1');
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('STATE_MISSING');
+      if (!result.ok) {
+        expect(result.code).toBe('STATE_MISSING');
+        expect(result.reason).toBe(defaultReasonRegistry.format(result.code).reason);
+        expect(result.reason).not.toContain('Run /hydrate');
+      }
     });
 
     it('fails closed as SESSION_AUTHORITY_UNAVAILABLE on untyped read failures', async () => {

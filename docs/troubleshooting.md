@@ -853,14 +853,22 @@ npm run build && npm run test:smoke
 
 **Symptom:** ACP tests show as "skipped" in smoke output.
 
-**Cause:** ACP tests require `RUN_OPENCODE_ACP_TESTS=1` and the `opencode` CLI.
+**Cause:** ACP tests require `RUN_OPENCODE_ACP_TESTS=1` and the exact native CLI
+candidate declared in `.sdk-baselines/opencode/cli-candidate.json`.
 
 **Solution:**
 
 ```bash
-npm install -g opencode-ai
-RUN_OPENCODE_ACP_TESTS=1 npm run test:smoke
+# Optional: preinstall the exact native test candidate
+npm install -g @opencode/cli@2.2.5
+npm run build
+RUN_OPENCODE_ACP_TESTS=1 npm run test:acp
 ```
+
+Without a matching installed CLI, the smoke helper uses the declared candidate
+through `npm exec` with an isolated cache. An explicit `OPENCODE_CLI` must report
+the exact candidate version or the test fails. ACP smoke verifies native process
+lifecycle only, not a governed ACP conversation or full host certification.
 
 ### PERF Tests Flaky on CI
 
