@@ -22,6 +22,10 @@ Get up and running in 5 minutes.
 
 Reference for all FlowGuard commands.
 
+### [Desktop GUI Companion](./desktop.md)
+
+Optional Desktop commands, read-only Workbench and ComposerPill behavior.
+
 ### [Phases](./phases.md)
 
 Understanding the 18 workflow phases across 3 flows.
@@ -141,17 +145,20 @@ Repository-level architecture decision records (review zone budgets, root matrix
 
 ## Quick Reference
 
-| Command            | Allowed In                                    | Description                             |
-| ------------------ | --------------------------------------------- | --------------------------------------- |
-| `/hydrate`         | Any                                           | Legacy compatibility; not V2 activation |
-| `/status`          | Any                                           | Read-only workflow orientation          |
-| `/ticket`          | READY, TICKET                                 | Record task, start ticket flow          |
-| `/plan`            | TICKET, PLAN                                  | Generate plan                           |
-| `/review-decision` | PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW     | Policy-selected approval decision       |
-| `/validate`        | VALIDATION                                    | Run checks                              |
-| `/implement`       | IMPLEMENTATION                                | Execute plan                            |
-| `/architecture`    | READY, ARCHITECTURE                           | Create/revise ADR                       |
-| `/review`          | READY                                         | Start peer review flow                  |
-| `/continue`        | Any                                           | Read-only next-action routing           |
-| `/abort`           | Any                                           | Terminate                               |
-| `/archive`         | COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE | Archive session                         |
+| Command               | Allowed In                                    | Description                             |
+| --------------------- | --------------------------------------------- | --------------------------------------- |
+| `/hydrate`            | Any                                           | Legacy compatibility; not V2 activation |
+| `/status`             | Any                                           | Read-only workflow orientation          |
+| `/ticket`             | READY, TICKET                                 | Record task, start ticket flow          |
+| `/plan`               | TICKET, PLAN                                  | Generate plan                           |
+| `/review-decision`    | PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW     | Policy-selected approval decision       |
+| `/validate`           | VALIDATION                                    | Run checks                              |
+| `/implement`          | IMPLEMENTATION                                | Execute plan                            |
+| `/architecture`       | READY, ARCHITECTURE                           | Create/revise ADR                       |
+| `/review`             | READY                                         | Start peer review flow                  |
+| `/continue`           | Any                                           | Read-only next-action routing           |
+| `/abort`              | Any                                           | Terminate                               |
+| `/archive`            | COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE | Archive session                         |
+| `/choose-workflow`    | TUI/Desktop companion                         | Canonical workflow/decision chooser     |
+| `/flowguard-ui-probe` | Desktop companion                             | Read-only Workbench (experimental)      |
+| `/flowguard-inline`   | Desktop companion                             | Refresh read-only composer status       |

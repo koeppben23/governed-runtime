@@ -71,16 +71,23 @@ The installer writes the server plugin at `plugins/flowguard/index.ts`, an
 optional TUI companion at `plugins/flowguard/tui.ts`, and an optional prebuilt
 Desktop GUI bundle at `plugins/flowguard/gui-experimental.cjs` under the selected
 OpenCode directory. The server plugin owns native tool registrations; the TUI
-and Desktop companions are progressive-enhancement workflow choosers and never a
-governance authority.
+and Desktop companions are progressive-enhancement surfaces and never a
+governance authority. The Desktop bundle adds `/choose-workflow`,
+`/flowguard-ui-probe` and `/flowguard-inline`; the latter two are experimental
+and depend on optional Desktop APIs. See
+[Desktop GUI Companion](./desktop.md).
 No `tools/flowguard.ts` or V1 plugin wrapper is installed. Existing OpenCode
 JSON/JSONC, comments, instructions, model/variant selection and permissions are
 preserved byte-for-byte. An absent config remains absent.
 `flowguard-mandates.md` is a passive managed artifact, **not** registered in
 `instructions[]`; installing files does not activate a session. A host without
 TUI/Desktop support or without the companion wrapper uses the complete Markdown
-chooser. Desktop visual acceptance remains `NOT_VERIFIED` until an installed
-pinned-host proof is recorded.
+chooser. Desktop GUI acceptance is bound to the installed OpenCode Desktop
+2.2.6 artifact and bundle hash recorded in the
+[Desktop GUI Companion](./desktop.md); a rebuilt package with a changed
+server-side command catalogue does not extend that artifact acceptance.
+Independent screenreader, zero-restart and live-profile uninstall gates remain
+open.
 
 The installer publishes the watched native plugin entrypoint only after its
 dependency tree is live. This prevents a running host from importing the fresh

@@ -92,8 +92,8 @@ const productAliasTemplates = new Set<string>(
 );
 
 describe('documentation/top-level-docs-drift', () => {
-  // Installed templates plus native/TUI commands represented by the public
-  // documentation catalogue (registered by the host, never template-installed).
+  // Installed templates plus native/TUI/Desktop commands represented by the
+  // public documentation catalogue (registered by the host, never template-installed).
   const installedCommands = [
     ...new Set([
       ...INSTALLED_TEMPLATE_FILES.map((templateFile) => slash(templateFile.replace(/\.md$/, ''))),

@@ -145,7 +145,10 @@ export function catalogPreflight(
       `Command catalog entry ${entry.id} has neither installed metadata nor host metadata.`,
     );
   }
-  if (entry.host.requiresSession && !state) {
+  // Host-session presence is a host-side precondition (`requiresHostSession`)
+  // and cannot be verified from this projection. Only the FlowGuard session
+  // state is authoritative here.
+  if (entry.host.requiresGovernanceSession && !state) {
     return {
       status: 'blocked',
       guarantee: 'eligible_to_attempt',

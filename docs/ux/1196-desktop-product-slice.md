@@ -1,5 +1,12 @@
 # FlowGuard Desktop UX — first native product slice (#1196)
 
+> **Post-merge status:** PR #1207 is merged into `develop`. This document
+> preserves the historical implementation and acceptance narrative; references
+> below to "Draft PR #1207" describe the state at the time of the recorded
+> evidence. The GUI artifact acceptance remains bound to the recorded bundle
+> hash; independent screenreader, zero-restart and live-profile uninstall gates
+> remain open.
+
 <!-- prettier-ignore-start -->
 
 **Status:** Implemented native Review Workbench, compact disclosure, reviewer timeline/ProofGraph, Session Explorer/audit chronology, and the read-only chat/composer status surface; installed-verified on Desktop 2.2.6 artifact `f9c53e8f` (GUI bundle `bb8c8cd2…b06ff81e`). VoiceOver, zero-restart and live-profile uninstall acceptance remain open.  

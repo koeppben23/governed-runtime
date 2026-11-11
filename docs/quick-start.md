@@ -3,9 +3,10 @@
 This Quick Start applies to OpenCode, the primary V2 host, on the `develop`
 command surface. The V2 port and the native Desktop Workbench (#1207) are
 merged; remaining product/accessibility acceptance is tracked in #1196. Desktop
-command-catalog metadata and ComposerPill documentation are a follow-up catalog
-change. The bounded OpenCode 2.2.4 CLI/server parity matrix remains historical
-evidence (65/65 on Linux, macOS and Windows); see the
+commands and the read-only ComposerPill are documented in the
+[Desktop GUI Companion](./desktop.md); GUI evidence remains bound to its
+installed bundle hash. The bounded OpenCode 2.2.4 CLI/server parity matrix
+remains historical evidence (65/65 on Linux, macOS and Windows); see the
 [P0-00 evidence](./host-probes/opencode-v2/p0-00-inactive-parity.md).
 R4 is a documented `NOT_SUPPORTED` trusted-plugin limitation: untrusted
 co-installed plugins are outside the supported V2 security boundary, and no
@@ -229,6 +230,17 @@ Or review a specific GitHub pull request:
 | `/recover-capacity` | Release a proven terminal reviewer capacity lock       |
 | `/end-governance`   | End governance after safe workflow and audit closure   |
 
-The optional TUI companion adds `/choose-workflow`. The merged Desktop GUI
-companion is not yet represented in this command catalog slice; Desktop command
-metadata and ComposerPill documentation are a follow-up catalog change.
+The optional TUI companion adds `/choose-workflow`.
+
+**Desktop companion commands:**
+
+| Command               | Description                                                                      |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `/choose-workflow`    | Shared TUI/Desktop chooser for workflows and review decisions.                   |
+| `/flowguard-ui-probe` | Open the read-only Desktop Workbench. Experimental and conditionally registered. |
+| `/flowguard-inline`   | Refresh the read-only composer status. Experimental; requires `ComposerPill`.    |
+
+The Desktop-only commands `/flowguard-ui-probe` and `/flowguard-inline` are not
+available on TUI, headless or MCP hosts. See
+[Desktop GUI Companion](./desktop.md) for the read-only ComposerPill, optional
+API degradation and installed evidence scope.

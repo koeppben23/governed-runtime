@@ -410,6 +410,7 @@ describe('renderHelp', () => {
     const markdown = renderHelp(result, { format: 'markdown' });
     expect(markdown).toContain('## Command reference');
     expect(markdown).toContain('## Host capabilities');
+    expect(markdown).toContain('desktop=not_verified');
     expect(markdown).toContain('source=default');
     expect(markdown).toContain('(portable; stable)');
     const json = JSON.parse(renderHelp(result, { format: 'json' }));
@@ -508,6 +509,37 @@ describe('renderHelp', () => {
     expect(json.commands[1]).toMatchObject({
       maturity: 'experimental',
       availability: 'available',
+    });
+  });
+
+  it('renders Desktop-only experimental commands with honest availability', () => {
+    const result = noSessionResult({
+      commands: [
+        {
+          id: 'desktop.ui-probe',
+          invocation: '/flowguard-ui-probe',
+          label: 'Open FlowGuard Workbench',
+          description: 'Open the read-only Desktop Workbench',
+          visibility: 'not_verified',
+          preflight: { status: 'available', guarantee: 'read_only_available' },
+          alsoAvailableAs: [],
+          surfaces: ['desktop'],
+          maturity: 'experimental',
+          capabilities: defaultCapabilities,
+          availability: 'not_verified',
+        },
+      ],
+      directive: null,
+    });
+    const markdown = renderHelp(result, { format: 'markdown' });
+    expect(markdown).toContain('(desktop; experimental; not verified on this host)');
+    const json = JSON.parse(renderHelp(result, { format: 'json' }));
+    expect(json.commands[0]).toMatchObject({
+      invocation: '/flowguard-ui-probe',
+      surfaces: ['desktop'],
+      maturity: 'experimental',
+      availability: 'not_verified',
+      visibility: 'not_verified',
     });
   });
 
