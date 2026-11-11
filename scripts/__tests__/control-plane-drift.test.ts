@@ -6,7 +6,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { evaluateControlPlane } from '../control-plane-drift.js';
+import {
+  ControlPlaneApiError,
+  evaluateControlPlane,
+  fetchLiveControlPlane,
+} from '../control-plane-drift.js';
 import {
   ACTIONS_POLICY_CONTRACT,
   CONTROL_PLANE_CONTRACT,
@@ -359,4 +363,27 @@ describe('scripts/control-plane-drift', () => {
       shaPinningRequired: true,
     });
   });
+
+  it.each([401, 403])(
+    'classifies HTTP %i as an authentication failure, not drift',
+    async (status) => {
+      const fetchImpl = (async () => ({
+        ok: false,
+        status,
+        statusText: status === 401 ? 'Unauthorized' : 'Forbidden',
+        json: async () => ({}),
+      })) as unknown as typeof fetch;
+      const error = await fetchLiveControlPlane({
+        repo: 'owner/repo',
+        token: 'expired',
+        fetchImpl,
+      }).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ControlPlaneApiError);
+      expect(error).toMatchObject({
+        status,
+        authFailure: true,
+        code: 'CONTROL_PLANE_API_FAILED',
+      });
+    },
+  );
 });
