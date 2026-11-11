@@ -69,6 +69,31 @@ function hostTranscript(sessionId: string): HostTranscript {
   return { sessionId, payload, messageCount: 1, bytes: JSON.stringify(payload).length };
 }
 
+async function writeFlowGuardLog(
+  entries: readonly Record<string, unknown>[],
+  file = 'flowguard-2026-01-01.log',
+): Promise<void> {
+  const directory = path.join(ws.tmpDir, '.opencode', 'logs');
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    path.join(directory, file),
+    `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
+  );
+}
+
+function logEntry(sessionId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    ts: '2026-01-01T00:00:00.000Z',
+    level: 'info',
+    service: 'flowguard',
+    sessionId,
+    traceId: `trace-${sessionId}`,
+    message: 'diagnostic entry',
+    fields: { phase: 'READY' },
+    ...overrides,
+  };
+}
+
 function request(
   outputDir: string,
   overrides: Partial<DiagnosticExportRequest> = {},
@@ -79,6 +104,8 @@ function request(
     outputDir,
     redactionMode: 'basic' as const,
     includeHost: false,
+    logsDirectory: path.join(ws.tmpDir, '.opencode', 'logs'),
+    logsDirectoryLabel: '.opencode/logs',
     now: FIXED_NOW,
     captureId: CAPTURE_ID,
     limits: {
@@ -120,6 +147,7 @@ describe('diagnostic export', () => {
   describe('HAPPY — bounded snapshot with manifest and session graph', () => {
     it('writes a complete manifest, graph and state without modifying canonical state', async () => {
       const { sessionDir } = await rootState();
+      await writeFlowGuardLog([logEntry(ROOT_ID)]);
       const before = await readFile(path.join(sessionDir, 'session-state.json'), 'utf8');
       const outputDir = path.join(ws.tmpDir, 'diag-complete');
 
@@ -129,23 +157,66 @@ describe('diagnostic export', () => {
       expect(result.manifest.boundary.sessionsKnown).toBe(1);
       expect(result.manifest.boundary.sessionsWithState).toBe(1);
       expect(result.manifest.counts.hostMessages).toBe(0);
+      expect(result.manifest.counts.logEntries).toBe(1);
       const manifest = JSON.parse(await readFile(path.join(outputDir, 'manifest.json'), 'utf8'));
       expect(manifest.captureId).toBe(CAPTURE_ID);
       expect(manifest.files.map((file: { path: string }) => file.path)).toEqual(
         expect.arrayContaining([
           'session-graph.json',
           'timeline.json',
+          'diagnostics/log-files.json',
+          'diagnostics/logs.redacted.jsonl',
           'sessions/ses_root/state.redacted.json',
         ]),
       );
       const graph = JSON.parse(await readFile(path.join(outputDir, 'session-graph.json'), 'utf8'));
       expect(graph.rootSessionId).toBe(ROOT_ID);
       expect(graph.sessions).toHaveLength(1);
+      expect(manifest.sources.logs).toMatchObject({
+        status: 'complete',
+        entriesIncluded: 1,
+        parseErrors: 0,
+        hostLogs: { status: 'not_verified' },
+      });
+      const logArtifact = await readFile(
+        path.join(outputDir, 'diagnostics', 'logs.redacted.jsonl'),
+        'utf8',
+      );
+      expect(logArtifact).toContain('diagnostic entry');
+      expect(logArtifact).toContain(ROOT_ID);
+      const logIndex = JSON.parse(
+        await readFile(path.join(outputDir, 'diagnostics', 'log-files.json'), 'utf8'),
+      );
+      expect(logIndex.artifact).toBe('diagnostics/logs.redacted.jsonl');
+      expect(logIndex.files).toHaveLength(1);
       expect(await readFile(path.join(sessionDir, 'session-state.json'), 'utf8')).toBe(before);
+    });
+
+    it('reports malformed log input as an explicit source gap', async () => {
+      await rootState();
+      const logDirectory = path.join(ws.tmpDir, '.opencode', 'logs');
+      await mkdir(logDirectory, { recursive: true });
+      await writeFile(
+        path.join(logDirectory, 'flowguard-2026-01-01.log'),
+        `${JSON.stringify(logEntry(ROOT_ID))}\nnot-json\n`,
+      );
+      const outputDir = path.join(ws.tmpDir, 'diag-log-gap');
+
+      const result = await writeDiagnosticExport(request(outputDir));
+      expect(result.manifest.status).toBe('PARTIAL');
+      expect(result.manifest.sources.logs).toMatchObject({
+        status: 'partial',
+        parseErrors: 1,
+        entriesIncluded: 1,
+      });
+      expect(result.manifest.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: 'LOG_CAPTURE_PARTIAL' })]),
+      );
     });
 
     it('captures a known reviewer child and preserves technical IDs while masking host text', async () => {
       await rootState(rootLinkedAssurance());
+      await writeFlowGuardLog([logEntry(ROOT_ID), logEntry(CHILD_ID)]);
       const outputDir = path.join(ws.tmpDir, 'diag-host');
 
       const hostTimeouts: number[] = [];
@@ -165,10 +236,11 @@ describe('diagnostic export', () => {
       expect(result.manifest.boundary.sessionsWithoutState).toBe(1);
       expect(result.manifest.counts.hostMessages).toBe(2);
       expect(result.manifest.status).toBe('PARTIAL');
-      expect(result.manifest.completeness).toEqual({
-        lineage: 'complete',
-        canonicalState: 'partial',
-        hostHistory: 'complete',
+      expect(result.manifest.sources).toMatchObject({
+        lineage: { status: 'complete' },
+        canonicalState: { status: 'partial' },
+        hostHistory: { status: 'complete' },
+        logs: { status: 'complete', sessionsWithoutEntries: [] },
       });
       const graph = JSON.parse(await readFile(path.join(outputDir, 'session-graph.json'), 'utf8'));
       expect(graph.sessions).toEqual(
@@ -196,6 +268,7 @@ describe('diagnostic export', () => {
 
   it('does not read a child whose invocation parent is not the requested root', async () => {
     await rootState(PLAN_REVIEW_ASSURANCE);
+    await writeFlowGuardLog([logEntry(ROOT_ID)]);
     const outputDir = path.join(ws.tmpDir, 'diag-foreign-parent');
 
     const result = await writeDiagnosticExport(
@@ -207,7 +280,7 @@ describe('diagnostic export', () => {
 
     expect(result.manifest.status).toBe('PARTIAL');
     expect(result.manifest.boundary.sessionsLineageUnverified).toBe(1);
-    expect(result.manifest.completeness.lineage).toBe('partial');
+    expect(result.manifest.sources.lineage.status).toBe('partial');
     expect(result.manifest.warnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -354,7 +427,7 @@ describe('diagnostic export', () => {
       expect(result.manifest.warnings).toEqual(
         expect.arrayContaining([expect.objectContaining({ code: 'ARTIFACT_TOO_LARGE' })]),
       );
-      expect(result.manifest.completeness.canonicalState).toBe('complete');
+      expect(result.manifest.sources.canonicalState.status).toBe('complete');
     });
   });
 

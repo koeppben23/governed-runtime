@@ -81,6 +81,8 @@ async function runDebugExport(ctx: Plugin.Context, sessionId: string): Promise<s
     outputDir,
     redactionMode: 'basic',
     includeHost: true,
+    logsDirectory: path.join(root, '.opencode', 'logs'),
+    logsDirectoryLabel: '.opencode/logs',
     hostReader: (childSessionId, timeoutMs) => nativeHostTranscript(ctx, childSessionId, timeoutMs),
   });
   const warningLines = result.manifest.warnings.map(
@@ -90,7 +92,8 @@ async function runDebugExport(ctx: Plugin.Context, sessionId: string): Promise<s
   return [
     `**Diagnostic export: ${result.manifest.status}**`,
     `Path: \`${result.outputDir}\``,
-    `Sessions: ${result.manifest.counts.sessions}; audit events: ${result.manifest.counts.auditEvents}; host messages: ${result.manifest.counts.hostMessages}.`,
+    `Sessions: ${result.manifest.counts.sessions}; audit events: ${result.manifest.counts.auditEvents}; host messages: ${result.manifest.counts.hostMessages}; log entries: ${result.manifest.counts.logEntries}.`,
+    `Log capture: ${result.manifest.sources.logs.status}; host logs: ${result.manifest.sources.logs.hostLogs.status}.`,
     warningLines.length > 0 ? `Warnings:\n${warningLines.join('\n')}` : 'No capture warnings.',
     'This snapshot is diagnostic only. It is not governance evidence, an authorization or a governed `/export`.',
   ].join('\n\n');

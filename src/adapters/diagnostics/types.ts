@@ -21,6 +21,8 @@ export type DiscoverySource =
 export interface SessionCapture {
   readonly sessionId: string;
   readonly parentSessionId: string | null;
+  readonly generation: number;
+  readonly captureStatus: 'captured' | 'not_captured' | 'truncated';
   readonly role: 'root' | 'reviewer' | 'continuation';
   readonly discoveredBy: readonly DiscoverySource[];
   readonly lineage: 'verified' | 'not_verified';

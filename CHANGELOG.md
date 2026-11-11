@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bundle bytes and installed bundle hash remain unchanged; Desktop availability
   stays `not_verified` without trusted host capability evidence.
 
+- Extend diagnostic export to `diagnostic-export.v2` with bounded FlowGuard
+  JSONL log artifacts, a source inventory and independent completeness status
+  for discovery, lineage, canonical state, audit, host history and logs.
+  CLI and native `/debug-export` share the same collector; OpenCode host
+  process logs remain explicitly `NOT_VERIFIED`. Missing or truncated logs,
+  malformed entries and uncorrelated records are explicit gaps.
+
 - Harden OpenCode uninstall safety: preserve a runtime `flowguard.json` when
   no valid scope-matched install ownership manifest exists; after deleting
   the managed native plugin entry, warn that a live host may still have the

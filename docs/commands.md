@@ -693,13 +693,27 @@ notification and panel behavior remains `NOT_VERIFIED` until installed-host
 evidence exists; file output is the reliable contract.
 
 The snapshot contains `manifest.json`, `session-graph.json`, `timeline.json`,
-per-session redacted state/audit/review files and optional redacted host
-transcripts. The manifest reports `COMPLETE`, `PARTIAL` or `NOT_VERIFIED`,
-per-file SHA-256/size, capture boundaries, warnings and redaction limitations.
-Known-but-unreachable sessions remain in the denominator and prevent `COMPLETE`.
-A reviewer child without its own FlowGuard state is reported with
-`canonicalState: partial`; a child whose invocation does not name the requested
-root is retained as `lineage: not_verified` and its state/transcript is not read.
+per-session redacted state/audit/review files, optional redacted host
+transcripts, and bounded FlowGuard log artifacts. The manifest reports
+`COMPLETE`, `PARTIAL` or `NOT_VERIFIED`, per-file SHA-256/size, capture
+boundaries, warnings and redaction limitations.
+
+The manifest reports independent source status for `discovery`, `lineage`,
+`canonicalState`, `audit`, `hostHistory` and `logs`. Known-but-unreachable
+sessions remain in the denominator and prevent `COMPLETE`. A reviewer child
+without its own FlowGuard state is reported with `canonicalState: partial`; a
+child whose invocation does not name the requested root is retained as
+`lineage: not_verified` and its state/transcript is not read.
+
+FlowGuard JSONL diagnostics are captured into `diagnostics/logs.redacted.jsonl`
+(CLI `--raw`: `diagnostics/logs.jsonl`) with a `diagnostics/log-files.json`
+index. The index lists inspected and skipped rotated files, byte/line budgets,
+parse failures, correlation counts and omissions. Only entries attributable to
+verified session IDs are written; uncorrelated entries are reported as a gap.
+OpenCode host process logs are explicitly `NOT_VERIFIED` and are not read by
+this exporter. Missing, unreadable, expired or truncated logs make the log
+source `PARTIAL` or `NOT_VERIFIED`, never silently `COMPLETE`.
+
 Per-file and total byte limits plus a total duration budget are enforced;
 oversized artifacts are skipped with an explicit warning and `PARTIAL`, never
 silently truncated.
