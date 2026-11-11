@@ -234,11 +234,11 @@ The optional TUI companion adds `/choose-workflow`.
 
 **Desktop companion commands:**
 
-| Command               | Description                                                                      |
-| --------------------- | -------------------------------------------------------------------------------- |
-| `/choose-workflow`    | Shared TUI/Desktop chooser for workflows and review decisions.                   |
-| `/flowguard-ui-probe` | Open the read-only Desktop Workbench. Experimental and conditionally registered. |
-| `/flowguard-inline`   | Refresh the read-only composer status. Experimental; requires `ComposerPill`.    |
+| Command               | Description                                                                   |
+| --------------------- | ----------------------------------------------------------------------------- |
+| `/choose-workflow`    | Shared TUI/Desktop chooser for workflows and review decisions.                |
+| `/flowguard-ui-probe` | Open the read-only Desktop Workbench. Experimental; requires `Panel`/`Slot`.  |
+| `/flowguard-inline`   | Refresh the read-only composer status. Experimental; requires `ComposerPill`. |
 
 The Desktop-only commands `/flowguard-ui-probe` and `/flowguard-inline` are not
 available on TUI, headless or MCP hosts. See

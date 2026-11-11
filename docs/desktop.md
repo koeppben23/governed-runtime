@@ -11,13 +11,14 @@ GUI APIs it uses, keeps the complete portable fallback: `/start`, `/status`,
 
 ## Desktop commands
 
-These commands are registered by the Desktop GUI bundle. They are documented in
-the capability-aware command catalogue with the `desktop` surface only.
+These commands are registered by the Desktop GUI bundle. `/choose-workflow` is
+shared with the TUI and catalogued with both surfaces; the two Desktop-only
+commands are catalogued with the `desktop` surface only.
 
 | Command               | Purpose                                                                                     | Availability                                                                 |
 | --------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `/choose-workflow`    | Opens the canonical Next Action chooser or review-decision dialog.                          | TUI or Desktop, depending on the loaded companion; never a server authority. |
-| `/flowguard-ui-probe` | Opens the read-only review, evidence and recovery Workbench.                                | Desktop only; experimental and conditionally registered.                     |
+| `/flowguard-ui-probe` | Opens the read-only review, evidence and recovery Workbench.                                | Desktop only; experimental. Registered, but requires `Panel`/`Slot` to open. |
 | `/flowguard-inline`   | Refreshes the read-only FlowGuard status beside the chat composer. Never inserts a message. | Desktop only; experimental and requires the `ComposerPill` API.              |
 
 `/choose-workflow` is shared with the optional TUI companion. The command can
@@ -111,7 +112,8 @@ When the Desktop companion is absent or an optional GUI API is unavailable:
 
 - use `/status`, `/help` and `/commands` in the chat;
 - use the portable Markdown workflow chooser from `/start` and `/status`;
-- use `/debug-export` and `/diagnostics` for read-only diagnostics;
+- use `/diagnostics` for read-only diagnostic views and `/debug-export` to
+  write a bounded diagnostic snapshot;
 - use the canonical command or decision path for any governance action.
 
 Desktop availability never implies availability on TUI, headless, MCP, Claude
