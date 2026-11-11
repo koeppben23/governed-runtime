@@ -1,6 +1,6 @@
 /** P0-00: real packed installs. No seeded authority; mixed tests use native Start. */
 import { existsSync } from 'node:fs';
-import { readFile, realpath, writeFile } from 'node:fs/promises';
+import { readFile, realpath, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionMessageAssistantTool } from '@opencode/client';
@@ -11,6 +11,7 @@ import { createPackedFlowGuardInstall } from './opencode-packed-install-test-hel
 import { FLOWGUARD_TOOL_NAMES } from '../integration/tool-names.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { statePath } from '../adapters/persistence.js';
 import { renderPhaseAwareMandates } from '../rendering/mandates-renderer.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 
@@ -247,6 +248,27 @@ describe.skipIf(!LIVE)('packed installed INACTIVE native parity', () => {
             channel: 'host_command',
             rootSessionId: active.id,
           });
+          // Exercise real authorized reload and repeated Start, never seeded authority.
+          probe.scripts.set(active.id, [{ tool: { name: 'flowguard_hydrate', arguments: {} } }]);
+          await probe.prompt(active.id, 'Reload the authorized workflow without restarting it.');
+          expect(
+            (await terminalTools(probe, active.id, 'flowguard_hydrate')).map(
+              (part) => part.state.status,
+            ),
+          ).toEqual(['completed']);
+          await probe.client.session.command({ sessionID: active.id, name: 'start', text: '' });
+          await probe.client.session.wait(
+            { sessionID: active.id },
+            { signal: AbortSignal.timeout(120_000) },
+          );
+          const reloaded = await resolveSessionAuthority({
+            root: await realpath(probe.project),
+            sessionId: active.id,
+          });
+          expect(reloaded.status).toBe('resolved');
+          if (reloaded.status !== 'resolved') throw new Error('Authorized reload lost its binding');
+          expect(reloaded.state.flowguardSessionId).toBe(authority.state.flowguardSessionId);
+          expect(reloaded.state.phase).toBe(authority.state.phase);
           const mandates = renderPhaseAwareMandates({}, authority.state.phase);
           for (const refresh of ['publication', 'location-reload', 'host-restart'] as const) {
             if (refresh === 'location-reload') await probe.client.location.reload();
@@ -323,6 +345,25 @@ describe.skipIf(!LIVE)('packed installed INACTIVE native parity', () => {
           ).toEqual(activation);
           expect(probe.errors).toEqual([]);
           checkpoint('inactive-effects-and-auxiliary-contexts-completed');
+          // Deliberate negative fixture: remove only this isolated workflow's state.
+          // The real native Start callback must fail without recreating authority.
+          const boundState = statePath(authority.sessDir);
+          const retainedState = `${boundState}.closure-test-backup`;
+          await rename(boundState, retainedState);
+          try {
+            await expect(
+              probe.client.session.command({ sessionID: active.id, name: 'start', text: '' }),
+            ).rejects.toThrow();
+            expect(existsSync(boundState)).toBe(false);
+            expect(
+              (await readAuditTrail(authority.sessDir)).filter(
+                (event) => event.event === 'governance:activated',
+              ),
+            ).toEqual(activation);
+          } finally {
+            await rename(retainedState, boundState);
+          }
+          checkpoint('missing-authority-not-recreated');
         } finally {
           restore();
         }

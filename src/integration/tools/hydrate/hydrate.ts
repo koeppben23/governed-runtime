@@ -285,10 +285,11 @@ async function executeHydrateTool(args: HydrateArgs, context: ToolContext): Prom
 
 export const hydrate: ToolDefinition = {
   description:
-    'Bootstrap or reload the FlowGuard session. Creates a new session if none exists, ' +
-    'or returns the existing session unchanged except explicit claimedTaskClass escalation. ' +
-    'Optionally configure policy mode (solo/team/regulated) and profile. ' +
-    'This MUST be the first FlowGuard tool call in any workflow.',
+    'Prepare or reload canonical workflow state inside an already authorized host path. ' +
+    'Only the explicit host Start operation or authorized StartGovernance activates governance; ' +
+    'direct hydrate cannot bootstrap activation or recreate missing authority. ' +
+    'Existing sessions are retained except explicit claimedTaskClass escalation; terminal reload is read-only. ' +
+    'Internal Start preparation retains policy mode (solo/team/team-ci/regulated) and profile configuration.',
   args: {
     policyMode: PolicyModeSchema.optional().describe(
       'FlowGuard policy mode. When omitted, reads from repo config ' +

@@ -940,6 +940,17 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Align OpenCode command templates, directly affected recovery reasons and
+  product documentation with explicit V2 Start authority. Hydrate remains the
+  internal preparation/reload mechanism, not external activation or authority
+  repair. Terminal/ACTIVE bindings are not restarted; new-work recovery requires
+  a distinct host session and trustworthy pre-change baseline where applicable.
+- Compare host output exactly against the native V2 CLI candidate, reject
+  malformed/prerelease/foreign outputs, and install that candidate in ProofGraph
+  live controls instead of the historical V1 host. A matching candidate is not
+  ACTIVE product or Desktop certification. Document native reviewer dispatch
+  authorization and same-child capture instead of hidden V1 SDK child creation.
+
 - Harden diagnostic log export: redacted mode rejects non-technical or
   secret-shaped trace IDs, and a failed JSONL/index publication marks the log
   source `PARTIAL` instead of reporting `COMPLETE` while the artifact is
@@ -2265,6 +2276,21 @@ stop`, reviewer child reported it could not complete the falsification).
   `src/adapters/session-authority.ts`: 100 % (20 killed, 0 survived).
 
 ### Removed
+
+- Remove the non-emitted `MAX_REVIEW_ITERATIONS_REACHED` reason retained solely
+  for registry compatibility on the reviewed recovery surface. Current review
+  budgets, convergence, decisions and audit behavior are unchanged.
+
+- **Breaking configuration change:** reject `presentation.opencode` and all
+  retired reviewer keys (`outputTokenMax`, `toolTimeoutMs`, `reviewTimeoutMs`,
+  `serializationTimeoutMs`), including former installer defaults. No read-time
+  normalization or automatic `install --force` migration remains. Document
+  backup-first manual recovery while preserving current settings, session state
+  and audit evidence. The independent config `schemaVersion: "v1"` is unchanged.
+- Remove the obsolete host-update trigger. Move the V1 docs integrity workflow
+  out of scheduled/current V2 acceptance into an explicit manual historical-only
+  check with no baseline-write mode. V2 docs-drift coverage remains
+  `NOT_VERIFIED`; retained baseline and historical evidence bytes are unchanged.
 
 - **V1 reviewer Task transport (#1190, #1169 WS1).** The V2 entrypoint never
   registered it and the V2 host adapter threw for every V1 reviewer call, so it

@@ -17,8 +17,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Install pinned host
-        run: npm install -g "opencode-ai@$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")"
+      - name: Install native V2 CLI candidate (not host certification)
+        run: npm install -g "$(node -p "const c = require('./.sdk-baselines/opencode/cli-candidate.json'); c.package + '@' + c.version")"
+      - name: Verify exact candidate executable
+        run: npm run check:opencode-host
       - name: Run real-host controls
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}

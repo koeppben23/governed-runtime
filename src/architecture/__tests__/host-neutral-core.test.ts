@@ -63,15 +63,12 @@ const PERSISTED_LOCATION =
   'persisted install/runtime location (~/.config/opencode, OPENCODE_CONFIG_DIR, .opencode/); moving it would be a user-data migration';
 const PERSISTED_MESSAGE_ID =
   'persisted-evidence validation of the recorded host message-ID format; changing it would change which stored evidence is accepted';
-const PERSISTED_PRESENTATION =
-  'persisted user-config key presentation.opencode is accepted with unchanged meaning into the neutral presentation.glyphProfile shape';
 
 /** Exact remaining host-specific lines in core. Lower a count when it shrinks. */
 const HOST_SPECIFIC_ALLOWLIST: readonly Allowance[] = [
   { file: 'adapters/persistence-config.ts', count: 1, reason: PERSISTED_LOCATION },
   { file: 'adapters/persistence.ts', count: 2, reason: PERSISTED_LOCATION },
   { file: 'adapters/workspace/init.ts', count: 7, reason: PERSISTED_LOCATION },
-  { file: 'config/flowguard-config.ts', count: 6, reason: PERSISTED_PRESENTATION },
   { file: 'logging/file-sink.ts', count: 2, reason: PERSISTED_LOCATION },
   { file: 'state/host-identity.ts', count: 1, reason: PERSISTED_MESSAGE_ID },
   {

@@ -332,7 +332,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Central policy file is invalid JSON: {message}',
     recoverySteps: [
       'Fix JSON syntax in the central policy file',
-      'Validate file structure before re-running /hydrate',
+      'Validate file structure before retrying the interrupted authorized Start operation',
     ],
   },
 
@@ -352,7 +352,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Central policy minimumMode is invalid: {message}',
     recoverySteps: [
       'Set minimumMode to one of: solo, team, regulated',
-      'Re-run /hydrate after updating the central policy file',
+      'Retry the interrupted authorized Start operation after updating the central policy file',
     ],
   },
 
@@ -362,7 +362,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Profile "{profile}" from config is not registered.',
     recoverySteps: [
       'Register the profile in the profile registry',
-      'Use an explicit profileId with /hydrate',
+      'Configure a supported profile before explicitly starting a new governed session',
       'Remove config.profile.defaultId from flowguard.json',
     ],
   },
@@ -372,7 +372,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'state',
     messageTemplate: 'Hydrate discovery contract failed: {message}',
     recoverySteps: [
-      'Re-run /hydrate and verify discovery artifacts are created',
+      'Inspect the failed authorized Start preparation; retry only through its canonical recovery and verify discovery artifacts',
       'Do not proceed until discoveryDigest and discoverySummary are present',
     ],
   },
@@ -502,7 +502,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Policy snapshot digest version is not supported: {message}',
     recoverySteps: [
       'Use the FlowGuard version that wrote the policy snapshot',
-      'Re-run /hydrate with the currently installed version to mint a current snapshot',
+      'Do not mint a replacement snapshot for the existing session. New work requires a distinct host session and explicit host Start under the current contract',
     ],
   },
 
@@ -512,7 +512,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Policy mode is invalid: {message}',
     recoverySteps: [
       'Set the policy mode to one of: solo, team, team-ci, regulated',
-      'Update the central policy file or flowguard.json and re-run /hydrate',
+      'Correct the central policy file or flowguard.json before retrying authorized Start; existing sessions retain their frozen policy',
     ],
   },
 

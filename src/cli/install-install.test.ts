@@ -408,27 +408,6 @@ describe('cli/install', () => {
       const config = await readConfig(tmpDir);
       expect(config.policy.defaultMode).toBe('team');
     });
-    it('install writes the current reviewer config and keeps an earlier-installer config usable', async () => {
-      const args = repoArgs({ coreTarball: await createMockTarball() });
-      expect((await install(args)).errors).toEqual([]);
-      const configPath = path.join(tmpDir, '.opencode', 'flowguard.json');
-      const read = async () =>
-        JSON.parse(await fs.readFile(configPath, 'utf8')) as Record<string, unknown>;
-      const write = (raw: unknown) => fs.writeFile(configPath, `${JSON.stringify(raw)}\n`, 'utf8');
-      const raw = await read();
-      expect(raw.reviewer).toEqual({ executionTimeoutMs: 600_000 });
-      const { readConfig } = await import('../adapters/persistence-config.js');
-      const legacy = { outputTokenMax: 'host', toolTimeoutMs: 30_000, reviewTimeoutMs: 480_000 };
-      await write({
-        ...raw,
-        reviewer: { ...legacy, serializationTimeoutMs: 60_000, executionTimeoutMs: 300_000 },
-      });
-      expect((await readConfig(tmpDir)).reviewer).toEqual({ executionTimeoutMs: 300_000 });
-      expect((await install({ ...args, force: true })).errors).toEqual([]);
-      expect((await read()).reviewer).toEqual({ executionTimeoutMs: 300_000 });
-      await write({ ...raw, reviewer: { outputTokenMax: 32_000 } });
-      await expect(readConfig(tmpDir)).rejects.toMatchObject({ code: 'SCHEMA_VALIDATION_FAILED' });
-    });
     it('copies tarball to vendor directory', async () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));

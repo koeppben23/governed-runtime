@@ -179,7 +179,7 @@ It composes existing authorities (the readiness projection, evidence completenes
 
 Difference from `/status --readiness`: `/status --readiness` returns the compact readiness projection; `/finish` additionally derives the single `overallStatus`, the non-normative action guidance, and the exit options as a curated pre-export card. Fail-closed enforcement remains with `/export` and the existing gates — `/finish` reports a blocker, it does not enforce one.
 
-Available in any phase, including terminal phases (`COMPLETE`, `ARCH_COMPLETE`, `PEER_REVIEW_COMPLETE`). When no session exists, `/finish` reports this and recommends `/hydrate`.
+Available in any governed phase, including terminal phases (`COMPLETE`, `ARCH_COMPLETE`, `PEER_REVIEW_COMPLETE`). If governance is verifiably inactive, recommend explicit `/start` without automatically invoking it. Missing, damaged or unavailable bound authority remains blocked; `/finish` never recreates it.
 
 `/finish` maps internally to `flowguard_status` with `{ finish: true }`.
 
@@ -205,22 +205,28 @@ records, and reason codes use canonical command names.
 
 ### /hydrate
 
-Bootstrap or reload the FlowGuard session. Calling it again without arguments
-returns the existing session unchanged; an explicit `claimedTaskClass` argument
-records a raise-only risk escalation (it can never lower the persisted claim).
-`/hydrate` performs no terminal transition and remains available in every phase
-as the bootstrap/reload/recovery entrypoint.
+Reload an already authorized FlowGuard session. Direct `/hydrate` does not
+activate OpenCode governance: only explicit `/start` or an authorized
+`StartGovernance` request does. Missing or damaged activation/session authority
+must not be recreated through hydrate or a repeated Start.
 
-**Creates:**
+Without arguments it retains the existing workflow; an explicit
+`claimedTaskClass` argument can record the existing raise-only escalation for a
+nonterminal session. Terminal reload is read-only. Neither `/hydrate` nor
+repeating `/start` in an ACTIVE binding restarts it. New work requires a distinct
+host session and explicit activation; implementation-evidence recovery also
+requires an independently prepared trustworthy pre-change worktree.
+
+**Internal Start preparation creates** (not a direct hydrate activation path):
 
 - Session state in workspace registry
 - Discovery results (repository metadata, stack, topology)
 - Profile resolution
 
-**Arguments:** `policyMode` (optional): `solo`, `team`, `team-ci`, or `regulated`.
+**Preparation arguments:** `policyMode` (optional): `solo`, `team`, `team-ci`, or `regulated`.
 When omitted, reads `flowguard.json` → `policy.defaultMode`, then falls back to `team` (human-gated).
 
-If `FLOWGUARD_POLICY_PATH` is set, `/hydrate` enforces the central `minimumMode` from that
+If `FLOWGUARD_POLICY_PATH` is set, internal hydration enforces the central `minimumMode` from that
 file. Explicit weaker modes are blocked; repo/default weaker modes are elevated with visible
 resolution evidence.
 
@@ -228,7 +234,7 @@ resolution evidence.
 
 - In CI context: effective mode = `team-ci` (auto-approve at user gates)
 - Without CI context: degrades to `team` (human-gated), reason `ci_context_missing`
-  **Starts at:** READY
+  **Fresh authorized preparation starts at:** READY. Existing bindings retain their phase and frozen policy.
 
 ### /ticket
 

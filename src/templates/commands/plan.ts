@@ -22,7 +22,7 @@ Generate a comprehensive implementation plan for the current ticket, then obtain
 ### Phase 1: Check State
 
 1. Call \`flowguard_status\` to verify a session exists with a ticket in TICKET or PLAN phase.
-   - If no session: call \`flowguard_hydrate\` first.
+   - If governance is inactive: recommend explicit \`/start\` and stop; never start it automatically. If session authority is missing or unavailable, report the block without recreating it.
    - If no ticket: tell the user to run /ticket first and stop.
    - If phase does not allow /plan: report the current phase and stop.
 ${DISCOVERY_REVIEW_CAPTURE}

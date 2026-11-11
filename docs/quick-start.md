@@ -38,7 +38,17 @@ subagent session); it prepares the workflow and activates governance for that
 session only. Until then OpenCode behaves natively. An optional single argument
 selects a policy mode, for example `/start team`.
 
-After starting, FlowGuard enters the **READY** phase. Choose one of three flows.
+A fresh successful start enters the **READY** phase. Choose one of three flows.
+Repeating `/start` in an ACTIVE root reuses its bound workflow; it does not reset
+the phase or establish a new implementation baseline. `/hydrate` reloads an
+already authorized session and cannot activate governance or repair missing
+authority. Terminal workflows remain terminal: new work requires a distinct
+host session and explicit activation, with a trustworthy pre-change worktree
+when recovering implementation evidence.
+
+Upgrading an existing installation? Follow the
+[manual configuration recovery](./configuration.md#breaking-change-manual-configuration-recovery)
+for retired keys; `install --force` does not migrate them.
 
 ## Ticket Flow (Full Development Lifecycle)
 
@@ -67,9 +77,10 @@ interpreted as risk classes. Comments, attachments and provider state are not pa
 ```
 
 The LLM generates a detailed plan. **The plan then enters an iterative
-independent-review loop**: the FlowGuard plugin deterministically invokes the
-`flowguard-reviewer` subagent and injects the structured findings back into the
-tool response. The primary agent reads the findings and either submits an
+independent-review loop**: the parent follows the returned invocation using the
+native `subagent` tool. FlowGuard authorizes the exact pending dispatch, binds
+the actual `flowguard-reviewer` child and validates same-child terminal findings
+before they can satisfy review. The primary agent reads the findings and either submits an
 `approve` verdict (no further changes), submits a `changes_requested` verdict
 with a revised plan (next iteration), or — if the reviewer cannot critique the
 plan — receives a BLOCKED `SUBAGENT_UNABLE_TO_REVIEW` and must produce a
@@ -204,7 +215,7 @@ Or review a specific GitHub pull request:
 
 | Command                              | Description                                            |
 | ------------------------------------ | ------------------------------------------------------ |
-| `/hydrate`                           | Legacy compatibility; not V2 activation                |
+| `/hydrate`                           | Reload authorized session; not activation or restart   |
 | `/ticket <text or URL>`              | Record task (supports external URLs)                   |
 | `/plan`                              | Generate plan                                          |
 | `/architecture`                      | Create/revise ADR                                      |

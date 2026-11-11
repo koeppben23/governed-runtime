@@ -46,7 +46,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     category: 'precondition',
     messageTemplate: 'Explicit policy mode violates central minimum: {message}',
     recoverySteps: [
-      'Use /hydrate with a policyMode that satisfies the central minimum',
+      'For a new workflow, explicitly activate governance with a policy mode that satisfies the central minimum through the host Start operation',
       'Or remove explicit policyMode and allow central minimum to apply',
     ],
   },
@@ -91,9 +91,10 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'NO_ACTIVE_CHECKS',
     category: 'precondition',
-    messageTemplate: 'No validation checks configured. Set activeChecks via /hydrate.',
+    messageTemplate:
+      'No validation checks configured. Configure activeChecks before starting a new governed session.',
     recoverySteps: [
-      'Configure a profile with activeChecks during /hydrate',
+      'Configure a profile with activeChecks before explicit activation; an existing session retains its frozen checks',
       'Ensure discovery finds verificationCandidates with commands (e.g., package.json scripts)',
     ],
   },
@@ -101,9 +102,12 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'NO_SESSION',
     category: 'precondition',
-    messageTemplate: 'No FlowGuard session found. Run /hydrate first to bootstrap a session.',
-    recoverySteps: ['Run /hydrate to create a new FlowGuard session'],
-    quickFixCommand: '/hydrate',
+    messageTemplate:
+      'No FlowGuard session found. Explicit activation is required; hydrate cannot activate governance.',
+    recoverySteps: [
+      'If governance is verifiably inactive, explicitly activate it through the host Start operation or an authorized StartGovernance request',
+      'If activation exists but its workflow binding is missing or unavailable, stop and restore trustworthy authority; do not recreate it',
+    ],
   },
 
   {
@@ -485,11 +489,11 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'SESSION_DIR_NOT_FOUND',
     category: 'precondition',
     messageTemplate:
-      'FlowGuard session directory expected at {sessDir} but not found on disk. Run /hydrate to initialize the session in this workspace.',
+      'FlowGuard session directory expected at {sessDir} but not found on disk. Missing bound authority must not be recreated by hydrate or Start.',
     recoverySteps: [
-      'Run /hydrate to recreate or bind a valid FlowGuard session.',
+      'Stop and restore the original bound session from a trusted backup; preserve activation and audit evidence.',
       'Verify the workspace/session directory still exists and is writable.',
-      'Restart the host runtime if the session points to stale workspace state.',
+      'Do not reset the binding, synthesize state or activate a replacement as recovery for this authority failure.',
     ],
   },
 
@@ -511,7 +515,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'FLOWGUARD_SESSION_DIR cannot be resolved to an existing path and is not accepted as a session authority.',
     recoverySteps: [
       'Unset FLOWGUARD_SESSION_DIR or fix the path so it names the canonical session directory',
-      'Run /hydrate if the workspace session has not been initialized yet',
+      'Only verified absence permits explicit host Start; unavailable or damaged authority must be restored, not initialized again',
     ],
   },
 
@@ -522,7 +526,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Hydrate cannot change the claimed task class of a terminal session (phase {phase}, current {currentTaskClass}, requested {requestedTaskClass}). Terminal sessions are read-only.',
     recoverySteps: [
       'Reload the terminal session without a claimedTaskClass argument',
-      'Start a distinct host session and /hydrate there for a different task class; re-hydrating this terminal session only reloads it',
+      'Start a distinct host session and explicitly activate governance there for a different task class; hydrate and repeated Start do not restart this ACTIVE binding',
     ],
   },
 ];

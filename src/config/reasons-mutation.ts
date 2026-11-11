@@ -52,7 +52,7 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
       'The git control plane (.git config/hooks/HEAD) changed since the session baseline was captured. The repository effect of a host mutation is not covered by the implementation subject, so recording fails closed.',
     recoverySteps: [
       'Restore the git control plane to its baseline state',
-      'Or start a fresh /hydrate session so a new baseline is established',
+      'For new work, independently prepare a trustworthy pre-change worktree, then explicitly activate governance in a distinct host session through host Start; the existing ACTIVE binding cannot be restarted',
       'Re-apply the implementation work and record fresh evidence with /implement',
     ],
   },
@@ -63,7 +63,7 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
       'The git control plane (.git config/hooks/HEAD) could not be read for evidence binding. Recording fails closed because a host mutation effect cannot be verified against the baseline.',
     recoverySteps: [
       'Verify the .git directory is present and readable',
-      'Restore or re-initialize the git repository, then start a fresh /hydrate session',
+      'Restore the original git control plane from trusted evidence; if new work is necessary, prepare its pre-change baseline outside this session and explicitly activate a distinct host session',
     ],
   },
   {

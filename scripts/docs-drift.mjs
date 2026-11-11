@@ -1,16 +1,15 @@
 /**
- * OpenCode Docs Drift Detection Tool.
+ * Historical OpenCode V1 documentation integrity check. NOT V2 acceptance.
  *
  * Compares structurally relevant OpenCode documentation sections against a
  * committed baseline. Documentation is fetched from the EXACT pinned host
  * version tag recorded in `.sdk-baselines/opencode/host-version.json`, never
- * from a moving branch: the integration is pinned to one host contract, so
- * unreviewed `dev` documentation changes must not masquerade as drift.
+ * from a moving branch. These are retained historical evidence, not the
+ * current V2 integration contract. V2 docs drift remains NOT_VERIFIED.
  *
  * Usage:
- *   node scripts/docs-drift.mjs              # Check: exit 1 if drift
- *   node scripts/docs-drift.mjs --update     # Update baseline for the pinned tag
- *   node scripts/docs-drift.mjs --verbose    # Show which pages changed
+ *   node scripts/docs-drift.mjs --historical --verbose
+ * No default V2 check or baseline-write mode exists.
  *
  * Baseline: .sdk-baselines/opencode/docs-hashes.json
  */
@@ -25,8 +24,15 @@ const root = path.join(__dirname, '..');
 const BASELINE_PATH = path.join(root, '.sdk-baselines', 'opencode', 'docs-hashes.json');
 const HOST_VERSION_PATH = path.join(root, '.sdk-baselines', 'opencode', 'host-version.json');
 
+class DocsIntegrityError extends Error {
+  constructor(message) {
+    super(message);
+    this.code = 'HISTORICAL_DOCS_INTEGRITY_FAILED';
+  }
+}
+
 const BASELINE_SCHEMA_VERSION = '1';
-const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z._+-]*$/;
+const VERSION_PATTERN = /^1\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const PAGE_FILES = [
   'sdk',
   'plugins',
@@ -41,7 +47,7 @@ const PAGE_FILES = [
 /** Raw-docs base URL for one exact OpenCode tag. Never a mutable branch. */
 export function docsBaseUrl(version) {
   if (typeof version !== 'string' || !VERSION_PATTERN.test(version)) {
-    throw new Error(`Invalid OpenCode version for docs URL: ${String(version)}`);
+    throw new DocsIntegrityError(`Invalid OpenCode version for docs URL: ${String(version)}`);
   }
   return `https://raw.githubusercontent.com/anomalyco/opencode/v${version}/packages/web/src/content/docs`;
 }
@@ -54,12 +60,14 @@ export function derivePages(version) {
   }));
 }
 
-/** The exact host version the integration is pinned to. */
+/** The historical host version; never the active V2 candidate. */
 export function readPinnedHostVersion(filePath = HOST_VERSION_PATH) {
   const meta = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
   const version = typeof meta.version === 'string' ? meta.version.replace(/^v/, '') : '';
-  if (!VERSION_PATTERN.test(version)) {
-    throw new Error(`Invalid pinned OpenCode host version in ${filePath}: ${String(meta.version)}`);
+  if (meta.package !== 'opencode-ai' || !VERSION_PATTERN.test(version)) {
+    throw new DocsIntegrityError(
+      `Invalid pinned OpenCode host version in ${filePath}: ${String(meta.version)}`,
+    );
   }
   return version;
 }
@@ -98,7 +106,7 @@ async function fetchPage(url, retries = 2) {
       clearTimeout(timeout);
 
       if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      if (!res.ok) throw new DocsIntegrityError(`HTTP ${res.status}: ${res.statusText}`);
       return await res.text();
     } catch (err) {
       if (attempt < retries) {
@@ -115,6 +123,7 @@ async function fetchPage(url, retries = 2) {
 
 /** Fetch and hash every page. A missing page is a failure, never a skip. */
 export async function collectHashes(pages, fetchImpl = fetchPage) {
+  /** @type {Record<string, {hash: string, sections: number} | null>} */
   const results = {};
   const failures = [];
   for (const page of pages) {
@@ -132,24 +141,25 @@ export async function collectHashes(pages, fetchImpl = fetchPage) {
 
 /** Reject a baseline that does not describe the currently pinned host tag. */
 export function assertBaselineMetadata(baseline, pinnedVersion) {
-  if (!baseline || typeof baseline !== 'object') throw new Error('Baseline is not an object.');
+  if (!baseline || typeof baseline !== 'object')
+    throw new DocsIntegrityError('Baseline is not an object.');
   if (baseline.version !== BASELINE_SCHEMA_VERSION) {
-    throw new Error(
+    throw new DocsIntegrityError(
       `Unsupported docs baseline schema version ${String(baseline.version)}; expected ${BASELINE_SCHEMA_VERSION}.`,
     );
   }
   if (baseline.opencodeVersion !== pinnedVersion) {
-    throw new Error(
+    throw new DocsIntegrityError(
       `Docs baseline is pinned to OpenCode ${String(baseline.opencodeVersion)}, but the host is pinned ` +
-        `to ${pinnedVersion}. Run "node scripts/docs-drift.mjs --update" after reviewing the pinned-tag diff.`,
+        `to ${pinnedVersion}. Restore the original historical evidence after verifying its provenance; do not rewrite it.`,
     );
   }
   const expected = [...PAGE_FILES].sort();
   const actual = Object.keys(baseline.hashes ?? {}).sort();
   if (expected.length !== actual.length || expected.some((key, index) => key !== actual[index])) {
-    throw new Error(
+    throw new DocsIntegrityError(
       `Docs baseline page set is stale (expected ${expected.join(', ')}, found ${actual.join(', ')}). ` +
-        'Run "node scripts/docs-drift.mjs --update".',
+        'Restore the original historical evidence; no baseline-write mode is available.',
     );
   }
   for (const key of expected) {
@@ -160,8 +170,8 @@ export function assertBaselineMetadata(baseline, pinnedVersion) {
       !Number.isInteger(entry.sections) ||
       entry.sections < 0
     ) {
-      throw new Error(
-        `Docs baseline entry "${key}" is invalid; run "node scripts/docs-drift.mjs --update".`,
+      throw new DocsIntegrityError(
+        `Docs baseline entry "${key}" is invalid; restore trusted historical evidence.`,
       );
     }
   }
@@ -178,29 +188,19 @@ export function compareAgainstBaseline(pages, results, baseline) {
   return changed;
 }
 
-/** Build a complete baseline; partial fetch results are refused. */
-export function buildBaseline({ pages, results, pinnedVersion, generatedAt }) {
-  const missing = pages.filter((page) => results[page.key] === null).map((page) => page.key);
-  if (missing.length > 0) {
-    throw new Error(`Refusing a partial docs baseline; fetch failed for: ${missing.join(', ')}.`);
-  }
-  const hashes = {};
-  for (const page of pages) {
-    hashes[page.key] = {
-      hash: results[page.key].hash,
-      sections: results[page.key].sections,
-    };
-  }
-  return {
-    generated: generatedAt,
-    version: BASELINE_SCHEMA_VERSION,
-    opencodeVersion: pinnedVersion,
-    hashes,
-  };
-}
-
 async function run(argv = process.argv.slice(2), fetchImpl = fetchPage) {
-  const isUpdate = argv.includes('--update');
+  if (
+    !argv.includes('--historical') ||
+    argv.some((arg) => !['--historical', '--verbose'].includes(arg))
+  ) {
+    console.error(
+      'NOT_VERIFIED: no V2 docs-drift contract is configured. Only --historical [--verbose] is supported; historical baselines cannot be rewritten.',
+    );
+    return 1;
+  }
+  console.log(
+    'HISTORICAL V1 integrity only. V2 docs drift: NOT_VERIFIED. This is not an SDK compatibility or host acceptance check.',
+  );
   const isVerbose = argv.includes('--verbose');
   const pinnedVersion = readPinnedHostVersion();
   const pages = derivePages(pinnedVersion);
@@ -219,24 +219,9 @@ async function run(argv = process.argv.slice(2), fetchImpl = fetchPage) {
     }
   }
 
-  if (isUpdate) {
-    const baseline = buildBaseline({
-      pages,
-      results,
-      pinnedVersion,
-      generatedAt: new Date().toISOString(),
-    });
-    fs.mkdirSync(path.dirname(BASELINE_PATH), { recursive: true });
-    fs.writeFileSync(BASELINE_PATH, JSON.stringify(baseline, null, 2) + '\n', 'utf-8');
-    console.log(
-      `Baseline updated for OpenCode v${pinnedVersion}: ${Object.keys(baseline.hashes).length} pages hashed.`,
-    );
-    return 0;
-  }
-
   if (!fs.existsSync(BASELINE_PATH)) {
     console.error('ERROR: Baseline file missing: .sdk-baselines/opencode/docs-hashes.json');
-    console.error('Run "node scripts/docs-drift.mjs --update" to create it.');
+    console.error('Restore trusted historical evidence. V2 docs drift remains NOT_VERIFIED.');
     return 1;
   }
 
@@ -264,12 +249,14 @@ async function run(argv = process.argv.slice(2), fetchImpl = fetchPage) {
     console.error(`Docs drift detected in: ${changed.join(', ')}`);
     console.error(
       `The pinned tag v${pinnedVersion} is immutable. Treat changed bytes as a tag-mutation ` +
-        'or fetch-integrity incident: verify the tag commit before updating the baseline.',
+        'or fetch-integrity incident: verify the original tag commit; do not rewrite the historical baseline.',
     );
     return 1;
   }
 
-  console.log(`All ${pages.length} documentation baselines match OpenCode v${pinnedVersion}.`);
+  console.log(
+    `Historical documentation matches OpenCode v${pinnedVersion} (${pages.length} pages). V2 docs drift remains NOT_VERIFIED.`,
+  );
   return 0;
 }
 

@@ -44,7 +44,8 @@ async function readConfigFile(filePath: string, scope: ConfigScope): Promise<Flo
   if (!result.success) {
     throw new PersistenceError(
       'SCHEMA_VALIDATION_FAILED',
-      `${scope} config failed schema validation: ${result.error.message}`,
+      `${scope} config failed schema validation at ${filePath}: ${result.error.message}. ` +
+        'Correct the configuration manually; install --force does not migrate unsupported keys. See docs/configuration.md#breaking-change-manual-configuration-recovery.',
     );
   }
   return result.data;

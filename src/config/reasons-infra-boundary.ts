@@ -50,7 +50,7 @@ export const BOUNDARY_INFRA_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Workspace initialization failed: {message}',
     recoverySteps: [
       'Ensure the workspace directory is writable and the disk has free space',
-      'Re-run flowguard install or /hydrate after fixing filesystem permissions',
+      'Retry the interrupted authorized operation after fixing permissions; do not recreate an existing activation or session binding',
     ],
   },
 
@@ -60,7 +60,7 @@ export const BOUNDARY_INFRA_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Workspace fingerprint does not match the bound worktree: {message}',
     recoverySteps: [
       'Run FlowGuard from inside the bound worktree (no symlinked or moved paths)',
-      'Re-hydrate the workspace to re-bind the session to the current worktree',
+      'Restore the original matching worktree and binding from trusted evidence; do not rebind an existing session through hydrate or Start',
     ],
   },
 

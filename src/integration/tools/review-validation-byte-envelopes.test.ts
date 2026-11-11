@@ -16,6 +16,11 @@
  * envelopes: the native V2 installer intentionally changes their recovery path
  * and reload guidance. Their current bytes are pinned without changing rejection
  * codes, precedence, or any historical runtime audit/probe evidence.
+ * V2 closure amendment: only the unable-to-review envelope's recovery text and
+ * its rendered Markdown now require trusted artifact restoration rather than
+ * claiming hydrate can repair corrupted mandates. The byte-exact assertion and
+ * all other fields/scenarios remain intact; this fixture pins current output,
+ * not historical runtime evidence.
  */
 
 import { readFileSync } from 'node:fs';
