@@ -54,7 +54,7 @@ Template commands invoke their corresponding tools; native callbacks such as
 | `/review-decision` (compatibility)                             | `flowguard_decision`      | Native verdict-routing surface kept for scripts; the product variants above are the recommended interface                                                                                    |
 | `/recover-capacity`                                            | native review-assurance   | Explicitly releases a proven terminal reviewer capacity lock; not a model tool and not an automatic unlock                                                                                   |
 | `/end-governance`                                              | native activation         | Ends opt-in governance after safe closure; distinct from `/finish` and `/abort`                                                                                                              |
-| `/debug-export`                                                | native diagnostics        | Read-only diagnostic snapshot for the current session and known reviewer children; works before ACTIVE governance and never authorizes or repairs                                            |
+| `/debug-export`                                                | native diagnostics        | Bounded diagnostic snapshot for the current session and known reviewer children; works before ACTIVE governance, writes files and never authorizes or repairs                                |
 | `/diagnostics`                                                 | native diagnostics        | Read-only Session Explorer, review subject/findings, bounded file-log tail and notification-capability views; never evidence, approval or a decision control                                 |
 | `/choose-workflow`                                             | TUI/Desktop companion     | Opens the optional native workflow chooser or review-decision dialog over the canonical Next Action projection; cancel/stale state executes nothing; Desktop catalog metadata is a follow-up |
 | `/validate`                                                    | `flowguard_run_check`     | Explicit baseline validation through the same evidence path as automatic validation                                                                                                          |
@@ -670,7 +670,7 @@ support it.
 
 **Non-Goals:** No state mutation, no schema changes, no new audit capabilities, no OpenCode slash command — CLI-only projection of existing audit data.
 
-### `flowguard debug-export` — Read-only diagnostic snapshot
+### `flowguard debug-export` — Bounded diagnostic snapshot
 
 Creates a bounded, versioned snapshot of the root session and every known
 reviewer/continuation child. It reads canonical session state, audit, review

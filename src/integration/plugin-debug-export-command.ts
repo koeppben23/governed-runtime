@@ -1,4 +1,4 @@
-/** Native `/debug-export`: a read-only diagnostic snapshot, never governance authority. */
+/** Native `/debug-export`: writes a diagnostic snapshot, never governance authority. */
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { Plugin } from '@opencode/plugin';
@@ -100,7 +100,7 @@ export function addDebugExportCommand(ctx: Plugin.Context, editor: CommandEditor
   editor.add({
     name: NATIVE_DEBUG_EXPORT_COMMAND,
     description:
-      'Create a bounded, read-only diagnostic snapshot for this session and its known reviewer children.',
+      'Create a bounded diagnostic snapshot for this session and its known reviewer children; it writes files but never mutates governance.',
     execute: async (input) => {
       const text = await runDebugExport(ctx, input.sessionID);
       try {
