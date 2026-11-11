@@ -258,7 +258,7 @@ Do not confuse an observed Desktop chooser with a proven persistent Desktop pane
 
 1. Read-only timeline displays real phase transitions, reviewer cycles, attempts and outcome_unknown/stale markers; no fabricated progress percentage.
 2. Evidence/ProofGraph displays claim → check → evidence → status and distinguishes VERIFIED, MISSING, NOT_VERIFIED and unavailable.
-3. Session navigator shows root, reviewer children and worktree context, marking incomplete lineage as incomplete. Switching sessions invalidates open decision views.
+3. Session navigator shows the root, verified reviewer descendants with generation, and worktree context, marking incomplete or conflicting lineage as incomplete. Switching sessions invalidates open decision views.
 4. Detail drill-down is available without a mutation, audit append or implicit hydration.
 
 ## Information architecture

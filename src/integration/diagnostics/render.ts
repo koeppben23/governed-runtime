@@ -128,7 +128,7 @@ function renderReviewLinks(links: ExplorerReviewLinks | null): string {
 export function renderExplorerView(view: ExplorerView): string {
   const rows = view.sessions.map(
     (session) =>
-      `| ${codeSpan(session.sessionId)} | ${cell(session.role)} | ${session.parentSessionId ? codeSpan(session.parentSessionId) : '—'} | ${cell(session.lineage)} | ${cell(session.state)} | ${cell(session.binding)} | ${cell(session.phase)} | ${cell(session.discoveredBy.join(', '))} |`,
+      `| ${codeSpan(session.sessionId)} | ${session.generation} | ${cell(session.role)} | ${session.parentSessionId ? codeSpan(session.parentSessionId) : '—'} | ${cell(session.lineage)} | ${cell(session.state)} | ${cell(session.binding)} | ${cell(session.phase)} | ${cell(session.discoveredBy.join(', '))} |`,
   );
   return [
     '# FlowGuard Session Explorer',
@@ -145,9 +145,9 @@ export function renderExplorerView(view: ExplorerView): string {
     '',
     '## Sessions',
     '',
-    '| Session | Role | Parent | Lineage | State | Binding | Phase | Discovered by |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- |',
-    ...(rows.length > 0 ? rows : ['| — | — | — | — | — | — | — | — |']),
+    '| Session | Generation | Role | Parent | Lineage | State | Binding | Phase | Discovered by |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...(rows.length > 0 ? rows : ['| — | — | — | — | — | — | — | — | — |']),
     '',
     renderReviewLinks(view.reviewLinks),
     '',

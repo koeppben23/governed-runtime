@@ -54,7 +54,7 @@ Template commands invoke their corresponding tools; native callbacks such as
 | `/review-decision` (compatibility)                             | `flowguard_decision`      | Native verdict-routing surface kept for scripts; the product variants above are the recommended interface                                                                              |
 | `/recover-capacity`                                            | native review-assurance   | Explicitly releases a proven terminal reviewer capacity lock; not a model tool and not an automatic unlock                                                                             |
 | `/end-governance`                                              | native activation         | Ends opt-in governance after safe closure; distinct from `/finish` and `/abort`                                                                                                        |
-| `/debug-export`                                                | native diagnostics        | Bounded diagnostic snapshot for the current session and known reviewer children; works before ACTIVE governance, writes files and never authorizes or repairs                          |
+| `/debug-export`                                                | native diagnostics        | Bounded diagnostic snapshot for the current session and its verified reviewer descendants; works before ACTIVE governance, writes files and never authorizes or repairs                |
 | `/diagnostics`                                                 | native diagnostics        | Read-only Session Explorer, review subject/findings, bounded file-log tail and notification-capability views; never evidence, approval or a decision control                           |
 | `/choose-workflow`                                             | TUI/Desktop companion     | Opens the optional native workflow chooser or review-decision dialog over the canonical Next Action projection; cancel/stale state executes nothing                                    |
 | `/validate`                                                    | `flowguard_run_check`     | Explicit baseline validation through the same evidence path as automatic validation                                                                                                    |
@@ -673,8 +673,8 @@ support it.
 
 ### `flowguard debug-export` — Bounded diagnostic snapshot
 
-Creates a bounded, versioned snapshot of the root session and every known
-reviewer/continuation child. It reads canonical session state, audit, review
+Creates a bounded, versioned snapshot of the root session and its verified
+reviewer descendant tree. It reads canonical session state, audit, review
 assurance and optional host transcripts; it never starts, hydrates, reconciles,
 unlocks, approves or repairs governance.
 
@@ -684,6 +684,7 @@ flowguard debug-export --session <id> --no-host    # FlowGuard state/audit only
 flowguard debug-export --session <id> --out <dir>  # explicit write-once directory
 flowguard debug-export --session <id> --raw        # explicit no-redaction consent
 flowguard debug-export --session <id> --max-file-bytes 8000000 --max-total-bytes 32000000
+flowguard debug-export --session <id> --max-discovery-nodes 250
 flowguard debug-export --session <id> --max-duration-ms 60000
 ```
 
@@ -701,9 +702,33 @@ boundaries, warnings and redaction limitations.
 The manifest reports independent source status for `discovery`, `lineage`,
 `canonicalState`, `audit`, `hostHistory` and `logs`. Known-but-unreachable
 sessions remain in the denominator and prevent `COMPLETE`. A reviewer child
-without its own FlowGuard state is reported with `canonicalState: partial`; a
-child whose invocation does not name the requested root is retained as
-`lineage: not_verified` and its state/transcript is not read.
+without its own FlowGuard state is reported with `canonicalState: partial`.
+
+Lineage is recursive but only through positively verified canonical invocation
+chains. A child is read only when a single invocation claim names a verified,
+reachable parent and that edge was observed in the parent's own state. Attempts,
+observations, host parent IDs, names and timing never authorize a read. A child
+claimed by two different invocation parents is `LINEAGE_CONFLICT` and stays
+`not_verified`; it is never resolved into a winning parent. Foreign, attempt-only
+and observation-only candidates stay visible as `lineage: not_verified` and their
+state/transcript is not read.
+
+Discovery has a separate hard graph budget, `maxDiscoveryNodes` (default 250,
+CLI `--max-discovery-nodes`), plus a derived hard budget of four raw candidate
+records per allowed node. When a budget is exhausted the first overflow
+candidate remains in the known inventory but is not re-read by capture;
+`sources.discovery` becomes `partial`, and the manifest reports
+`DISCOVERY_NODE_LIMIT` or `DISCOVERY_CANDIDATE_LIMIT`. A time-budget stop or unreadable verified child
+state also makes discovery `partial`. A parent state that was not enumerated to
+the end never authorizes reading its children; those candidates stay
+`lineage: not_verified` with `SESSION_LINEAGE_PARENT_INCOMPLETE`. The
+`maxSessions` capture limit is independent: a verified descendant above that
+limit stays in the graph as `captureStatus: truncated` without per-session
+artifacts.
+
+Continuation sessions are not discovered or claimed. No bounded trusted source
+for complete continuation enumeration has been proven, so continuation coverage
+is explicitly `not_verified`/out of scope rather than reported as complete.
 
 FlowGuard JSONL diagnostics are captured into `diagnostics/logs.redacted.jsonl`
 (CLI `--raw`: `diagnostics/logs.jsonl`) with a `diagnostics/log-files.json`
@@ -735,11 +760,13 @@ nothing, and is never evidence, approval or authorization.
 /diagnostics notifications
 ```
 
-- **explorer** projects the root session and only positively linked reviewer
-  children. Ambiguous or foreign-parent candidates stay visible as
+- **explorer** projects the root session and the same verified multi-level
+  reviewer lineage as the debug export, including generation. Ambiguous,
+  conflicting, attempt-only or foreign-parent candidates stay visible as
   `lineage: not_verified` and are not read. Obligation, attempt, dispatch and
   invocation IDs are shown with their canonical statuses. Known sessions are
-  never removed from the denominator; the session cap is reported explicitly.
+  never removed from the denominator; session and discovery caps are reported
+  explicitly.
 - **review** shows the displayed subject kind, revision and exact content or
   record digest, the verbatim plan/ADR/implementation-diff material within a
   byte budget, reviewer verdict and findings, and ProofGraph declarations versus

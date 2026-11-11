@@ -45,12 +45,8 @@ export interface CaptureAccumulator {
   readonly maxTotalBytes: number;
   readonly deadlineAt: number;
   truncated: boolean;
-}
-
-export interface SessionDiscovery {
-  readonly sources: DiscoverySource[];
-  readonly parentSessionId: string | null;
-  readonly lineage: 'verified' | 'not_verified';
+  discoveryTruncated: boolean;
+  readonly discoveryReasons: string[];
 }
 
 export interface ArtifactWriteTarget {

@@ -8,6 +8,7 @@ import path from 'node:path';
 import type { RedactionMode } from '../../redaction/export-redaction.js';
 import {
   DEFAULT_DIAGNOSTIC_LIMITS,
+  DEFAULT_MAX_DISCOVERY_NODES,
   DIAGNOSTIC_EXPORT_SCHEMA_VERSION,
   DiagnosticCaptureStatus,
   DiagnosticManifest,
@@ -66,7 +67,7 @@ function rootResolved(root: SessionCapture): boolean {
 
 function discoveryStatus(acc: CaptureAccumulator, resolved: boolean): SourceStatus {
   if (!resolved) return 'not_verified';
-  return acc.truncated ? 'partial' : 'complete';
+  return acc.discoveryTruncated ? 'partial' : 'complete';
 }
 
 function lineageStatus(acc: CaptureAccumulator, resolved: boolean): SourceStatus {
@@ -80,7 +81,9 @@ function canonicalStateStatus(acc: CaptureAccumulator, resolved: boolean): Sourc
   if (!resolved) return 'not_verified';
   return verifiedSessions(acc).some(
     (session) =>
-      session.authority?.status === 'absent' || session.authority?.status === 'unavailable',
+      session.authority === null ||
+      session.authority.status === 'absent' ||
+      session.authority.status === 'unavailable',
   )
     ? 'partial'
     : 'complete';
@@ -155,6 +158,19 @@ function statusFor(
   return 'COMPLETE';
 }
 
+const DISCOVERY_WARNING_CODES = new Set([
+  'DISCOVERY_TRUNCATED',
+  'SESSION_DISCOVERY_TRUNCATED',
+  'SESSION_LIMIT_TRUNCATED',
+  'CAPTURE_TIME_BUDGET_EXCEEDED',
+]);
+
+function discoveryWarningMessages(acc: CaptureAccumulator): string[] {
+  return acc.warnings
+    .filter((entry) => entry.source === 'capture' && DISCOVERY_WARNING_CODES.has(entry.code))
+    .map((entry) => sanitizeDiagnosticString(entry.message));
+}
+
 function discoverySource(acc: CaptureAccumulator, status: SourceStatus) {
   const verified = verifiedSessions(acc);
   return {
@@ -162,8 +178,8 @@ function discoverySource(acc: CaptureAccumulator, status: SourceStatus) {
     known: acc.sessions.length,
     verified: verified.length,
     unverified: acc.sessions.length - verified.length,
-    truncated: acc.truncated,
-    reasons: warningMessagesFor(acc, 'capture'),
+    truncated: acc.discoveryTruncated,
+    reasons: [...new Set([...acc.discoveryReasons, ...discoveryWarningMessages(acc)])],
   };
 }
 
@@ -327,6 +343,7 @@ function boundaryFor(
     sessionsLineageUnverified: acc.sessions.filter((item) => item.lineage === 'not_verified')
       .length,
     maxSessions: limit.maxSessions,
+    maxDiscoveryNodes: limit.maxDiscoveryNodes ?? DEFAULT_MAX_DISCOVERY_NODES,
     maxFileBytes: limit.maxFileBytes,
     maxTotalBytes: limit.maxTotalBytes,
     maxDurationMs: limit.maxDurationMs,

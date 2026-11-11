@@ -2,6 +2,7 @@
 export { DiagnosticExportError, writeDiagnosticExport } from './export.js';
 export {
   DEFAULT_DIAGNOSTIC_LIMITS,
+  DEFAULT_MAX_DISCOVERY_NODES,
   type DiagnosticExportLimits,
   type DiagnosticManifest,
 } from './export-schema.js';

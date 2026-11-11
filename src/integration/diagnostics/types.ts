@@ -18,6 +18,7 @@ export type ExplorerSessionState = 'captured' | 'absent' | 'unavailable';
 export interface ExplorerSessionNode {
   readonly sessionId: string;
   readonly parentSessionId: string | null;
+  readonly generation: number;
   readonly role: ExplorerSessionRole;
   readonly discoveredBy: readonly string[];
   readonly state: ExplorerSessionState;
