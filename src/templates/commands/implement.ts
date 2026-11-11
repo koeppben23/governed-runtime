@@ -44,8 +44,9 @@ ${DISCOVERY_REVIEW_CAPTURE}
      worktree). Implementation evidence is git-derived: the runtime blocks every mutating host tool
      with \`NOT_GIT_REPO\` in a non-Git worktree, and \`flowguard_implement\` cannot record evidence
      there. If this is not a git repository, STOP and report it — the user must initialize git
-     OUTSIDE this session and start a fresh \`/hydrate\` (establishing a new implementation baseline)
-     before implementation can proceed. Do NOT run \`git init\` inside this session: a session
+      OUTSIDE this session, prepare a trustworthy pre-change worktree, and explicitly run \`/start\`
+      in a distinct host session (establishing a new implementation baseline) before implementation
+      can proceed. Repeating \`/start\` in this ACTIVE binding does not restart it. Do NOT run \`git init\` inside this session: a session
      hydrated without git has no baseline, and recording afterwards would attribute the entire
      pre-existing project to this implementation.
    - Use \`read\` to examine existing files before modifying.

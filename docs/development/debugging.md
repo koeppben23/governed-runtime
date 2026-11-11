@@ -437,7 +437,9 @@ Session state + audit chain
 Two `info` log lines carry diagnostic latency. They change no state, audit,
 or enforcement behavior, and they contain identifiers, codes, and numbers only.
 
-`hook` / `tool.execute.after` (the existing after-hook line) adds:
+`hook` / `tool.execute.after` (the existing diagnostic log label) adds the
+following fields. This label is retained diagnostic vocabulary, not a V1 hook
+registration: the host registration is native V2 `execute.after`.
 
 | Field                 | Meaning                                                                                                                                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -528,9 +530,9 @@ Live OpenCode debugging is required for:
 
 ```text
 plugin lifecycle
-command.execute.before
-tool.execute.before
-tool.execute.after
+native command callbacks (command.transform)
+execute.before
+execute.after
 native reviewer subagent/reviewer orchestration
 host events
 session compaction

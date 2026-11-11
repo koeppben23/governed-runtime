@@ -101,7 +101,6 @@
     "test:assertion-conformance": "vitest run --project conformance test/conformance/assertions/assertion-golden-conformance.test.ts",
     "test:provider-conformance": "FLOWGUARD_RUNTIME_CONFORMANCE=1 vitest run --project conformance test/conformance/assertions/assertion-runtime-conformance.test.ts",
     "test:independent-review-e2e": "node scripts/verify-independent-review-e2e.js",
-    "trigger:opencode-host-update": "node scripts/check-opencode-host-drift.mjs --trigger",
     "sync-version": "node scripts/sync-version.js",
     "update:opencode-sdk": "node scripts/update-opencode-sdk.mjs",
     "generate-docs": "node scripts/generate-docs.js",

@@ -116,6 +116,37 @@ describe('readConfig', () => {
     expect(config.archive.redaction.maxAuditEvents).toBe(10_000);
   });
 
+  it.each([
+    { reviewer: { outputTokenMax: 'host' } },
+    { reviewer: { toolTimeoutMs: 30_000 } },
+    { reviewer: { reviewTimeoutMs: 480_000 } },
+    { reviewer: { serializationTimeoutMs: 60_000 } },
+    { presentation: { opencode: { glyphProfile: 'ascii' } } },
+  ])(
+    'rejects obsolete config %j at both real file boundaries without fallback or rewrite',
+    async (obsolete) => {
+      for (const scope of ['repo', 'global'] as const) {
+        const file = scope === 'repo' ? repoConfigPath(tmpDir) : globalConfigPath();
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        const raw = `${JSON.stringify({ schemaVersion: 'v1', ...obsolete })}\n`;
+        await fs.writeFile(file, raw);
+        await expect(readConfig(scope === 'repo' ? tmpDir : undefined)).rejects.toMatchObject({
+          code: 'SCHEMA_VALIDATION_FAILED',
+        });
+        expect(await fs.readFile(file, 'utf8')).toBe(raw);
+        const recovered = {
+          schemaVersion: 'v1',
+          presentation: { glyphProfile: 'ascii' },
+          reviewer: { executionTimeoutMs: 120_000 },
+        };
+        await fs.writeFile(file, JSON.stringify(recovered));
+        const config = await readConfig(scope === 'repo' ? tmpDir : undefined);
+        expect(config.presentation.glyphProfile).toBe('ascii');
+        expect(config.reviewer).toEqual({ executionTimeoutMs: 120_000 });
+      }
+    },
+  );
+
   it('reads and parses a valid config file', async () => {
     const custom: FlowGuardConfig = {
       ...DEFAULT_CONFIG,

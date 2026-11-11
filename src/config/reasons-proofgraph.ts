@@ -17,7 +17,7 @@ import type { BlockedReason } from './reasons-types.js';
 const CERTIFIED_PLAN_RECOVERY: readonly string[] = [
   'After plan approval, /plan is not admissible in IMPLEMENTATION or EVIDENCE_REVIEW; at EVIDENCE_REVIEW, /request-changes returns to IMPLEMENTATION, not PLAN',
   'Preserve the old session id, plan/certificate digests, detected triggers and code changes; on explicit user instruction run /abort to retain the terminal audit trail',
-  'Operator action: prepare a separate worktree at the original trusted pre-change base, then start a new host session with a different host-session id; run /hydrate there and verify a distinct FlowGuard session id and READY phase',
+  'Operator action: prepare a separate worktree at the original trusted pre-change base, then start a new host session with a different host-session id; follow its documented session-start procedure and verify a distinct FlowGuard session id and READY phase',
   'Re-running /hydrate in the old host session only reloads it, including after /abort; existing unchanged dirty files in a new session are baseline, not new implementation evidence',
   'In the new session run /ticket, then /plan with complete corrected claims and coversRiskTriggers for every applicable specific trigger; complete independent review and obtain a new approval certificate under the active policy',
   'Only in the new authorized IMPLEMENTATION step, reapply the preserved changes through the regular governed host-mutation contract, then run /implement to record their complete scope and a fresh risk assessment; an out-of-workflow git apply is not retroactively authorized',

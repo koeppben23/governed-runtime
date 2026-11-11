@@ -1,15 +1,16 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertBaselineMetadata,
-  buildBaseline,
+  collectHashes,
   compareAgainstBaseline,
   derivePages,
   docsBaseUrl,
   extractRelevantSections,
   readPinnedHostVersion,
+  run,
 } from '../docs-drift.mjs';
 
 const MARKDOWN = [
@@ -44,7 +45,45 @@ function baseline(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe('scripts/docs-drift', () => {
+afterEach(() => vi.restoreAllMocks());
+
+describe('historical V1 docs integrity, never active V2 acceptance', () => {
+  it.each([
+    { argv: [] },
+    { argv: ['--verbose'] },
+    { argv: ['--update'] },
+    { argv: ['--historical', '--update'] },
+  ])('fails explicitly without a valid historical-only invocation $argv', async ({ argv }) => {
+    const fetch = vi.fn();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await run(argv, fetch)).toBe(1);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('NOT_VERIFIED'));
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('runs a real historical comparison while leaving V2 coverage NOT_VERIFIED', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetch = vi.fn().mockResolvedValue(MARKDOWN);
+    expect(await run(['--historical'], fetch)).toBe(1); // changed bytes cannot pass
+    expect(fetch).toHaveBeenCalledTimes(8);
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('V2 docs drift: NOT_VERIFIED'),
+    );
+  });
+
+  it('the workflow is manual, historical and cannot open current SDK-drift issues', () => {
+    const workflow = readFileSync(
+      new URL('../../.github/workflows/docs-drift.yml', import.meta.url),
+      'utf8',
+    );
+    expect(workflow).toContain('workflow_dispatch:');
+    expect(workflow).not.toMatch(/^  schedule:/m);
+    expect(workflow).toContain('--historical --verbose');
+    expect(workflow).toContain('NOT_VERIFIED');
+    expect(workflow).not.toContain('issues: write');
+    expect(workflow).not.toContain('if: false');
+  });
   it('pins every docs URL to the exact host tag and never to a moving branch', () => {
     expect(docsBaseUrl('1.19.3')).toBe(
       'https://raw.githubusercontent.com/anomalyco/opencode/v1.19.3/packages/web/src/content/docs',
@@ -57,7 +96,7 @@ describe('scripts/docs-drift', () => {
   });
 
   it('rejects URL-unsafe versions instead of interpolating them', () => {
-    for (const value of ['', '..', '1.19.3/../../dev', 'v 1', null, 42]) {
+    for (const value of ['', '..', '1.19.3/../../dev', 'v 1', '2.2.5', null, 42]) {
       expect(() => docsBaseUrl(value)).toThrow(/Invalid OpenCode version/);
     }
   });
@@ -99,43 +138,12 @@ describe('scripts/docs-drift', () => {
     expect(compareAgainstBaseline(pages, results, baseline())).toEqual(['plugins']);
   });
 
-  it('refuses to persist a partial baseline', () => {
-    const pages = derivePages('1.19.3');
-    const results = Object.fromEntries(
-      pages.map((page: { key: string }) => [
-        page.key,
-        page.key === 'sdk' ? null : { hash: `hash-${page.key}`, sections: 1 },
-      ]),
+  it('treats a missing historical page as failure, never a skip', async () => {
+    const result = await collectHashes(derivePages('1.19.3'), async (url: string) =>
+      url.endsWith('/sdk.mdx') ? null : MARKDOWN,
     );
-    expect(() =>
-      buildBaseline({
-        pages,
-        results,
-        pinnedVersion: '1.19.3',
-        generatedAt: '2026-01-01T00:00:00.000Z',
-      }),
-    ).toThrow(/Refusing a partial docs baseline.*sdk/);
-  });
-
-  it('builds a complete pinned baseline', () => {
-    const pages = derivePages('1.19.3');
-    const results = Object.fromEntries(
-      pages.map((page: { key: string }) => [page.key, { hash: `hash-${page.key}`, sections: 2 }]),
-    );
-    expect(
-      buildBaseline({
-        pages,
-        results,
-        pinnedVersion: '1.19.3',
-        generatedAt: '2026-01-01T00:00:00.000Z',
-      }),
-    ).toMatchObject({
-      version: '1',
-      opencodeVersion: '1.19.3',
-      hashes: Object.fromEntries(
-        pages.map((page: { key: string }) => [page.key, { hash: `hash-${page.key}`, sections: 2 }]),
-      ),
-    });
+    expect(result.failures).toEqual(['sdk']);
+    expect(result.results.sdk).toBeNull();
   });
 
   it('keeps the docs baseline pinned to the host baseline', () => {

@@ -13,8 +13,8 @@ defines nor widens it.
 graph TD
   %% ── OpenCode Boundary (External) ──
   subgraph OpenCode["OpenCode Runtime"]
-    Agent["AI Agent<br/>(Claude/GPT via OpenCode SDK)"]
-    Hooks["Plugin Hooks<br/>(tool.execute.before/after)"]
+    Agent["AI Agent<br/>(native OpenCode model runtime)"]
+    Hooks["Native V2 Plugin Hooks<br/>(execute.before / execute.after)"]
     Tools["Tool Registry<br/>(flowguard tools)"]
   end
 
@@ -87,7 +87,7 @@ graph TD
 
   %% ── Connections ──
   Agent -->|tool calls| Hooks
-  Tools -->|tool.execute.before| Hooks
+  Tools -->|execute.before| Hooks
   Hooks -->|intercept| PluginEntry
   PluginEntry -->|activate| Activation
   PluginEntry -->|route| ReviewPipeline

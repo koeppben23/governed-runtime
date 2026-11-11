@@ -29,8 +29,17 @@ and regression checks; changing those declarations is not proof of installed
 host behavior. The API update workflow opens a **Draft** PR, never certifies a
 host or closes operator/reviewer acceptance gates.
 
-Installed-host detection/smoke infrastructure still needs its own V2 acceptance
-work. `check:opencode-host` compares only the retained old-generation baseline;
-`trigger:opencode-host-update` explicitly blocks instead of dispatching a host
-target to the API-only updater. Neither path certifies V2 Desktop/CLI support.
-See `docs/host-probes/opencode-v2/` for the current NO-GO gates.
+`check:opencode-host` validates `cli-candidate.json` and compares the exact native
+CLI version output; it does not certify ACTIVE product or Desktop support.
+`OPENCODE_CLI` may name the executable, but cannot change the expected version.
+The obsolete host-update trigger was removed; API updates never adopt a host.
+
+**V2 documentation drift: NOT_VERIFIED.** No verified revisions/document set/hash
+contract has been adopted for V2 docs. `docs-drift.yml` is manual historical V1
+integrity only, not scheduled or part of V2 acceptance. Its explicit command is
+`node scripts/docs-drift.mjs --historical --verbose`; unqualified invocation fails
+with `NOT_VERIFIED`. Historical baseline bytes cannot be rewritten by the tool.
+A historical match never implies V2 documentation coverage or SDK compatibility.
+Investigate changed bytes against the original tag commit as an integrity issue;
+the API-only SDK updater does not update this host pin or docs evidence.
+See `docs/host-probes/opencode-v2/` for separately scoped acceptance gates.

@@ -19,7 +19,8 @@ Arguments: $ARGUMENTS
 2. Call \`flowguard_status\` with the appropriate flag (or no args if none provided).
 3. If \`presentation.markdown\` is present in the response, print it verbatim — do not reformat
    or interpret it. Otherwise render the focused projection without inventing semantics.
-4. If no session exists: report this and recommend \`/start\`.
+4. If governance is verifiably inactive: report this and recommend explicit \`/start\`, then stop without activating it.
+   If bound session authority is missing, damaged or unavailable: report the block; do not recreate it.
 
 ## Rules
 

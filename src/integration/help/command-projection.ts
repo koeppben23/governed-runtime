@@ -7,7 +7,6 @@ import {
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_HELP,
-  TOOL_FLOWGUARD_HYDRATE,
   TOOL_FLOWGUARD_STATUS,
 } from '../tool-names.js';
 import { NATIVE_START_COMMAND } from '../../shared/flowguard-identifiers.js';
@@ -60,18 +59,14 @@ function installedPreflight(
   ) {
     return { status: 'available', guarantee: 'read_only_available' };
   }
-  // /hydrate is the compatibility bootstrap tool when no session exists; the
-  // native /start command is activation authority and is projected separately.
-  if (definition.target.toolName === TOOL_FLOWGUARD_HYDRATE && !state) {
-    return { status: 'available', guarantee: 'eligible_to_attempt' };
-  }
   if (!state) {
     return {
       status: 'blocked',
       guarantee: 'eligible_to_attempt',
       reasonCode: 'SESSION_REQUIRED',
       message: 'This command requires a FlowGuard session.',
-      recovery: 'Run /hydrate to initialize a session.',
+      recovery:
+        "Follow the installed host integration's documented session-start procedure; missing or damaged bound authority must be restored, not recreated.",
     };
   }
   const operation = explicitOperationPreflight(definition, state);

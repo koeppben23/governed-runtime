@@ -160,15 +160,15 @@ describe('FlowGuardConfigSchema', () => {
       }
     });
 
-    it('reads the earlier installer key with unchanged meaning', () => {
+    it('rejects the earlier installer key even with a valid or matching neutral value', () => {
       for (const glyphProfile of ['unicode', 'ascii'] as const) {
-        const result = FlowGuardConfigSchema.safeParse({
-          schemaVersion: 'v1',
-          presentation: { opencode: { glyphProfile } },
-        });
-        expect(result.success).toBe(true);
-        expect(result.data?.presentation.glyphProfile).toBe(glyphProfile);
-        expect(result.data?.presentation).not.toHaveProperty('opencode');
+        for (const neutral of [{}, { glyphProfile }]) {
+          const result = FlowGuardConfigSchema.safeParse({
+            schemaVersion: 'v1',
+            presentation: { ...neutral, opencode: { glyphProfile } },
+          });
+          expect(result.success).toBe(false);
+        }
       }
     });
 
@@ -1128,7 +1128,7 @@ describe('FlowGuardConfigSchema boundaries', () => {
     expect(parse({ schemaVersion: 'v1' }).data!.archive.redaction.allowRawExport).toBe(false);
   });
 
-  it('accepts a config written by an earlier installer and drops the retired default keys', () => {
+  it('rejects a config written by an earlier installer instead of dropping retired default keys', () => {
     const result = parse({
       schemaVersion: 'v1',
       reviewer: {
@@ -1139,26 +1139,26 @@ describe('FlowGuardConfigSchema boundaries', () => {
         executionTimeoutMs: 120_000,
       },
     });
-    expect(result.success).toBe(true);
-    expect(result.data!.reviewer).toEqual({ executionTimeoutMs: 120_000 });
+    expect(result.success).toBe(false);
   });
 
   it.each([
-    ['outputTokenMax', 65_536, 'no reviewer output cap'],
-    ['outputTokenMax', 'host ', 'no reviewer output cap'],
-    ['toolTimeoutMs', 45_000, 'no tool/review/serialization watchdog'],
-    ['reviewTimeoutMs', 80_000, 'no tool/review/serialization watchdog'],
-    ['serializationTimeoutMs', '60000', 'no tool/review/serialization watchdog'],
-  ])(
-    'rejects a non-default retired reviewer key %s=%j with a concrete reason',
-    (key, value, reason) => {
-      const result = parse({ schemaVersion: 'v1', reviewer: { [key]: value } });
-      expect(result.success).toBe(false);
-      const issue = result.error!.issues.find((item) => item.path.join('.') === `reviewer.${key}`);
-      expect(issue?.message).toContain(reason);
-      expect(issue?.message).toContain('Remove the key');
-    },
-  );
+    ['outputTokenMax', 'host'],
+    ['outputTokenMax', 65_536],
+    ['outputTokenMax', 'host '],
+    ['toolTimeoutMs', 30_000],
+    ['toolTimeoutMs', 45_000],
+    ['reviewTimeoutMs', 480_000],
+    ['reviewTimeoutMs', 80_000],
+    ['serializationTimeoutMs', 60_000],
+    ['serializationTimeoutMs', '60000'],
+  ])('rejects retired reviewer key %s=%j including former defaults', (key, value) => {
+    const result = parse({ schemaVersion: 'v1', reviewer: { [key]: value } });
+    expect(result.success).toBe(false);
+    expect(result.error!.issues).toContainEqual(
+      expect.objectContaining({ code: 'unrecognized_keys', path: ['reviewer'], keys: [key] }),
+    );
+  });
 
   it('still rejects unknown reviewer keys', () => {
     expect(parse({ schemaVersion: 'v1', reviewer: { maxOutputTokens: 1 } }).success).toBe(false);

@@ -689,10 +689,9 @@ as `[OK]`, `[WARN]`, and `[NEXT]`) for terminals or fonts that cannot display
 them. It does not transliterate arbitrary Markdown, embedded artifact content,
 or user-authored text.
 
-Earlier installers wrote the same setting as
-`presentation.opencode.glyphProfile`. That key is still read with unchanged
-meaning; use the neutral key for new configuration. Supplying both keys with
-different values fails configuration validation instead of choosing one.
+Only `presentation.glyphProfile` is accepted. The former
+`presentation.opencode.glyphProfile` key is rejected, even when it agrees with
+the neutral key. See [manual configuration recovery](#breaking-change-manual-configuration-recovery).
 
 Canonical `reviewCard` artifacts remain Unicode and are preserved verbatim.
 The profile affects the separate, host-visible `presentation.markdown` field.
@@ -757,25 +756,62 @@ locally hosted models; no requested value is clamped and no model or variant is
 substituted. The former `reviewer.outputTokenMax` key and the V1
 `chat.params`/`maxOutputTokens` workaround are removed.
 
-**Existing configurations keep working.** Earlier installers wrote the retired
-reviewer keys with their defaults into every `flowguard.json`
-(`outputTokenMax: "host"`, `toolTimeoutMs: 30000`, `reviewTimeoutMs: 480000`,
-`serializationTimeoutMs: 60000`). A retired key whose value equals that former
-default has today's meaning and is dropped when the config is read;
-`flowguard install --force` rewrites the current shape. A retired key with any
-other value requested a function V2 no longer provides (a numeric reviewer cap
-or a watchdog sub-budget) and fails with `CONFIG_INVALID` and a reason naming
-the key. Unknown `reviewer` keys are rejected.
+**Breaking change:** all four retired reviewer keys are rejected, including the
+defaults written by earlier installers. Only `reviewer.executionTimeoutMs` is
+accepted. No old key is normalized, ignored or removed at read time.
+
+### Breaking Change: Manual Configuration Recovery
+
+This applies to FlowGuard's `flowguard.json`, not the host's `opencode.json(c)`.
+The configuration's own `schemaVersion: "v1"` remains current; do not rename it
+to match the OpenCode host generation.
+
+1. Back up each affected file before editing. Check the repository's
+   `.opencode/flowguard.json` and the global `flowguard.json` under
+   `OPENCODE_CONFIG_DIR` (otherwise `~/.config/opencode/`). Ordinary reads select
+   repository config before global config; archive policy also validates the
+   global file, so a valid repository file does not make an invalid global file safe.
+2. Move the chosen `presentation.opencode.glyphProfile` value to
+   `presentation.glyphProfile`, then remove `presentation.opencode`. If both
+   forms exist and disagree, resolve the choice explicitly; do not silently
+   overwrite either value. Preserve unrelated presentation settings supported
+   by the current schema.
+3. Remove `reviewer.outputTokenMax`, `reviewer.toolTimeoutMs`,
+   `reviewer.reviewTimeoutMs` and `reviewer.serializationTimeoutMs`, even if they
+   equal their former defaults. Preserve a valid existing
+   `reviewer.executionTimeoutMs` and all unrelated current settings. There is
+   **no numeric conversion** from the old watchdog sub-budgets to the execution
+   deadline. Native model/variant configuration owns output budgets.
+4. Retry the failed installation or authorized operation after saving valid
+   JSON. The reader reports `SCHEMA_VALIDATION_FAILED` with the file path and
+   rejected fields; ACTIVE OpenCode operations report `CONFIG_INVALID`.
+   `flowguard install --force` is **not** a migration command: it validates the
+   existing config and fails without rewriting unsupported keys. Correct the
+   file manually first.
+
+Current affected fields, inside an otherwise valid configuration:
+
+```json
+{
+  "schemaVersion": "v1",
+  "presentation": { "glyphProfile": "ascii" },
+  "reviewer": { "executionTimeoutMs": 600000 }
+}
+```
+
+Do not delete the entire configuration, reset activation, edit canonical
+session-state/audit files or manufacture a new session as configuration recovery.
+Config correction does not change an existing session's frozen policy.
 
 ### Reviewer Execution Deadline (OpenCode)
 
-`json
+```json
 {
   "reviewer": {
     "executionTimeoutMs": 600000
   }
 }
-`
+```
 
 `executionTimeoutMs` (1,000-1,800,000 ms, default 600,000) is the absolute deadline
 from reviewer dispatch authorization through evidence binding. If it has
@@ -783,8 +819,8 @@ elapsed when the same-child capture reaches the canonical evidence recorder, no
 evidence is bound and the review is blocked. The native V2 adapter has no
 watchdog that interrupts a running reviewer; safe unknown-outcome recovery is
 open Finding 6 work (**NOT_VERIFIED**). The former V1 watchdog sub-budgets
-`toolTimeoutMs`, `reviewTimeoutMs` and `serializationTimeoutMs` are removed and
-follow the same compatibility rule as `outputTokenMax`.
+`toolTimeoutMs`, `reviewTimeoutMs` and `serializationTimeoutMs` are rejected,
+including their former defaults; use the manual recovery above.
 
 An unreadable or invalid `flowguard.json` blocks every ACTIVE FlowGuard
 operation of the worktree with `CONFIG_INVALID`; logging alone falls back to

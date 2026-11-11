@@ -89,7 +89,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Review obligation generation does not match the current reviewer criteria or mandate generation. The stale obligation was not executed.',
     recoverySteps: [
-      'Re-hydrate the session or start a fresh review cycle so FlowGuard creates an obligation with current reviewer semantics',
+      'Use a currently admissible originating review command to create a fresh obligation with current reviewer semantics; hydrate does not replace stale obligations',
       'Do not execute, attest, or submit findings for the stale obligation',
     ],
   },
@@ -347,7 +347,7 @@ export const REVIEW_VALIDATION_REASONS = [
     category: 'state',
     messageTemplate: 'Session aborted: {reason}',
     recoverySteps: [
-      'Start a new host session with a different host-session id, then /hydrate at a trusted baseline; /hydrate in the aborted session only reloads it',
+      'For new work, prepare a trusted pre-change baseline and follow the documented host session-start procedure in a new host session with a different host-session id; hydrate does not restart the old terminal workflow',
       'The aborted session is preserved in the audit trail',
     ],
   },
@@ -375,11 +375,10 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Session state is missing policySnapshot. Every hydrated session must have a frozen policy snapshot.',
     recoverySteps: [
-      'Re-hydrate the session with /hydrate',
-      'If the issue persists, the session state may be corrupted — start a new session',
-      'Verify session-state.json contains a non-empty policySnapshot field',
+      'Stop and restore the original policy snapshot and session from trusted evidence',
+      'Do not mint a replacement snapshot, edit session-state.json or recreate authority through hydrate or Start',
+      'If trustworthy restoration is unavailable, keep this session blocked',
     ],
-    quickFixCommand: '/hydrate',
   },
 
   {
@@ -390,7 +389,7 @@ export const REVIEW_VALIDATION_REASONS = [
     recoverySteps: [
       'Re-run the FlowGuard tool that produced the review obligation (flowguard_plan, flowguard_implement, flowguard_architecture, or flowguard_review)',
       'Verify the response contains the reviewObligation field with iteration and planVersion',
-      'If the issue persists in regulated mode, re-hydrate the session',
+      'If the issue persists, report the authority failure; hydrate cannot replace missing review evidence',
     ],
     quickFixCommand: '/continue',
   },
@@ -505,7 +504,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Cannot verify review obligation fulfillment in strict mode — enforcement state is unavailable and session state cannot be read.',
     recoverySteps: [
-      'Re-hydrate the session with /hydrate',
+      'Restore the original readable session and review assurance from trusted evidence; hydrate cannot recreate missing authority',
       'Run /continue before submitting a verdict to restore enforcement state',
       'Verify session-state.json is readable and contains a reviewAssurance object',
     ],
@@ -538,25 +537,6 @@ export const REVIEW_VALIDATION_REASONS = [
   },
 
   {
-    // RETAINED, NO LONGER EMITTED. The plan and architecture review loops used
-    // to hard-block here when the iteration budget was exhausted without an
-    // approving verdict. That stranded human-gated sessions at the review gate
-    // with an inadmissible "/plan" recovery. They now force-converge to the
-    // review gate (human decides) or finalize in auto-approve modes — parity
-    // with the implementation-review flow. This reason is kept for registry and
-    // changelog stability; reintroduce an emitter only with a coherent recovery.
-    code: 'MAX_REVIEW_ITERATIONS_REACHED',
-    category: 'state',
-    messageTemplate:
-      'Maximum review iterations ({maxIterations}) reached without convergence (last verdict: {lastVerdict}). The review loop could not converge within the policy limit.',
-    recoverySteps: [
-      'Submit a fresh /plan or /implement (this resets the iteration counter to 0 and starts a new obligation)',
-      'Review the subagent findings — addressing the outstanding issues may allow convergence in the next attempt',
-      'If the policy limit is too restrictive, adjust reviewBudget in the policy configuration',
-    ],
-  },
-
-  {
     code: 'SUBAGENT_UNABLE_TO_REVIEW',
     category: 'state',
     messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} subagent reported it is unable to review obligation {obligationId}. The review loop did NOT converge. This is a tool-failure signal (not a substantive finding) and is reserved for cases where the reviewer cannot honestly evaluate the input — for example malformed plan/implementation text, missing required context references, an unrecoverable structured-output schema violation, or a corrupted/mismatched mandate digest. Substantive concerns must be expressed as changes_requested instead.`,
@@ -567,7 +547,7 @@ export const REVIEW_VALIDATION_REASONS = [
       'Plan or ADR: submit the artifact again (/plan or /architecture) to mint a fresh review obligation',
       'Implementation: re-record the implementation and re-run the independent review',
       'Standalone /review: abort the blocked review, then start a fresh governed session and run /review for the current content',
-      'If the cause is a corrupted mandate digest or template hash mismatch, re-hydrate the session before retrying',
+      'If mandate or template integrity is damaged, restore trustworthy installed artifacts and original evidence before retrying; do not rewrite bound digests',
     ],
   },
 
@@ -591,7 +571,7 @@ export const REVIEW_VALIDATION_REASONS = [
     recoverySteps: [
       'Run flowguard_status to see activeChecks',
       'Only execute checks listed in activeChecks',
-      'Re-hydrate if the check list needs updating',
+      'Existing sessions retain frozen checks; configure new checks before preparing a distinct host session through its documented start procedure',
     ],
   },
 
@@ -601,7 +581,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Policy requires validation evidence before progressing past VALIDATION, but no Discovery-derived verification commands are active. VALIDATION must not pass vacuously under this policy.',
     recoverySteps: [
-      'Re-run discovery and flowguard_hydrate so repo-native verification commands are detected',
+      'Inspect the frozen discovery and checks. New discovery requires the documented session-start procedure in a distinct host session at a trustworthy pre-change baseline; hydrate does not recollect existing sessions',
       'Execute the discovered checks with flowguard_run_check (the runtime-executed verification tool that records pass/fail evidence)',
       'If this repository genuinely has no verification commands, set validationEvidence.allowNoCommands=true in policy with explicit governance approval (the only sanctioned exception)',
     ],
@@ -613,7 +593,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Policy requires validation evidence but Discovery is not trustworthy, so the absence of verification commands cannot be verified (NOT_VERIFIED). VALIDATION is blocked fail-closed rather than asserting false certainty.',
     recoverySteps: [
-      'Run flowguard_hydrate to restore trustworthy Discovery (clear health gate, clean drift, persisted summary and digest)',
+      'Restore original trustworthy Discovery artifacts, then use authorized hydrate to re-evaluate the health gate and drift; hydrate does not recreate or recollect missing artifacts for an existing binding',
       'Resolve any blocked discoveryHealthGate before retrying VALIDATION',
       'Do not treat an empty active-check list as a verified pass while Discovery health is unverified',
     ],
@@ -625,7 +605,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Discovery detected a technology stack for this repository, but no verification commands were derived, so VALIDATION cannot pass vacuously. A detected stack with zero active checks is treated as a mis-detection hazard, not a verified "no commands" property.',
     recoverySteps: [
-      'Re-run flowguard_hydrate so repo-native verification commands (build/test/lint) are detected from the stack',
+      'Inspect the frozen discovery and stack commands. To collect new discovery, follow the documented session-start procedure in a distinct host session at a trustworthy pre-change baseline; hydrate does not recollect existing sessions',
       'Ensure the stack wrapper/manifest (package.json scripts, mvnw/gradlew, pyproject) is at the resolved worktree root',
       'If this stack genuinely has no verification commands, set validationEvidence.allowNoCommands=true in policy with explicit governance approval (the only sanctioned exception)',
     ],

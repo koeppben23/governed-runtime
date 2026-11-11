@@ -213,6 +213,11 @@ describe('buildHelpResult', () => {
     expect(result.capabilitySource).toBe('default');
     expect(result.capabilities.native).toBe('not_verified');
     const byInvocation = new Map(result.commands.map((command) => [command.invocation, command]));
+    expect(byInvocation.get('/hydrate')?.preflight).toMatchObject({
+      status: 'blocked',
+      reasonCode: 'SESSION_REQUIRED',
+      recovery: expect.stringContaining('missing or damaged bound authority must be restored'),
+    });
     expect(byInvocation.get('/start')).toMatchObject({
       surfaces: ['native'],
       availability: 'not_verified',

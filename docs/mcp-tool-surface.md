@@ -18,6 +18,26 @@ recovery helper.
 
 ## Tool Behaviour
 
+### Session Preparation and Host Admission
+
+`flowguard_hydrate` is a shared tool: it prepares canonical workflow state for
+an uninitialized session or reloads an existing bound session. The installed
+Claude Code and Codex Start skills call `mcp__flowguard__flowguard_hydrate` with
+no arguments, report the returned state and stop on a blocked/failed result.
+The MCP server publishes this same host-neutral description and optional-argument
+schema; it does not require OpenCode's native activation protocol.
+
+OpenCode V2 separately requires its native `/start` command or an authorized
+`StartGovernance` request before direct workflow tools are admitted. Those
+requirements belong to its native integration and command templates, not to
+the common Hydrate metadata or generic `NO_SESSION` recovery. Missing or damaged
+existing authority is never permission to recreate a bound session on any host.
+
+This distinction is a tool/installed-skill contract, not a new host acceptance
+or certification claim. See [Host Installation](./host-installation.md).
+
+### Advisory Challenge Resolution
+
 `resolve_implementation_challenge` records advisory `NOT_VERIFIED` evidence
 that a prior implementation review challenge has been addressed. It is available
 in the `IMPL_REVIEW` phase after post-implementation validation. The tool:

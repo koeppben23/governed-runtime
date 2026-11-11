@@ -15,7 +15,8 @@ approval, merge, or archive-finalization command.
 ## Steps
 
 1. Call \`flowguard_status\` with exactly \`{ finish: true }\`.
-2. If no session exists: report this and recommend \`/hydrate\`. Stop.
+2. If governance is inactive: report this and recommend explicit \`/start\`. Stop without activating it.
+   If session authority is missing, damaged or unavailable: report the block and stop; do not recreate it.
 3. If \`presentation.markdown\` is present in the response, output it verbatim —
    do not rephrase or interpret it.
    Otherwise output the \`finish\` object without inventing semantics.

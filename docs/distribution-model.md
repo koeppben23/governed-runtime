@@ -73,7 +73,7 @@ FlowGuard provides a CLI wrapper for headless operation:
 
 ```bash
 # Execute FlowGuard commands non-interactively (EXPERIMENTAL)
-flowguard run --host opencode -- "Run /hydrate policyMode=team-ci"
+flowguard run --host opencode -- "Inspect the project without activating FlowGuard"
 flowguard run --host claude-code -- "Run /validate"
 flowguard run --host codex -- "Run /status"
 
@@ -89,13 +89,18 @@ Host resolution is strict: CLI `--host` overrides `host.defaultHost` in `.openco
 
 ```bash
 # Direct host usage (recommended)
-opencode run "Run /hydrate"
+opencode run "Inspect the project without activating FlowGuard"
 opencode serve --port 4096
 claude -p "Run /validate" --output-format stream-json
 codex --non-interactive --prompt "Run /status"
 ```
 
 **Note:** Selecting `codex` or `claude-code` for `flowguard run` selects the host process and argument shape only. It does not prove native plugin load, hook trust, MCP activation, or governance enforcement unless those checks are verified separately.
+
+OpenCode prompt text (including "Run /start" or "Run /hydrate") is not activation
+authority. Activate through the actual native `/start [mode]` command callback,
+or a canonically authorized `StartGovernance` RPC request. The examples above
+are ungoverned host invocations, not evidence of headless governance acceptance.
 
 **Headless ambiguity handling:** In non-interactive automation (`flowguard run`, `flowguard serve`, `opencode run`, API-driven execution), operators must provide all required inputs up front. Missing safety-critical input returns `BLOCKED`; there is no follow-up question loop in headless mode.
 

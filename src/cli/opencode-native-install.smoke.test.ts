@@ -16,6 +16,7 @@ import {
   TUI_PLUGIN_WRAPPER,
   GUI_PLUGIN_BUNDLE,
   GUI_PLUGIN_RELATIVE_PATH,
+  COMMANDS,
 } from './templates.js';
 import { hashBuffer } from '../shared/hashing.js';
 import { nativeOpenCodeCandidate } from './opencode-live-host-test-helpers.js';
@@ -143,6 +144,9 @@ describe.skipIf(!LIVE)('packed native V2 installation and lifecycle', () => {
     expect(await readFile(join(target, PLUGIN_RELATIVE_PATH), 'utf8')).toBe(PLUGIN_WRAPPER);
     expect(await readFile(join(target, TUI_PLUGIN_RELATIVE_PATH), 'utf8')).toBe(TUI_PLUGIN_WRAPPER);
     expect(await readFile(join(target, GUI_PLUGIN_RELATIVE_PATH), 'utf8')).toBe(GUI_PLUGIN_BUNDLE);
+    for (const [file, body] of Object.entries(COMMANDS)) {
+      expect(await readFile(join(target, 'commands', file), 'utf8')).toBe(body);
+    }
     expect(Host.resolve({ directory: join(target, 'plugins/flowguard') }).gui).toMatch(
       /gui-experimental\.cjs$/,
     );

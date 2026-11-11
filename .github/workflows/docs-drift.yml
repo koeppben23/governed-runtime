@@ -1,8 +1,7 @@
-name: OpenCode Docs Drift
+name: Historical OpenCode V1 docs integrity (not V2 acceptance)
 
+# Historical evidence only. No schedule or PR gate: V2 docs drift is NOT_VERIFIED.
 on:
-  schedule:
-    - cron: '0 8 * * 1' # Mondays 08:00 UTC (staggered after opencode-sdk-update)
   workflow_dispatch:
 
 permissions:
@@ -13,13 +12,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: docs-drift
+  historical-integrity:
+    name: historical V1 integrity only
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: read
-      issues: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
@@ -27,47 +23,10 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # actions/setup-node v7.1.0
         with:
           node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Check docs drift
-        run: node scripts/docs-drift.mjs --verbose
-      - name: Create issue on drift
-        if: failure()
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
-        with:
-          script: |
-            const issues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              labels: 'sdk-drift,docs',
-              state: 'open',
-            });
-            if (issues.data.length > 0) {
-              console.log('Open docs-drift issue already exists, skipping.');
-              return;
-            }
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: 'OpenCode docs changed - review integration impact',
-              labels: ['sdk-drift', 'docs', 'automated'],
-              body: [
-                '## Docs Drift Detected',
-                '',
-                'The scheduled docs-drift check detected different documentation bytes at the',
-                '**pinned OpenCode host tag** recorded in `.sdk-baselines/opencode/host-version.json`.',
-                'The check never follows a moving branch.',
-                '',
-                `**Run**: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-                '',
-                '### Triage',
-                '',
-                '1. Review the workflow run log to identify the changed pages.',
-                '2. Verify the pinned tag and its commit. Published tags are expected to be immutable.',
-                '3. Do NOT run `node scripts/docs-drift.mjs --update` merely to clear this issue.',
-                '   Drift at an already-adopted tag indicates a tag mutation or fetch-integrity',
-                '   problem and must be reviewed as a supply-chain incident.',
-                '4. To adopt a newer OpenCode version, use the `OpenCode SDK Update` workflow;',
-                '   it moves the pin and refreshes this docs baseline at the new tag in one reviewed PR.',
-              ].join('\n'),
-            });
+      - name: Historical integrity (cannot certify V2 docs)
+        run: node scripts/docs-drift.mjs --historical --verbose
+      - name: Report coverage boundary
+        if: always()
+        run: |
+          echo 'V2 documentation drift: NOT_VERIFIED. This manual job checks only retained V1 evidence.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'A V2 replacement requires a verified source revision, document scope and hash contract; API SDK updates do not update historical pins.' >> "$GITHUB_STEP_SUMMARY"

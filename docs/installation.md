@@ -145,6 +145,13 @@ Current ownership manifests use `schemaVersion: 2`; unsupported formats fail
 explicitly. `--force` only reinstalls the current format and does not prove
 ownership of a modified plugin file.
 
+**Breaking configuration change:** earlier `flowguard.json` files containing
+`presentation.opencode` or retired reviewer keys now fail validation, including
+with their former default values. Back up and correct them using
+[Manual Configuration Recovery](./configuration.md#breaking-change-manual-configuration-recovery)
+before retrying installation. `--force` does not migrate unsupported keys or
+authorize resetting session state, activation or audit evidence.
+
 ### 2. Initialize OpenCode Integration (Standard)
 
 The approved local tarball is the authoritative package source. npm/npx may use an internal cache, but no global installation is required.

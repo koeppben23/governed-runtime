@@ -38,12 +38,18 @@ flowguard doctor
 **Solution:**
 
 ```bash
-# Create or restore a session
+# OpenCode V2: explicit start for a verified new/inactive root
 /start
 
 # Or check if session exists
 ls ~/.config/opencode/workspaces/*/sessions/
 ```
+
+For Claude Code and Codex, follow the installed Start skill: it calls
+`mcp__flowguard__flowguard_hydrate` to prepare or reload the workflow. The shared
+`NO_SESSION` reason does not impose OpenCode's native activation protocol on
+those MCP hosts. Missing or damaged existing authority must be restored from
+trusted evidence, not recreated through any start path.
 
 ### Phase Not Advancing
 
@@ -148,9 +154,11 @@ Legacy `location` text is not accepted.
    ```bash
    cat ~/.config/opencode/flowguard.json
    ```
-2. Recreate session with correct mode:
+2. Existing sessions retain their frozen policy. For new work, prepare a
+   trustworthy pre-change worktree and use a distinct host session with explicit
+   activation; do not recreate an existing binding:
    ```bash
-   /hydrate policyMode=regulated
+   /start regulated
    ```
 
 ## Native OpenCode installer recovery
@@ -163,6 +171,12 @@ install V2 fresh. `--force` does not migrate formats. `OPENCODE_CONFIG_INVALID`
 means the installer could not safely inspect OpenCode JSON/JSONC; preserve and
 repair that file before retrying. Neither error authorizes deletion of audit
 history or customer configuration.
+
+Unsupported keys in FlowGuard's separate `flowguard.json` are a breaking config
+change, not an OpenCode JSON/JSONC error. Back up and manually correct the file
+using [configuration recovery](./configuration.md#breaking-change-manual-configuration-recovery).
+`install --force` does not normalize or delete old keys. ACTIVE config failures
+remain `CONFIG_INVALID`; no session-state or audit reset is authorized.
 
 ## Error Codes
 
@@ -192,21 +206,21 @@ real, registered reason.
 
 ### Session & State
 
-| Code                             | Description                                                                                        | Solution                                                                                                                                                                                                                                                             |
-| -------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NO_SESSION`                     | No session exists for the current workspace                                                        | Run `/hydrate` first                                                                                                                                                                                                                                                 |
-| `MISSING_SESSION_ID`             | Tool call missing session id                                                                       | Re-invoke via OpenCode (the runtime injects sessionId)                                                                                                                                                                                                               |
-| `MISSING_WORKTREE`               | Workspace fingerprint cannot be resolved                                                           | Run from inside a git worktree                                                                                                                                                                                                                                       |
-| `INVALID_FINGERPRINT`            | Workspace fingerprint missing or malformed (expected 24 hex chars)                                 | Run `flowguard doctor`                                                                                                                                                                                                                                               |
-| `CONFIG_MISSING`                 | Config file is absent                                                                              | Re-run `flowguard install` for this workspace                                                                                                                                                                                                                        |
-| `CONFIG_INVALID`                 | Config file failed schema validation                                                               | Restore from a trusted backup or re-install                                                                                                                                                                                                                          |
-| `SCHEMA_VALIDATION_FAILED`       | Persisted session state failed an incompatible schema or evidence contract                         | Follow the operator recovery tree in [Upgrade and Rollback](./upgrade-rollback.md#operator-recovery-for-incompatible-persisted-state): complete an active session or archive a terminal one with the release that wrote it, then upgrade; never edit persisted state |
-| `SESSION_STATE_INCOMPATIBLE`     | Persisted session state predates the current schema hard cut and is rejected at the read preflight | Same operator recovery tree: complete an active session or archive a terminal one with the release that wrote it, then upgrade and start a fresh session; archive restore does not make the old session readable                                                     |
-| `SESSION_ERROR`                  | Session error received from host runtime                                                           | Check OpenCode logs for root cause; start a new session                                                                                                                                                                                                              |
-| `SESSION_LOCK_CONTENDED`         | Session write lock could not be acquired (a concurrent operation held it past the timeout)         | Wait for the concurrent FlowGuard operation to finish and re-run `/hydrate`; remove a stale `session-state.json.lock` only after confirming no live process holds it                                                                                                 |
-| `LOCK_TIMEOUT_EXHAUSTED`         | Session write lock retries exhausted after all attempts                                            | Retry the interrupted FlowGuard command (e.g., `/check` for the same check kind); run `/status --why-blocked` to inspect session state; if persistent, check session directory for stale lock diagnostics                                                            |
-| `REVIEWER_INVOCATION_EXHAUSTED`  | All reviewer subagent retry attempts failed                                                        | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output                                                                                                                                                       |
-| `TSA_TIMESTAMP_ASSURANCE_FAILED` | Timestamp authority assurance failed                                                               | Check TSA endpoint availability, trust anchors, and timestamp policy configuration                                                                                                                                                                                   |
+| Code                             | Description                                                                                        | Solution                                                                                                                                                                                                                                                                           |
+| -------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NO_SESSION`                     | No session exists for the current workspace                                                        | Follow the installed host's documented start procedure: native activation for OpenCode V2, installed MCP Start skill for Claude/Codex. Missing or damaged existing authority must be restored, not recreated.                                                                      |
+| `MISSING_SESSION_ID`             | Tool call missing session id                                                                       | Re-invoke via OpenCode (the runtime injects sessionId)                                                                                                                                                                                                                             |
+| `MISSING_WORKTREE`               | Workspace fingerprint cannot be resolved                                                           | Run from inside a git worktree                                                                                                                                                                                                                                                     |
+| `INVALID_FINGERPRINT`            | Workspace fingerprint missing or malformed (expected 24 hex chars)                                 | Run `flowguard doctor`                                                                                                                                                                                                                                                             |
+| `CONFIG_MISSING`                 | Config file is absent                                                                              | Re-run `flowguard install` for this workspace                                                                                                                                                                                                                                      |
+| `CONFIG_INVALID`                 | Config file failed schema validation                                                               | Back up the reported file, manually correct only invalid fields and preserve unrelated supported settings; see [manual configuration recovery](./configuration.md#breaking-change-manual-configuration-recovery). Do not delete the config; `install --force` does not migrate it. |
+| `SCHEMA_VALIDATION_FAILED`       | Persisted session state failed an incompatible schema or evidence contract                         | Follow the operator recovery tree in [Upgrade and Rollback](./upgrade-rollback.md#operator-recovery-for-incompatible-persisted-state): complete an active session or archive a terminal one with the release that wrote it, then upgrade; never edit persisted state               |
+| `SESSION_STATE_INCOMPATIBLE`     | Persisted session state predates the current schema hard cut and is rejected at the read preflight | Same operator recovery tree: complete an active session or archive a terminal one with the release that wrote it, then upgrade and start a fresh session; archive restore does not make the old session readable                                                                   |
+| `SESSION_ERROR`                  | Session error received from host runtime                                                           | Check OpenCode logs for root cause; start a new session                                                                                                                                                                                                                            |
+| `SESSION_LOCK_CONTENDED`         | Session write lock could not be acquired (a concurrent operation held it past the timeout)         | Wait for the concurrent FlowGuard operation to finish and re-run `/hydrate`; remove a stale `session-state.json.lock` only after confirming no live process holds it                                                                                                               |
+| `LOCK_TIMEOUT_EXHAUSTED`         | Session write lock retries exhausted after all attempts                                            | Retry the interrupted FlowGuard command (e.g., `/check` for the same check kind); run `/status --why-blocked` to inspect session state; if persistent, check session directory for stale lock diagnostics                                                                          |
+| `REVIEWER_INVOCATION_EXHAUSTED`  | All reviewer subagent retry attempts failed                                                        | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output                                                                                                                                                                     |
+| `TSA_TIMESTAMP_ASSURANCE_FAILED` | Timestamp authority assurance failed                                                               | Check TSA endpoint availability, trust anchors, and timestamp policy configuration                                                                                                                                                                                                 |
 
 ### Command & Phase
 
@@ -227,11 +241,11 @@ real, registered reason.
 
 ### Validation Evidence
 
-| Code                                    | Description                                                                                                                           | Solution                                                                                                                             |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `VALIDATION_EVIDENCE_REQUIRED`          | Policy requires validation evidence but no Discovery-derived verification commands are active                                         | Re-run discovery and `/hydrate` to detect repo-native checks, or set `validationEvidence.allowNoCommands=true` (governance approval) |
-| `VALIDATION_EVIDENCE_UNVERIFIED`        | Policy requires validation evidence but Discovery is not trustworthy (NOT_VERIFIED)                                                   | Run `/hydrate` to restore healthy Discovery and clear any blocked discovery health gate before retrying VALIDATION                   |
-| `VALIDATION_EVIDENCE_STACK_NO_COMMANDS` | Discovery detected a technology stack but derived no verification commands; VALIDATION will not pass vacuously (mis-detection hazard) | Re-run `/hydrate` so repo-native checks are detected, or set `validationEvidence.allowNoCommands=true` (governance approval)         |
+| Code                                    | Description                                                                                                                           | Solution                                                                                                                                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `VALIDATION_EVIDENCE_REQUIRED`          | Policy requires validation evidence but no Discovery-derived verification commands are active                                         | Inspect frozen discovery and checks. New discovery requires explicit activation in a distinct host session at a trustworthy pre-change baseline; hydrate does not recollect existing sessions.               |
+| `VALIDATION_EVIDENCE_UNVERIFIED`        | Policy requires validation evidence but Discovery is not trustworthy (NOT_VERIFIED)                                                   | Restore original trustworthy Discovery artifacts, then use authorized `/hydrate` to re-evaluate the health gate and drift. It does not recreate missing evidence.                                            |
+| `VALIDATION_EVIDENCE_STACK_NO_COMMANDS` | Discovery detected a technology stack but derived no verification commands; VALIDATION will not pass vacuously (mis-detection hazard) | Inspect frozen discovery and stack commands. New collection requires a distinct explicitly activated host session with the correct pre-change baseline; do not silently change the current policy or checks. |
 
 ### Evidence Integrity
 
@@ -258,14 +272,13 @@ real, registered reason.
 | `SUBAGENT_FINDINGS_ISSUES_MISMATCH` | L4 — submitted blockingIssues count differs from actual count | Submit the findings exactly as returned |
 | `SUBAGENT_VERDICT_FINDINGS_INCOHERENT` | Captured review is self-contradictory: `accept` verdict with blocking issues | Return a non-accept verdict, or reclassify/resolve the blocking issues, then re-review |
 | `SUBAGENT_EVIDENCE_REUSED` | One-shot review evidence reused for a second obligation | Submit a substantively-new artifact for a fresh review obligation; reduced ceremony stays withheld for this session (start a fresh governed session to restore it) |
-| `MAX_REVIEW_ITERATIONS_REACHED` | Retained; no longer emitted — loop force-converges to the review gate | Use `/review-decision` (approve / request-changes / reject) at the gate |
 | `SUBAGENT_UNABLE_TO_REVIEW` | Reviewer declared the artifact unreviewable; obligation consumed | Address the reviewer's reason or substantially revise; do not retry the same artifact |
 | `SUBAGENT_TYPE_UNAUTHORIZED` | Non-reviewer subagent type blocked by FlowGuard governance (defense-in-depth) | Only `flowguard-reviewer` subagent type is authorized; do not spawn other subagents |
 | `SUBAGENT_CONTEXT_UNVERIFIABLE` | Strict enforcement cannot validate obligation context from tool output | Re-run the tool that produced the review obligation |
 | `REVIEW_FINDINGS_REQUIRED` | Mode B verdict submitted without `reviewFindings` | Include the structured `reviewFindings` object |
 | `REVIEW_FINDINGS_SESSION_MISMATCH` | Findings came from a different session than the current FlowGuard session | Use findings produced for the current session |
 | `REVIEW_FINDINGS_HASH_MISMATCH` | Findings hash does not match the review obligation | Re-run the review for the current obligation |
-| `REVIEW_GENERATION_MISMATCH` | Review obligation was created under stale reviewer criteria or mandate generation | Re-hydrate or start a fresh review cycle; do not execute or attest the stale obligation |
+| `REVIEW_GENERATION_MISMATCH` | Review obligation was created under stale reviewer criteria or mandate generation | Use a currently admissible originating review command to create a fresh obligation; do not execute or attest the stale obligation. Hydrate does not replace it. |
 | `REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED` | Reviewer finding has no valid structured subject anchor | Anchor the finding to the reviewed change or artifact section |
 | `REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY` | Finding evidence path escapes the repository | Remove parent-directory traversal that would leave the repository |
 | `REVIEW_EVIDENCE_LOCATION_INVALID` | Finding evidence location is not a valid repository location | Use repository-relative evidence paths at the frozen base or head revision |
@@ -300,7 +313,7 @@ real, registered reason.
 | `HOST_STRUCTURED_OUTPUT_REQUIRED` | The correlated assistant response is not one complete strict JSON object | Inspect the contract diagnostic; do not extract JSON from prose or submit copied findings |
 | `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION` | The correlated JSON violates ReviewerFindingsInput | Follow bounded capture recovery; never repair reviewer semantics outside the capture transaction |
 | `REVIEWER_CAPTURE_PROVENANCE_INVALID` | Request/response identity, model selection, tool-free execution or successful completion cannot be proved | Resolve the exact execution outcome; do not accept stale or concurrent messages or bypass the capture fence |
-| `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read | Re-hydrate; if persistent, restore from archive |
+| `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read | Restore the original session and review assurance from trusted evidence; hydrate cannot recreate missing authority. |
 | `REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE` | Invocation does not establish coherent persisted attempt lineage | Re-invoke the reviewer; the stale invocation is retained for audit |
 | `REVIEW_ATTEMPT_NOT_FOUND` | Attempt referenced by invocation was not found in assurance state | Verify the attempt exists with flowguard_status; re-invoke reviewer if corrupt |
 | `REVIEW_ASSURANCE_UNAVAILABLE` | Review assurance state missing; cannot reject an incoherent attempt | Ensure the session has an active review obligation with an attempt |
@@ -345,16 +358,16 @@ real, registered reason.
 
 ### Configuration & Central Policy
 
-| Code                                  | Description                                                    | Solution                                   |
-| ------------------------------------- | -------------------------------------------------------------- | ------------------------------------------ |
-| `CENTRAL_POLICY_PATH_EMPTY`           | `FLOWGUARD_POLICY_PATH` set but empty                          | Unset or point to a valid policy file      |
-| `CENTRAL_POLICY_MISSING`              | Central policy file does not exist                             | Verify the path                            |
-| `CENTRAL_POLICY_UNREADABLE`           | Central policy file cannot be read                             | Check file permissions                     |
-| `CENTRAL_POLICY_INVALID_JSON`         | Central policy is not valid JSON                               | Validate JSON                              |
-| `CENTRAL_POLICY_INVALID_SCHEMA`       | Central policy schema check failed                             | Validate against the policy schema         |
-| `CENTRAL_POLICY_INVALID_MODE`         | Central policy `minimumMode` is not one of solo/team/regulated | Use a valid mode literal                   |
-| `EXPLICIT_WEAKER_THAN_CENTRAL`        | Explicit `--policy-mode` weaker than central minimum           | Use a mode at or above the central minimum |
-| `EXISTING_POLICY_WEAKER_THAN_CENTRAL` | Persisted session policy weaker than current central minimum   | Re-hydrate the session                     |
+| Code                                  | Description                                                    | Solution                                                                                                                   |
+| ------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `CENTRAL_POLICY_PATH_EMPTY`           | `FLOWGUARD_POLICY_PATH` set but empty                          | Unset or point to a valid policy file                                                                                      |
+| `CENTRAL_POLICY_MISSING`              | Central policy file does not exist                             | Verify the path                                                                                                            |
+| `CENTRAL_POLICY_UNREADABLE`           | Central policy file cannot be read                             | Check file permissions                                                                                                     |
+| `CENTRAL_POLICY_INVALID_JSON`         | Central policy is not valid JSON                               | Validate JSON                                                                                                              |
+| `CENTRAL_POLICY_INVALID_SCHEMA`       | Central policy schema check failed                             | Validate against the policy schema                                                                                         |
+| `CENTRAL_POLICY_INVALID_MODE`         | Central policy `minimumMode` is not one of solo/team/regulated | Use a valid mode literal                                                                                                   |
+| `EXPLICIT_WEAKER_THAN_CENTRAL`        | Explicit `--policy-mode` weaker than central minimum           | Use a mode at or above the central minimum                                                                                 |
+| `EXISTING_POLICY_WEAKER_THAN_CENTRAL` | Persisted session policy weaker than current central minimum   | Preserve the frozen policy; restore compatible central policy or explicitly activate a distinct host session for new work. |
 
 ### Archive
 
@@ -507,7 +520,6 @@ INVALID_VERDICT
 INVENTORY_UNREADABLE
 LOCK_TIMEOUT
 LOCK_TIMEOUT_EXHAUSTED
-MAX_REVIEW_ITERATIONS_REACHED
 MCP_RATE_LIMITED
 MCP_TOOL_TIMEOUT
 MISSING_ADR_SECTIONS

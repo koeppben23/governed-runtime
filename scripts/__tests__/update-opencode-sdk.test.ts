@@ -38,16 +38,14 @@ describe('native API updater target validation', () => {
     expect(files.map((file) => readFileSync(file))).toEqual(before);
   });
 
-  it('does not dispatch the API update workflow as host drift recovery', () => {
+  it('rejects the removed host trigger instead of dispatching the API update workflow', () => {
     const result = spawnSync(
       process.execPath,
       ['scripts/check-opencode-host-drift.mjs', '--trigger'],
       { cwd: resolve(import.meta.dirname, '../..'), encoding: 'utf8' },
     );
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain(
-      'BLOCKED: native API updates cannot certify installed host versions',
-    );
+    expect(result.stderr).toContain('OPENCODE_HOST_ARGUMENT_INVALID: no arguments accepted');
   });
 });
 

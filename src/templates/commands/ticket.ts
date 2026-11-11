@@ -38,7 +38,7 @@ $ARGUMENTS
 ## Steps
 
 1. Call \`flowguard_status\` to check the current phase.
-   - If no session: call \`flowguard_hydrate\` first.
+   - If governance is inactive: recommend explicit \`/start\` and stop; never start it automatically. If session authority is missing or unavailable, report the block without recreating it.
    - If phase is not READY or TICKET: report that /ticket is only allowed in READY or TICKET phase.
 
 2. **External Reference Resolution** (URLs, ticket IDs, issue links):

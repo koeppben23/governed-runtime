@@ -524,17 +524,17 @@ dispatch-only port, and no hidden SDK auto-spawn exists.
 **Layer 3 — Plugin-level enforcement (`src/integration/review/enforcement/enforcement.ts` via `src/integration/plugin.ts`):**
 
 Structural validation alone cannot prove that a child produced submitted
-findings. The following retained completion requirements must be ported and
-proved against native V2 execution; until then the after-hook blocks rather than
-manufacturing findings or invocation evidence:
+findings. The current native V2 dispatch and generation-6 same-child capture
+implementation feeds the following checks. Its implementation is not a claim
+that all installed-host acceptance gates have passed:
 
-**Level 1 — Invocation Gate** (`tool.execute.before` for flowguard tools):
+**Level 1 — Invocation Gate** (native `execute.before` for FlowGuard tools):
 A host-observed structured reviewer invocation MUST be recorded before any verdict submission. Blocks with `SUBAGENT_REVIEW_NOT_INVOKED`.
 
-**Level 2 — Child Session Match** (`tool.execute.before` for flowguard tools):
+**Level 2 — Child Session Match** (native `execute.before` for FlowGuard tools):
 When both the host-observed reviewer child session ID and the submitted `reviewFindings.reviewedBy.sessionId` are available, they must match. Blocks with `SUBAGENT_SESSION_MISMATCH`.
 
-**Level 4 — Findings Integrity** (`tool.execute.before` for flowguard tools):
+**Level 4 — Findings Integrity** (native `execute.before` for FlowGuard tools):
 The submitted `reviewFindings` are compared against the host-captured structured reviewer output:
 
 - `overallVerdict` must match exactly (blocks `SUBAGENT_FINDINGS_VERDICT_MISMATCH`)
@@ -545,17 +545,17 @@ Dispatch prompt integrity is enforced before initial V2 execution: the
 FlowGuard-owned frozen prompt digest and exact native prefix must agree with the
 enrolled Child's original request. This is not serialization provenance.
 Dispatch authority failures use `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`;
-the unported completion/capture boundary uses `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`.
+an unproven completion/capture outcome uses `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`.
 
-Required complete review sequence (not current V2 capture acceptance):
+Implemented review sequence (not full installed-host acceptance):
 
 ```
-flowguard_plan (initial)    →  tool emits reviewDispatch.required
+flowguard_plan (initial)    →  tool emits a pending reviewInvocation
     ↓                          parent invokes the native reviewer subagent child
     ↓                          plugin requests a correlated normal JSON serialization
     ↓                          plugin validates response-correlated strict JSON
-    ↓                          plugin mutates reviewDispatch to completed
-    ↓                          plugin records the invocation in enforcement state
+    ↓                          plugin binds generation-6 invocation/evidence
+    ↓                          plugin fulfills the matching obligation
     ↓
 flowguard_plan (verdict)    →  L1: host-observed invocation recorded?
                             →  L2: child session ID match?
@@ -566,9 +566,16 @@ flowguard_plan (verdict)    →  L1: host-observed invocation recorded?
 
 Each host-observed reviewer child session fulfills exactly **one** pending review obligation (1:1 contract). Plan review and implement review are independent governance obligations; a verdict binds to the child session recorded for its own obligation. If no matching invocation is recorded, enforcement fails closed.
 
-State is session-scoped and cleared after successful verdict submission. Tracking errors (in `tool.execute.after`) are fire-and-forget and never block governance flow. Enforcement errors (in `tool.execute.before`) are strict and physically prevent the tool call.
+Tracking is session-scoped; verdict submission consumes its matching invocation.
+Native `execute.after` reconciles mutation, audit and review tracking before the
+pending review signal is exposed. Required audit/evidence failures remain
+fail-closed; diagnostic logging alone is not authority. Native `execute.before`
+enforcement errors prevent the governed tool call.
 
-**Defense-in-depth note:** The plugin and FlowGuard tools are architecturally separate. If the plugin fails to load, the tools remain available but plugin-level enforcement (Levels 1, 2, and 4) is inactive. In that case, structural validation (Layer 1) still enforces schema compliance, review-mode gating, and mandatory findings. Plugin load failure would also prevent audit event emission, making it detectable through missing audit trails.
+**Native load boundary:** the V2 plugin registers its own tools. There is no
+separate legacy tool file that remains as a fallback when that plugin fails to
+load. A missing plugin or tool catalogue is not a supported governed execution
+path. The separate MCP surface is not proof of native V2 plugin enforcement.
 
 ---
 
@@ -735,7 +742,7 @@ dispatch contract failures surface as `HOST_STRUCTURED_OUTPUT_REQUIRED`,
 `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`, `REVIEWER_CAPTURE_PROVENANCE_INVALID` or
 `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`.
 
-Enforcement logic is implemented in `src/integration/review/enforcement/enforcement.ts` (with supporting modules under `src/integration/review/enforcement/`) and integrated via `tool.execute.before/after` hooks in `src/integration/plugin.ts`.
+Enforcement logic is implemented in `src/integration/review/enforcement/enforcement.ts` (with supporting modules under `src/integration/review/enforcement/`) and integrated through native `execute.before`/`execute.after` registrations in `src/integration/plugin.ts`.
 
 ---
 
@@ -842,14 +849,16 @@ architecture requires:
 
 1. **Structural validation** — FlowGuard tools validate ReviewFindings schema, review mode vs. policy, plan-version binding, and iteration binding. Invalid findings are BLOCKED.
 2. **Deterministic dispatch authority** — The parent invokes native `subagent`; the plugin durably authorizes its exact operation, binds the actual Child, and captures one exclusive terminal JSON window as evidence generation 6. Unknown outcomes are recovered only through the proven settlement above. There is no second runtime or text fallback.
-3. **Plugin-level enforcement** — Host-observed child-session enforcement via OpenCode `tool.execute.before/after` hooks:
+3. **Plugin-level enforcement** — Host-observed child-session enforcement through OpenCode V2 native `execute.before`/`execute.after` hooks:
    - L1: Invocation gate — a host-observed structured reviewer invocation must be recorded before any verdict
    - L2: Child session match — submitted session ID must match the host-observed reviewer child session
    - L4: Findings integrity — submitted overallVerdict and blockingIssues count must match the host-captured structured reviewer output
 4. **1:1 obligation matching** — Each host-observed reviewer child session fulfills exactly one pending review obligation. Plan and implement are independent; if both are pending, each requires its own reviewer dispatch. A verdict binds to the child session recorded for its own obligation; no matching invocation = fail-closed.
 5. **Strict evidence contract ** — With `strictEnforcement=true`, verdicts are accepted only when obligation, invocation evidence, and reviewer attestation are all present, mandate-bound, and single-use. No fallback to probabilistic review.
 
-Mandatory by default. The default policy enables strict subagent review, blocks self-review evidence, and normalizes missing or weaker session snapshots to the mandatory strict configuration.
+Mandatory by default. The default policy enables strict subagent review and
+blocks self-review evidence. Missing or invalid session authority cannot count
+as valid review evidence; no obsolete snapshot is normalized into acceptance.
 
 ---
 
