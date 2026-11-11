@@ -311,8 +311,15 @@ export interface BulletListSection {
 
 // ─── Help / Diagnostic Primitives ─────────────────────────────────────────────
 
-/** Visibility for detailed command lists — includes blocked_recoverable for help surfaces. */
-export type DetailedCommandVisibility = 'recommended' | 'available' | 'blocked_recoverable';
+/** Visibility for detailed command lists — includes help-only availability states. */
+export type DetailedCommandVisibility =
+  | 'recommended'
+  | 'available'
+  | 'blocked_recoverable'
+  | 'not_verified'
+  | 'unavailable'
+  | 'not_applicable'
+  | 'hidden';
 
 export interface DetailedCommandItem {
   /** Never null — detail commands are always command-based. */
@@ -320,8 +327,14 @@ export interface DetailedCommandItem {
   readonly description: string;
   readonly visibility: DetailedCommandVisibility;
   readonly aliases: readonly string[];
+  /** Host surfaces where this command is documented. */
+  readonly surfaces?: readonly string[];
+  readonly maturity?: 'stable' | 'experimental';
+  /** Whether at least one documented host surface is supported. */
+  readonly availability?: 'available' | 'host_unavailable' | 'not_verified';
   readonly preflight:
     | { readonly status: 'available' }
+    | { readonly status: 'not_applicable' }
     | {
         readonly status: 'blocked';
         readonly message: string | null;

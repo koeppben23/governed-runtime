@@ -152,6 +152,6 @@ Repository-level architecture decision records (review zone budgets, root matrix
 | `/implement`       | IMPLEMENTATION                                | Execute plan                            |
 | `/architecture`    | READY, ARCHITECTURE                           | Create/revise ADR                       |
 | `/review`          | READY                                         | Start peer review flow                  |
-| `/continue`        | Any                                           | Auto-advance                            |
+| `/continue`        | Any                                           | Read-only next-action routing           |
 | `/abort`           | Any                                           | Terminate                               |
 | `/archive`         | COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE | Archive session                         |

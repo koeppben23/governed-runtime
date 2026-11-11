@@ -56,7 +56,7 @@ Template commands invoke their corresponding tools; native callbacks such as
 | `/end-governance`                                              | native activation         | Ends opt-in governance after safe closure; distinct from `/finish` and `/abort`                                                                                                        |
 | `/debug-export`                                                | native diagnostics        | Read-only diagnostic snapshot for the current session and known reviewer children; works before ACTIVE governance and never authorizes or repairs                                      |
 | `/diagnostics`                                                 | native diagnostics        | Read-only Session Explorer, review subject/findings, bounded file-log tail and notification-capability views; never evidence, approval or a decision control                           |
-| `/choose-workflow`                                             | TUI/Desktop companion     | Opens the optional native workflow chooser or review-decision dialog over the canonical Next Action projection; cancel/stale state executes nothing                                    |
+| `/choose-workflow`                                             | TUI companion             | Opens the optional native TUI workflow chooser or review-decision dialog over the canonical Next Action projection; cancel/stale state executes nothing; Desktop is tracked separately |
 | `/validate`                                                    | `flowguard_run_check`     | Explicit baseline validation through the same evidence path as automatic validation                                                                                                    |
 | `/check`                                                       | native scoped command     | Runs the canonical verification/review turn under the build agent, then clears scope and restores the prior agent; not a VALIDATE alias                                                |
 | `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                                                                                              |
@@ -535,6 +535,30 @@ post-mortem via both `phase === 'ABORTED'` and `state.error.code === 'ABORTED'`.
 
 These tools operate on session artifacts but don't drive workflow.
 
+### `/recover-capacity` — Release reviewer capacity lock
+
+Native review-assurance operator command. It releases only a **proven terminal**
+reviewer capacity lock: the exact blocked obligation, stale attempt and
+`outcome_unknown` dispatch must match the reviewed lineage. An unknown outcome is
+never treated as a safe unlock. The obligation remains blocked for a new explicit
+review command.
+
+This is not a model tool, not an automatic unlock and not a decision. It does not
+change workflow authority; see [independent review](./independent-review.md) and
+[configuration](./configuration.md) for the underlying lifecycle.
+
+### `/end-governance` — End opt-in governance
+
+Native activation operator command. It commits `ACTIVE → ENDING → INACTIVE`
+under one decision after safe closure: terminal workflow, no live
+reviewer/mutation execution, no capacity lock and reconciled audit.
+`governance:ended` is appended separately and retried idempotently.
+
+`/end-governance` is distinct from `/finish` and `/abort`; it does not delete
+session state or audit history. It is unavailable while closure prerequisites are
+unmet. The command channel records `host_command` and does not prove a verified
+human.
+
 ### flowguard_status
 
 Read-only status tool used by `/status` and other slash commands to inspect
@@ -728,12 +752,13 @@ nothing, and is never evidence, approval or authorization.
 The portable Markdown/file fallback remains complete: `/debug-export` still
 writes the versioned snapshot, and `/diagnostics` only projects the same facts.
 
-### `/choose-workflow` — Optional TUI/Desktop workflow chooser
+### `/choose-workflow` — Optional TUI workflow chooser
 
 The optional TUI companion installed at `plugins/flowguard/tui.ts` adds a native
-workflow chooser. The optional Desktop companion is the prebuilt CommonJS bundle
-at `plugins/flowguard/gui-experimental.cjs`. Neither is a server, headless or
-decision authority; both consume the same read-only projection.
+workflow chooser. The optional Desktop companion is tracked separately in the
+open Desktop PR and is not part of this `develop` command baseline. Neither is a
+server, headless or decision authority; both consume the same read-only
+projection.
 
 ```text
 /choose-workflow
@@ -742,10 +767,10 @@ decision authority; both consume the same read-only projection.
 - The chooser uses the canonical `CHOOSE_FLOW` projection and shows exactly
   `/task` (recommended), `/architecture` and `/review`.
 - It opens only when the user explicitly invokes `/choose-workflow` or runs
-  `/choose-workflow` in the host. There is no automatic idle modal and no
-  persistent composer pill. Cancelling, closing, switching sessions or plugin
-  reload performs no command, including a dialog result that arrives after
-  unload.
+  `/choose-workflow` in the host. There is no automatic idle modal and the
+  chooser itself creates no persistent composer pill. Cancelling, closing,
+  switching sessions or plugin reload performs no command, including a dialog
+  result that arrives after unload.
 - Before requesting a command, the chooser re-reads the read-only
   `GetNextAction` projection and compares the state digest plus the canonical
   activation id and activation generation. It then re-checks the active session
@@ -760,10 +785,9 @@ decision authority; both consume the same read-only projection.
 - Only `CHOOSE_FLOW` is handled. Review gates, exhausted overrides and native
   decisions remain with the canonical commands and the separate revision-bound
   interaction contract.
-- Desktop GUI support is installed as a `gui-experimental` bundle and opens the
-  same chooser only when requested. Its visual chooser remains `NOT_VERIFIED`
-  until an installed OpenCode Desktop 2.2.5 proof is recorded. The portable
-  Markdown chooser from `/start` and `/status` remains complete.
+- Desktop GUI support and its installed acceptance are tracked separately in the
+  open Desktop PR and are not part of this `develop` command baseline. The
+  portable Markdown chooser from `/start` and `/status` remains complete.
 
 ### Native review decisions
 

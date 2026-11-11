@@ -4,12 +4,12 @@ Host-aware governance runtime for AI-assisted software delivery.
 
 > **Version:** 2.0.0-tp.2 | TypeScript | Host-aware | OpenCode synchronous enforcement path
 
-> **OpenCode V2 migration checkpoint:** native entrypoint and installation are
-> implemented; complete installed INACTIVE parity, interactive/autonomous activation,
-> policy-required human provenance and reviewer recovery remain unverified.
-> Reviewer dispatch and same-child evidence generation are connected; safe
-> unknown-outcome recovery remains unverified. PR #1190 is Draft; this branch
-> is not a supported ACTIVE V2 release.
+> **OpenCode V2 status:** the V2-only port (#1169/#1190) is merged on
+> `develop`. This README describes the command/tool surface that exists on
+> `develop`; installed Desktop UX and the remaining #1196 product and
+> accessibility gates are tracked separately in #1196 and the open Desktop PR
+> #1207. Command availability alone is not installed-host acceptance, and this is
+> not a GA release claim.
 
 V2 must preserve V1 capabilities and governance guarantees, including
 policy-permitted autonomous workflows and fully automatic independent AI review.
@@ -31,7 +31,7 @@ FlowGuard is distributed as a pre-built proprietary release artifact via GitHub 
 
 1. Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
 2. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
-3. OpenCode V2 watches plugin/config changes; its native reload action forces rediscovery. Installation does not activate governance; installed V2 acceptance remains NOT_VERIFIED.
+3. OpenCode V2 watches plugin/config changes; its native reload action forces rediscovery. Installation does not activate governance. Verify the installed host with `flowguard doctor`; full installed Desktop/product acceptance is tracked in #1196 and the open Desktop PR #1207.
 4. Verify: `npx --package ./flowguard-core-{version}.tgz flowguard doctor`
 
 If you installed with `--install-scope repo`, use the same flag for `doctor`.
@@ -54,17 +54,19 @@ In headless/non-interactive execution, FlowGuard does not rely on follow-up ques
 
 ## In 30 Seconds
 
-This describes the intended governed OpenCode workflow, not completed V2
-activation/reviewer acceptance. Installation alone cannot enable it.
+This describes the intended governed OpenCode workflow on `develop`. The V2
+port is merged; installed Desktop UX and the remaining product/accessibility
+acceptance are tracked separately. Installation alone cannot enable it.
 
 Three governed flows are available after `/start`:
 
 **Ticket flow** — full development lifecycle:
 
-![FlowGuard's intended human-gated ticket lifecycle: independently reviewed plan, approval, baseline validation, implementation, fresh verification, independent review, evidence approval and persisted export. V2 Desktop acceptance remains open; R4 is a documented NOT_SUPPORTED trusted-plugin limitation.](./docs/assets/development-lifecycle.svg)
+![FlowGuard's intended human-gated ticket lifecycle: independently reviewed plan, approval, baseline validation, implementation, fresh verification, independent review, evidence approval and persisted export. Installed Desktop product acceptance is tracked separately; R4 is a documented NOT_SUPPORTED trusted-plugin limitation.](./docs/assets/development-lifecycle.svg)
 
 The diagram shows the standard full-ceremony, human-gated path, not completed V2
-acceptance. `/start` activates governance; `/hydrate` does not. Policy-authorized
+acceptance. Installed Desktop product acceptance is tracked separately. `/start`
+activates governance; `/hydrate` does not. Policy-authorized
 autonomy and reduced ceremony are separate paths. R4 is a documented
 `NOT_SUPPORTED` host limitation under the trusted-plugin model; untrusted
 co-installed plugins are outside the supported boundary, and a native command
@@ -94,9 +96,10 @@ alone does not prove human identity.
    `text="diff"` → blocked with `requiredReviewAttestation` (obligation UUID)
 3. When plugin orchestration is active on a host with a verified native review
    transport, FlowGuard authorizes the reviewer subagent and binds structured
-   findings to the obligation. OpenCode V2 currently connects dispatch and
-   independent-Child authority only; native completion/capture/evidence remains
-   blocked, so free-form reviewer text is never accepted as a verdict.
+   findings to the obligation. OpenCode V2 connects reviewer dispatch and
+   independent-Child authority; current native completion/capture acceptance is
+   tracked in the host-probe records, so free-form reviewer text is never
+   accepted as a verdict.
 4. `/review prNumber=42 reviewFindings=<complete object>` →
    PEER_REVIEW_COMPLETE, receives structured `reviewCard`
 
@@ -107,6 +110,12 @@ alone does not prove human identity.
 **Advanced/canonical commands** (`/hydrate`, `/ticket`, `/review-decision`,
 `/validate`, `/architecture`, `/review`, `/export`, `/archive`, `/abort`, `/continue`)
 remain fully supported for scripts, CI, and power users.
+
+**Native operator/diagnostic commands:** `/check`, `/debug-export`,
+`/diagnostics`, `/recover-capacity`, `/end-governance`,
+`/reconcile-mutation-episode`, `/resolve-implementation-challenge`.
+The optional TUI companion adds `/choose-workflow`; Desktop-only commands are
+tracked separately in the open Desktop PR #1207.
 
 See [docs/commands.md](./docs/commands.md) for the complete command reference and
 [docs/independent-review.md](./docs/independent-review.md) for review obligations,
@@ -139,6 +148,7 @@ subagent attestation, and the `/review` evidence model.
 | Document                                                             | Description                                                            |
 | -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | [Installation](./docs/installation.md)                               | Install and configure FlowGuard                                        |
+| [Quick Start](./docs/quick-start.md)                                 | First governed OpenCode session and command walkthrough                |
 | [Commands](./docs/commands.md)                                       | Command reference                                                      |
 | [Phases](./docs/phases.md)                                           | Workflow phases and gates                                              |
 | [Policies](./docs/policies.md)                                       | Solo, Team, Team-CI, Regulated modes                                   |

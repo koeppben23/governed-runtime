@@ -33,8 +33,10 @@ describe('bounded OpenCode V2 acceptance claims', () => {
     const introduction = readDoc('docs/quick-start.md').split('## Prerequisites')[0]!;
     expect(introduction).toContain('Linux, macOS and Windows');
     expect(introduction).toContain('65/65');
-    expect(introduction).toContain('Desktop 2.2.5');
-    expect(introduction).toContain('Draft/NO-GO');
+    expect(introduction).toContain('installed Desktop UX');
+    expect(introduction).toContain('#1196');
+    expect(introduction).toContain('#1207');
+    expect(introduction).not.toContain('Draft/NO-GO');
     expect(introduction).not.toContain('Desktop, Windows and whole-PR');
   });
 

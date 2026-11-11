@@ -21,8 +21,13 @@ function renderCommandJson(command: ProjectedCommand, verbose: boolean): Record<
     invocation: command.invocation,
     description: command.description,
     visibility: command.visibility,
+    surfaces: command.surfaces,
+    maturity: command.maturity,
+    capabilities: command.capabilities,
+    availability: command.availability,
+    preflight: command.preflight,
     ...(command.alsoAvailableAs.length > 0 ? { alsoAvailableAs: command.alsoAvailableAs } : {}),
-    ...(verbose ? { id: command.id, label: command.label, preflight: command.preflight } : {}),
+    ...(verbose ? { id: command.id, label: command.label } : {}),
   };
 }
 
@@ -60,6 +65,7 @@ function renderHelpJson(result: HelpResult, verbose: boolean, includeContent: bo
     archiveVerification: result.archiveVerification,
     directive: result.directive ? renderCommandJson(result.directive, verbose) : null,
     commands: result.commands.map((command) => renderCommandJson(command, verbose)),
+    commandScope: result.commandScope,
     artifacts: buildArtifactsJson(result, includeContent),
     ...(result.blocker
       ? { blocker: { reasonCode: result.blocker.reasonCode, message: result.blocker.message } }
@@ -75,11 +81,16 @@ function mapVisibility(v: ProjectedCommand['visibility']): DetailedCommandVisibi
       return 'recommended';
     case 'blocked_recoverable':
       return 'blocked_recoverable';
-    case 'available':
-    case 'upcoming':
+    case 'not_verified':
+      return 'not_verified';
+    case 'host_unavailable':
+      return 'unavailable';
     case 'not_applicable':
-    case 'hidden':
+      return 'not_applicable';
+    case 'available':
       return 'available';
+    case 'hidden':
+      return 'hidden';
   }
 }
 
@@ -109,15 +120,18 @@ export function buildHelpDocument(result: HelpResult, includeContent: boolean): 
     sections.push(nextSection);
   }
 
-  // ## Available commands
+  // ## Available commands / ## Command reference
   sections.push({
     kind: 'detailedCommandList',
-    heading: 'Available commands',
+    heading: result.commandScope === 'all' ? 'Command reference' : 'Available commands',
     items: result.commands.map((cmd) => ({
       invocation: cmd.invocation,
       description: cmd.description,
       visibility: mapVisibility(cmd.visibility),
       aliases: cmd.alsoAvailableAs,
+      surfaces: cmd.surfaces,
+      maturity: cmd.maturity,
+      availability: cmd.availability,
       preflight:
         cmd.preflight.status === 'blocked'
           ? {
@@ -126,7 +140,9 @@ export function buildHelpDocument(result: HelpResult, includeContent: boolean): 
               reasonCode: cmd.preflight.reasonCode,
               recovery: cmd.preflight.recovery,
             }
-          : { status: 'available' as const },
+          : cmd.preflight.status === 'not_applicable'
+            ? { status: 'not_applicable' as const }
+            : { status: 'available' as const },
     })),
   });
 

@@ -52,6 +52,12 @@ export interface ToolContext {
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
   /** Host-command hook for a visible in-flight validation update. */
   autoValidationProgress?: AutoValidationProgress;
+  /**
+   * Trusted host-surface capability snapshot for read-only help.
+   * Native plugin composition may assert its own slash-command registration;
+   * MCP and other callers must omit this and remain `not_verified`.
+   */
+  helpCapabilities?: import('../help/command-catalog.js').HelpCapabilities;
 }
 
 /**

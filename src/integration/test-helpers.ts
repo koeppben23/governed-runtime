@@ -97,6 +97,7 @@ export interface TestToolContext {
   abort: AbortSignal;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
   autoValidationProgress?: import('./tools/helpers.js').AutoValidationProgress;
+  helpCapabilities?: import('./help/command-catalog.js').HelpCapabilities;
 }
 
 /**

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Complete FlowGuard command discoverability and help on `develop`: compose
+  installed, native-only and optional TUI command metadata into a
+  capability-aware catalog; make `/commands --all` meaningful without a session;
+  and report host availability, maturity and readiness consistently in Markdown
+  and JSON. No governance authority, phase transition or decision permission is
+  introduced.
+
 - Add the optional Desktop GUI companion for #1196 as an installed prebuilt
   `plugins/flowguard/gui-experimental.cjs` bundle. It exposes the same
   `/choose-workflow` dialog only when explicitly requested; it installs no

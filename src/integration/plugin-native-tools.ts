@@ -158,6 +158,12 @@ export async function executeCanonicalNativeTool(
           ...(update.title === undefined ? {} : { title: update.title }),
         };
       },
+      helpCapabilities: {
+        portable: 'supported',
+        native: 'supported',
+        tui: 'not_verified',
+        desktop: 'not_verified',
+      },
     });
   const result =
     name === TOOL_FLOWGUARD_DECISION

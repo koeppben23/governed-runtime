@@ -90,6 +90,7 @@ async function executeHelp(
     ...(reviewReport !== undefined ? { reviewReport } : {}),
     ...(requestedInvocation !== undefined ? { requestedInvocation } : {}),
     includeArtifactContent,
+    ...(context.helpCapabilities !== undefined ? { capabilities: context.helpCapabilities } : {}),
   });
   return renderHelp(result, {
     format: view.verbose ? 'json' : 'markdown',

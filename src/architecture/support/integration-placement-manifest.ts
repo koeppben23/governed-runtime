@@ -364,6 +364,8 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/host-mutation-observation.ts', owner: 'root-host-runtime' },
   { file: 'integration/git-control-plane.ts', owner: 'root-authority' },
   { file: 'integration/governance-end-preconditions.ts', owner: 'root-authority' },
+  { file: 'integration/help/command-catalog.ts', owner: 'help' },
+  { file: 'integration/help/command-projection.ts', owner: 'help' },
   { file: 'integration/help/help-projection.ts', owner: 'help' },
   { file: 'integration/help/help-renderer.ts', owner: 'help' },
   { file: 'integration/implementation-guidance.ts', owner: 'root-authority' },
