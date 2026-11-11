@@ -1,15 +1,16 @@
 # Quick Start (OpenCode)
 
-This Quick Start applies to OpenCode, the primary V2 host. The ACTIVE V2
-integration is still Draft/NO-GO. The bounded OpenCode 2.2.4 CLI/server parity
-matrix remains historical evidence (65/65 on Linux, macOS and Windows); see the
-[P0-00 evidence](./host-probes/opencode-v2/p0-00-inactive-parity.md). The current
-native candidate pin is OpenCode 2.2.5; installed Desktop 2.2.5 and whole-PR
-acceptance remain open. R4 is a documented
-`NOT_SUPPORTED` trusted-plugin limitation: untrusted co-installed plugins are
-outside the supported V2 security boundary, and no receipt claims
-tool-result-byte attestation. Use this guide for evaluation, not as a GA release
-claim.
+This Quick Start applies to OpenCode, the primary V2 host, on the `develop`
+command surface. The V2 port and the native Desktop Workbench (#1207) are
+merged; remaining product/accessibility acceptance is tracked in #1196. Desktop
+command-catalog metadata and ComposerPill documentation are a follow-up catalog
+change. The bounded OpenCode 2.2.4 CLI/server parity matrix remains historical
+evidence (65/65 on Linux, macOS and Windows); see the
+[P0-00 evidence](./host-probes/opencode-v2/p0-00-inactive-parity.md).
+R4 is a documented `NOT_SUPPORTED` trusted-plugin limitation: untrusted
+co-installed plugins are outside the supported V2 security boundary, and no
+receipt claims tool-result-byte attestation. Use this guide for evaluation, not
+as a GA release claim.
 
 ## Prerequisites
 
@@ -193,25 +194,41 @@ Or review a specific GitHub pull request:
 | `/approve`            | Approve at the current review gate                |
 | `/request-changes`    | Request changes at the current review gate        |
 | `/reject`             | Reject at the current review gate                 |
-| `/check`              | Compatibility: re-run validation                  |
+| `/check`              | Native scoped check/review turn                   |
 | `/export`             | Materialize the verifiable export                 |
 | `/why`                | Diagnostic: explain the current next-action       |
 | `/status`             | Read-only session view                            |
 
 **Canonical commands:**
 
-| Command                              | Description                             |
-| ------------------------------------ | --------------------------------------- |
-| `/hydrate`                           | Legacy compatibility; not V2 activation |
-| `/ticket <text or URL>`              | Record task (supports external URLs)    |
-| `/plan`                              | Generate plan                           |
-| `/architecture`                      | Create/revise ADR                       |
-| `/implement`                         | Execute approved plan                   |
-| `/validate`                          | Run validation                          |
-| `/review <PR-URL or branch>`         | Start peer review flow                  |
-| `/continue`                          | Auto-advance                            |
-| `/review-decision approve`           | Approve                                 |
-| `/review-decision changes_requested` | Request changes                         |
-| `/review-decision reject`            | Reject                                  |
-| `/archive`                           | Archive completed session               |
-| `/abort`                             | Terminate session                       |
+| Command                              | Description                                            |
+| ------------------------------------ | ------------------------------------------------------ |
+| `/hydrate`                           | Legacy compatibility; not V2 activation                |
+| `/ticket <text or URL>`              | Record task (supports external URLs)                   |
+| `/plan`                              | Generate plan                                          |
+| `/architecture`                      | Create/revise ADR                                      |
+| `/implement`                         | Execute approved plan                                  |
+| `/validate`                          | Run validation                                         |
+| `/review <PR-URL or branch>`         | Start peer review flow                                 |
+| `/continue`                          | Read-only next-action routing                          |
+| `/review-decision approve`           | Approve                                                |
+| `/review-decision changes_requested` | Request changes                                        |
+| `/review-decision reject`            | Reject                                                 |
+| `/archive`                           | Archive completed session                              |
+| `/abort`                             | Terminate session                                      |
+| `/reconcile-mutation-episode`        | Resolve an unobservable host mutation episode          |
+| `/resolve-implementation-challenge`  | Record evidence addressing an implementation challenge |
+
+**Native operator/diagnostic commands:**
+
+| Command             | Description                                            |
+| ------------------- | ------------------------------------------------------ |
+| `/check`            | Run the canonical scoped verification/review turn      |
+| `/debug-export`     | Write a bounded, redacted diagnostic snapshot          |
+| `/diagnostics`      | Read-only Explorer, review, log and notification views |
+| `/recover-capacity` | Release a proven terminal reviewer capacity lock       |
+| `/end-governance`   | End governance after safe workflow and audit closure   |
+
+The optional TUI companion adds `/choose-workflow`. The merged Desktop GUI
+companion is not yet represented in this command catalog slice; Desktop command
+metadata and ComposerPill documentation are a follow-up catalog change.

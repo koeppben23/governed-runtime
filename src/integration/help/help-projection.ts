@@ -4,54 +4,38 @@
  */
 
 import type { FlowGuardPolicy } from '../../config/policy.js';
-import { COMMAND_HELP } from '../../machine/command-help.js';
-import { isCommandAllowed } from '../../machine/commands.js';
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewReport } from '../../state/evidence.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { directiveLabel } from '../../presentation/directive-copy.js';
 import { buildStatusProjection } from '../status/status.js';
-import {
-  buildEvidenceDetailProjection,
-  projectEvidenceApprovalBlock,
-} from '../status/status-detail-projections.js';
+import { buildEvidenceDetailProjection } from '../status/status-detail-projections.js';
 import type { FinishOverallStatus } from '../status/status-types.js';
 import { buildFinishCard } from '../status/status-finish.js';
-import { evaluateArchivePreflight, type CommandPreflight } from '../archive-preflight.js';
 import {
-  getInstalledCommand,
-  INSTALLED_COMMANDS,
-  visibleAliasesForDefinition,
-  type InstalledCommandDefinition,
-} from '../installed-commands.js';
+  COMMAND_CATALOG,
+  DEFAULT_HELP_CAPABILITIES,
+  commandAvailability,
+  getCatalogCommand,
+  type CapabilityMap,
+  type CommandCatalogEntry,
+  type HelpCapabilities,
+} from './command-catalog.js';
+import {
+  catalogPreflight,
+  findRecommendation,
+  projectCatalogCommand,
+  type ProjectedCommand,
+} from './command-projection.js';
 import {
   resolveCurrentReviewReport,
   type ReviewReportResolution,
 } from '../review/evidence/report-coherence.js';
-import {
-  TOOL_FLOWGUARD_ARCHIVE,
-  TOOL_FLOWGUARD_HELP,
-  TOOL_FLOWGUARD_HYDRATE,
-  TOOL_FLOWGUARD_STATUS,
-  TOOL_FLOWGUARD_CONTINUE,
-} from '../tool-names.js';
 import { IntegrationInvariantError } from '../errors.js';
-import { NATIVE_START_COMMAND } from '../../shared/flowguard-identifiers.js';
 
-export type HelpVisibility =
-  'recommended' | 'available' | 'upcoming' | 'blocked_recoverable' | 'not_applicable' | 'hidden';
+export type { HelpVisibility, ProjectedCommand } from './command-projection.js';
 
 export type Readiness = 'ready' | 'ready_with_warnings' | 'blocked' | 'not_verified' | 'none';
-
-export interface ProjectedCommand {
-  readonly id: string;
-  readonly invocation: string;
-  readonly label: string;
-  readonly description: string;
-  readonly visibility: HelpVisibility;
-  readonly preflight: CommandPreflight;
-  readonly alsoAvailableAs: readonly string[];
-}
 
 export interface EvidenceCompleteness {
   readonly status: 'complete' | 'incomplete' | 'failed' | 'not_applicable';
@@ -103,6 +87,11 @@ export interface HelpResult {
   readonly archiveVerification: ArchiveVerification;
   readonly directive: ProjectedCommand | null;
   readonly commands: readonly ProjectedCommand[];
+  readonly commandScope: 'available' | 'all';
+  /** Capability snapshot used for this projection. */
+  readonly capabilities: CapabilityMap;
+  /** `host` when supplied by trusted host composition; `default` otherwise. */
+  readonly capabilitySource: 'host' | 'default';
   readonly artifacts: HelpArtifacts;
   readonly blocker: HelpBlocker | null;
 }
@@ -198,140 +187,6 @@ function buildBlocker(
     };
   }
   return null;
-}
-
-function description(definition: InstalledCommandDefinition): string {
-  if (definition.target.workflowCommand) {
-    return COMMAND_HELP[definition.target.workflowCommand].description;
-  }
-  return definition.description;
-}
-
-function label(definition: InstalledCommandDefinition): string {
-  if (definition.target.workflowCommand)
-    return COMMAND_HELP[definition.target.workflowCommand].label;
-  return definition.invocation;
-}
-
-function preflight(
-  definition: InstalledCommandDefinition,
-  state: SessionState | null,
-): CommandPreflight {
-  if (definition.target.nativeCommand === NATIVE_START_COMMAND)
-    return { status: 'available', guarantee: 'eligible_to_attempt' };
-  if (definition.target.toolName === TOOL_FLOWGUARD_ARCHIVE) return evaluateArchivePreflight(state);
-  if (
-    definition.target.toolName === TOOL_FLOWGUARD_STATUS ||
-    definition.target.toolName === TOOL_FLOWGUARD_HELP
-  ) {
-    return { status: 'available', guarantee: 'read_only_available' };
-  }
-  // /hydrate is the compatibility bootstrap tool when no session exists; the
-  // native /start command is activation authority and is projected separately.
-  // With a session present hydrate follows the same command policy as every
-  // other command; there is no second admissibility interpretation here.
-  if (definition.target.toolName === TOOL_FLOWGUARD_HYDRATE && !state) {
-    return { status: 'available', guarantee: 'eligible_to_attempt' };
-  }
-  if (!state) {
-    return {
-      status: 'blocked',
-      guarantee: 'eligible_to_attempt',
-      reasonCode: 'SESSION_REQUIRED',
-      message: 'This command requires a FlowGuard session.',
-      recovery: 'Run /hydrate to initialize a session.',
-    };
-  }
-  const operation = explicitOperationPreflight(definition, state);
-  if (operation) return operation;
-  if (
-    definition.target.workflowCommand &&
-    !isCommandAllowed(state.phase, definition.target.workflowCommand)
-  ) {
-    return {
-      status: 'blocked',
-      guarantee: 'eligible_to_attempt',
-      reasonCode: 'WORKFLOW_COMMAND_NOT_ALLOWED',
-      message: 'This command is not available in the current phase.',
-      recovery: 'Follow the recommended next action.',
-    };
-  }
-  return (
-    approvalPreflight(definition, state) ?? {
-      status: 'available',
-      guarantee: 'eligible_to_attempt',
-    }
-  );
-}
-
-/** Display eligibility only; native admission remains in the ACTIVE-root callback. */
-function explicitOperationPreflight(
-  definition: InstalledCommandDefinition,
-  state: SessionState,
-): CommandPreflight | null {
-  if (definition.target.toolName === TOOL_FLOWGUARD_CONTINUE) {
-    if (state.phase === 'READY')
-      return {
-        status: 'blocked',
-        guarantee: 'eligible_to_attempt',
-        reasonCode: 'CONTINUE_AMBIGUOUS',
-        message: 'Continue requires a selected workflow. Choose a flow first.',
-        recovery: 'Run /task, /architecture, or /review to select a flow.',
-      };
-    // Read-only at gates/terminal phases too; never the old mutating rail.
-    return { status: 'available', guarantee: 'read_only_available' };
-  }
-  if (definition.target.nativeCommand !== undefined)
-    return { status: 'available', guarantee: 'eligible_to_attempt' };
-  return null;
-}
-
-function approvalPreflight(
-  definition: InstalledCommandDefinition,
-  state: SessionState,
-): CommandPreflight | null {
-  if (definition.intent !== 'approve') return null;
-  const block = projectEvidenceApprovalBlock(state);
-  if (!block) return null;
-  return {
-    status: 'blocked',
-    guarantee: 'eligible_to_attempt',
-    reasonCode: block.code,
-    message: block.reason,
-    recovery: block.recovery.join('\n'),
-  };
-}
-
-function projectCommand(
-  definition: InstalledCommandDefinition,
-  state: SessionState | null,
-  visibility: HelpVisibility,
-): ProjectedCommand {
-  return {
-    id: definition.id,
-    invocation: definition.invocation,
-    label: label(definition),
-    description: description(definition),
-    visibility,
-    preflight: preflight(definition, state),
-    alsoAvailableAs: visibleAliasesForDefinition(definition),
-  };
-}
-
-function visibilityForPreflight(preflightResult: CommandPreflight): HelpVisibility {
-  switch (preflightResult.status) {
-    case 'available':
-      return 'available';
-    case 'blocked':
-      return 'blocked_recoverable';
-    case 'not_applicable':
-      return 'not_applicable';
-  }
-}
-
-function findRecommendation(invocation: string | null): InstalledCommandDefinition | undefined {
-  if (!invocation) return undefined;
-  return getInstalledCommand(invocation);
 }
 
 export function finishToReadiness(overallStatus: FinishOverallStatus): Readiness {
@@ -443,11 +298,14 @@ function buildArchiveVerification(state: SessionState | null): ArchiveVerificati
   };
 }
 
-function buildCommandDetail(state: SessionState | null, requestedInvocation: string): HelpResult {
-  const definition = getInstalledCommand(requestedInvocation);
-  const command = definition
-    ? projectCommand(definition, state, visibilityForPreflight(preflight(definition, state)))
-    : null;
+function buildCommandDetail(
+  state: SessionState | null,
+  requestedInvocation: string,
+  capabilities: HelpCapabilities,
+  capabilitySource: 'host' | 'default',
+): HelpResult {
+  const entry = getCatalogCommand(requestedInvocation);
+  const command = entry ? projectCatalogCommand(entry, state, capabilities, null) : null;
   return {
     phase: state ? { id: state.phase, label: PHASE_LABELS[state.phase] } : null,
     lifecycle: state ? PHASE_LABELS[state.phase] : 'No active session',
@@ -463,26 +321,38 @@ function buildCommandDetail(state: SessionState | null, requestedInvocation: str
     archiveVerification: buildArchiveVerification(state),
     directive: null,
     commands: command ? [command] : [],
+    commandScope: 'available',
+    capabilities,
+    capabilitySource,
     artifacts: EMPTY_ARTIFACTS,
     blocker: null,
   };
 }
 
-function buildNoSessionResult(): HelpResult {
-  const start = INSTALLED_COMMANDS.find((definition) => definition.invocation === '/start');
-  if (start === undefined) {
+function noSessionCommand(
+  invocation: string,
+  capabilities: HelpCapabilities,
+  recommendedInvocation: string | null,
+): ProjectedCommand {
+  const entry = getCatalogCommand(invocation);
+  if (entry === undefined) {
     throw new IntegrationInvariantError(
-      'HELP_START_COMMAND_METADATA_MISSING',
-      'buildNoSessionResult: no installed command metadata for the native /start command.',
+      'HELP_COMMAND_METADATA_MISSING',
+      `buildNoSessionResult: no command metadata for ${invocation}.`,
     );
   }
-  const status = INSTALLED_COMMANDS.find((definition) => definition.id === 'operational.status');
-  if (status === undefined) {
-    throw new IntegrationInvariantError(
-      'HELP_STATUS_COMMAND_METADATA_MISSING',
-      'buildNoSessionResult: no installed command metadata for "operational.status".',
-    );
-  }
+  return projectCatalogCommand(entry, null, capabilities, recommendedInvocation);
+}
+
+function noSessionDirective(capabilities: HelpCapabilities): ProjectedCommand | null {
+  const start = noSessionCommand('/start', capabilities, '/start');
+  return start.availability === 'available' ? start : null;
+}
+
+function buildNoSessionResult(
+  capabilities: HelpCapabilities,
+  capabilitySource: 'host' | 'default',
+): HelpResult {
   return {
     phase: null,
     lifecycle: 'No active session',
@@ -496,40 +366,60 @@ function buildNoSessionResult(): HelpResult {
     nextActionSummary: 'Start a governed session.',
     evidenceCompleteness: buildEvidenceCompleteness(null),
     archiveVerification: buildArchiveVerification(null),
-    directive: projectCommand(start, null, 'recommended'),
+    directive: noSessionDirective(capabilities),
     commands: [
-      projectCommand(start, null, 'recommended'),
-      projectCommand(status, null, 'available'),
+      noSessionCommand('/start', capabilities, '/start'),
+      noSessionCommand('/status', capabilities, '/start'),
     ],
+    commandScope: 'available',
+    capabilities,
+    capabilitySource,
     artifacts: EMPTY_ARTIFACTS,
     blocker: null,
   };
 }
 
-function projectActiveCommand(
-  definition: InstalledCommandDefinition,
-  state: SessionState,
-  recommended: InstalledCommandDefinition | undefined,
-  scope: 'available' | 'all',
-): ProjectedCommand {
-  if (definition.id === recommended?.id) {
-    const projected = projectCommand(definition, state, 'available');
-    return projected.preflight.status === 'available'
-      ? { ...projected, visibility: 'recommended' }
-      : { ...projected, visibility: visibilityForPreflight(projected.preflight) };
-  }
-  const availability = preflight(definition, state);
-  if (availability.status === 'available') return projectCommand(definition, state, 'available');
-  if (scope === 'all')
-    return projectCommand(definition, state, visibilityForPreflight(availability));
-  return projectCommand(definition, state, 'hidden');
+function buildNoSessionCatalogResult(
+  capabilities: HelpCapabilities,
+  capabilitySource: 'host' | 'default',
+): HelpResult {
+  const commands = COMMAND_CATALOG.filter((entry) => entry.public).map((entry) =>
+    projectCatalogCommand(entry, null, capabilities, '/start'),
+  );
+  return {
+    phase: null,
+    lifecycle: 'No active session',
+    readiness: 'none',
+    recommendationQuality: {
+      quality: 'not_applicable',
+      advisoryStatus: 'not_applicable',
+      summary: '',
+    },
+    reviewReportStatus: 'not_available',
+    nextActionSummary: 'Start a governed session.',
+    evidenceCompleteness: buildEvidenceCompleteness(null),
+    archiveVerification: buildArchiveVerification(null),
+    directive: noSessionDirective(capabilities),
+    commands,
+    commandScope: 'all',
+    capabilities,
+    capabilitySource,
+    artifacts: EMPTY_ARTIFACTS,
+    blocker: null,
+  };
 }
 
-function isVisibleInScope(command: ProjectedCommand, scope: 'available' | 'all'): boolean {
+function isEntryVisible(
+  entry: CommandCatalogEntry,
+  scope: 'available' | 'all',
+  state: SessionState,
+  capabilities: HelpCapabilities,
+): boolean {
+  if (!entry.public) return false;
   if (scope === 'all') return true;
-  if (command.visibility === 'hidden') return false;
-  const definition = INSTALLED_COMMANDS.find((candidate) => candidate.id === command.id);
-  return definition?.visibility === 'primary';
+  if (entry.visibility !== 'primary') return false;
+  if (commandAvailability(entry, capabilities) !== 'available') return false;
+  return catalogPreflight(entry, state).status === 'available';
 }
 
 function resolveReport(
@@ -546,15 +436,20 @@ interface SessionHelpOpts {
   readonly scope: 'available' | 'all';
   readonly reportResolution: ReviewReportResolution | null;
   readonly includeArtifactContent: boolean;
+  readonly capabilities: HelpCapabilities;
+  readonly capabilitySource: 'host' | 'default';
 }
 
 function projectHelpNext(
   status: ReturnType<typeof buildStatusProjection>,
   state: SessionState,
-  recommended: InstalledCommandDefinition | undefined,
+  recommended: CommandCatalogEntry | undefined,
+  capabilities: HelpCapabilities,
 ): Pick<HelpResult, 'directive' | 'nextActionSummary'> {
   const chooseFlow = status.directive.code === 'CHOOSE_FLOW';
-  const candidateNext = recommended ? projectCommand(recommended, state, 'recommended') : null;
+  const candidateNext = recommended
+    ? projectCatalogCommand(recommended, state, capabilities, recommended.invocation)
+    : null;
   if (chooseFlow && status.conclusion.kind === 'decision_required') {
     const choices = status.conclusion.actions.map((action) =>
       action.description.toLowerCase().includes('recommended')
@@ -567,13 +462,25 @@ function projectHelpNext(
     };
   }
   return {
-    directive: candidateNext?.preflight.status === 'available' ? candidateNext : null,
+    directive:
+      candidateNext?.availability === 'available' && candidateNext.preflight.status === 'available'
+        ? candidateNext
+        : null,
     nextActionSummary: status.blocker?.reasonText ?? directiveLabel(status.directive.code),
   };
 }
 
 function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
-  const { state, policy, view, scope, reportResolution, includeArtifactContent } = opts;
+  const {
+    state,
+    policy,
+    view,
+    scope,
+    reportResolution,
+    includeArtifactContent,
+    capabilities,
+    capabilitySource,
+  } = opts;
   const currentReport = reportResolution?.status === 'current' ? reportResolution.report : null;
 
   const status = buildStatusProjection(state, policy);
@@ -581,11 +488,13 @@ function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
   const readiness = finishToReadiness(finish.overallStatus);
   const recommendationQuality = projectRecommendationQuality(reportResolution);
   const recommended = findRecommendation(status.directive.commands[0] ?? null);
-  const next = projectHelpNext(status, state, recommended);
+  const next = projectHelpNext(status, state, recommended, capabilities);
 
-  const commands = INSTALLED_COMMANDS.map((definition) =>
-    projectActiveCommand(definition, state, recommended, scope),
-  ).filter((command) => isVisibleInScope(command, scope));
+  const commands = COMMAND_CATALOG.filter((entry) =>
+    isEntryVisible(entry, scope, state, capabilities),
+  ).map((entry) =>
+    projectCatalogCommand(entry, state, capabilities, recommended?.invocation ?? null),
+  );
   const contextCommands = view === 'context' ? limitContextCommands(commands) : commands;
 
   return {
@@ -599,6 +508,9 @@ function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
     archiveVerification: buildArchiveVerification(state),
     directive: next.directive,
     commands: contextCommands,
+    commandScope: scope,
+    capabilities,
+    capabilitySource,
     artifacts: buildArtifacts(state, includeArtifactContent, directiveLabel(status.directive.code)),
     blocker: buildBlocker(state, policy),
   };
@@ -613,10 +525,18 @@ export function buildHelpResult(
     requestedInvocation?: string;
     reviewReport?: ReviewReport;
     includeArtifactContent?: boolean;
+    capabilities?: HelpCapabilities;
   },
 ): HelpResult {
-  if (opts.requestedInvocation) return buildCommandDetail(state, opts.requestedInvocation);
-  if (!state || !policy) return buildNoSessionResult();
+  const capabilities = opts.capabilities ?? DEFAULT_HELP_CAPABILITIES;
+  const capabilitySource = opts.capabilities === undefined ? 'default' : 'host';
+  if (opts.requestedInvocation)
+    return buildCommandDetail(state, opts.requestedInvocation, capabilities, capabilitySource);
+  if (!state || !policy) {
+    return opts.view === 'commands' && (opts.scope ?? 'available') === 'all'
+      ? buildNoSessionCatalogResult(capabilities, capabilitySource)
+      : buildNoSessionResult(capabilities, capabilitySource);
+  }
 
   // After the early returns, view is always 'context' or 'commands'.
   const view = opts.view as 'context' | 'commands';
@@ -627,6 +547,8 @@ export function buildHelpResult(
     scope: opts.scope ?? 'available',
     reportResolution: resolveReport(state, opts.reviewReport),
     includeArtifactContent: opts.includeArtifactContent ?? false,
+    capabilities,
+    capabilitySource,
   });
 }
 

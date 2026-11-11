@@ -18,6 +18,7 @@ import {
   INSTALLED_TEMPLATE_FILES,
   type InstalledCommandDefinition,
 } from '../../integration/installed-commands.js';
+import { COMMAND_CATALOG } from '../../integration/help/command-catalog.js';
 import { Command } from '../../machine/commands.js';
 import { TRANSITIONS, USER_GATES } from '../../machine/topology.js';
 import { Phase } from '../../state/schema.js';
@@ -91,12 +92,16 @@ const productAliasTemplates = new Set<string>(
 );
 
 describe('documentation/top-level-docs-drift', () => {
-  // Installed templates plus native plugin commands (registered, never installed).
+  // Installed templates plus native/TUI commands represented by the public
+  // documentation catalogue (registered by the host, never template-installed).
   const installedCommands = [
-    ...INSTALLED_TEMPLATE_FILES.map((templateFile) => slash(templateFile.replace(/\.md$/, ''))),
-    ...INSTALLED_COMMANDS.filter((definition) => definition.templateFile === null).map(
-      (definition) => definition.invocation,
-    ),
+    ...new Set([
+      ...INSTALLED_TEMPLATE_FILES.map((templateFile) => slash(templateFile.replace(/\.md$/, ''))),
+      ...INSTALLED_COMMANDS.filter((definition) => definition.templateFile === null).map(
+        (definition) => definition.invocation,
+      ),
+      ...COMMAND_CATALOG.filter((entry) => entry.public).map((entry) => entry.invocation),
+    ]),
   ].sort();
 
   const productAliasCommands = productAliasDefinitions
@@ -117,7 +122,7 @@ describe('documentation/top-level-docs-drift', () => {
     .sort();
 
   describe('HAPPY — canonical command and alias names', () => {
-    it('top-level docs mention only installed slash commands', () => {
+    it('top-level docs mention only catalogued slash commands', () => {
       for (const doc of TOP_LEVEL_DOCS) {
         const unknownCommands = extractSlashCommands(readDoc(doc)).filter(
           (command) => !installedCommands.includes(command),

@@ -177,10 +177,158 @@ describe('buildHelpResult', () => {
     }
   });
 
-  it('no-session help recommends /start, not /hydrate', () => {
-    const result = buildHelpResult(null, null, { view: 'context' });
+  it('no-session help recommends /start on a verified native host, not /hydrate', () => {
+    const result = buildHelpResult(null, null, {
+      view: 'context',
+      capabilities: {
+        portable: 'supported',
+        native: 'supported',
+        tui: 'not_verified',
+        desktop: 'not_verified',
+      },
+    });
     expect(result.directive?.invocation).toBe('/start');
     expect(result.commands.map((command) => command.invocation)).toEqual(['/start', '/status']);
+    expect(result.commands.find((command) => command.invocation === '/start')).toMatchObject({
+      availability: 'available',
+      visibility: 'recommended',
+    });
+    expect(result.commandScope).toBe('available');
+  });
+
+  it('does not claim native /start on a host without native capability evidence', () => {
+    const result = buildHelpResult(null, null, { view: 'context' });
+    expect(result.directive).toBeNull();
+    expect(result.nextActionSummary).toContain('Start');
+    expect(result.commands.find((command) => command.invocation === '/start')).toMatchObject({
+      surfaces: ['native'],
+      availability: 'not_verified',
+      visibility: 'not_verified',
+    });
+  });
+
+  it('no-session /commands --all exposes the complete capability-aware catalog', () => {
+    const result = buildHelpResult(null, null, { view: 'commands', scope: 'all' });
+    expect(result.commandScope).toBe('all');
+    expect(result.capabilitySource).toBe('default');
+    expect(result.capabilities.native).toBe('not_verified');
+    const byInvocation = new Map(result.commands.map((command) => [command.invocation, command]));
+    expect(byInvocation.get('/start')).toMatchObject({
+      surfaces: ['native'],
+      availability: 'not_verified',
+      visibility: 'not_verified',
+    });
+    expect(byInvocation.get('/status')).toMatchObject({
+      surfaces: ['portable'],
+      availability: 'available',
+      visibility: 'available',
+    });
+    expect(byInvocation.get('/diagnostics')).toMatchObject({
+      surfaces: ['native'],
+      availability: 'not_verified',
+      visibility: 'not_verified',
+    });
+    expect(byInvocation.get('/recover-capacity')).toMatchObject({
+      surfaces: ['native'],
+      availability: 'not_verified',
+    });
+    expect(byInvocation.get('/choose-workflow')).toMatchObject({
+      surfaces: ['tui'],
+      availability: 'not_verified',
+    });
+    expect(byInvocation.get('/debug-export')).toBeDefined();
+    expect(byInvocation.get('/end-governance')).toBeDefined();
+  });
+
+  it('native capabilities expose native-only commands without inventing session state', () => {
+    const capabilities = {
+      portable: 'supported' as const,
+      native: 'supported' as const,
+      tui: 'not_verified' as const,
+      desktop: 'not_verified' as const,
+    };
+    const result = buildHelpResult(null, null, {
+      view: 'commands',
+      scope: 'all',
+      capabilities,
+    });
+    expect(result.capabilitySource).toBe('host');
+    expect(result.capabilities).toEqual(capabilities);
+    expect(result.commands.find((command) => command.invocation === '/diagnostics')).toMatchObject({
+      availability: 'available',
+      visibility: 'available',
+      preflight: { status: 'available', guarantee: 'read_only_available' },
+    });
+    expect(result.commands.find((command) => command.invocation === '/debug-export')).toMatchObject(
+      {
+        availability: 'available',
+        visibility: 'available',
+        preflight: { status: 'available', guarantee: 'eligible_to_attempt' },
+      },
+    );
+    expect(
+      result.commands.find((command) => command.invocation === '/recover-capacity'),
+    ).toMatchObject({
+      availability: 'available',
+      visibility: 'blocked_recoverable',
+      preflight: { status: 'blocked', reasonCode: 'SESSION_REQUIRED' },
+    });
+    expect(result.commands.find((command) => command.invocation === '/start')).toMatchObject({
+      availability: 'available',
+      visibility: 'recommended',
+    });
+    expect(result.directive?.invocation).toBe('/start');
+    expect(
+      result.commands.find((command) => command.invocation === '/choose-workflow')?.availability,
+    ).toBe('not_verified');
+  });
+
+  it('active /commands --all includes native metadata without claiming host support', () => {
+    const capabilities = {
+      portable: 'supported' as const,
+      native: 'supported' as const,
+      tui: 'not_verified' as const,
+      desktop: 'not_verified' as const,
+    };
+    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
+      view: 'commands',
+      scope: 'all',
+      capabilities,
+    });
+    const diagnostics = result.commands.find((command) => command.invocation === '/diagnostics');
+    expect(diagnostics).toMatchObject({
+      availability: 'available',
+      visibility: 'available',
+      surfaces: ['native'],
+    });
+    expect(
+      result.commands.find((command) => command.invocation === '/choose-workflow')?.visibility,
+    ).toBe('not_verified');
+    expect(result.commands.some((command) => command.invocation === '/recover-capacity')).toBe(
+      true,
+    );
+  });
+
+  it('resolves native command detail without a session', () => {
+    const result = buildHelpResult(null, null, {
+      view: 'command',
+      requestedInvocation: '/diagnostics',
+    });
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toMatchObject({
+      invocation: '/diagnostics',
+      availability: 'not_verified',
+    });
+  });
+
+  it('does not claim an unknown command is available', () => {
+    const result = buildHelpResult(null, null, {
+      view: 'command',
+      requestedInvocation: '/not-a-command',
+    });
+    expect(result.commands).toEqual([]);
+    expect(result.directive).toBeNull();
+    expect(result.nextActionSummary).toBe('Unknown FlowGuard command.');
   });
 
   it('/commands --all has a formal interface identity', () => {
@@ -342,6 +490,12 @@ describe('buildHelpResult', () => {
   it('/start is primary, /hydrate is compatibility', () => {
     const result = buildHelpResult(makeProgressedState('READY'), TEAM_POLICY, {
       view: 'commands',
+      capabilities: {
+        portable: 'supported',
+        native: 'supported',
+        tui: 'not_verified',
+        desktop: 'not_verified',
+      },
     });
     const invocations = result.commands.map((command) => command.invocation);
     expect(invocations).toContain('/start');
@@ -505,6 +659,37 @@ describe('flowguard_help tool execute', () => {
     expect(out).toContain('## Available commands');
   });
 
+  it('uses trusted native capabilities from the tool context', async () => {
+    const ctx = createToolContext({
+      helpCapabilities: {
+        portable: 'supported',
+        native: 'supported',
+        tui: 'not_verified',
+        desktop: 'not_verified',
+      },
+    });
+    const out = await help.execute({ view: 'commands', scope: 'all' }, ctx);
+    expect(out).toContain('/diagnostics');
+    expect(out).toContain('SESSION_REQUIRED');
+    expect(out).toContain('not verified on this host');
+    expect(out).not.toContain('/desktop-only');
+  });
+
+  it('resolves native diagnostic detail without a session or activation', async () => {
+    const ctx = createToolContext({
+      helpCapabilities: {
+        portable: 'supported',
+        native: 'supported',
+        tui: 'not_verified',
+        desktop: 'not_verified',
+      },
+    });
+    const out = await help.execute({ view: 'command', command: 'diagnostics' }, ctx);
+    expect(out).toContain('`/diagnostics`');
+    expect(out).toContain('Render bounded, read-only Explorer');
+    expect(out).not.toContain('SESSION_REQUIRED');
+  });
+
   it('includeArtifactContent: true with no session still returns Markdown', async () => {
     const ctx = createToolContext({ worktree: '/tmp/test-worktree' });
     const out = await help.execute({ view: 'context', includeArtifactContent: true }, ctx);
@@ -610,6 +795,25 @@ describe('resume end-to-end via help.execute', () => {
 
     expect(out).toContain('[WARN] **Why blocked:**');
     expect(out).not.toContain('⚠ **Why blocked:**');
+  });
+
+  it('rejects helpCapabilities supplied through tool arguments', async () => {
+    const out = await help.execute(
+      {
+        view: 'commands',
+        scope: 'all',
+        helpCapabilities: {
+          portable: 'supported',
+          native: 'supported',
+          tui: 'supported',
+          desktop: 'supported',
+        },
+      },
+      ctx,
+    );
+    const parsed = JSON.parse(out as string);
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('HELP_ARGUMENTS_INVALID');
   });
 
   it('command view rejects includeArtifactContent via strict schema', async () => {

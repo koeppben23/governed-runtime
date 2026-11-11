@@ -21,6 +21,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import * as tools from './tools/index.js';
 import type { ToolDefinition } from './tools/helpers.js';
+import type { HelpCapabilities } from './help/command-catalog.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { encodeHostCallId } from '../state/host-identity.js';
@@ -34,6 +35,50 @@ export type NativeCanonicalExecutor = (
   args: unknown,
   context: NativeToolContext,
 ) => Promise<{ content: string; metadata: Record<string, unknown> }>;
+
+/**
+ * Trusted capability snapshot for the native host composition. The plugin
+ * registers these commands itself; TUI/Desktop companions remain unverified
+ * here because this composition cannot prove their presence.
+ */
+const NATIVE_HELP_CAPABILITIES: HelpCapabilities = {
+  portable: 'supported',
+  native: 'supported',
+  tui: 'not_verified',
+  desktop: 'not_verified',
+};
+
+/**
+ * Execute inert help without an ACTIVE scope. This is limited to the read-only
+ * help tool; every other tool keeps the previous inactive behavior.
+ */
+export async function executeInactiveHelp(
+  definition: ToolDefinition,
+  args: unknown,
+  context: NativeToolContext,
+  directory: string,
+): Promise<{ content: string; metadata: Record<string, unknown> }> {
+  let metadata: Record<string, unknown> = {};
+  const result = await definition.execute(args, {
+    sessionID: context.sessionID,
+    messageID: context.messageID,
+    agent: context.agent,
+    directory,
+    worktree: directory,
+    abort: context.signal,
+    metadata: (update) => {
+      metadata = {
+        ...metadata,
+        ...update.metadata,
+        ...(update.title === undefined ? {} : { title: update.title }),
+      };
+    },
+    helpCapabilities: NATIVE_HELP_CAPABILITIES,
+  });
+  return typeof result === 'string'
+    ? { content: result, metadata }
+    : { content: result.output, metadata: { ...metadata, ...result.metadata } };
+}
 
 /** The only productive FlowGuard tool permitted to a delegated reviewer. */
 export function isDelegatedWorkflowDecision(
@@ -158,6 +203,7 @@ export async function executeCanonicalNativeTool(
           ...(update.title === undefined ? {} : { title: update.title }),
         };
       },
+      helpCapabilities: NATIVE_HELP_CAPABILITIES,
     });
   const result =
     name === TOOL_FLOWGUARD_DECISION

@@ -23,6 +23,18 @@ const emptyArtifact = {
   workflowNextAction: null,
 };
 
+const defaultCapabilities = {
+  portable: 'supported' as const,
+  native: 'not_verified' as const,
+  tui: 'not_verified' as const,
+  desktop: 'not_verified' as const,
+};
+
+const nativeCapabilities = {
+  ...defaultCapabilities,
+  native: 'supported' as const,
+};
+
 function noSessionResult(overrides?: Partial<HelpResult>): HelpResult {
   return {
     phase: null,
@@ -51,7 +63,14 @@ function noSessionResult(overrides?: Partial<HelpResult>): HelpResult {
       visibility: 'recommended',
       preflight: { status: 'available', guarantee: 'eligible_to_attempt' },
       alsoAvailableAs: ['/hydrate'],
+      surfaces: ['portable', 'native'],
+      maturity: 'stable',
+      capabilities: defaultCapabilities,
+      availability: 'available',
     },
+    commandScope: 'available',
+    capabilities: defaultCapabilities,
+    capabilitySource: 'default',
     commands: [
       {
         id: 'start',
@@ -61,6 +80,10 @@ function noSessionResult(overrides?: Partial<HelpResult>): HelpResult {
         visibility: 'recommended',
         preflight: { status: 'available', guarantee: 'eligible_to_attempt' },
         alsoAvailableAs: ['/hydrate'],
+        surfaces: ['portable', 'native'],
+        maturity: 'stable',
+        capabilities: defaultCapabilities,
+        availability: 'available',
       },
       {
         id: 'status',
@@ -70,6 +93,10 @@ function noSessionResult(overrides?: Partial<HelpResult>): HelpResult {
         visibility: 'available',
         preflight: { status: 'available', guarantee: 'read_only_available' },
         alsoAvailableAs: [],
+        surfaces: ['portable'],
+        maturity: 'stable',
+        capabilities: defaultCapabilities,
+        availability: 'available',
       },
     ],
     artifacts: {
@@ -338,6 +365,10 @@ describe('renderHelp', () => {
               recovery: 'Try later',
             },
             alsoAvailableAs: [],
+            surfaces: ['portable'],
+            maturity: 'stable',
+            capabilities: defaultCapabilities,
+            availability: 'available',
           },
         ],
         directive: null,
@@ -362,12 +393,146 @@ describe('renderHelp', () => {
             visibility: 'available',
             preflight: { status: 'available', guarantee: 'eligible_to_attempt' },
             alsoAvailableAs: [],
+            surfaces: ['portable'],
+            maturity: 'stable',
+            capabilities: defaultCapabilities,
+            availability: 'available',
           },
         ],
       }),
       { format: 'markdown' },
     );
     expect(out).toContain('- `/thing`');
+  });
+
+  it('renders the all-scope reference heading and preserves scope and capabilities', () => {
+    const result = noSessionResult({ commandScope: 'all' });
+    const markdown = renderHelp(result, { format: 'markdown' });
+    expect(markdown).toContain('## Command reference');
+    expect(markdown).toContain('## Host capabilities');
+    expect(markdown).toContain('source=default');
+    expect(markdown).toContain('(portable; stable)');
+    const json = JSON.parse(renderHelp(result, { format: 'json' }));
+    expect(json.commandScope).toBe('all');
+    expect(json.capabilities).toEqual(defaultCapabilities);
+    expect(json.capabilitySource).toBe('default');
+  });
+
+  it('preserves host availability states in Markdown and JSON', () => {
+    const commands = [
+      {
+        id: 'native',
+        invocation: '/diagnostics',
+        label: 'Diagnostics',
+        description: 'Show diagnostics',
+        visibility: 'not_verified' as const,
+        preflight: { status: 'available' as const, guarantee: 'read_only_available' as const },
+        alsoAvailableAs: [],
+        surfaces: ['native'] as const,
+        maturity: 'stable' as const,
+        capabilities: defaultCapabilities,
+        availability: 'not_verified' as const,
+      },
+      {
+        id: 'desktop',
+        invocation: '/desktop-only',
+        label: 'Desktop',
+        description: 'Desktop only',
+        visibility: 'host_unavailable' as const,
+        preflight: { status: 'available' as const, guarantee: 'eligible_to_attempt' as const },
+        alsoAvailableAs: [],
+        surfaces: ['desktop'] as const,
+        maturity: 'experimental' as const,
+        capabilities: defaultCapabilities,
+        availability: 'host_unavailable' as const,
+      },
+    ];
+    const result = noSessionResult({ commands, directive: null });
+    const markdown = renderHelp(result, { format: 'markdown' });
+    expect(markdown).toContain('(native; not verified on this host)');
+    expect(markdown).toContain('(desktop; experimental; unavailable on this host)');
+    const json = JSON.parse(renderHelp(result, { format: 'json' }));
+    expect(json.commands[0]).toMatchObject({
+      invocation: '/diagnostics',
+      availability: 'not_verified',
+      surfaces: ['native'],
+      maturity: 'stable',
+      capabilities: defaultCapabilities,
+    });
+    expect(json.commands[1].visibility).toBe('host_unavailable');
+  });
+
+  it('renders not-applicable and experimental metadata without changing availability', () => {
+    const result = noSessionResult({
+      commands: [
+        {
+          id: 'na',
+          invocation: '/not-applicable',
+          label: 'Not applicable',
+          description: 'Not executable here',
+          visibility: 'not_applicable',
+          preflight: {
+            status: 'not_applicable',
+            guarantee: 'eligible_to_attempt',
+            reasonCode: 'SESSION_REQUIRED',
+            message: 'Not executable here',
+            recovery: 'Use the host-native command surface.',
+          },
+          alsoAvailableAs: [],
+          surfaces: [],
+          maturity: 'stable',
+          capabilities: defaultCapabilities,
+          availability: 'available',
+        },
+        {
+          id: 'experimental',
+          invocation: '/experimental',
+          label: 'Experimental',
+          description: 'Experimental but available',
+          visibility: 'available',
+          preflight: { status: 'available', guarantee: 'eligible_to_attempt' },
+          alsoAvailableAs: [],
+          surfaces: ['portable'],
+          maturity: 'experimental',
+          capabilities: defaultCapabilities,
+          availability: 'available',
+        },
+      ],
+      directive: null,
+    });
+    const markdown = renderHelp(result, { format: 'markdown' });
+    expect(markdown).toContain('(not applicable here)');
+    expect(markdown).toContain('(experimental)');
+    const json = JSON.parse(renderHelp(result, { format: 'json' }));
+    expect(json.commands[0].visibility).toBe('not_applicable');
+    expect(json.commands[1]).toMatchObject({
+      maturity: 'experimental',
+      availability: 'available',
+    });
+  });
+
+  it('omits hidden commands from Markdown but preserves the state in JSON', () => {
+    const result = noSessionResult({
+      commands: [
+        {
+          id: 'hidden',
+          invocation: '/hidden',
+          label: 'Hidden',
+          description: 'Internal command',
+          visibility: 'hidden',
+          preflight: { status: 'available', guarantee: 'eligible_to_attempt' },
+          alsoAvailableAs: [],
+          surfaces: ['portable'],
+          maturity: 'stable',
+          capabilities: defaultCapabilities,
+          availability: 'available',
+        },
+      ],
+      directive: null,
+    });
+    expect(renderHelp(result, { format: 'markdown' })).not.toContain('/hidden');
+    const json = JSON.parse(renderHelp(result, { format: 'json' }));
+    expect(json.commands[0].visibility).toBe('hidden');
   });
 
   it('verbose flag alone does NOT include artifact content', () => {
@@ -394,7 +559,10 @@ describe('renderHelp', () => {
 
 describe('help golden fixtures', () => {
   it('help-no-session matches golden output', async () => {
-    const result = buildHelpResult(null, null, { view: 'context' });
+    const result = buildHelpResult(null, null, {
+      view: 'context',
+      capabilities: nativeCapabilities,
+    });
     const output = renderHelp(result, { format: 'markdown' });
     const golden = await readGolden('help-no-session.md');
     expect(output).toBe(golden);
@@ -402,7 +570,10 @@ describe('help golden fixtures', () => {
 
   it('help-blocked matches golden output', async () => {
     const state = makePlanReviewState();
-    const result = buildHelpResult(state, getPolicyPreset('team'), { view: 'context' });
+    const result = buildHelpResult(state, getPolicyPreset('team'), {
+      view: 'context',
+      capabilities: nativeCapabilities,
+    });
     const output = renderHelp(result, { format: 'markdown' });
     const golden = await readGolden('help-blocked.md');
     expect(output).toBe(golden);
@@ -410,7 +581,10 @@ describe('help golden fixtures', () => {
 
   it('help-complete matches golden output', async () => {
     const state = makeCompleteState();
-    const result = buildHelpResult(state, getPolicyPreset('solo'), { view: 'context' });
+    const result = buildHelpResult(state, getPolicyPreset('solo'), {
+      view: 'context',
+      capabilities: nativeCapabilities,
+    });
     const output = renderHelp(result, { format: 'markdown' });
     const golden = await readGolden('help-complete.md');
     expect(output).toBe(golden);
@@ -468,6 +642,10 @@ describe('help blocker edge cases', () => {
             visibility: 'blocked_recoverable',
             preflight: blockedPreflight,
             alsoAvailableAs: [],
+            surfaces: ['portable'],
+            maturity: 'stable',
+            capabilities: defaultCapabilities,
+            availability: 'available',
           },
         ],
         directive: null,

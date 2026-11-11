@@ -26,6 +26,7 @@ import { help } from './tools/index.js';
 import {
   createNativeToolCatalogue,
   executeCanonicalNativeTool,
+  executeInactiveHelp,
   handleNativeCompletion,
   applicationTool,
   isDelegatedWorkflowDecision,
@@ -37,7 +38,6 @@ import { createNativeReviewerAuthority } from './plugin-native-review.js';
 import { createEventFence, consumeEvents } from './plugin-native-events.js';
 import { registerStartCommands } from './plugin-start-command.js';
 import { injectActiveMandates } from './plugin-mandates.js';
-
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
   const normalized = path.resolve(worktree);
@@ -48,11 +48,9 @@ export function isUsableWorktree(worktree: string | undefined): boolean {
     return false;
   }
 }
-
 class PluginCleanupError extends AggregateError {
   readonly code = 'PLUGIN_CLEANUP_FAILED';
 }
-
 type Registration = { dispose(): Promise<void> };
 type NativeToolCompletion = Extract<
   Parameters<Parameters<Plugin.Context['tool']['hook']>[1]>[0],
@@ -63,7 +61,6 @@ type RuntimeEntry = {
   readonly dispose: () => Promise<void>;
 };
 type ScopedRuntimeEntry = RuntimeEntry & { readonly scope: ActiveGovernanceScope };
-
 /** This is the only OpenCode entrypoint. There is deliberately no callable V1 factory. */
 export const FlowGuardAuditPlugin = Plugin.define({
   id: 'flowguard',
@@ -108,6 +105,7 @@ export const FlowGuardAuditPlugin = Plugin.define({
       operations,
       assertLifecycle,
       assertAvailable,
+      directory: ctx.location.directory,
     });
 
     const dispose = (): Promise<void> => {
@@ -165,6 +163,7 @@ type RuntimeActionInput = {
   operations: Set<Promise<unknown>>;
   assertLifecycle: () => void;
   assertAvailable: (scope: ActiveGovernanceScope) => void;
+  directory: string;
 };
 
 type RuntimeLoadOptions = {
@@ -181,6 +180,7 @@ function createRuntimeActions(input: RuntimeActionInput) {
     operations,
     assertLifecycle,
     assertAvailable,
+    directory,
   } = input;
   const resolveEntry = async (
     sessionId: string,
@@ -225,7 +225,10 @@ function createRuntimeActions(input: RuntimeActionInput) {
       operations,
       (async () => {
         const entry = await resolveEntry(context.sessionID, name !== TOOL_FLOWGUARD_HELP);
-        if (!entry) return { content: help.description, metadata: {} };
+        if (!entry)
+          return name === TOOL_FLOWGUARD_HELP
+            ? executeInactiveHelp(definition, args, context, directory)
+            : { content: help.description, metadata: {} };
         if (name === TOOL_FLOWGUARD_HELP && entry.scope.sessionId !== entry.scope.root.sessionId)
           return { content: help.description, metadata: {} };
         return executeCanonicalNativeTool(name, definition, args, context, {
@@ -241,7 +244,6 @@ function createRuntimeActions(input: RuntimeActionInput) {
     trackOperation(operations, Promise.resolve().then(assertLifecycle).then(run));
   return { invoke, execute, guard, observe: createReadOnlyObserver(input) };
 }
-
 function createReadOnlyObserver(input: RuntimeActionInput) {
   const { governance, runtimes, sessionRoots, operations, assertLifecycle, assertAvailable } =
     input;

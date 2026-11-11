@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Complete FlowGuard command discoverability and help on `develop`: compose
+  installed, native-only and optional TUI command metadata into a
+  capability-aware catalog; make `/commands --all` meaningful without a session;
+  and report host availability, maturity and readiness consistently in Markdown
+  and JSON. Desktop command-catalog metadata and ComposerPill documentation
+  remain a follow-up. No governance authority, phase transition or decision
+  permission is introduced.
+
 - Harden OpenCode uninstall safety: preserve a runtime `flowguard.json` when
   no valid scope-matched install ownership manifest exists; after deleting
   the managed native plugin entry, warn that a live host may still have the
@@ -900,6 +908,18 @@ last read` without a click, while a completion in another session left the
   structured report.
 
 ### Fixed
+
+- Execute the read-only help projection through the inactive native path so
+  `/help` and `/commands --all` work before `/start` without activating
+  governance. Align native diagnostic readiness with the real no-session
+  handlers, distinguish file-writing `/debug-export` from read-only
+  `/diagnostics`, and expose capability provenance plus host readiness in
+  Markdown and JSON.
+
+- Keep formatting and documentation checks deterministic by invoking the
+  installed Prettier and Vitest binaries directly. `check:doc-drift` and the
+  pre-push hook no longer depend on `npx` package resolution and fail only on
+  real formatting or inventory drift.
 
 - Reopen an author-resolved implementation review from the current
   **unsuperseded** stale attempt rather than failing when an earlier retry left a

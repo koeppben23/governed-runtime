@@ -416,7 +416,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     target: { toolName: TOOL_FLOWGUARD_HELP, fixedArgs: { view: 'commands', scope: 'all' } },
     visibility: 'primary',
     presentationGroup: 'information',
-    description: 'Show the complete installed FlowGuard command reference.',
+    description: 'Show the complete public FlowGuard command reference.',
   },
 ];
 

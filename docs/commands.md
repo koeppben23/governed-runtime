@@ -45,22 +45,22 @@ Template commands invoke their corresponding tools; native callbacks such as
 
 **Naming exceptions** (slash command and tool name differ):
 
-| Slash command                                                  | Tool binding              | Reason                                                                                                                                                                                 |
-| -------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/start`                                                       | native activation         | Explicit native command, not a template or hydrate alias: locked activation preflight, hydration only for a fresh start, activation/audit commit; ACTIVE repeats reuse the bound state |
-| `/task`                                                        | `flowguard_ticket`        | Product naming; the canonical tool keeps the historical `ticket` name                                                                                                                  |
-| `/approve`, `/override-approve`, `/request-changes`, `/reject` | `flowguard_decision`      | Native decision commands: they execute the canonical decision tool and rails directly, without a model turn                                                                            |
-| `/abort`                                                       | `flowguard_abort_session` | Tool name disambiguates `abort` from `serve`/`run`                                                                                                                                     |
-| `/review-decision` (compatibility)                             | `flowguard_decision`      | Native verdict-routing surface kept for scripts; the product variants above are the recommended interface                                                                              |
-| `/recover-capacity`                                            | native review-assurance   | Explicitly releases a proven terminal reviewer capacity lock; not a model tool and not an automatic unlock                                                                             |
-| `/end-governance`                                              | native activation         | Ends opt-in governance after safe closure; distinct from `/finish` and `/abort`                                                                                                        |
-| `/debug-export`                                                | native diagnostics        | Read-only diagnostic snapshot for the current session and known reviewer children; works before ACTIVE governance and never authorizes or repairs                                      |
-| `/diagnostics`                                                 | native diagnostics        | Read-only Session Explorer, review subject/findings, bounded file-log tail and notification-capability views; never evidence, approval or a decision control                           |
-| `/choose-workflow`                                             | TUI/Desktop companion     | Opens the optional native workflow chooser or review-decision dialog over the canonical Next Action projection; cancel/stale state executes nothing                                    |
-| `/validate`                                                    | `flowguard_run_check`     | Explicit baseline validation through the same evidence path as automatic validation                                                                                                    |
-| `/check`                                                       | native scoped command     | Runs the canonical verification/review turn under the build agent, then clears scope and restores the prior agent; not a VALIDATE alias                                                |
-| `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                                                                                              |
-| `/help`, `/commands`, `/commands --all`                        | `flowguard_help`          | Contextual help and command-list views supply fixed help arguments                                                                                                                     |
+| Slash command                                                  | Tool binding              | Reason                                                                                                                                                                                       |
+| -------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/start`                                                       | native activation         | Explicit native command, not a template or hydrate alias: locked activation preflight, hydration only for a fresh start, activation/audit commit; ACTIVE repeats reuse the bound state       |
+| `/task`                                                        | `flowguard_ticket`        | Product naming; the canonical tool keeps the historical `ticket` name                                                                                                                        |
+| `/approve`, `/override-approve`, `/request-changes`, `/reject` | `flowguard_decision`      | Native decision commands: they execute the canonical decision tool and rails directly, without a model turn                                                                                  |
+| `/abort`                                                       | `flowguard_abort_session` | Tool name disambiguates `abort` from `serve`/`run`                                                                                                                                           |
+| `/review-decision` (compatibility)                             | `flowguard_decision`      | Native verdict-routing surface kept for scripts; the product variants above are the recommended interface                                                                                    |
+| `/recover-capacity`                                            | native review-assurance   | Explicitly releases a proven terminal reviewer capacity lock; not a model tool and not an automatic unlock                                                                                   |
+| `/end-governance`                                              | native activation         | Ends opt-in governance after safe closure; distinct from `/finish` and `/abort`                                                                                                              |
+| `/debug-export`                                                | native diagnostics        | Bounded diagnostic snapshot for the current session and known reviewer children; works before ACTIVE governance, writes files and never authorizes or repairs                                |
+| `/diagnostics`                                                 | native diagnostics        | Read-only Session Explorer, review subject/findings, bounded file-log tail and notification-capability views; never evidence, approval or a decision control                                 |
+| `/choose-workflow`                                             | TUI/Desktop companion     | Opens the optional native workflow chooser or review-decision dialog over the canonical Next Action projection; cancel/stale state executes nothing; Desktop catalog metadata is a follow-up |
+| `/validate`                                                    | `flowguard_run_check`     | Explicit baseline validation through the same evidence path as automatic validation                                                                                                          |
+| `/check`                                                       | native scoped command     | Runs the canonical verification/review turn under the build agent, then clears scope and restores the prior agent; not a VALIDATE alias                                                      |
+| `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                                                                                                    |
+| `/help`, `/commands`, `/commands --all`                        | `flowguard_help`          | Contextual help and command-list views supply fixed help arguments                                                                                                                           |
 
 The decision commands above execute `flowguard_decision` natively without a model
 turn. A model-initiated `flowguard_decision` call is not the user's command. The
@@ -193,8 +193,9 @@ preflight reasons, or canonical aliases are needed.
 ### /commands
 
 Read-only command listing for the current session. `/commands` shows currently
-relevant commands. `/commands --all` shows the complete installed command
-reference, including visible compatibility invocations.
+relevant commands. `/commands --all` shows the complete public command
+reference, including native-only, optional TUI and visible compatibility
+invocations.
 
 ## Daily Workflow
 
@@ -535,6 +536,30 @@ post-mortem via both `phase === 'ABORTED'` and `state.error.code === 'ABORTED'`.
 
 These tools operate on session artifacts but don't drive workflow.
 
+### `/recover-capacity` — Release reviewer capacity lock
+
+Native review-assurance operator command. It releases only a **proven terminal**
+reviewer capacity lock: the exact blocked obligation, stale attempt and
+`outcome_unknown` dispatch must match the reviewed lineage. An unknown outcome is
+never treated as a safe unlock. The obligation remains blocked for a new explicit
+review command.
+
+This is not a model tool, not an automatic unlock and not a decision. It does not
+change workflow authority; see [independent review](./independent-review.md) and
+[configuration](./configuration.md) for the underlying lifecycle.
+
+### `/end-governance` — End opt-in governance
+
+Native activation operator command. It commits `ACTIVE → ENDING → INACTIVE`
+under one decision after safe closure: terminal workflow, no live
+reviewer/mutation execution, no capacity lock and reconciled audit.
+`governance:ended` is appended separately and retried idempotently.
+
+`/end-governance` is distinct from `/finish` and `/abort`; it does not delete
+session state or audit history. It is unavailable while closure prerequisites are
+unmet. The command channel records `host_command` and does not prove a verified
+human.
+
 ### flowguard_status
 
 Read-only status tool used by `/status` and other slash commands to inspect
@@ -645,7 +670,7 @@ support it.
 
 **Non-Goals:** No state mutation, no schema changes, no new audit capabilities, no OpenCode slash command — CLI-only projection of existing audit data.
 
-### `flowguard debug-export` — Read-only diagnostic snapshot
+### `flowguard debug-export` — Bounded diagnostic snapshot
 
 Creates a bounded, versioned snapshot of the root session and every known
 reviewer/continuation child. It reads canonical session state, audit, review
@@ -728,12 +753,13 @@ nothing, and is never evidence, approval or authorization.
 The portable Markdown/file fallback remains complete: `/debug-export` still
 writes the versioned snapshot, and `/diagnostics` only projects the same facts.
 
-### `/choose-workflow` — Optional TUI/Desktop workflow chooser
+### `/choose-workflow` — Optional TUI workflow chooser
 
 The optional TUI companion installed at `plugins/flowguard/tui.ts` adds a native
-workflow chooser. The optional Desktop companion is the prebuilt CommonJS bundle
-at `plugins/flowguard/gui-experimental.cjs`. Neither is a server, headless or
-decision authority; both consume the same read-only projection.
+workflow chooser. The Desktop GUI companion merged in #1207; its command
+metadata and ComposerPill documentation are a follow-up catalog change. Neither
+is a server, headless or decision authority; both consume the same read-only
+projection.
 
 ```text
 /choose-workflow
@@ -742,10 +768,10 @@ decision authority; both consume the same read-only projection.
 - The chooser uses the canonical `CHOOSE_FLOW` projection and shows exactly
   `/task` (recommended), `/architecture` and `/review`.
 - It opens only when the user explicitly invokes `/choose-workflow` or runs
-  `/choose-workflow` in the host. There is no automatic idle modal and no
-  persistent composer pill. Cancelling, closing, switching sessions or plugin
-  reload performs no command, including a dialog result that arrives after
-  unload.
+  `/choose-workflow` in the host. There is no automatic idle modal and the
+  chooser itself creates no persistent composer pill. Cancelling, closing,
+  switching sessions or plugin reload performs no command, including a dialog
+  result that arrives after unload.
 - Before requesting a command, the chooser re-reads the read-only
   `GetNextAction` projection and compares the state digest plus the canonical
   activation id and activation generation. It then re-checks the active session
@@ -760,9 +786,8 @@ decision authority; both consume the same read-only projection.
 - Only `CHOOSE_FLOW` is handled. Review gates, exhausted overrides and native
   decisions remain with the canonical commands and the separate revision-bound
   interaction contract.
-- Desktop GUI support is installed as a `gui-experimental` bundle and opens the
-  same chooser only when requested. Its visual chooser remains `NOT_VERIFIED`
-  until an installed OpenCode Desktop 2.2.5 proof is recorded. The portable
+- The Desktop GUI companion merged in #1207; Desktop command metadata and
+  ComposerPill documentation are a follow-up catalog change. The portable
   Markdown chooser from `/start` and `/status` remains complete.
 
 ### Native review decisions
