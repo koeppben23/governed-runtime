@@ -24,6 +24,8 @@ jobs:
     name: control-plane-drift
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      verification: ${{ steps.verify.outputs.exit_code }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
@@ -40,11 +42,22 @@ jobs:
         run: node scripts/control-plane-drift.js --mode partial --verbose
 
       - name: Verify live control plane (trusted, strict)
+        id: verify
         if: github.event_name != 'pull_request'
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CONTROL_PLANE_TOKEN: ${{ secrets.CONTROL_PLANE_READ_TOKEN }}
-        run: node scripts/control-plane-drift.js --mode strict --verbose
+        run: |
+          set +e
+          node scripts/control-plane-drift.js --mode strict --verbose
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit $code
+
+      - name: Fail verification
+        if: steps.verify.outcome == 'failure'
+        run: exit 1
 
   # Remediation runs only for trusted schedule/dispatch events, never for
   # pull_request runs of untrusted code, and holds issues:write without any
@@ -52,7 +65,7 @@ jobs:
   remediate:
     name: control-plane-drift-remediation
     needs: verify
-    if: failure() && github.event_name != 'pull_request'
+    if: failure() && github.event_name != 'pull_request' && needs.verify.outputs.verification != '2'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

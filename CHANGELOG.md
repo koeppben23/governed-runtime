@@ -917,6 +917,12 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Separate control-plane credential failures from actual drift. Strict
+  verification now exits with `AUTH_FAILED` (exit code 2) for HTTP 401/403 and
+  does not open a misleading `control-plane-drift` issue; rotate
+  `CONTROL_PLANE_READ_TOKEN` and re-run the workflow. Only a real divergence
+  opens or refreshes the drift issue.
+
 - Execute the read-only help projection through the inactive native path so
   `/help` and `/commands --all` work before `/start` without activating
   governance. Align native diagnostic readiness with the real no-session

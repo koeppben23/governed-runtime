@@ -77,11 +77,17 @@ describe('scripts/control-plane-workflow-contract', () => {
       expect(verifyJob).toContain('--mode strict');
       expect(verifyJob).toContain("if: github.event_name != 'pull_request'");
       expect(verifyJob).toContain('CONTROL_PLANE_TOKEN: ${{ secrets.CONTROL_PLANE_READ_TOKEN }}');
+      expect(verifyJob).toContain('id: verify');
+      expect(verifyJob).toContain('continue-on-error: true');
+      expect(verifyJob).toContain('verification: ${{ steps.verify.outputs.exit_code }}');
+      expect(verifyJob).toContain('Fail verification');
       expect(verifyJob).not.toContain('issues: write');
     });
 
-    it('runs privileged remediation only on trusted non-PR events', () => {
-      expect(workflow).toContain("if: failure() && github.event_name != 'pull_request'");
+    it('runs privileged remediation only for real drift, not auth failures', () => {
+      expect(workflow).toContain(
+        "if: failure() && github.event_name != 'pull_request' && needs.verify.outputs.verification != '2'",
+      );
       const remediateJob = workflow.slice(workflow.indexOf('  remediate:'));
       expect(remediateJob).toContain('issues: write');
       expect(remediateJob).not.toContain('actions/checkout');
