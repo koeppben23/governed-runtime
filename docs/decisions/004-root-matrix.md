@@ -8,14 +8,23 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-11-06):
+(counts updated 2026-11-07):
 
 - `root-composition`: 36 files (plugin lifecycle entrypoints and barrels)
-- `root-host-runtime`: exactly 7 named files (`host-mutation-observation.ts`,
-  `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
+- `root-host-runtime`: exactly 8 named files (`gui-rpc-client-contract.ts`,
+  `host-mutation-observation.ts`, `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 58 root production files
+- total: 59 root production files
+
+The #1196 Desktop-layer isolation adds `gui-rpc-client-contract.ts` as a
+host-runtime **type-only port** reusing the canonical Next Action, review,
+diagnostics and SubmitDecision RPC contracts. It is deliberately owned by
+`root-host-runtime` because its type imports reference the OpenCode transport
+contract. Its runtime implementation remains the embedded, isolated GUI RPC
+adapter under `templates/`; no reverse `templates -> integration` dependency,
+new approval authority, core host selection, or additional activation path
+is introduced. This is one explicit, frozen host/runtime boundary expansion.
 
 The bounded P0-10 audit removes `plugin-orchestrator.ts`, which only forwarded
 the `OrchestratorDeps` type to one production caller. That caller now imports

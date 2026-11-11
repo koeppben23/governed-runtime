@@ -271,6 +271,21 @@ complete product-command reference.
 See [Command Surface](./commands.md#command-surface) for the installed internal
 tool bindings.
 
+### Active-host and unproven-configuration safeguards
+
+An uninstall deletes provably managed files; it does **not** guarantee that
+an already running OpenCode service has unloaded its prior plugin instance.
+If a native plugin entry was removed, the CLI prints an explicit next-step
+notice: finish active work, reload that location or restart the service, and
+verify the live plugin list no longer contains FlowGuard. Never interpret
+file deletion alone as proof of host unload.
+
+When a valid, scope-matched ownership manifest is absent, an existing
+`flowguard.json` is preserved byte-for-byte instead of being deleted:
+its ownership cannot be inferred from its filename. A partial/orphaned
+installation may therefore require explicit operator cleanup after the
+remaining artifacts are independently verified.
+
 ## Uninstall
 
 ```bash

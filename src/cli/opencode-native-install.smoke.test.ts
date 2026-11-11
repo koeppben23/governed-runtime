@@ -177,6 +177,8 @@ export default Plugin.define({ id: 'flowguard-test-inventory', async setup(ctx) 
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const child = host;
+    const installedHostPid = child.pid;
+    expect(installedHostPid).toBeGreaterThan(0);
     const baseUrl = await new Promise<string>((resolve, reject) => {
       const timer = setTimeout(
         () => reject(new Error(`Native host startup timed out: ${output}`)),
@@ -244,6 +246,8 @@ export default Plugin.define({ id: 'flowguard-test-inventory', async setup(ctx) 
       'flowguard_help',
     ]);
     await client.location.reload({ signal: AbortSignal.timeout(60_000) });
+    expect(child.pid).toBe(installedHostPid);
+    expect(child.exitCode).toBeNull();
     await assertSingleLoadedPlugin();
     const reviewer = await client.agent.get({ location, agentID: 'flowguard-reviewer' });
     expect(reviewer.data.id).toBe('flowguard-reviewer');
@@ -270,9 +274,14 @@ export default Plugin.define({ id: 'flowguard-test-inventory', async setup(ctx) 
     expect(existsSync(join(target, GUI_PLUGIN_RELATIVE_PATH))).toBe(false);
     expect(existsSync(join(target, 'package.json'))).toBe(false);
     await client.location.reload({ signal: AbortSignal.timeout(60_000) });
+    expect(child.pid).toBe(installedHostPid);
+    expect(child.exitCode).toBeNull();
     await awaitLocationActivation(client, location);
     const after = await client.plugin.list({ location });
     expect(after.data.some((plugin) => plugin.id === 'flowguard')).toBe(false);
+    expect(after.data.find((plugin) => plugin.id === 'flowguard-test-inventory')?.state).toEqual({
+      status: 'active',
+    });
     expect(await readFile(join(project, 'opencode.jsonc'), 'utf8')).toBe(customer);
   }, 420_000);
 });
