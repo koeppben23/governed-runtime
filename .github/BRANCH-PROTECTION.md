@@ -202,6 +202,12 @@ stored as the repository secret `CONTROL_PLANE_READ_TOKEN` (fine-grained PAT)
 and exposed to the drift workflow and the release preflight as
 `CONTROL_PLANE_TOKEN`. Without it, trusted runs fail closed.
 
+An expired, revoked or under-scoped token is reported as `AUTH_FAILED`
+(exit code 2), not as control-plane drift. Trusted runs still fail, but the
+remediation job does not open a misleading `control-plane-drift` issue; rotate
+`CONTROL_PLANE_READ_TOKEN` and re-run the workflow. Only an actual divergence
+(exit code 1) opens or refreshes the drift issue.
+
 ## Actions Policy
 
 The repository Actions policy is part of the release supply chain and is
