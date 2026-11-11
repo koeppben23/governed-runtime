@@ -15,6 +15,7 @@ function explorer(): ExplorerView {
       {
         sessionId: 'ses_root',
         parentSessionId: null,
+        generation: 0,
         role: 'root',
         discoveredBy: ['root'],
         state: 'captured',
@@ -26,6 +27,7 @@ function explorer(): ExplorerView {
       {
         sessionId: 'ses_child',
         parentSessionId: 'ses_root',
+        generation: 1,
         role: 'reviewer',
         discoveredBy: ['review_attempt'],
         state: 'unavailable',

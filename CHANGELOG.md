@@ -32,6 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   process logs remain explicitly `NOT_VERIFIED`. Missing or truncated logs,
   malformed entries and uncorrelated records are explicit gaps.
 
+- Discover verified multi-level reviewer lineage from canonical invocation
+  chains. Only a child whose single invocation parent is verified and reachable
+  is read; attempts, observations, host parent IDs, names and timing never
+  authorize a read. Conflicting invocation parents remain `LINEAGE_CONFLICT` and
+  `not_verified`, and descendants read before the conflict are cleared. Add a
+  hard `maxDiscoveryNodes` graph budget (default 250, CLI
+  `--max-discovery-nodes`) that keeps the first overflow candidate in the known
+  denominator, plus explicit `DISCOVERY_TRUNCATED`/`SESSION_LIMIT_TRUNCATED`
+  reporting. The Session Explorer now projects the same multi-level lineage and
+  generation as `session-graph.json`. Complete continuation coverage remains
+  explicitly `not_verified` until a bounded trusted discovery source exists.
+
 - Harden OpenCode uninstall safety: preserve a runtime `flowguard.json` when
   no valid scope-matched install ownership manifest exists; after deleting
   the managed native plugin entry, warn that a live host may still have the

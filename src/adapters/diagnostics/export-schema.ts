@@ -10,6 +10,7 @@
 import { z } from 'zod';
 
 export const DIAGNOSTIC_EXPORT_SCHEMA_VERSION = 'diagnostic-export.v2' as const;
+export const DEFAULT_MAX_DISCOVERY_NODES = 250;
 
 export const DiagnosticCaptureStatus = z.enum(['COMPLETE', 'PARTIAL', 'NOT_VERIFIED']);
 export type DiagnosticCaptureStatus = z.infer<typeof DiagnosticCaptureStatus>;
@@ -59,6 +60,7 @@ export const DiagnosticManifest = z
         sessionsUnavailable: z.number().int().nonnegative(),
         sessionsLineageUnverified: z.number().int().nonnegative(),
         maxSessions: z.number().int().positive(),
+        maxDiscoveryNodes: z.number().int().positive(),
         maxFileBytes: z.number().int().positive(),
         maxTotalBytes: z.number().int().positive(),
         maxDurationMs: z.number().int().positive(),
@@ -235,6 +237,7 @@ export type DiagnosticTimeline = z.infer<typeof DiagnosticTimeline>;
 /** A bounded diagnostic request; limits are explicit and recorded in the manifest. */
 export interface DiagnosticExportLimits {
   readonly maxSessions: number;
+  readonly maxDiscoveryNodes?: number;
   readonly maxFileBytes: number;
   readonly maxTotalBytes: number;
   readonly hostTimeoutMs: number;
@@ -243,6 +246,7 @@ export interface DiagnosticExportLimits {
 
 export const DEFAULT_DIAGNOSTIC_LIMITS: DiagnosticExportLimits = Object.freeze({
   maxSessions: 100,
+  maxDiscoveryNodes: DEFAULT_MAX_DISCOVERY_NODES,
   maxFileBytes: 16 * 1024 * 1024,
   maxTotalBytes: 64 * 1024 * 1024,
   hostTimeoutMs: 60_000,

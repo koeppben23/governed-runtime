@@ -15,6 +15,10 @@ import { initWorkspace } from '../workspace/index.js';
 import { writeState } from '../persistence.js';
 import { appendAuditEvent } from '../persistence-audit.js';
 import { BINDING, PLAN_REVIEW_ASSURANCE, makeState } from '../../fixtures.js';
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../../review-invocation-test-helpers.js';
 import { writeDiagnosticExport, type DiagnosticExportRequest } from './export.js';
 import type { HostTranscript } from './host-transcript.js';
 
@@ -22,6 +26,8 @@ const ROOT_ID = 'ses_root';
 const ROOT_STATE_ID = '00000000-0000-4000-8000-000000000101';
 const CHILD_STATE_ID = '00000000-0000-4000-8000-000000000102';
 const CHILD_ID = 'child-session-1';
+const GRANDCHILD_STATE_ID = '00000000-0000-4000-8000-000000000103';
+const GRANDCHILD_ID = 'grandchild-session-1';
 const FIXED_NOW = () => new Date('2026-01-01T00:00:00.000Z');
 const CAPTURE_ID = '00000000-0000-4000-8000-000000000099';
 
@@ -127,6 +133,62 @@ function rootLinkedAssurance(): typeof PLAN_REVIEW_ASSURANCE {
       parentSessionId: ROOT_ID,
     })),
   };
+}
+
+function linkedAssurance(
+  parentSessionId: string,
+  childSessionId: string,
+): typeof PLAN_REVIEW_ASSURANCE {
+  const invocationId = randomUUID();
+  const attemptId = randomUUID();
+  const obligationId = PLAN_REVIEW_ASSURANCE.obligations[0]?.obligationId ?? '';
+  const capture = messageCaptureFixture({ childSessionId, obligationId, attemptId });
+  return {
+    ...PLAN_REVIEW_ASSURANCE,
+    obligations: PLAN_REVIEW_ASSURANCE.obligations.map((obligation) => ({
+      ...obligation,
+      invocationId,
+    })),
+    invocations: [
+      {
+        ...PLAN_REVIEW_ASSURANCE.invocations[0]!,
+        invocationId,
+        attemptId,
+        parentSessionId,
+        childSessionId,
+        capture,
+        nativeProvenance: nativeProvenanceFixture(capture, childSessionId),
+      },
+    ],
+    attempts: [{ ...PLAN_REVIEW_ASSURANCE.attempts[0]!, attemptId, childSessionId }],
+    dispatches: [
+      {
+        ...PLAN_REVIEW_ASSURANCE.dispatches[0]!,
+        dispatchId: randomUUID(),
+        attemptId,
+        hostCallId: childSessionId,
+      },
+    ],
+  };
+}
+
+async function writeReviewerState(
+  sessionId: string,
+  stateId: string,
+  fingerprint: string,
+  assurance?: typeof PLAN_REVIEW_ASSURANCE,
+): Promise<string> {
+  const { sessionDir } = await initWorkspace(ws.tmpDir, sessionId);
+  await writeState(
+    sessionDir,
+    boundState(
+      stateId,
+      sessionId,
+      fingerprint,
+      assurance === undefined ? {} : { reviewAssurance: assurance },
+    ),
+  );
+  return sessionDir;
 }
 
 async function rootState(
@@ -303,6 +365,207 @@ describe('diagnostic export', () => {
     );
     await expect(
       readFile(path.join(outputDir, 'sessions', CHILD_ID, 'host.transcript.redacted.json'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('captures a verified root → child → grandchild invocation chain', async () => {
+    const { fingerprint } = await rootState(rootLinkedAssurance());
+    await writeReviewerState(
+      CHILD_ID,
+      CHILD_STATE_ID,
+      fingerprint,
+      linkedAssurance(CHILD_ID, GRANDCHILD_ID),
+    );
+    await writeReviewerState(GRANDCHILD_ID, GRANDCHILD_STATE_ID, fingerprint);
+    await writeFlowGuardLog([logEntry(ROOT_ID), logEntry(CHILD_ID), logEntry(GRANDCHILD_ID)]);
+    const outputDir = path.join(ws.tmpDir, 'diag-multilevel');
+
+    const result = await writeDiagnosticExport(request(outputDir));
+
+    expect(result.manifest.status).toBe('COMPLETE');
+    expect(result.manifest.boundary.sessionsKnown).toBe(3);
+    expect(result.manifest.boundary.sessionsWithState).toBe(3);
+    expect(result.manifest.sources).toMatchObject({
+      discovery: { status: 'complete', known: 3, verified: 3, unverified: 0 },
+      lineage: { status: 'complete', verified: 3, unverified: 0 },
+    });
+    const graph = JSON.parse(await readFile(path.join(outputDir, 'session-graph.json'), 'utf8'));
+    expect(graph.sessions).toEqual([
+      expect.objectContaining({ sessionId: ROOT_ID, generation: 0, lineage: 'verified' }),
+      expect.objectContaining({
+        sessionId: CHILD_ID,
+        parentSessionId: ROOT_ID,
+        generation: 1,
+        lineage: 'verified',
+      }),
+      expect.objectContaining({
+        sessionId: GRANDCHILD_ID,
+        parentSessionId: CHILD_ID,
+        generation: 2,
+        lineage: 'verified',
+      }),
+    ]);
+    expect(result.manifest.files.map((file) => file.path)).toEqual(
+      expect.arrayContaining([
+        `sessions/${CHILD_ID}/state.redacted.json`,
+        `sessions/${GRANDCHILD_ID}/state.redacted.json`,
+      ]),
+    );
+  });
+
+  it('keeps a known grandchild in the denominator when maxSessions is reached', async () => {
+    const { fingerprint } = await rootState(rootLinkedAssurance());
+    await writeReviewerState(
+      CHILD_ID,
+      CHILD_STATE_ID,
+      fingerprint,
+      linkedAssurance(CHILD_ID, GRANDCHILD_ID),
+    );
+    await writeReviewerState(GRANDCHILD_ID, GRANDCHILD_STATE_ID, fingerprint);
+    const outputDir = path.join(ws.tmpDir, 'diag-max-sessions');
+
+    const result = await writeDiagnosticExport(
+      request(outputDir, {
+        limits: {
+          maxSessions: 2,
+          maxFileBytes: 1_000_000,
+          maxTotalBytes: 10_000_000,
+          hostTimeoutMs: 1_000,
+          maxDurationMs: 60_000,
+        },
+      }),
+    );
+
+    expect(result.manifest.status).toBe('PARTIAL');
+    expect(result.manifest.boundary.sessionsKnown).toBe(3);
+    expect(result.manifest.boundary.sessionsWithState).toBe(2);
+    expect(result.manifest.sources.discovery).toMatchObject({
+      status: 'complete',
+      known: 3,
+      truncated: false,
+    });
+    const graph = JSON.parse(await readFile(path.join(outputDir, 'session-graph.json'), 'utf8'));
+    expect(graph.sessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sessionId: GRANDCHILD_ID,
+          parentSessionId: CHILD_ID,
+          generation: 2,
+          captureStatus: 'truncated',
+          lineage: 'verified',
+        }),
+      ]),
+    );
+    expect(result.manifest.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'SESSION_LIMIT_TRUNCATED', sessionId: GRANDCHILD_ID }),
+      ]),
+    );
+    await expect(
+      readFile(path.join(outputDir, 'sessions', GRANDCHILD_ID, 'state.redacted.json'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('stops discovery at the hard node budget and reports the truncation', async () => {
+    const { fingerprint } = await rootState(rootLinkedAssurance());
+    await writeReviewerState(
+      CHILD_ID,
+      CHILD_STATE_ID,
+      fingerprint,
+      linkedAssurance(CHILD_ID, GRANDCHILD_ID),
+    );
+    await writeReviewerState(GRANDCHILD_ID, GRANDCHILD_STATE_ID, fingerprint);
+    const outputDir = path.join(ws.tmpDir, 'diag-discovery-budget');
+
+    const result = await writeDiagnosticExport(
+      request(outputDir, {
+        limits: {
+          maxSessions: 10,
+          maxDiscoveryNodes: 2,
+          maxFileBytes: 1_000_000,
+          maxTotalBytes: 10_000_000,
+          hostTimeoutMs: 1_000,
+          maxDurationMs: 60_000,
+        },
+      }),
+    );
+
+    expect(result.manifest.status).toBe('PARTIAL');
+    expect(result.manifest.boundary.maxDiscoveryNodes).toBe(2);
+    expect(result.manifest.boundary.sessionsKnown).toBe(3);
+    expect(result.manifest.boundary.sessionsWithState).toBe(2);
+    expect(result.manifest.sources.discovery).toMatchObject({
+      status: 'partial',
+      known: 3,
+      truncated: true,
+    });
+    expect(result.manifest.warnings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'DISCOVERY_TRUNCATED' })]),
+    );
+    const graph = JSON.parse(await readFile(path.join(outputDir, 'session-graph.json'), 'utf8'));
+    expect(graph.sessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sessionId: GRANDCHILD_ID,
+          parentSessionId: CHILD_ID,
+          captureStatus: 'truncated',
+          lineage: 'verified',
+        }),
+      ]),
+    );
+    await expect(
+      readFile(path.join(outputDir, 'sessions', GRANDCHILD_ID, 'state.redacted.json'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('keeps known descendants in the denominator after the time budget expires', async () => {
+    const { fingerprint } = await rootState(rootLinkedAssurance());
+    await writeReviewerState(CHILD_ID, CHILD_STATE_ID, fingerprint);
+    const outputDir = path.join(ws.tmpDir, 'diag-time-budget');
+    let current = Date.parse('2026-01-01T00:00:00.000Z');
+    const advancingClock = () => {
+      const value = new Date(current);
+      current += 10_000;
+      return value;
+    };
+
+    const result = await writeDiagnosticExport(
+      request(outputDir, {
+        now: advancingClock,
+        limits: {
+          maxSessions: 10,
+          maxFileBytes: 1_000_000,
+          maxTotalBytes: 10_000_000,
+          hostTimeoutMs: 1_000,
+          maxDurationMs: 5_000,
+        },
+      }),
+    );
+
+    expect(result.manifest.status).toBe('PARTIAL');
+    expect(result.manifest.boundary.sessionsKnown).toBe(2);
+    expect(result.manifest.boundary.sessionsWithState).toBe(1);
+    expect(result.manifest.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CAPTURE_TIME_BUDGET_EXCEEDED',
+          sessionId: CHILD_ID,
+        }),
+      ]),
+    );
+    const graph = JSON.parse(await readFile(path.join(outputDir, 'session-graph.json'), 'utf8'));
+    expect(graph.sessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sessionId: CHILD_ID,
+          captureStatus: 'truncated',
+          lineage: 'verified',
+          state: 'unavailable',
+        }),
+      ]),
+    );
+    await expect(
+      readFile(path.join(outputDir, 'sessions', CHILD_ID, 'state.redacted.json'), 'utf8'),
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 

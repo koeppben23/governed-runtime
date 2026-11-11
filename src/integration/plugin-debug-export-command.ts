@@ -103,7 +103,7 @@ export function addDebugExportCommand(ctx: Plugin.Context, editor: CommandEditor
   editor.add({
     name: NATIVE_DEBUG_EXPORT_COMMAND,
     description:
-      'Create a bounded diagnostic snapshot for this session and its known reviewer children; it writes files but never mutates governance.',
+      'Create a bounded diagnostic snapshot for this session and its verified reviewer descendants; it writes files but never mutates governance.',
     execute: async (input) => {
       const text = await runDebugExport(ctx, input.sessionID);
       try {

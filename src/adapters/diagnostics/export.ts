@@ -19,6 +19,7 @@ import { resolveSessionAuthority } from '../session-authority.js';
 import { validateSessionId } from '../workspace/types.js';
 import {
   DEFAULT_DIAGNOSTIC_LIMITS,
+  DEFAULT_MAX_DISCOVERY_NODES,
   DIAGNOSTIC_EXPORT_SCHEMA_VERSION,
   DiagnosticSessionGraph,
   DiagnosticTimeline,
@@ -34,9 +35,8 @@ import {
   type DiagnosticHostReader,
   type DiscoverySource,
   type SessionCapture,
-  type SessionDiscovery,
 } from './types.js';
-import { discoverReviewSessions } from './session-discovery.js';
+import { discoverSessionTree, type DiscoveredSession } from './session-discovery.js';
 import type { HostTranscript } from './host-transcript.js';
 import type { AuditEvent } from '../../state/evidence-audit.js';
 import type { RedactionMode } from '../../redaction/export-redaction.js';
@@ -126,7 +126,7 @@ async function readHost(
   acc: CaptureAccumulator,
 ): Promise<HostTranscript | null> {
   if (!request.includeHost || request.hostReader === undefined) return null;
-  const remaining = acc.deadlineAt - Date.now();
+  const remaining = acc.deadlineAt - (request.now ?? (() => new Date()))().getTime();
   if (remaining <= 0) {
     acc.warnings.push(
       warning(
@@ -216,27 +216,45 @@ async function captureOne(
   };
 }
 
-function uncapturedSession(
-  sessionId: string,
-  discovery: SessionDiscovery,
-  acc: CaptureAccumulator,
-): SessionCapture {
-  acc.warnings.push(
-    warning(
-      'SESSION_LINEAGE_NOT_VERIFIED',
-      'Known session was retained in the graph but not read because its lineage to the requested root is not positively established.',
-      sessionId,
-      'review',
-    ),
-  );
+function pushDiscoveryWarnings(acc: CaptureAccumulator, discovered: DiscoveredSession): void {
+  acc.warnings.push(...discovered.warnings);
+}
+
+function uncapturedSession(discovered: DiscoveredSession, acc: CaptureAccumulator): SessionCapture {
+  pushDiscoveryWarnings(acc, discovered);
   return {
-    sessionId,
-    parentSessionId: discovery.parentSessionId,
-    generation: 1,
+    sessionId: discovered.sessionId,
+    parentSessionId: discovered.parentSessionId,
+    generation: discovered.generation,
     captureStatus: 'not_captured',
     role: 'reviewer',
-    discoveredBy: discovery.sources,
+    discoveredBy: discovered.sources,
     lineage: 'not_verified',
+    authority: null,
+    state: null,
+    audit: [],
+    auditValid: null,
+    host: null,
+    hostRequested: false,
+  };
+}
+
+function truncatedSession(
+  discovered: DiscoveredSession,
+  acc: CaptureAccumulator,
+  code: string,
+  message: string,
+): SessionCapture {
+  pushDiscoveryWarnings(acc, discovered);
+  acc.warnings.push(warning(code, message, discovered.sessionId, 'capture'));
+  return {
+    sessionId: discovered.sessionId,
+    parentSessionId: discovered.parentSessionId,
+    generation: discovered.generation,
+    captureStatus: 'truncated',
+    role: 'reviewer',
+    discoveredBy: discovered.sources,
+    lineage: 'verified',
     authority: null,
     state: null,
     audit: [],
@@ -350,59 +368,116 @@ async function collectSessions(
     lineage: 'verified',
   });
   acc.sessions.push(root);
-  if (Date.now() > acc.deadlineAt) {
+  if (root.state === null) return root;
+
+  const clock = request.now ?? (() => new Date());
+  const tree = await discoverSessionTree({
+    root: request.root,
+    rootSessionId: request.sessionId,
+    rootState: root.state,
+    ...(root.authority === null ? {} : { rootAuthority: root.authority }),
+    maxNodes: limit.maxDiscoveryNodes ?? DEFAULT_MAX_DISCOVERY_NODES,
+    deadlineAt: acc.deadlineAt,
+    now: () => clock().getTime(),
+  });
+  acc.discoveryTruncated = tree.truncated;
+  acc.discoveryReasons.push(...tree.reasons);
+  if (tree.truncated) {
     acc.truncated = true;
     acc.warnings.push(
       warning(
-        'CAPTURE_TIME_BUDGET_EXCEEDED',
-        'The root capture consumed the total capture time budget; descendants were not traversed.',
-        request.sessionId,
+        'DISCOVERY_TRUNCATED',
+        `Known descendants were not fully discovered: ${tree.reasons.join('; ') || 'discovery budget reached'}`,
+        null,
         'capture',
       ),
     );
-    return root;
   }
-  for (const [sessionId, discovery] of discoverReviewSessions(root.state, request.sessionId)) {
-    if (sessionId === request.sessionId) continue;
-    if (Date.now() > acc.deadlineAt) {
-      acc.truncated = true;
-      acc.warnings.push(
-        warning(
-          'CAPTURE_TIME_BUDGET_EXCEEDED',
-          `Known session ${sessionId} was not captured because the total capture time budget was exhausted.`,
-          sessionId,
-          'capture',
-        ),
-      );
-      break;
-    }
-    if (acc.sessions.length >= limit.maxSessions) {
-      acc.truncated = true;
-      acc.warnings.push(
-        warning(
-          'SESSION_LIMIT_TRUNCATED',
-          `Known session ${sessionId} was not captured because the ${limit.maxSessions}-session limit was reached.`,
-          sessionId,
-          'capture',
-        ),
-      );
-      continue;
-    }
-    if (discovery.lineage !== 'verified') {
-      acc.sessions.push(uncapturedSession(sessionId, discovery, acc));
-      continue;
-    }
-    acc.sessions.push(
-      await captureOne(sessionId, request.root, request, acc, {
-        role: 'reviewer',
-        discoveredBy: discovery.sources,
-        parentSessionId: discovery.parentSessionId,
-        generation: 1,
-        lineage: discovery.lineage,
-      }),
-    );
+
+  let captured = 1;
+  for (const discovered of tree.sessions) {
+    if (discovered.sessionId === request.sessionId) continue;
+    const decision = await captureDiscoveredSession({
+      request,
+      limit,
+      acc,
+      discovered,
+      captured,
+      clock,
+    });
+    acc.sessions.push(decision.capture);
+    if (decision.counted) captured++;
   }
   return root;
+}
+
+interface CaptureDecision {
+  readonly capture: SessionCapture;
+  readonly counted: boolean;
+}
+
+interface CaptureDiscoveredInput {
+  readonly request: DiagnosticExportRequest;
+  readonly limit: DiagnosticExportLimits;
+  readonly acc: CaptureAccumulator;
+  readonly discovered: DiscoveredSession;
+  readonly captured: number;
+  readonly clock: () => Date;
+}
+
+async function captureDiscoveredSession(input: CaptureDiscoveredInput): Promise<CaptureDecision> {
+  const { request, limit, acc, discovered, captured, clock } = input;
+  if (discovered.lineage !== 'verified' || discovered.conflict) {
+    return { capture: uncapturedSession(discovered, acc), counted: false };
+  }
+  if (captured >= limit.maxSessions) {
+    acc.truncated = true;
+    return {
+      capture: truncatedSession(
+        discovered,
+        acc,
+        'SESSION_LIMIT_TRUNCATED',
+        `Known session ${discovered.sessionId} was not captured because the ${limit.maxSessions}-session capture limit was reached.`,
+      ),
+      counted: false,
+    };
+  }
+  // A verified node whose state discovery did not read (graph-budget overflow,
+  // unreadable authority, or elapsed time) must not be re-read by capture.
+  if (clock().getTime() > acc.deadlineAt) {
+    acc.truncated = true;
+    return {
+      capture: truncatedSession(
+        discovered,
+        acc,
+        'CAPTURE_TIME_BUDGET_EXCEEDED',
+        `Known session ${discovered.sessionId} was not captured because the total capture time budget was exhausted.`,
+      ),
+      counted: false,
+    };
+  }
+  if (discovered.authority === null) {
+    acc.truncated = true;
+    return {
+      capture: truncatedSession(
+        discovered,
+        acc,
+        'SESSION_DISCOVERY_TRUNCATED',
+        `Known session ${discovered.sessionId} was not captured because discovery did not read its state within the graph budget.`,
+      ),
+      counted: false,
+    };
+  }
+  return {
+    capture: await captureOne(discovered.sessionId, request.root, request, acc, {
+      role: 'reviewer',
+      discoveredBy: discovered.sources,
+      parentSessionId: discovered.parentSessionId,
+      generation: discovered.generation,
+      lineage: discovered.lineage,
+    }),
+    counted: true,
+  };
 }
 
 async function writeIndexArtifacts(
@@ -439,7 +514,8 @@ export async function writeDiagnosticExport(
   }
   validateSessionId(request.sessionId);
   const limit = request.limits ?? DEFAULT_DIAGNOSTIC_LIMITS;
-  const createdAt = (request.now ?? (() => new Date()))().toISOString();
+  const clock = request.now ?? (() => new Date());
+  const createdAt = clock().toISOString();
   await createOutputDirectory(request.outputDir);
 
   const acc: CaptureAccumulator = {
@@ -451,8 +527,10 @@ export async function writeDiagnosticExport(
     totalBytes: 0,
     maxFileBytes: limit.maxFileBytes,
     maxTotalBytes: limit.maxTotalBytes,
-    deadlineAt: Date.now() + limit.maxDurationMs,
+    deadlineAt: clock().getTime() + limit.maxDurationMs,
     truncated: false,
+    discoveryTruncated: false,
+    discoveryReasons: [],
   };
   const root = await collectSessions(request, limit, acc);
   await writeAllSessionArtifacts(request, acc, createdAt);

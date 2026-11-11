@@ -24,6 +24,10 @@ import {
 import type { PlanRecord, ReviewFindings } from '../../state/evidence.js';
 import { computeRecordDigest } from '../../state/evidence-plan.js';
 import { hashText } from '../../shared/hashing.js';
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../../review-invocation-test-helpers.js';
 import { getLogDir } from '../../logging/file-sink.js';
 import { createTestWorkspace, type TestWorkspace } from '../test-helpers.js';
 import { buildExplorerView } from './explorer-view.js';
@@ -41,6 +45,8 @@ const ROOT_ID = 'ses_root';
 const ROOT_STATE_ID = '00000000-0000-4000-8000-000000000101';
 const CHILD_STATE_ID = '00000000-0000-4000-8000-000000000102';
 const CHILD_ID = 'child-session-1';
+const GRANDCHILD_STATE_ID = '00000000-0000-4000-8000-000000000103';
+const GRANDCHILD_ID = 'grandchild-session-1';
 const PLAN_DIGEST = PLAN_RECORD.current.digest;
 const FIXED_NOW = () => new Date('2026-01-01T00:00:00.000Z');
 
@@ -109,6 +115,58 @@ async function writeProgressed(
 async function writeChild(fingerprint: string, phase: Parameters<typeof makeState>[0] = 'READY') {
   const { sessionDir } = await initWorkspace(ws.tmpDir, CHILD_ID);
   await writeState(sessionDir, boundState(CHILD_STATE_ID, CHILD_ID, fingerprint, phase));
+  return sessionDir;
+}
+
+function linkedAssurance(parentSessionId: string, childSessionId: string) {
+  const assurance = makeProgressedState('PLAN_REVIEW').reviewAssurance!;
+  const invocationId = randomUUID();
+  const attemptId = randomUUID();
+  const obligationId = assurance.obligations[0]?.obligationId ?? '';
+  const capture = messageCaptureFixture({ childSessionId, obligationId, attemptId });
+  return {
+    ...assurance,
+    obligations: assurance.obligations.map((obligation) => ({ ...obligation, invocationId })),
+    invocations: [
+      {
+        ...assurance.invocations[0]!,
+        invocationId,
+        attemptId,
+        parentSessionId,
+        childSessionId,
+        capture,
+        nativeProvenance: nativeProvenanceFixture(capture, childSessionId),
+      },
+    ],
+    attempts: [{ ...assurance.attempts[0]!, attemptId, childSessionId }],
+    dispatches: [
+      {
+        ...assurance.dispatches[0]!,
+        dispatchId: randomUUID(),
+        attemptId,
+        hostCallId: childSessionId,
+      },
+    ],
+  };
+}
+
+async function writeReviewerState(
+  sessionId: string,
+  stateId: string,
+  fingerprint: string,
+  assurance?: ReturnType<typeof linkedAssurance>,
+) {
+  const { sessionDir } = await initWorkspace(ws.tmpDir, sessionId);
+  await writeState(
+    sessionDir,
+    boundState(
+      stateId,
+      sessionId,
+      fingerprint,
+      'READY',
+      assurance === undefined ? {} : { reviewAssurance: assurance },
+    ),
+  );
   return sessionDir;
 }
 
@@ -204,6 +262,35 @@ describe('diagnostic explorer view', () => {
     expect(markdown).toContain('Session Explorer');
     expect(markdown).toContain(CHILD_ID);
     expect(markdown).toContain('not evidence');
+  });
+
+  it('HAPPY — projects a verified multi-level reviewer chain with generations', async () => {
+    const { fingerprint } = await writeRoot({ reviewAssurance: rootLinkedAssurance() });
+    await writeReviewerState(
+      CHILD_ID,
+      CHILD_STATE_ID,
+      fingerprint,
+      linkedAssurance(CHILD_ID, GRANDCHILD_ID),
+    );
+    await writeReviewerState(GRANDCHILD_ID, GRANDCHILD_STATE_ID, fingerprint);
+
+    const view = await buildExplorerView({ root: ws.tmpDir, sessionId: ROOT_ID, now: FIXED_NOW });
+
+    expect(view.status).toBe('COMPLETE');
+    expect(view.completeness).toEqual({ lineage: 'complete', canonicalState: 'complete' });
+    expect(
+      view.sessions.map((session) => ({
+        id: session.sessionId,
+        generation: session.generation,
+        parent: session.parentSessionId,
+        lineage: session.lineage,
+      })),
+    ).toEqual([
+      { id: ROOT_ID, generation: 0, parent: null, lineage: 'verified' },
+      { id: CHILD_ID, generation: 1, parent: ROOT_ID, lineage: 'verified' },
+      { id: GRANDCHILD_ID, generation: 2, parent: CHILD_ID, lineage: 'verified' },
+    ]);
+    expect(renderExplorerView(view)).toContain('| 2 |');
   });
 
   it('BAD — keeps a foreign-parent child visible as not_verified without reading it', async () => {
@@ -634,7 +721,13 @@ describe('cross-surface consistency', () => {
   it('shows the same session lineage and plan digest as the debug export', async () => {
     const plan: PlanRecord = { ...PLAN_RECORD, reviewFindings: [findings()] };
     const { fingerprint } = await writeRoot({ plan, reviewAssurance: rootLinkedAssurance() });
-    await writeChild(fingerprint);
+    await writeReviewerState(
+      CHILD_ID,
+      CHILD_STATE_ID,
+      fingerprint,
+      linkedAssurance(CHILD_ID, GRANDCHILD_ID),
+    );
+    await writeReviewerState(GRANDCHILD_ID, GRANDCHILD_STATE_ID, fingerprint);
     const outputDir = path.join(ws.tmpDir, 'diagnostic-export');
     const exported = await writeDiagnosticExport({
       root: ws.tmpDir,
@@ -658,7 +751,10 @@ describe('cross-surface consistency', () => {
     expect(explorer.sessions.map((session) => session.lineage)).toEqual(
       graph.sessions.map((session: { lineage: string }) => session.lineage),
     );
-    expect(exported.manifest.counts.sessions).toBe(2);
+    expect(explorer.sessions.map((session) => session.generation)).toEqual(
+      graph.sessions.map((session: { generation: number }) => session.generation),
+    );
+    expect(exported.manifest.counts.sessions).toBe(3);
     expect(review.subject.digest).toBe(PLAN_DIGEST);
     expect(renderReviewView(review)).toContain(PLAN_DIGEST);
   });

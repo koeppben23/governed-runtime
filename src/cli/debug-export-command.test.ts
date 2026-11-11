@@ -73,6 +73,7 @@ describe('debug-export CLI', () => {
           redaction: 'basic',
           limits: {
             maxSessions: 100,
+            maxDiscoveryNodes: 250,
             maxFileBytes: 16 * 1024 * 1024,
             maxTotalBytes: 64 * 1024 * 1024,
             hostTimeoutMs: 60_000,
@@ -127,10 +128,14 @@ describe('debug-export CLI', () => {
         '200000',
         '--max-duration-ms',
         '5000',
+        '--max-discovery-nodes',
+        '25',
       ]);
       expect(parsed).toMatchObject({
         kind: 'ok',
-        value: { limits: { maxTotalBytes: 200000, maxDurationMs: 5000 } },
+        value: {
+          limits: { maxTotalBytes: 200000, maxDurationMs: 5000, maxDiscoveryNodes: 25 },
+        },
       });
     });
   });

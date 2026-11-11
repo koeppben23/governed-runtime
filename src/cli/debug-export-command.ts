@@ -9,6 +9,7 @@ import path from 'node:path';
 import { resolveRoot } from '../adapters/git.js';
 import {
   DEFAULT_DIAGNOSTIC_LIMITS,
+  DEFAULT_MAX_DISCOVERY_NODES,
   DiagnosticExportError,
   writeDiagnosticExport,
   type DiagnosticExportLimits,
@@ -36,6 +37,7 @@ interface MutableDebugExportArgs {
   redactionExplicit: boolean;
   rawRequested: boolean;
   maxSessions: number;
+  maxDiscoveryNodes: number;
   maxFileBytes: number;
   maxTotalBytes: number;
   hostTimeoutMs: number;
@@ -48,6 +50,7 @@ const VALUE_FLAGS = new Set([
   '--out',
   '--redaction',
   '--max-sessions',
+  '--max-discovery-nodes',
   '--max-file-bytes',
   '--max-total-bytes',
   '--host-timeout-ms',
@@ -56,6 +59,7 @@ const VALUE_FLAGS = new Set([
 
 const NUMERIC_FLAGS = {
   '--max-sessions': 'maxSessions',
+  '--max-discovery-nodes': 'maxDiscoveryNodes',
   '--max-file-bytes': 'maxFileBytes',
   '--max-total-bytes': 'maxTotalBytes',
   '--host-timeout-ms': 'hostTimeoutMs',
@@ -149,6 +153,7 @@ export function parseDebugExportArgs(argv: readonly string[]): CliParseResult<De
     redactionExplicit: false,
     rawRequested: false,
     maxSessions: DEFAULT_DIAGNOSTIC_LIMITS.maxSessions,
+    maxDiscoveryNodes: DEFAULT_DIAGNOSTIC_LIMITS.maxDiscoveryNodes ?? DEFAULT_MAX_DISCOVERY_NODES,
     maxFileBytes: DEFAULT_DIAGNOSTIC_LIMITS.maxFileBytes,
     maxTotalBytes: DEFAULT_DIAGNOSTIC_LIMITS.maxTotalBytes,
     hostTimeoutMs: DEFAULT_DIAGNOSTIC_LIMITS.hostTimeoutMs,
@@ -174,6 +179,7 @@ export function parseDebugExportArgs(argv: readonly string[]): CliParseResult<De
       redaction: args.redaction,
       limits: {
         maxSessions: args.maxSessions,
+        maxDiscoveryNodes: args.maxDiscoveryNodes,
         maxFileBytes: args.maxFileBytes,
         maxTotalBytes: args.maxTotalBytes,
         hostTimeoutMs: args.hostTimeoutMs,
@@ -188,7 +194,8 @@ export function getDebugExportUsage(): string {
   return `Usage: flowguard debug-export --session <id> [options]
 
 Create a bounded, read-only diagnostic snapshot for one FlowGuard session and
-its known reviewer children. It never starts, hydrates, reconciles or approves.
+its verified reviewer descendants. It never starts, hydrates, reconciles or
+approves.
 
 Options:
   --session <id>          Root FlowGuard session ID (required)
@@ -197,7 +204,9 @@ Options:
   --no-host               Do not capture OpenCode transcript exports
   --redaction <mode>      basic (default), pseudonymous, or none
   --raw                   Shorthand for --redaction none; explicit consent
-  --max-sessions <n>      Maximum known sessions to capture (default 100)
+  --max-sessions <n>      Maximum verified sessions to capture (default 100)
+  --max-discovery-nodes <n>
+                          Hard graph budget for lineage discovery (default 250)
   --max-file-bytes <n>    Maximum bytes per written artifact / host transcript
   --max-total-bytes <n>   Maximum bytes for the complete snapshot
   --host-timeout-ms <n>   Host export timeout per session

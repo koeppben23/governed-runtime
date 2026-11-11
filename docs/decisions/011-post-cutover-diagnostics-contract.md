@@ -70,28 +70,51 @@ That exception is limited to **reading and reporting**:
   resumable.
 - The diagnostic path never becomes an authorization or evidence source.
 
-### D2. Scope authorization and foreign-session exclusion
+### D2. Scope authorization and verified lineage
 
 Read-only access is not an access grant. A diagnostic request is authorized only
-for the requested local root/workspace context and for child or continuation
-sessions whose relationship is positively established.
+for the requested local root/workspace context and for reviewer descendants
+whose relationship is positively established through a verified invocation
+chain.
 
-- A host `parentID` field alone does not prove FlowGuard enrollment, delegation
-  or review binding.
+- A host `parentID` field, session name, timing, attempt, dispatch, observation
+  or host-visible transcript alone does not prove FlowGuard enrollment,
+  delegation, review binding or lineage.
 - Reviewer children may be discovered from canonical attempts, dispatches,
-  invocations, observations and verified native relationships.
+  invocations, observations and verified native relationships. Discovery may
+  recurse through a child only after that child's own state is resolved and its
+  invocation parent is positively verified.
+- A child becomes `lineage: verified` only when exactly one canonical review
+  invocation names its parent, that same edge was observed in the claimed
+  parent's resolved state, and the parent is itself reachable through verified
+  edges from the requested root. A candidate discovered only through an attempt
+  or observation remains `not_verified`; attempts and observations are inventory
+  evidence, not authorization.
+- If two different canonical invocation parents claim the same child, the child
+  is `LINEAGE_CONFLICT` and remains `lineage: not_verified`. A verified claim
+  never wins a conflict, and a descendant chain that was read before the conflict
+  became visible is re-evaluated and cleared from the exported state.
+- A self-parent invocation is ignored. Duplicate invocation edges are deduped.
+  A cycle never causes unbounded traversal.
 - If a relationship is ambiguous, contradictory or unavailable, the projection
   reports a gap and **does not fetch or merge foreign session content**. The
   candidate remains in the graph as `lineage: not_verified`; its state and host
   transcript are not read.
-- A child is read only when its persisted invocation names the requested root
-  session as its parent. Attempts or observations without that positive link
-  remain `not_verified` rather than being treated as root descendants.
 - A corrupt or unavailable governance state may be read and reported as
   **untrusted**. It must not be trusted for further scope expansion or repaired
   by the diagnostic path.
+- Discovery has its own hard graph budget, independent of the capture-session
+  limit. The first candidate that overflows `maxDiscoveryNodes` remains visible
+  in the known inventory, then traversal stops and reports
+  `DISCOVERY_NODE_LIMIT`. Candidates discovered before the stop are never
+  removed from the denominator merely because their state was not read.
 - Capture boundaries are recorded per source and per session, not only as one
   global success flag.
+
+Continuation sessions are **not** discovered or claimed by the current contract.
+No bounded trusted source for enumerating continuations has been proven. Any
+continuation candidate remains `not_verified`/out of scope and must not be
+presented as complete coverage.
 
 The canonical session authority remains
 [`adapters/session-authority.ts`](../../src/adapters/session-authority.ts). A
@@ -118,6 +141,15 @@ denominator. Removing an unreachable known child from the denominator is
 forbidden, because it would manufacture apparent completeness. Missing,
 stale, duplicate, rejected, exhausted, interrupted and `outcome_unknown`
 attempts remain visible as such.
+
+Discovery is bounded by a hard `maxDiscoveryNodes` graph budget that is separate
+from `maxSessions`. When that budget is exhausted, `sources.discovery` reports
+`partial`, `truncated: true`, `DISCOVERY_NODE_LIMIT` and the known candidate
+count reached before the stop. The first overflow candidate remains visible in
+the graph but is not re-read by capture; it stays `captureStatus: truncated`
+without per-session artifacts. `maxSessions` may then truncate capture of
+verified descendants; those sessions also remain in the graph as
+`captureStatus: truncated`, and the manifest stays `PARTIAL`.
 
 A known reviewer child without its own FlowGuard state is normal in the native
 host model, but it is not fully bound canonical state. The manifest therefore
@@ -242,23 +274,36 @@ portable Markdown/file path remains complete and must not depend on a GUI.
 interaction surfaces and chooser. Neither issue may introduce a rival command
 catalogue or persisted view state.
 
-## Implementation status (2026-11-06)
+## Implementation status (2026-11-11)
 
 Implemented in this repository state:
 
 - `flowguard debug-export` and native `/debug-export` produce a bounded,
-  write-once snapshot of the root session and known reviewer children.
+  write-once snapshot of the root session and its verified reviewer descendant
+  tree.
 - Root and child resolution uses the canonical session authority. A known child
   that cannot be resolved remains in the graph and completeness denominator.
-- A child is read only after its invocation positively names the requested root.
-  Foreign or unlinked candidates remain `lineage: not_verified` and are not
-  fetched; the manifest reports `PARTIAL`.
+- Multi-level reviewer lineage is discovered only through positively verified
+  canonical invocation edges. A child is read only after its invocation names a
+  verified parent that is reachable from the requested root. Foreign, unlinked,
+  attempt-only and observation-only candidates remain `lineage: not_verified`
+  and are not fetched; conflicting invocation parents remain `LINEAGE_CONFLICT`
+  and are never resolved into a winning parent. The manifest reports `PARTIAL`.
+- Discovery uses a hard graph budget (`maxDiscoveryNodes`, default 250) that is
+  independent of the capture limit. Truncation keeps the first overflow
+  candidate in the known inventory and reports `DISCOVERY_NODE_LIMIT`.
 - The snapshot verifies the canonical audit chain, preserves native session,
   message and part IDs, captures optional host transcripts through the installed
   OpenCode CLI or the native plugin context, and redacts before persistence.
 - The manifest records per-file SHA-256/size, capture boundaries, redaction mode,
-  per-axis completeness (`lineage`, `canonicalState`, `hostHistory`) and explicit
-  `COMPLETE`/`PARTIAL`/`NOT_VERIFIED` status.
+  per-axis completeness (`discovery`, `lineage`, `canonicalState`, `audit`,
+  `hostHistory`, `logs`) and explicit `COMPLETE`/`PARTIAL`/`NOT_VERIFIED` status.
+- Diagnostic export v2 publishes real bounded FlowGuard JSONL logs and a log
+  index. Log capture is limited to FlowGuard log files, rotated files are
+  selected within explicit file/byte/line budgets, and malformed, uncorrelated
+  or truncated input is reported explicitly. Redacted mode rejects non-technical
+  and secret-shaped trace IDs. A failed JSONL or index publication downgrades
+  `sources.logs` to `partial` instead of reporting `COMPLETE`.
 - Per-artifact and total byte budgets, a per-session host timeout and a total
   capture duration are enforced. Oversized artifacts are skipped with an explicit
   `ARTIFACT_TOO_LARGE`/`AUDIT_TOO_LARGE`/`HOST_HISTORY_TOO_LARGE` warning and
@@ -270,8 +315,9 @@ Implemented in this repository state:
   explicitly keeps native Desktop delivery `NOT_VERIFIED`; it does not execute
   the command.
 - Native `/diagnostics` provides the portable post-cutover views tracked by
-  #1202: `explorer` projects exact known lineage and explicit `not_verified`
-  gaps with obligation/attempt/dispatch/invocation IDs; `review` displays the
+  #1202: `explorer` projects the same verified multi-level lineage as the debug
+  export, including generation, explicit `not_verified` gaps and
+  obligation/attempt/dispatch/invocation IDs; `review` displays the
   exact subject revision/digest, verbatim material, reviewer verdict, findings
   and ProofGraph declarations versus evaluation while declaring decision
   authority `NOT GRANTED`. Only reviewer output positively bound to the displayed
@@ -387,8 +433,17 @@ as product facts:
       authority unchanged; no implicit start or hydration.
 - [ ] Known-but-unreachable children remain in the manifest and prevent
       `COMPLETE`; foreign or ambiguous sessions are never merged.
-- [ ] A child whose invocation names another root is not read; the graph keeps it
-      as `lineage: not_verified` and the manifest is not `COMPLETE`.
+- [ ] Only a chain of positively verified invocation edges from the requested
+      root authorizes a read. Attempts, observations, host parent IDs and names
+      never authorize a read.
+- [ ] A child claimed by two different invocation parents remains
+      `LINEAGE_CONFLICT`/`not_verified`; a verified claim never wins the conflict
+      and previously read descendants are cleared.
+- [ ] Discovery exhaustion keeps the first overflow candidate in the known
+      inventory, reports `DISCOVERY_NODE_LIMIT`, and prevents `COMPLETE`.
+- [ ] Continuation coverage is explicitly `not_verified`/out of scope until a
+      bounded trusted discovery source exists; no complete continuation claim is
+      made.
 - [ ] A host-only reviewer child reports `canonicalState: partial`, even when its
       host transcript is complete.
 - [ ] Oversized host transcripts, audit trails, artifacts and total captures

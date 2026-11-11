@@ -7,14 +7,18 @@
  * read. No state, audit or host transcript is written.
  */
 
-import { DEFAULT_DIAGNOSTIC_LIMITS } from '../../adapters/diagnostics/export-schema.js';
-import { discoverReviewSessions } from '../../adapters/diagnostics/session-discovery.js';
-import type { DiagnosticWarning } from '../../adapters/diagnostics/export-schema.js';
-import { warning, type SessionDiscovery } from '../../adapters/diagnostics/types.js';
+import {
+  DEFAULT_DIAGNOSTIC_LIMITS,
+  type DiagnosticWarning,
+} from '../../adapters/diagnostics/export-schema.js';
+import {
+  discoverSessionTree,
+  type DiscoveredSession,
+} from '../../adapters/diagnostics/session-discovery.js';
+import { warning } from '../../adapters/diagnostics/types.js';
 import { resolveSessionAuthority } from '../../adapters/session-authority.js';
 import { sanitizeDiagnosticString } from '../../logging/redact.js';
 import type { SessionAuthorityResolution } from '../../adapters/session-authority.js';
-import type { SessionState } from '../../state/schema.js';
 import type { ExplorerSessionNode, ExplorerView } from './types.js';
 import { projectReviewLinks } from './review-links.js';
 
@@ -89,6 +93,7 @@ function unresolvedRootNode(
   return {
     sessionId,
     parentSessionId: null,
+    generation: 0,
     role: 'root',
     discoveredBy: ['root'],
     state: sessionState(resolution),
@@ -126,81 +131,109 @@ function unresolvedExplorerView(
   };
 }
 
+function pushDiscoveryWarnings(
+  discovered: DiscoveredSession,
+  warnings: DiagnosticWarning[],
+): readonly string[] {
+  for (const entry of discovered.warnings) {
+    warnings.push(
+      sanitizedWarning(
+        entry.code,
+        entry.message,
+        entry.sessionId ?? discovered.sessionId,
+        entry.source,
+      ),
+    );
+  }
+  return discovered.warnings.map((entry) => entry.code);
+}
+
 function unverifiedChildNode(
-  sessionId: string,
-  discovery: SessionDiscovery,
+  discovered: DiscoveredSession,
   warnings: DiagnosticWarning[],
 ): ExplorerSessionNode {
-  warnings.push(
-    sanitizedWarning(
-      'SESSION_LINEAGE_NOT_VERIFIED',
-      'Known session was retained in the graph but not read because its lineage to the requested root is not positively established.',
-      sessionId,
-      'review',
-    ),
-  );
+  const warningCodes = pushDiscoveryWarnings(discovered, warnings);
   return {
-    sessionId,
-    parentSessionId: discovery.parentSessionId,
+    sessionId: discovered.sessionId,
+    parentSessionId: discovered.parentSessionId,
+    generation: discovered.generation,
     role: 'reviewer',
-    discoveredBy: [...discovery.sources],
+    discoveredBy: [...discovered.sources],
     state: 'unavailable',
     lineage: 'not_verified',
     phase: null,
     binding: 'unknown',
-    warningCodes: ['SESSION_LINEAGE_NOT_VERIFIED'],
+    warningCodes,
   };
 }
 
-async function verifiedChildNode(
-  root: string,
-  sessionId: string,
-  discovery: SessionDiscovery,
+function verifiedChildNode(
+  discovered: DiscoveredSession,
   warnings: DiagnosticWarning[],
-): Promise<ExplorerSessionNode> {
-  const resolution = await resolveSessionAuthority({ root, sessionId });
-  appendResolutionWarning(warnings, resolution, sessionId);
+): ExplorerSessionNode {
+  const resolution = discovered.authority;
+  const warningCodes = pushDiscoveryWarnings(discovered, warnings);
   return {
-    sessionId,
-    parentSessionId: discovery.parentSessionId,
+    sessionId: discovered.sessionId,
+    parentSessionId: discovered.parentSessionId,
+    generation: discovered.generation,
     role: 'reviewer',
-    discoveredBy: [...discovery.sources],
-    state: sessionState(resolution),
+    discoveredBy: [...discovered.sources],
+    state: resolution === null ? 'unavailable' : sessionState(resolution),
     lineage: 'verified',
-    phase: resolution.status === 'resolved' ? resolution.state.phase : null,
-    binding: bindingStatus(resolution),
-    warningCodes: warnings
-      .filter((entry) => entry.sessionId === sessionId)
-      .map((entry) => entry.code),
+    phase: resolution?.status === 'resolved' ? resolution.state.phase : null,
+    binding: resolution === null ? 'unknown' : bindingStatus(resolution),
+    warningCodes,
   };
 }
 
-async function collectChildren(
+async function collectTree(
   request: ExplorerViewRequest,
-  rootState: SessionState,
+  rootResolution: Extract<SessionAuthorityResolution, { status: 'resolved' }>,
   sessions: ExplorerSessionNode[],
   warnings: DiagnosticWarning[],
   maxSessions: number,
 ): Promise<boolean> {
-  let truncated = false;
-  for (const [sessionId, discovery] of discoverReviewSessions(rootState, request.sessionId)) {
-    if (sessionId === request.sessionId) continue;
+  const clock = request.now ?? (() => new Date());
+  const tree = await discoverSessionTree({
+    root: request.root,
+    rootSessionId: request.sessionId,
+    rootState: rootResolution.state,
+    rootAuthority: rootResolution,
+    // The explorer never displays more sessions than its view limit, so the
+    // view limit is also its hard discovery budget.
+    maxNodes: maxSessions,
+    now: () => clock().getTime(),
+  });
+  let truncated = tree.truncated;
+  if (tree.truncated) {
+    warnings.push(
+      sanitizedWarning(
+        'DISCOVERY_TRUNCATED',
+        `Known descendants were not fully discovered: ${tree.reasons.join('; ') || 'discovery budget reached'}.`,
+        null,
+        'capture',
+      ),
+    );
+  }
+  for (const discovered of tree.sessions) {
+    if (discovered.sessionId === request.sessionId) continue;
     if (sessions.length >= maxSessions) {
       truncated = true;
       warnings.push(
         sanitizedWarning(
           'SESSION_LIMIT_TRUNCATED',
-          `Known session ${sessionId} was not projected because the ${maxSessions}-session view limit was reached.`,
-          sessionId,
+          `Known session ${discovered.sessionId} was not projected because the ${maxSessions}-session view limit was reached.`,
+          discovered.sessionId,
           'capture',
         ),
       );
       continue;
     }
     sessions.push(
-      discovery.lineage !== 'verified'
-        ? unverifiedChildNode(sessionId, discovery, warnings)
-        : await verifiedChildNode(request.root, sessionId, discovery, warnings),
+      discovered.lineage !== 'verified' || discovered.conflict
+        ? unverifiedChildNode(discovered, warnings)
+        : verifiedChildNode(discovered, warnings),
     );
   }
   return truncated;
@@ -258,6 +291,7 @@ export async function buildExplorerView(request: ExplorerViewRequest): Promise<E
   sessions.push({
     sessionId: request.sessionId,
     parentSessionId: null,
+    generation: 0,
     role: 'root',
     discoveredBy: ['root'],
     state: 'captured',
@@ -266,7 +300,7 @@ export async function buildExplorerView(request: ExplorerViewRequest): Promise<E
     binding: 'verified',
     warningCodes: [],
   });
-  const truncated = await collectChildren(request, rootState, sessions, warnings, maxSessions);
+  const truncated = await collectTree(request, rootResolution, sessions, warnings, maxSessions);
   const reviewLinks = projectReviewLinks(rootState, warnings);
   const { completeness, status } = completenessFor(sessions, truncated, warnings);
 

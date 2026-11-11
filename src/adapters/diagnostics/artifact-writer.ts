@@ -190,6 +190,10 @@ export async function writeAllSessionArtifacts(
   createdAt: string,
 ): Promise<void> {
   for (const session of acc.sessions) {
+    // Known-but-unread sessions stay visible in session-graph.json and the
+    // manifest denominator. They have no captured state, audit or host data to
+    // publish and must not receive a per-session artifact directory.
+    if (session.captureStatus !== 'captured') continue;
     try {
       await writeSessionArtifacts(target, session, acc, createdAt);
     } catch (error) {
