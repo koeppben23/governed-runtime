@@ -223,7 +223,10 @@ function parseRecord(
 
 function safeTraceId(value: string, redact: boolean): string | null {
   if (!redact) return value;
-  return TECHNICAL_TRACE_ID.test(value) ? value : null;
+  if (!TECHNICAL_TRACE_ID.test(value)) return null;
+  // The format check alone still admits secret-shaped values such as sk- keys
+  // or JWTs. Reuse the central sanitizer and reject anything it would alter.
+  return sanitizeDiagnosticString(value) === value ? value : null;
 }
 
 function safeString(value: string, redact: boolean): string {

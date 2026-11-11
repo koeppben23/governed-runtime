@@ -924,9 +924,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
-- Harden diagnostic log export: redacted mode rejects non-technical trace IDs,
-  and a failed JSONL/index publication marks the log source `PARTIAL` instead
-  of reporting `COMPLETE` while the artifact is missing.
+- Harden diagnostic log export: redacted mode rejects non-technical or
+  secret-shaped trace IDs, and a failed JSONL/index publication marks the log
+  source `PARTIAL` instead of reporting `COMPLETE` while the artifact is
+  missing.
 
 - Separate control-plane credential failures from actual drift. Strict
   verification now exits with `AUTH_FAILED` (exit code 2) for HTTP 401/403 and
