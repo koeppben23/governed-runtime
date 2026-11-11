@@ -135,9 +135,13 @@ describe('explicit autonomous root Start', () => {
     await open();
     const input = await request();
     const first = await start(input);
+    expect(host.synthetic).not.toHaveBeenCalled();
+    expect(host.prompt).not.toHaveBeenCalled();
     const hydration = vi.spyOn(hydrate, 'execute');
     expect(await start(input)).toEqual({ ...(first as object), kind: 'already_active' });
     expect(hydration).not.toHaveBeenCalled();
+    expect(host.synthetic).not.toHaveBeenCalled();
+    expect(host.prompt).not.toHaveBeenCalled();
     expect(await authority(input.sessionID)).toMatchObject({
       kind: 'active',
       record: {

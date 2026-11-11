@@ -5,6 +5,14 @@ import { POLICY_DIGEST_PATTERN } from '../state/evidence-identifiers.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
 import { DecisionBinding } from './status/decision-binding.js';
 import { NextActionRequest, NextActionResult } from './status/next-action-projection.js';
+import {
+  WorkbenchDiagnosticsRequest,
+  WorkbenchDiagnosticsResult,
+} from './status/workbench-diagnostics-projection.js';
+import {
+  WorkbenchReviewRequest,
+  WorkbenchReviewResult,
+} from './status/workbench-review-projection.js';
 
 export const AutonomousStartRequest = z
   .object({
@@ -53,6 +61,16 @@ export const FlowGuardGovernance = Rpc.define({
     GetNextAction: {
       input: NextActionRequest,
       output: NextActionResult,
+      errors: {},
+    },
+    GetWorkbenchReview: {
+      input: WorkbenchReviewRequest,
+      output: WorkbenchReviewResult,
+      errors: {},
+    },
+    GetWorkbenchDiagnostics: {
+      input: WorkbenchDiagnosticsRequest,
+      output: WorkbenchDiagnosticsResult,
       errors: {},
     },
     SubmitDecision: {

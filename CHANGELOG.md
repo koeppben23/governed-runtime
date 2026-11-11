@@ -9,6 +9,137 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Harden OpenCode uninstall safety: preserve a runtime `flowguard.json` when
+  no valid scope-matched install ownership manifest exists; after deleting
+  the managed native plugin entry, warn that a live host may still have the
+  old plugin loaded until its location is reloaded or the service restarts.
+  Regression tests cover byte-exact config retention and the unload notice.
+
+- Add optional 30-second visible-sidecar-session read-only reconciliation to
+  the Desktop composer status. Host completion events remain fast-path hints,
+  missed transitions are reconciled best-effort when the GUI is visible and
+  connected, and concurrent refreshes are coalesced. Expose named regions and
+  polite atomic status announcements in the Workbench and chat card. Extend
+  isolated running-host uninstall regression with PID/liveness and unaffected
+  observer checks. Installed Desktop 2.2.6 acceptance on artifact `f9c53e8f`
+  observed the 30-second visible-session reconciliation without a click or
+  event, retained the immediate completion refresh, and confirmed the ARIA
+  semantics without governance mutation. The isolated active-uninstall smoke
+  test passed against the exact packed artifact with the pinned native CLI
+  candidate `2.2.5`; a one-off rerun with the installed Desktop `2.2.6` CLI
+  (temporary candidate-version override, restored afterwards) also passed. This
+  does not establish a screenreader PASS, a distinct revision zero-restart
+  upgrade, or live-profile uninstall acceptance.
+
+- Isolate the OpenCode Desktop sidecar lifecycle and `serverEndpoints` /
+  `servers` compatibility into a host bridge. Route all GUI RPC calls
+  through a typed facade that reuses the canonical governance contracts,
+  binds to the mounted session and preserves the server-side decision gate.
+  No new authority or host-independent UI runtime is introduced. Installed
+  Desktop 2.2.6 acceptance on artifact `e8e1e90d` covers the Workbench read
+  projections, manual and completion-driven pill refresh, a rendered
+  `flowguard-live` card, and an opened-then-dismissed canonical decision
+  chooser without mutation. The host bridge keeps the 2.2.6 `ctx.servers`
+  surface and the newer `ctx.serverEndpoints` typings; contract tests pin both.
+  Zero-restart upgrade, active-profile uninstall and screenreader coverage
+  remain open.
+
+- Remove the separate autonomous StartGovernance synthetic status transcript
+  (RPC result remains authoritative; interactive /start stays unchanged).
+  Add an optional sidecar session-completion listener for read-only composer
+  status refresh, bound to the current session and protected against
+  out-of-order RPC responses. Manual Refresh remains the fallback. Installed
+  Desktop 2.2.6 acceptance on artifact `2651c0cb` observed a disposable
+  session change from `FlowGuard · inspect` to `FlowGuard · NOT_VERIFIED ·
+last read` without a click, while a completion in another session left the
+  open demo pill unchanged; the demo stayed at 44 messages, the existing
+  `approve` decision, generation 1 and 72 verified audit events. The installed
+  host exposes `ctx.servers`; newer plugin typings use `ctx.serverEndpoints`,
+  so the bundle supports both. The autonomous removal is covered by code and
+  product-composition regression; no installed autonomous Start was run.
+  Zero-restart host upgrade, active-profile uninstall, independent screenreader
+  coverage and automatic refresh across every governance transition remain
+  open.
+
+- Add optional read-only FlowGuard status beside the Desktop chat composer via
+  the official `ComposerPill` API, with an explicit palette refresh action.
+  Reuse canonical `GetNextAction` and `GetWorkbenchReview`; no workflow
+  commands, decisions, audit writes or model turns are initiated. A
+  `flowguard-live` `CodeBlock` renderer supports intentionally authored
+  fenced blocks in existing chat messages. The earlier synthetic-message
+  prototype was removed because those messages could enter model context.
+  Installed Desktop 2.2.6 acceptance on artifact `e054159a` covers placement
+  above the composer, manual `last read` refresh at EVIDENCE_REVIEW/READY/PLAN,
+  honest `NOT_VERIFIED`, session switching, renderer reload, light/dark,
+  keyboard operation, a rendered `flowguard-live` `v1` card, `v2` fallback and
+  unchanged demo state (44 messages, `approve` decision, activation generation 1,
+  72 verified audit events). The acceptance also records the separate
+  autonomous-start synthetic report as remaining model-context exposure.
+
+- Add read-only native Session Explorer and verified audit-chain chronology to
+  Desktop PR #1207, preserving unverified reviewer lineage, bounded audit
+  integrity and evidence completeness, without introducing decision authority.
+  Installed Desktop 2.2.6 acceptance on artifact `9ea01ae8` shows the root
+  session `verified`, two reviewer children `not_verified` with explicit lineage
+  reasons, two review attempts, and 72 persisted `audit-chain.v3` events under
+  `PARTIAL` completeness. The new sections are collapsed by default and expanding
+  them issues no hydrate, workflow command or decision. Acceptance also fixed an
+  unformatted diagnostics projection before the 37/37 green CI run.
+
+- Extend #1207's native Desktop Workbench with a bounded, read-only review
+  transport timeline built from canonical reviewer-assurance timestamps, and
+  ProofGraph claim cards showing positive/counterexample references plus
+  certificate binding. The timeline is explicitly not a full audit timeline;
+  missing or truncated history stays visible. Installed Desktop 2.2.6
+  acceptance on artifact `8ef2cc11` covers a 16-event review-assurance
+  timeline, a `PROVEN` claim with one evidence and one counterexample reference,
+  certificate binding `current`, READY `NOT_VERIFIED` when no history exists,
+  default-collapsed timeline disclosure and no renderer-induced mutation.
+  Acceptance corrected the pinned bundle hash from `1615f16a…` to the actual
+  built bytes `460eb485…` and fixed formatting, projection complexity and the
+  650-LOC wrapper budget (the bundle moved to `gui-plugin-bundle.ts` with
+  byte-identical output) before the installed run.
+
+- Refine the native OpenCode Desktop Review Workbench in #1207 with compact
+  phase orientation, prominent but canonical next-action/decision entry, native
+  keyboard-accessible expandable review/evidence/recovery sections, forensic
+  binding details on demand, and responsive density for narrower windows.
+  No separate decision authority or automatic workflow transition is introduced.
+  Installed Desktop 2.2.6 acceptance on artifact `3bc54caa` covers READY,
+  EVIDENCE_REVIEW and BLOCKED states, native details/summary keyboard operation,
+  global expand/collapse, light/dark mode and a `900x900` window. Acceptance
+  found and fixed an initial compact-revision defect where the recovery section
+  opened at a decision gate; recovery now opens only for a true blocked state.
+  Active-profile uninstall remains `PARTIAL`.
+
+- Add the first native Desktop Review Workbench slice to #1196: a bounded
+  `GetWorkbenchReview` RPC projects the exact persisted review subject, verdict,
+  findings, missing verification and ProofGraph summary without raw subject
+  content or file paths. The installed side panel composes it with `GetNextAction`,
+  separates independent reviewer results from operator decisions, shows canonical
+  blocker recovery, and opens the existing revision-bound chooser only for a
+  matching, complete review. Installed Desktop 2.2.6 evidence covers READY, a
+  real PLAN-pending review that fails closed with `REVIEW_VERDICT_NOT_RECORDED`,
+  a complete bound PLAN_REVIEW with reviewer accept and one minor finding,
+  native `/approve` advancing to `IMPLEMENTATION`, a stale binding rejected with
+  `DECISION_BINDING_STALE`, and BLOCKED guided recovery for `aea39b90`. The
+  stuck session's dispatch is diagnosed as `outcome_unknown` even though its
+  child review completed; no ledger was reset. Narrow layout, light mode and
+  decision-dialog keyboard navigation are verified; active-profile uninstall
+  remains `PARTIAL`. A service restart is required to load the new RPC in a
+  long-running service.
+
+- Add an opt-in, read-only OpenCode Desktop Panel/Slot capability probe to #1196, with
+  a native FlowGuard side tab, manual status refresh, and an opt-in session-header
+  display consuming the existing `GetNextAction` projection. Existing native
+  chooser and decision authority remain unchanged. Installed OpenCode Desktop
+  2.2.6 paints the Panel and `session.header` Slot, keeps the session-specific
+  `READY` projection current through manual refresh and session switches, and
+  registers no duplicate controls after reload; the pinned 2.2.5 Desktop build
+  remains `NOT_VERIFIED`. The probe is not the finished Review Workbench. Add
+  Desktop product UX specification, pinned-host acceptance checklist, adapter
+  regression tests and bundle hash.
+
 - Add the optional Desktop GUI companion for #1196 as an installed prebuilt
   `plugins/flowguard/gui-experimental.cjs` bundle. It exposes the same
   `/choose-workflow` dialog only when explicitly requested; it installs no

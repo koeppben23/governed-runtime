@@ -19,7 +19,14 @@ import {
   sha256,
   toCliError,
 } from './install-helpers.js';
-import type { CliArgs, CliError, CliResult, FileOp, InstallPlatform } from './install-types.js';
+import type {
+  CliArgs,
+  CliError,
+  CliNotice,
+  CliResult,
+  FileOp,
+  InstallPlatform,
+} from './install-types.js';
 import { FLOWGUARD_OWNED_FILES, FLOWGUARD_TARBALL_PATTERN } from './install-types.js';
 import {
   ownershipManifestPath,
@@ -386,6 +393,61 @@ async function resolveUninstallOwnership(
   return ownership;
 }
 
+function runtimeConfigPath(
+  args: CliArgs,
+  target: string,
+  installPlatform: InstallPlatform,
+): string {
+  if (installPlatform !== 'opencode') return join(target, 'flowguard.json');
+  return args.installScope === 'global'
+    ? globalConfigPath()
+    : join(resolve('.'), '.opencode', 'flowguard.json');
+}
+
+async function cleanupRuntimeConfig(
+  args: CliArgs,
+  target: string,
+  installPlatform: InstallPlatform,
+  ownership: InstallOwnershipManifest | null,
+  result: { readonly ops: FileOp[]; readonly warnings: string[] },
+): Promise<void> {
+  const cfgPath = runtimeConfigPath(args, target, installPlatform);
+  // A same-named runtime config is user data unless a valid, scope-matched
+  // installation manifest establishes that FlowGuard provisioned this scope.
+  // Do not turn an orphaned/partial install into destructive config cleanup.
+  if (ownership === null && existsSync(cfgPath)) {
+    result.warnings.push(`${cfgPath}: configuration ownership is not proven — preserved`);
+    result.ops.push({
+      path: cfgPath,
+      action: 'skipped',
+      reason: 'configuration ownership not proven',
+    });
+    return;
+  }
+  const removedCfg = await safeUnlink(cfgPath);
+  result.ops.push({ path: cfgPath, action: removedCfg ? 'removed' : 'not_found' });
+}
+
+function hostUnloadNotices(
+  installPlatform: InstallPlatform,
+  target: string,
+  errors: readonly string[],
+  ops: readonly FileOp[],
+): CliNotice[] {
+  const removedNativePlugin =
+    installPlatform === 'opencode' &&
+    errors.length === 0 &&
+    ops.some((op) => op.path === join(target, PLUGIN_RELATIVE_PATH) && op.action === 'removed');
+  if (!removedNativePlugin) return [];
+  return [
+    {
+      kind: 'next',
+      message:
+        'Managed files were removed, but a running OpenCode service may still have the plugin loaded. After safely completing active work, reload that location or restart the service and verify FlowGuard is absent from the live plugin list. File removal alone is not proof of unload.',
+    },
+  ];
+}
+
 export async function uninstall(args: CliArgs): Promise<CliResult> {
   const installPlatform = args.installPlatform ?? 'opencode';
   const target = resolveTarget(args.installScope, installPlatform);
@@ -403,14 +465,7 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
     ops.push(...(await cleanupEmptyDependencyDirectory(target, packageOps)));
     ops.push(...(await cleanupOpencodeConfig(args, target)));
 
-    const cfgPath =
-      installPlatform !== 'opencode'
-        ? join(target, 'flowguard.json')
-        : args.installScope === 'global'
-          ? globalConfigPath()
-          : join(resolve('.'), '.opencode', 'flowguard.json');
-    const removedCfg = await safeUnlink(cfgPath);
-    ops.push({ path: cfgPath, action: removedCfg ? 'removed' : 'not_found' });
+    await cleanupRuntimeConfig(args, target, installPlatform, ownership, { ops, warnings });
 
     const removedManifest = await safeUnlink(manifestPath);
     ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
@@ -423,5 +478,6 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
     errorDetails.push(toCliError(err));
   }
 
-  return { target, ops, errors, errorDetails, warnings, notices: [] };
+  const notices = hostUnloadNotices(installPlatform, target, errors, ops);
+  return { target, ops, errors, errorDetails, warnings, notices };
 }

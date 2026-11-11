@@ -36,6 +36,9 @@ import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { hydrate, resolveHydratePolicy } from './tools/index.js';
 import { FlowGuardGovernance, type AutonomousStartRequest } from './opencode-governance-rpc.js';
+import { buildReviewView } from './diagnostics/review-view.js';
+import { projectWorkbenchReview } from './status/workbench-review-projection.js';
+import { buildWorkbenchDiagnostics } from './status/workbench-diagnostics-reader.js';
 import { getNextAction, submitDecision } from './plugin-next-action-command.js';
 import { addDecisionCommands } from './plugin-decision-command.js';
 import {
@@ -154,6 +157,20 @@ function registerAutonomousStart(
         }
       }),
     GetNextAction: (request) => getNextAction(ctx, deps.governance, request),
+    GetWorkbenchReview: async (request) =>
+      projectWorkbenchReview(
+        await buildReviewView({
+          root: ctx.location.directory,
+          sessionId: request.sessionID,
+          maxSubjectBytes: 32768,
+        }),
+        request.sessionID,
+      ),
+    GetWorkbenchDiagnostics: (request) =>
+      buildWorkbenchDiagnostics({
+        root: ctx.location.directory,
+        sessionID: request.sessionID,
+      }),
     SubmitDecision: (request) => deps.guard(() => submitDecision(ctx, deps, request)),
   });
 }
@@ -204,6 +221,12 @@ async function runStart(
     );
   await confirmCommittedStartAudits(deps, input.sessionID, workflow, result.record);
   await presentCommittedStart(() => deps.publish(), 'catalogue', input.sessionID);
+  // Autonomous callers receive the authoritative RPC result and can query
+  // GetNextAction. A synthetic status notice would persist into later model
+  // context despite resume:false; never manufacture an agent-visible turn.
+  if (autonomous !== undefined) {
+    return { kind: result.kind, activationId: result.record.activationId };
+  }
   const status =
     result.kind === 'already_active'
       ? 'was already ACTIVE'
@@ -229,10 +252,7 @@ async function runStart(
     "This is a FlowGuard host status report. Do not select a workflow automatically; wait for the user's explicit command.",
   ].join('\n\n');
   await presentCommittedStart(
-    () =>
-      autonomous === undefined
-        ? ctx.session.prompt({ sessionID: input.sessionID, text })
-        : ctx.session.synthetic({ sessionID: input.sessionID, text, resume: false }),
+    () => ctx.session.prompt({ sessionID: input.sessionID, text }),
     'status report',
     input.sessionID,
   );
