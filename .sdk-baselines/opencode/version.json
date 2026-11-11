@@ -1,9 +1,9 @@
 {
   "platform": "opencode",
-  "updated": "2026-11-06T18:45:37.751Z",
+  "updated": "2026-11-11T10:35:29.442Z",
   "packages": {
-    "@opencode/plugin": "2.2.5",
-    "@opencode/client": "2.2.5"
+    "@opencode/plugin": "2.2.7",
+    "@opencode/client": "2.2.7"
   },
   "files": [
     {
@@ -20,7 +20,7 @@
     },
     {
       "label": "@opencode/plugin/dist/promise/session.d.ts",
-      "hash": "b33ad2554c28b1b7213a18a0502782467338a096203635e27137310cc6d48048"
+      "hash": "8657ee38c23b2117c7a58339eeaddd94c240f3cdec6d7f442db3e05d0e07c7f7"
     },
     {
       "label": "@opencode/plugin/dist/promise/event.d.ts",
@@ -32,7 +32,7 @@
     },
     {
       "label": "@opencode/client#EventSubscribeOutput/V2Event",
-      "hash": "a05d4d1024d06cc93c369cdeb7d2e49af411f5c14ee9852cc47016c7790f6e7d"
+      "hash": "f6a6e84e489c3d80d6036f215afdb41489c3b3ac46b23ba18819209aada2c55b"
     },
     {
       "label": "@opencode/client#SessionMessageInfo/ToolContent",

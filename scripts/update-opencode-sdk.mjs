@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-/** Native API package update only. Never updates host certification, runtime
- * support constants, historical probes or installed-product documentation pins. */
+/** Native API package update only. Never updates the independently verified
+ * CLI host candidate, host certification, runtime support constants, historical
+ * probes or installed-product documentation pins. */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';

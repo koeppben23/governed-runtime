@@ -22,6 +22,7 @@ import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createIsolatedOpenCodeEnvironment,
+  isVersionAtMost,
   nativeOpenCodeCandidate,
   resolvePinnedOpenCodeHost,
   type PinnedOpenCodeHost,
@@ -46,7 +47,7 @@ function versionProbe(stdout: string, status = 0) {
 }
 
 describe('native candidate host resolver', () => {
-  it('keeps the candidate pin aligned with the SDK without promoting historical host evidence', () => {
+  it('keeps the verified host candidate independent of a newer API baseline', () => {
     const sdk = JSON.parse(
       readFileSync(new URL('../../.sdk-baselines/opencode/version.json', import.meta.url), 'utf8'),
     );
@@ -54,8 +55,13 @@ describe('native candidate host resolver', () => {
       package: '@opencode/cli',
       status: 'candidate',
     });
-    expect(nativeOpenCodeCandidate.version).toBe(sdk.packages['@opencode/client']);
-    expect(nativeOpenCodeCandidate.version).toBe(sdk.packages['@opencode/plugin']);
+    expect(isVersionAtMost(nativeOpenCodeCandidate.version, sdk.packages['@opencode/client'])).toBe(
+      true,
+    );
+    expect(isVersionAtMost(nativeOpenCodeCandidate.version, sdk.packages['@opencode/plugin'])).toBe(
+      true,
+    );
+    expect(sdk.packages['@opencode/client']).toBe(sdk.packages['@opencode/plugin']);
     const workflows = ['ci.yml', 'opencode-parity.yml']
       .map((file) =>
         readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), 'utf8'),

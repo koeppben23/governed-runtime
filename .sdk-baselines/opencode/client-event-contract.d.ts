@@ -45,7 +45,10 @@ export type CredentialUpdated = {
     };
     type: "credential.updated";
     location?: LocationRef;
-    data: {};
+    data: {
+        integrationID: IntegrationID;
+        credentialID: CredentialID;
+    };
 };
 
 export type CredentialSwitched = {

@@ -1839,6 +1839,10 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Updated native OpenCode API packages and type baselines to 2.2.7; the
+  independently verified CLI host smoke pin remains 2.2.5, and installed
+  Desktop/CLI support is not certified by this update.
+
 - Refresh pinned GitHub Actions and production OpenTelemetry dependencies:
   `actions/setup-java` 6.2.0, `github/codeql-action` 4.39.3, and
   OpenTelemetry 0.301.0/3.1.0.
