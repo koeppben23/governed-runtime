@@ -2,11 +2,13 @@
 
 ## Scope and decision
 
-**Work package A only. The full progress-feature gate is BLOCKED, not passed.**
+**Transport probes plus a targeted lifecycle repair. The full progress-feature
+gate is BLOCKED, not passed.**
 
-The candidate-host probe establishes some transport mechanics and records a
-negative lifecycle finding. It does not implement the product progress UI,
-instrument the executor, or change validation/retry/governance behavior.
+The candidate-host probe establishes some transport mechanics. A follow-up
+product regression reproduces and repairs its lifecycle finding. Neither
+implements the product progress UI nor instruments the executor. State schemas,
+audit contracts, reviewer admission and retry/backoff persistence remain unchanged.
 
 Reference source: `develop` at `41b2932e32fc84b64af435486c0ecfa3ad837c15`.
 Local execution: 11 November 2026, macOS arm64, Node 22.22.2 / npm 10.9.7,
@@ -26,38 +28,61 @@ The fixture does not load the FlowGuard product plugin or execute a build. Its
 `runID` is an ephemeral transport correlation ID, **not a ValidationAttempt**.
 It never emits `PASS`. Releasing the Promise proves fixture completion only.
 
-| Route                                         | Observation                                                                                                                                                                                                         | What remains unproved                                                                           |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Native tool                                   | `ToolContext.progress()` reaches the actual `session.tool.progress` stream while the native tool remains running; one user prompt and no extra model call during the held interval                                  | Native tool progress rendering; actual `flowguard_*` validation wiring                          |
-| Native command, both phase labels             | A session-location-scoped snapshot is read and visibly rendered by the test TUI as a toast before command completion; zero user messages/model calls                                                                | Production `/approve`, automatic plan approval and `/implement` wiring; durable attempt binding |
-| Consumer disappears                           | The fixture command completes after the TUI process is closed and the barrier is released                                                                                                                           | Production bounded delivery, hung receiver handling and cleanup under all failure modes         |
-| Ordinary execution success / resume candidate | Native success was observed as `session.execution.succeeded`; no `session.idle` was observed through that completion observation; the current product event projector returns `null` for the captured success event | Successful automatic-validation lifecycle resume and its progress display                       |
+| Route                                       | Observation                                                                                                                                                                        | What remains unproved                                                                           |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Native tool                                 | `ToolContext.progress()` reaches the actual `session.tool.progress` stream while the native tool remains running; one user prompt and no extra model call during the held interval | Native tool progress rendering; actual `flowguard_*` validation wiring                          |
+| Native command, both phase labels           | A session-location-scoped snapshot is read and visibly rendered by the test TUI as a toast before command completion; zero user messages/model calls                               | Production `/approve`, automatic plan approval and `/implement` wiring; durable attempt binding |
+| Consumer disappears                         | The fixture command completes after the TUI process is closed and the barrier is released                                                                                          | Production bounded delivery, hung receiver handling and cleanup under all failure modes         |
+| Ordinary execution success / product resume | The separate product-host regression resumes persisted validation after an admitted `session.execution.succeeded`, executing only open checks in both validation phases            | Resume progress display and packed-product acceptance                                           |
 
-The suite has three positive transport cases and one explicit **negative
-characterization**, not four successful feature-acceptance cases. A green run
-preserves the recorded lifecycle counterexample; it does not clear the gate.
+The transport suite has three positive fixture cases. The separate product-host
+case covers both validation phases. Four passing cases are still **not** full
+progress-feature acceptance.
 
-### Lifecycle counterexample
+### Lifecycle counterexample and bounded repair
 
 The probe originally required a snapshot after ordinary foreground success
 through the existing `session.idle` route. That expectation failed. The captured
 native stream contained `session.execution.succeeded` instead, and the armed
 idle observer did not run.
 
-The final negative test passes the **actual captured success event** through
-`projectOpenCodeEvent()` in `src/integration/opencode-host-adapter.ts` and
-asserts that it is not projected. The existing lifecycle path runs through
-`plugin-events.ts`, `plugin-afterhooks.ts` and
-`tools/auto-validation.ts:resumePendingSystemWork`. This result blocks a claim
-that normal success already supplies that resume route. It is not a claim
-that the host can never emit idle, that every recovery path fails, or that an
-installed end-to-end FlowGuard retry was exercised.
+The original negative characterization at `8359a511` passed the captured event
+through the product projector and established that it returned `null`. It is
+now replaced by `src/cli/opencode-validation-resume.smoke.test.ts`: before the
+repair, this real product-path regression persisted a technical interruption
+but stayed in `VALIDATION` after ordinary native success.
 
-Do not silently substitute a different wake-up event in this probe and report
-resume acceptance. Any correction to production lifecycle routing must retain
-the canonical operation-generation, backoff and reentrancy guarantees and
-replace this negative characterization with a meaningful positive product test.
-That correction is not made by this probe.
+The new case loads the actual product plugin, runs native `/start` and `/approve`,
+and later records an implementation through the native tool. **Only the core
+plan-review gate and active check selection are explicit component fixtures**;
+this is not independent reviewer/operator provenance or packed-install acceptance.
+Discovery supplies the commands. Real subprocesses produce a controlled exit
+127, persisted subject-bound `ValidationAttempt`s and a re-armed
+`pendingSystemWork` marker. The fixture waits for the persisted backoff rather
+than rewriting it. In both `VALIDATION` and `IMPL_VALIDATION`, ordinary native
+completion then reruns only the open check, preserves the earlier bound PASS,
+clears the marker and advances through the canonical check-result path.
+
+Success is **not an alias for idle**. The projector preserves its event type and
+creation time. ACTIVE root-scope admission precedes a native adapter claim:
+
+- aggregate identity must match the event session;
+- a per-session sequence high-water mark rejects concurrent/replayed delivery;
+- a fresh exact-session read must report `outcome: succeeded`, `time.idle` equal
+  to the notification's `created`, and `time.busy <= time.idle`. Old idle/outcome
+  values while a later execution runs do not suffice;
+- the canonical runner checks both notification creation time and current time
+  against persisted backoff. Delayed delivery cannot make an inside-backoff
+  notification eligible. Existing generation fencing and in-flight guards remain.
+
+The pinned candidate supplies matching native completion/session timestamps in
+the live regression; the test observes no `session.idle` through those completions.
+Integration tests cover duplicate/out-of-order notifications, stale/running or
+non-successful session state, identity/read failures, unrelated and delegated
+scope exclusion, and delayed delivery within backoff. Delegated-scope testing
+uses an explicit scoped-port fixture, not native delegation provenance.
+Notifications never supply check-result or reviewer evidence. No timer-driven
+retry or process-quiescence guarantee is added.
 
 ### Snapshot location is not an arbitrary UI location
 
@@ -84,6 +109,8 @@ binary fails in the existing host helper; there is no historical-host fallback.
 ```bash
 OPENCODE_LIVE=1 npm run test:smoke -- --no-file-parallelism \
   src/cli/opencode-validation-progress.smoke.test.ts
+OPENCODE_LIVE=1 npm run test:smoke -- \
+  src/cli/opencode-validation-resume.smoke.test.ts
 ```
 
 Optionally set `FLOWGUARD_PROGRESS_PROBE_REPORT_DIR` to an owned evidence
@@ -94,13 +121,13 @@ state or audit evidence. The suite's JSON reporter can be retained separately.
 
 The existing CI smoke job enables `FLOWGUARD_OPENCODE_HOST_E2E=1`, installs and
 checks the exact candidate, and discovers this suite without a workflow change.
-The three PTY-dependent cases are explicitly skipped on Windows. A run without
+The two PTY-dependent cases are explicitly skipped on Windows. A run without
 either live-host flag skips the suite and is **not transport evidence**.
 
 ## Product implementation remains gated
 
-Before claiming the complete feature, establish the supported lifecycle route
-and independently verify the required UI scope. The product implementation must:
+The supported native success route now has product-path evidence. Before claiming
+the complete feature, independently verify the required UI scope. The product implementation must:
 
 - replace, not supplement, the current `presentValidationProgress()` prompt;
 - cover explicit/automatic plan approval, `/implement` and supported resume;

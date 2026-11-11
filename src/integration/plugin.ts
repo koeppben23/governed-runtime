@@ -2,7 +2,6 @@
 import { existsSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { Plugin } from '@opencode/plugin';
-import type { OpenCodeEvent } from '@opencode/client';
 import { HttpTimestampAuthorityProvider } from '../audit/rfc-3161-http-provider.js';
 import { PkijsTimestampVerifier } from '../audit/rfc-3161-pkijs-verifier.js';
 import { repoConfigPath } from '../adapters/persistence.js';
@@ -10,11 +9,11 @@ import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { toAdapterLogger } from '../logging/adapter-logger.js';
 import { serializeError } from '../logging/error-serialize.js';
 import { toolBefore } from './plugin-beforehooks.js';
-import { toolAfter, handlePluginEvent, handleCompaction } from './plugin-afterhooks.js';
+import { toolAfter, handleCompaction } from './plugin-afterhooks.js';
 import { createPluginLogger } from './plugin-logging.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
-import { OpenCodeHostAdapter, projectOpenCodeEvent } from './opencode-host-adapter.js';
+import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { encodeHostCallId } from '../state/host-identity.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { buildEnforcementError } from './blocked-result.js';
@@ -33,9 +32,8 @@ import {
   type NativeCanonicalExecutor,
 } from './plugin-native-tools.js';
 import { OpenCodeGovernance, type ActiveGovernanceScope } from './opencode-governance.js';
-import { resolveGovernanceActivation } from '../adapters/governance-activation.js';
 import { createNativeReviewerAuthority } from './plugin-native-review.js';
-import { createEventFence, consumeEvents } from './plugin-native-events.js';
+import { createEventFence, consumeEvents, dispatchEvent } from './plugin-native-events.js';
 import { registerStartCommands } from './plugin-start-command.js';
 import { injectActiveMandates } from './plugin-mandates.js';
 export function isUsableWorktree(worktree: string | undefined): boolean {
@@ -129,7 +127,13 @@ export const FlowGuardAuditPlugin = Plugin.define({
         controller.signal,
         (event) =>
           governance.observeProgress(event) ??
-          dispatchEvent(event, runtimes, sessionRoots, actions.invoke, governance),
+          dispatchEvent(event, {
+            runtimes,
+            sessionRoots,
+            invoke: actions.invoke,
+            governance,
+            adapter,
+          }),
         fence.failed,
         operations,
       );
@@ -354,31 +358,6 @@ async function disposeResources(
   );
   if (errors.length > 0)
     throw new PluginCleanupError(errors, 'OpenCode V2 plugin cleanup was incomplete.');
-}
-
-async function dispatchEvent(
-  event: OpenCodeEvent,
-  runtimes: ReadonlyMap<string, Promise<RuntimeEntry>>,
-  sessionRoots: Map<string, string>,
-  invoke: Invoke,
-  governance: OpenCodeGovernance,
-): Promise<void> {
-  const projected = projectOpenCodeEvent(event);
-  if (!projected) return;
-  if (event.type === 'session.deleted') {
-    const authority = await resolveGovernanceActivation(governance.store, projected.sessionId);
-    if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
-    if (authority.kind !== 'active') return;
-    const root = sessionRoots.get(projected.sessionId);
-    const entry = root === undefined ? undefined : runtimes.get(root);
-    if (entry && authority.record.rootSessionId === projected.sessionId)
-      await handlePluginEvent((await entry).runtime, projected.event, projected.sessionId);
-    sessionRoots.delete(projected.sessionId);
-    return;
-  }
-  await invoke(projected.sessionId, (entry) =>
-    handlePluginEvent(entry.runtime, projected.event, entry.scope.root.sessionId),
-  );
 }
 
 async function createSessionRuntime(

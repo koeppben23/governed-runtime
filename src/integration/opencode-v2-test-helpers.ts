@@ -95,6 +95,8 @@ export function createV2Host(directory: string) {
       location: { directory: string };
       parentID?: string;
       agent?: string;
+      outcome?: 'succeeded' | 'failed' | 'interrupted';
+      time?: { busy?: number; idle?: number };
     }> => ({
       id: sessionID,
       location: { directory },

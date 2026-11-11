@@ -358,19 +358,24 @@ async function runFlowGuardAuditAfter(args: {
 /**
  * Resume interrupted canonical system work at the session lifecycle boundary.
  * `system_work` phases carry no commands, so the runtime — not a later user
- * command — owns the continuation. Fail-safe: the event handler catches.
+ * command — owns the continuation. Thrown handler failures reach the scope fence.
  */
 async function resumeSystemWorkForSession(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
+  wakeupCreatedAtMs?: number,
 ): Promise<void> {
   const worktreeRoot = runtime.riskDeps.getWorktreeRoot?.();
   if (!worktreeRoot) return;
-  const outcome = await runSystemWorkResume({
-    sessionID: sessionId,
-    worktree: worktreeRoot,
-    directory: worktreeRoot,
-  });
+  const outcome = await runSystemWorkResume(
+    {
+      sessionID: sessionId,
+      worktree: worktreeRoot,
+      directory: worktreeRoot,
+    },
+    undefined,
+    wakeupCreatedAtMs,
+  );
   if (outcome.kind === 'blocked') {
     runtime.log.error('system-work', 'system work resume blocked', {
       sessionId,
@@ -395,10 +400,10 @@ export async function handlePluginEvent(
     const eventDeps: EventHandlerDeps = {
       log: runtime.log,
       cleanupSession: (sessionId: string) => cleanupSessionRuntime(runtime, sessionId),
-      // Delegated-session idleness is not a root lifecycle wakeup.
-      resumePendingSystemWork: async (sessionId: string) => {
+      // Delegated-session completion is not a root lifecycle wakeup.
+      resumePendingSystemWork: async (sessionId: string, wakeupCreatedAtMs?: number) => {
         if (sessionId === governedSessionId)
-          await resumeSystemWorkForSession(runtime, governedSessionId);
+          await resumeSystemWorkForSession(runtime, governedSessionId, wakeupCreatedAtMs);
       },
       observeMutationEvent: (hostEvent) =>
         reconcileMutationEvent(runtime, hostEvent, governedSessionId),

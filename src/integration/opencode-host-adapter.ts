@@ -16,6 +16,7 @@ function hasMethods(domain: unknown, methods: readonly string[]): boolean {
 }
 
 export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
+  private readonly successSequences = new Map<string, number>();
   constructor(
     readonly context: Plugin.Context,
     private readonly signal: AbortSignal,
@@ -42,7 +43,7 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
     console[level](`[FlowGuard] ${message}`, ...(data === undefined ? [] : [data]));
   }
 
-  async getSession(sessionId: string): Promise<HostSession> {
+  private async readSession(sessionId: string) {
     const session = await this.context.session.get(
       { sessionID: sessionId },
       { signal: this.signal },
@@ -52,12 +53,42 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
         'The host returned another session for an exact session lookup.',
       );
     }
+    return session;
+  }
+
+  async getSession(sessionId: string): Promise<HostSession> {
+    const session = await this.readSession(sessionId);
     return {
       sessionId: session.id,
       directory: session.location.directory,
       ...(session.parentID === undefined ? {} : { parentSessionId: session.parentID }),
       ...(session.agent === undefined ? {} : { agent: session.agent }),
     };
+  }
+
+  /** A notification is only a wakeup, never check evidence. Claim before the
+   * read/runner so concurrent delivery and replay after backoff cannot retry it.
+   * A fresh native read must still describe this exact successful terminal run;
+   * idle/outcome alone can belong to an earlier execution while another runs. */
+  async claimSuccessfulExecutionWakeup(
+    event: Extract<OpenCodeEvent, { type: 'session.execution.succeeded' }>,
+  ): Promise<boolean> {
+    const sessionId = event.data.sessionID;
+    if (event.durable.aggregateID !== sessionId) return false;
+    const previous = this.successSequences.get(sessionId) ?? -1;
+    if (event.durable.seq <= previous) return false;
+    this.successSequences.set(sessionId, event.durable.seq);
+    const session = await this.readSession(sessionId);
+    return (
+      session.outcome === 'succeeded' &&
+      session.time.idle === event.created &&
+      session.time.busy !== undefined &&
+      session.time.busy <= session.time.idle
+    );
+  }
+
+  forgetSession(sessionId: string): void {
+    this.successSequences.delete(sessionId);
   }
 
   async readHistory(sessionId: string): Promise<unknown> {
@@ -97,6 +128,15 @@ export function projectOpenCodeEvent(event: OpenCodeEvent): {
     return {
       sessionId: event.data.sessionID,
       event: { type: event.type, data: { ...event.data, hostEventId: event.id } },
+    };
+  }
+  if (event.type === 'session.execution.succeeded') {
+    return {
+      sessionId: event.data.sessionID,
+      event: {
+        type: event.type,
+        data: { ...event.data, hostEventId: event.id, hostCreatedAt: event.created },
+      },
     };
   }
   return null;

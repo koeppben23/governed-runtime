@@ -4,8 +4,6 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Rpc } from '@opencode/plugin/rpc';
-import type { OpenCodeEvent } from '@opencode/client';
-import { projectOpenCodeEvent } from '../integration/opencode-host-adapter.js';
 import { createNativeHostProbe, type NativeHostProbe } from './opencode-native-test-helpers.js';
 import {
   PROGRESS_PROBE_PTY,
@@ -303,38 +301,5 @@ describe.skipIf(!LIVE)('validation progress transport gate (fixture only)', () =
       },
       120_000,
     );
-
-    it('NEGATIVE: ordinary execution success is not the existing idle resume route; the full transport gate remains blocked', async () => {
-      const host = await create();
-      const session = await host.session();
-      await startUi(host, session.id);
-      await writeFile(join(host.project, `resume-${session.id}`), 'IMPL_VALIDATION');
-      await host.prompt(session.id, 'Wake the fixture lifecycle observer.');
-      let events: Array<{ type: string; event: OpenCodeEvent }> = [];
-      await vi.waitFor(
-        async () => {
-          events = await host.entries();
-          expect(events.some((entry) => entry.event?.type === 'session.execution.succeeded')).toBe(
-            true,
-          );
-        },
-        { timeout: 15_000 },
-      );
-      const success = events.find(
-        (entry) => entry.event?.type === 'session.execution.succeeded',
-      )?.event;
-      if (!success) throw new Error('Missing observed success event');
-      expect(projectOpenCodeEvent(success)).toBeNull();
-      expect(events.some((entry) => entry.event?.type === 'session.idle')).toBe(false);
-      expect(await get(host, session.id)).toBeNull();
-      expect(output).not.toContain('FG RPC IMPL_VALIDATION pending');
-      expect(
-        (await host.client.session.context({ sessionID: session.id })).filter(
-          (message) => message.type === 'user',
-        ),
-      ).toHaveLength(1);
-      expect(host.requests).toHaveLength(1);
-      await expectNoFixtureErrors(host);
-    }, 120_000);
   });
 });

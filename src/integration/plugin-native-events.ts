@@ -5,6 +5,49 @@ import { serializeError } from '../logging/error-serialize.js';
 import { buildEnforcementError } from './blocked-result.js';
 import type { OpenCodeGovernance, ActiveGovernanceScope } from './opencode-governance.js';
 import type { OpenCodeHostAdapter } from './opencode-host-adapter.js';
+import { projectOpenCodeEvent } from './opencode-host-adapter.js';
+import { resolveGovernanceActivation } from '../adapters/governance-activation.js';
+import { handlePluginEvent } from './plugin-afterhooks.js';
+import type { FlowGuardPluginRuntime } from './plugin-shared.js';
+
+type EventRuntime = { readonly runtime: FlowGuardPluginRuntime };
+type ScopedEventRuntime = EventRuntime & { readonly scope: ActiveGovernanceScope };
+interface EventDispatchDeps {
+  readonly runtimes: ReadonlyMap<string, Promise<EventRuntime>>;
+  readonly sessionRoots: Map<string, string>;
+  readonly governance: OpenCodeGovernance;
+  readonly adapter: OpenCodeHostAdapter;
+  readonly invoke: <T>(
+    sessionId: string,
+    action: (entry: ScopedEventRuntime) => Promise<T>,
+  ) => Promise<T | undefined>;
+}
+
+/** ACTIVE-scope routing and host-specific wakeup admission, not result evidence. */
+export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDeps): Promise<void> {
+  const projected = projectOpenCodeEvent(event);
+  if (!projected) return;
+  const { adapter, governance, runtimes, sessionRoots, invoke } = deps;
+  if (event.type === 'session.deleted') {
+    adapter.forgetSession(projected.sessionId);
+    const authority = await resolveGovernanceActivation(governance.store, projected.sessionId);
+    if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
+    if (authority.kind !== 'active') return;
+    const root = sessionRoots.get(projected.sessionId);
+    const entry = root === undefined ? undefined : runtimes.get(root);
+    if (entry && authority.record.rootSessionId === projected.sessionId)
+      await handlePluginEvent((await entry).runtime, projected.event, projected.sessionId);
+    sessionRoots.delete(projected.sessionId);
+    return;
+  }
+  await invoke(projected.sessionId, async (entry) => {
+    if (event.type === 'session.execution.succeeded') {
+      if (projected.sessionId !== entry.scope.root.sessionId) return;
+      if (!(await adapter.claimSuccessfulExecutionWakeup(event))) return;
+    }
+    await handlePluginEvent(entry.runtime, projected.event, entry.scope.root.sessionId);
+  });
+}
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

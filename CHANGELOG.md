@@ -11,9 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add candidate-host validation-progress transport probes: live native tool
   events, real TUI rendering of read-only command snapshots, session/location
-  isolation and consumer-disconnect controls. Record the normal-success versus
-  idle-resume counterexample explicitly; the complete progress-feature gate
-  remains blocked. No product runtime or validation behavior changes.
+  isolation and consumer-disconnect controls. Preserve the original lifecycle
+  counterexample and its product-path regression; the complete progress-feature
+  gate remains blocked.
+
+- Resume pending OpenCode validation on an admitted native successful execution,
+  not an unconditional idle alias: verify current root-session completion and
+  reject replayed/stale notifications. Preserve canonical retry authority and
+  reject delayed notifications created inside backoff. Prove real subprocess
+  interruption, persisted attempts and open-check-only resumption in both
+  validation phases; product progress UI remains unimplemented.
 
 - Complete FlowGuard command discoverability and help on `develop`: compose
   installed, native-only and optional TUI command metadata into a

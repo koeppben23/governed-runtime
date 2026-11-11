@@ -36,7 +36,7 @@ export const PROGRESS_PROBE_RPC = {
 export const PROGRESS_PROBE_SERVER = `
 import { Rpc } from '@opencode/plugin/rpc';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, unlinkSync, appendFileSync } from 'node:fs';
+import { existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 const Contract = Rpc.define(${JSON.stringify(PROGRESS_PROBE_RPC)});
 export default Plugin.define({ id: 'flowguard-progress-probe', async setup(ctx) {
@@ -81,13 +81,6 @@ export default Plugin.define({ id: 'flowguard-progress-probe', async setup(ctx) 
   const events = (async () => {
     for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
       if (event.type.startsWith('session.')) record({ type: 'native-event', event });
-      if (event.type !== 'session.idle') continue;
-      const sessionID = event.data.sessionID;
-      const arm = join(ctx.location.directory, 'resume-' + sessionID);
-      if (!existsSync(arm)) continue;
-      const phase = readFileSync(arm, 'utf8');
-      unlinkSync(arm);
-      void run(sessionID, phase, 'idle').catch(error => record({ type: 'error', message: String(error) }));
     }
   })();
   void events.catch(error => { if (!controller.signal.aborted) record({ type: 'error', message: String(error) }); });
