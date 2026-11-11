@@ -536,8 +536,17 @@ describe('diagnostic export', () => {
         expect.objectContaining({
           sessionId: GRANDCHILD_ID,
           parentSessionId: CHILD_ID,
-          captureStatus: 'truncated',
-          lineage: 'verified',
+          captureStatus: 'not_captured',
+          lineage: 'not_verified',
+          state: 'unavailable',
+        }),
+      ]),
+    );
+    expect(graph.sessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sessionId: GRANDCHILD_ID,
+          warningCodes: expect.arrayContaining(['SESSION_LINEAGE_PARENT_INCOMPLETE']),
         }),
       ]),
     );
@@ -550,11 +559,15 @@ describe('diagnostic export', () => {
     const { fingerprint } = await rootState(rootLinkedAssurance());
     await writeReviewerState(CHILD_ID, CHILD_STATE_ID, fingerprint);
     const outputDir = path.join(ws.tmpDir, 'diag-time-budget');
-    let current = Date.parse('2026-01-01T00:00:00.000Z');
+    let calls = 0;
     const advancingClock = () => {
-      const value = new Date(current);
-      current += 10_000;
-      return value;
+      calls += 1;
+      if (calls === 1) return new Date(0);
+      if (calls === 2) return new Date(10_000);
+      // Calls 3-4 cover the two root candidate claims. The child-state read is
+      // then refused because the deadline has passed.
+      if (calls <= 4) return new Date(12_000);
+      return new Date(20_000);
     };
 
     const result = await writeDiagnosticExport(
@@ -573,6 +586,10 @@ describe('diagnostic export', () => {
     expect(result.manifest.status).toBe('PARTIAL');
     expect(result.manifest.boundary.sessionsKnown).toBe(2);
     expect(result.manifest.boundary.sessionsWithState).toBe(1);
+    expect(result.manifest.sources.discovery).toMatchObject({
+      status: 'partial',
+      truncated: true,
+    });
     expect(result.manifest.warnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -621,6 +638,13 @@ describe('diagnostic export', () => {
       expect(result.manifest.status).toBe('PARTIAL');
       expect(result.manifest.boundary.sessionsKnown).toBe(2);
       expect(result.manifest.boundary.sessionsUnavailable).toBe(1);
+      expect(result.manifest.sources.discovery).toMatchObject({
+        status: 'partial',
+        truncated: true,
+      });
+      expect(result.manifest.sources.discovery.reasons).toEqual(
+        expect.arrayContaining([expect.stringContaining(`SESSION_WORKTREE_MISMATCH:${CHILD_ID}`)]),
+      );
       expect(result.manifest.warnings).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ code: 'SESSION_WORKTREE_MISMATCH', sessionId: CHILD_ID }),

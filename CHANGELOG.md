@@ -38,8 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authorize a read. Conflicting invocation parents remain `LINEAGE_CONFLICT` and
   `not_verified`, and descendants read before the conflict are cleared. Add a
   hard `maxDiscoveryNodes` graph budget (default 250, CLI
-  `--max-discovery-nodes`) that keeps the first overflow candidate in the known
-  denominator, plus explicit `DISCOVERY_TRUNCATED`/`SESSION_LIMIT_TRUNCATED`
+  `--max-discovery-nodes`) plus bounded incremental candidate enumeration, and
+  keep the first overflow candidate in the known denominator. Time-budget stops,
+  unreadable child states and candidate-budget stops mark discovery `partial`;
+  children of a partially enumerated parent are never read and remain
+  `not_verified` with `SESSION_LINEAGE_PARENT_INCOMPLETE`. Add explicit
+  `DISCOVERY_TRUNCATED`/`DISCOVERY_CANDIDATE_LIMIT`/`SESSION_LIMIT_TRUNCATED`
   reporting. The Session Explorer now projects the same multi-level lineage and
   generation as `session-graph.json`. Complete continuation coverage remains
   explicitly `not_verified` until a bounded trusted discovery source exists.

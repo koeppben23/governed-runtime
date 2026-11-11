@@ -714,9 +714,14 @@ and observation-only candidates stay visible as `lineage: not_verified` and thei
 state/transcript is not read.
 
 Discovery has a separate hard graph budget, `maxDiscoveryNodes` (default 250,
-CLI `--max-discovery-nodes`). When it is exhausted the first overflow candidate
-remains in the known inventory but is not re-read by capture; `sources.discovery`
-becomes `partial`, and the manifest reports `DISCOVERY_NODE_LIMIT`. The
+CLI `--max-discovery-nodes`), plus a derived hard budget of four raw candidate
+records per allowed node. When a budget is exhausted the first overflow
+candidate remains in the known inventory but is not re-read by capture;
+`sources.discovery` becomes `partial`, and the manifest reports
+`DISCOVERY_NODE_LIMIT` or `DISCOVERY_CANDIDATE_LIMIT`. A time-budget stop or unreadable verified child
+state also makes discovery `partial`. A parent state that was not enumerated to
+the end never authorizes reading its children; those candidates stay
+`lineage: not_verified` with `SESSION_LINEAGE_PARENT_INCOMPLETE`. The
 `maxSessions` capture limit is independent: a verified descendant above that
 limit stays in the graph as `captureStatus: truncated` without per-session
 artifacts.

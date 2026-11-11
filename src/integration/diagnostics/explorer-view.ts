@@ -9,6 +9,7 @@
 
 import {
   DEFAULT_DIAGNOSTIC_LIMITS,
+  DEFAULT_MAX_DISCOVERY_NODES,
   type DiagnosticWarning,
 } from '../../adapters/diagnostics/export-schema.js';
 import {
@@ -26,6 +27,7 @@ export interface ExplorerViewRequest {
   readonly root: string;
   readonly sessionId: string;
   readonly maxSessions?: number;
+  readonly maxDiscoveryNodes?: number;
   /** Deterministic test seam; production uses the current clock. */
   readonly now?: () => Date;
 }
@@ -200,9 +202,9 @@ async function collectTree(
     rootSessionId: request.sessionId,
     rootState: rootResolution.state,
     rootAuthority: rootResolution,
-    // The explorer never displays more sessions than its view limit, so the
-    // view limit is also its hard discovery budget.
-    maxNodes: maxSessions,
+    // Discovery and display have separate budgets: discovery may know more
+    // verified descendants than the view displays.
+    maxNodes: request.maxDiscoveryNodes ?? DEFAULT_MAX_DISCOVERY_NODES,
     now: () => clock().getTime(),
   });
   let truncated = tree.truncated;

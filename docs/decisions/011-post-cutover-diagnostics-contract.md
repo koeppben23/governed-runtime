@@ -104,10 +104,18 @@ chain.
   **untrusted**. It must not be trusted for further scope expansion or repaired
   by the diagnostic path.
 - Discovery has its own hard graph budget, independent of the capture-session
-  limit. The first candidate that overflows `maxDiscoveryNodes` remains visible
-  in the known inventory, then traversal stops and reports
-  `DISCOVERY_NODE_LIMIT`. Candidates discovered before the stop are never
+  limit. Candidate claims are enumerated incrementally; the raw
+  invocation/attempt/observation records are also bounded relative to
+  `maxDiscoveryNodes`. The first candidate that overflows `maxDiscoveryNodes`
+  remains visible in the known inventory, then traversal stops and reports
+  `DISCOVERY_NODE_LIMIT`. Exhausting the candidate-enumeration budget reports
+  `DISCOVERY_CANDIDATE_LIMIT`. Candidates discovered before the stop are never
   removed from the denominator merely because their state was not read.
+- A parent state that was not enumerated to the end never authorizes reading
+  its children. A time-budget stop, unreadable child state or candidate-budget
+  stop marks `sources.discovery` as `partial`; children of a partially
+  enumerated parent remain `lineage: not_verified` with
+  `SESSION_LINEAGE_PARENT_INCOMPLETE` rather than being read optimistically.
 - Capture boundaries are recorded per source and per session, not only as one
   global success flag.
 
@@ -143,13 +151,18 @@ stale, duplicate, rejected, exhausted, interrupted and `outcome_unknown`
 attempts remain visible as such.
 
 Discovery is bounded by a hard `maxDiscoveryNodes` graph budget that is separate
-from `maxSessions`. When that budget is exhausted, `sources.discovery` reports
-`partial`, `truncated: true`, `DISCOVERY_NODE_LIMIT` and the known candidate
-count reached before the stop. The first overflow candidate remains visible in
-the graph but is not re-read by capture; it stays `captureStatus: truncated`
-without per-session artifacts. `maxSessions` may then truncate capture of
-verified descendants; those sessions also remain in the graph as
-`captureStatus: truncated`, and the manifest stays `PARTIAL`.
+from `maxSessions`, plus a derived hard budget of four raw candidate records per
+allowed node. When either budget is exhausted, `sources.discovery` reports
+`partial`, `truncated: true`, the precise limit reason (`DISCOVERY_NODE_LIMIT`
+or `DISCOVERY_CANDIDATE_LIMIT`) and the known candidate count reached before the
+stop. The first overflow candidate remains visible in the graph but is not
+re-read by capture; it stays `captureStatus: truncated` without per-session
+artifacts. A time-budget stop or an unreadable verified child state also marks
+discovery `partial`, because deeper descendants can no longer be enumerated.
+Children of a partially enumerated parent remain `lineage: not_verified` and are
+not read. `maxSessions` may then truncate capture of verified descendants; those
+sessions also remain in the graph as `captureStatus: truncated`, and the
+manifest stays `PARTIAL`.
 
 A known reviewer child without its own FlowGuard state is normal in the native
 host model, but it is not fully bound canonical state. The manifest therefore
@@ -290,8 +303,13 @@ Implemented in this repository state:
   and are not fetched; conflicting invocation parents remain `LINEAGE_CONFLICT`
   and are never resolved into a winning parent. The manifest reports `PARTIAL`.
 - Discovery uses a hard graph budget (`maxDiscoveryNodes`, default 250) that is
-  independent of the capture limit. Truncation keeps the first overflow
-  candidate in the known inventory and reports `DISCOVERY_NODE_LIMIT`.
+  independent of the capture limit, plus a derived hard budget of four raw
+  candidate records per allowed node. Truncation keeps the first overflow
+  candidate in the known inventory and reports `DISCOVERY_NODE_LIMIT` or
+  `DISCOVERY_CANDIDATE_LIMIT`. Time-budget stops and unreadable verified child
+  states mark discovery `partial`. A parent state that was not fully enumerated
+  never authorizes reading its children; those children remain `not_verified`
+  with `SESSION_LINEAGE_PARENT_INCOMPLETE`.
 - The snapshot verifies the canonical audit chain, preserves native session,
   message and part IDs, captures optional host transcripts through the installed
   OpenCode CLI or the native plugin context, and redacts before persistence.
@@ -440,7 +458,11 @@ as product facts:
       `LINEAGE_CONFLICT`/`not_verified`; a verified claim never wins the conflict
       and previously read descendants are cleared.
 - [ ] Discovery exhaustion keeps the first overflow candidate in the known
-      inventory, reports `DISCOVERY_NODE_LIMIT`, and prevents `COMPLETE`.
+      inventory, reports `DISCOVERY_NODE_LIMIT`/`DISCOVERY_CANDIDATE_LIMIT`, and
+      prevents `COMPLETE`.
+- [ ] A time-budget stop or unreadable verified child state marks
+      `sources.discovery` `partial`; children of a partially enumerated parent
+      are never read and remain `not_verified`.
 - [ ] Continuation coverage is explicitly `not_verified`/out of scope until a
       bounded trusted discovery source exists; no complete continuation claim is
       made.

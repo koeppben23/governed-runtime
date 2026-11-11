@@ -299,11 +299,77 @@ describe('session tree discovery', () => {
       'child-1',
       'child-2',
     ]);
-    expect(tree.sessions.find((session) => session.sessionId === 'child-2')).toMatchObject({
-      lineage: 'verified',
+    // The root state was not fully enumerated, so none of its children may be
+    // read or treated as verified.
+    for (const sessionId of ['child-1', 'child-2']) {
+      expect(tree.sessions.find((session) => session.sessionId === sessionId)).toMatchObject({
+        lineage: 'not_verified',
+        state: null,
+      });
+    }
+    expect(
+      tree.sessions.find((session) => session.sessionId === 'child-2')?.warnings.map((w) => w.code),
+    ).toContain('SESSION_LINEAGE_PARENT_INCOMPLETE');
+    expect(resolveMock).not.toHaveBeenCalled();
+  });
+
+  it('BAD — an invocation claim observed only in another parent does not authorize', async () => {
+    resolveMock.mockImplementation(async ({ sessionId }) => {
+      if (sessionId === 'claimed-parent') {
+        return resolved('claimed-parent', stateOf({ attempts: [{ child: 'child' }] }));
+      }
+      if (sessionId === 'child') return resolved('child', stateOf());
+      return absent(sessionId);
+    });
+
+    const tree = await discoverSessionTree(
+      request(
+        stateOf({
+          invocations: [
+            { parent: 'root', child: 'claimed-parent' },
+            { parent: 'claimed-parent', child: 'child' },
+          ],
+        }),
+      ),
+    );
+
+    expect(tree.sessions.find((session) => session.sessionId === 'child')).toMatchObject({
+      parentSessionId: 'claimed-parent',
+      lineage: 'not_verified',
+      authority: null,
       state: null,
     });
-    expect(resolveMock.mock.calls.map(([input]) => input.sessionId)).toEqual(['child-1']);
+    expect(resolveMock.mock.calls.map(([input]) => input.sessionId)).not.toContain('child');
+  });
+
+  it('CORNER — bounds raw candidate enumeration and stays conservative', async () => {
+    const tree = await discoverSessionTree(
+      request(
+        stateOf({
+          invocations: [
+            { parent: 'root', child: 'child-1' },
+            { parent: 'root', child: 'child-2' },
+            { parent: 'root', child: 'child-3' },
+            { parent: 'root', child: 'child-4' },
+          ],
+        }),
+        { maxNodes: 10, maxCandidates: 2 },
+      ),
+    );
+
+    expect(tree.truncated).toBe(true);
+    expect(tree.reasons).toContain('DISCOVERY_CANDIDATE_LIMIT');
+    expect(tree.sessions.map((session) => session.sessionId)).toEqual([
+      'root',
+      'child-1',
+      'child-2',
+    ]);
+    expect(
+      tree.sessions
+        .filter((session) => session.sessionId !== 'root')
+        .every((session) => session.lineage === 'not_verified'),
+    ).toBe(true);
+    expect(resolveMock).not.toHaveBeenCalled();
   });
 
   it('EDGE — keeps a verified child with missing state in the denominator', async () => {
@@ -320,20 +386,23 @@ describe('session tree discovery', () => {
     expect(tree.reasons).toContain('SESSION_STATE_ABSENT:child');
   });
 
-  it('EDGE — does not read a verified child after the time budget is exhausted', async () => {
+  it('EDGE — marks discovery partial and does not read a child after the time budget', async () => {
+    let calls = 0;
     const tree = await discoverSessionTree(
       request(stateOf({ invocations: [{ parent: 'root', child: 'child' }] }), {
         deadlineAt: 100,
-        now: () => 200,
+        // The root enumeration completes, then the child read is refused.
+        now: () => (calls++ === 0 ? 50 : 200),
       }),
     );
 
+    expect(tree.truncated).toBe(true);
+    expect(tree.reasons).toContain('CAPTURE_TIME_BUDGET_EXCEEDED:child');
     expect(tree.sessions.find((session) => session.sessionId === 'child')).toMatchObject({
       lineage: 'verified',
       authority: null,
       state: null,
     });
-    expect(tree.reasons).toContain('CAPTURE_TIME_BUDGET_EXCEEDED:child');
     expect(resolveMock).not.toHaveBeenCalled();
   });
 });

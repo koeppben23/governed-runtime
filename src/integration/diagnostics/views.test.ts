@@ -338,6 +338,30 @@ describe('diagnostic explorer view', () => {
     );
   });
 
+  it('CORNER — reports discovery truncation separately from the view limit', async () => {
+    const { fingerprint } = await writeRoot({ reviewAssurance: rootLinkedAssurance() });
+    await writeChild(fingerprint);
+
+    const view = await buildExplorerView({
+      root: ws.tmpDir,
+      sessionId: ROOT_ID,
+      maxSessions: 10,
+      maxDiscoveryNodes: 1,
+      now: FIXED_NOW,
+    });
+
+    expect(view.status).toBe('PARTIAL');
+    expect(view.sessions).toHaveLength(2);
+    expect(view.sessions[1]).toMatchObject({
+      sessionId: CHILD_ID,
+      lineage: 'not_verified',
+      warningCodes: expect.arrayContaining(['SESSION_LINEAGE_PARENT_INCOMPLETE']),
+    });
+    expect(view.warnings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'DISCOVERY_TRUNCATED' })]),
+    );
+  });
+
   it('EDGE — reports NOT_VERIFIED when the root has no canonical state', async () => {
     const view = await buildExplorerView({
       root: ws.tmpDir,
