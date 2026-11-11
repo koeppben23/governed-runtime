@@ -112,7 +112,7 @@ Start the OpenCode HTTP server for API access, optionally with basic auth:
 OPENCODE_SERVER_PASSWORD=secret opencode serve --port 4096
 ```
 
-Create a session and send a governed message through the API:
+Create a session and send an ungoverned message through the API:
 
 ```bash
 curl -u opencode:secret -X POST http://localhost:4096/session \
@@ -121,8 +121,13 @@ curl -u opencode:secret -X POST http://localhost:4096/session \
 
 curl -u opencode:secret -X POST http://localhost:4096/session/{sessionId}/message \
   -H "Content-Type: application/json" \
-  -d '{"parts": [{"type": "text", "text": "/hydrate policyMode=team-ci"}]}'
+  -d '{"parts": [{"type": "text", "text": "Inspect the project without activating FlowGuard"}]}'
 ```
+
+This text-message request does not activate governance. Native OpenCode V2
+activation requires the actual `/start [mode]` command callback or a canonically
+authorized `StartGovernance` request; sending either name as prompt text is not
+equivalent. This example is not evidence of governed HTTP/API acceptance.
 
 See the [OpenCode Server Documentation](https://opencode.ai/docs/server/) for
 the full API reference.

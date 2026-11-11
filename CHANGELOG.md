@@ -940,6 +940,14 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Use canonical host-neutral session reasons in tool helpers, verification-check
+  errors and hook session resolution instead of direct Hydrate bootstrap advice.
+  Preserve error codes and fail-closed authority checks; native OpenCode
+  activation and Claude Code/Codex MCP start behavior are unchanged.
+- Correct HTTP API guidance to show an ungoverned message rather than prompt-based
+  activation, and align ACP smoke instructions with the pinned native V2 CLI
+  candidate and the existing lifecycle-only test scope.
+
 - Correct PR #1221's shared Hydrate metadata and generic session-recovery copy:
   canonical preparation/reload remains available to the installed Claude Code
   and Codex MCP Start skills; native OpenCode activation stays enforced only by

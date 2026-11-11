@@ -20,6 +20,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import * as path from 'node:path';
 import { resolveSessionAuthority } from '../../adapters/session-authority.js';
+import { defaultReasonRegistry } from '../../config/reasons.js';
 import type { SessionState } from '../../state/schema.js';
 import { SESSION_AUTHORITY_DEADLINE_MS } from './limits.js';
 
@@ -74,10 +75,11 @@ export async function resolveSession(cwd: string, sessionId: string): Promise<Se
   if (resolution.status === 'resolved') {
     return { ok: true, state: resolution.state, sessionDir: resolution.sessDir };
   }
+  const code = existsSync(resolution.sessDir) ? 'STATE_MISSING' : 'SESSION_DIR_NOT_FOUND';
   return {
     ok: false,
-    code: existsSync(resolution.sessDir) ? 'STATE_MISSING' : 'SESSION_DIR_NOT_FOUND',
-    reason: `No session state exists at "${resolution.sessDir}". Run /hydrate to initialize.`,
+    code,
+    reason: defaultReasonRegistry.format(code, { sessDir: resolution.sessDir }).reason,
   };
 }
 

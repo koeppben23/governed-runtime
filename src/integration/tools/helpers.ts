@@ -23,6 +23,7 @@ import {
 } from '../../adapters/session-authority.js';
 // Config
 import type { FlowGuardPolicy } from '../../config/policy.js';
+import { defaultReasonRegistry } from '../../config/reasons.js';
 import { IntegrationInvariantError } from '../errors.js';
 import { createPolicyContext, resolvePolicyFromState } from './workflow-policy-context.js';
 const lockedSessionDir = new AsyncLocalStorage<string>();
@@ -183,7 +184,7 @@ export async function requireState(sessDir: string): Promise<SessionState> {
   if (!state) {
     throw new IntegrationInvariantError(
       'NO_SESSION',
-      'No FlowGuard session found. Run /hydrate first to bootstrap a session.',
+      defaultReasonRegistry.format('NO_SESSION').reason,
     );
   }
   return state;
@@ -201,7 +202,7 @@ export async function requireBoundStateForMutation(
   if (paths.state === null) {
     throw new IntegrationInvariantError(
       'NO_SESSION',
-      'No FlowGuard session found. Run /hydrate first to bootstrap a session.',
+      defaultReasonRegistry.format('NO_SESSION').reason,
     );
   }
   await verifyEvidenceArtifacts(paths.sessDir, paths.state);
@@ -565,7 +566,7 @@ async function requireFreshBoundStateUnderLock(
   if (authority.status === 'absent') {
     throw new IntegrationInvariantError(
       'NO_SESSION',
-      'No FlowGuard session found. Run /hydrate first to bootstrap a session.',
+      defaultReasonRegistry.format('NO_SESSION').reason,
     );
   }
   if (authority.sessDir !== locked.sessDir || authority.fingerprint !== locked.fingerprint) {

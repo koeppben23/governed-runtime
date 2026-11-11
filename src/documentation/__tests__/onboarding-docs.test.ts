@@ -117,6 +117,34 @@ describe('developer onboarding documentation contract', () => {
     expect(distribution.match(/curl -u opencode:secret/g)).toHaveLength(2);
   });
 
+  it('does not present an HTTP text prompt as native governance activation', () => {
+    const section = read('docs/distribution-model.md')
+      .split('### HTTP API Mode (opencode serve)')[1]
+      ?.split('### ACP Mode')[0];
+
+    expect(section).toBeDefined();
+    expect(section).toContain('ungoverned message');
+    expect(section).toContain('"text": "Inspect the project without activating FlowGuard"');
+    expect(section).toContain('does not activate governance');
+    expect(section).not.toContain('/hydrate policyMode=');
+    expect(section).not.toContain('send a governed message');
+  });
+
+  it('uses the declared native CLI candidate for ACP smoke guidance', () => {
+    const candidate = JSON.parse(read('.sdk-baselines/opencode/cli-candidate.json')) as {
+      package: string;
+      version: string;
+    };
+    const section = read('docs/troubleshooting.md')
+      .split('### ACP Smoke Tests Skipped')[1]
+      ?.split('### PERF Tests')[0];
+
+    expect(section).toBeDefined();
+    expect(section).toContain(`npm install -g ${candidate.package}@${candidate.version}`);
+    expect(section).toContain('RUN_OPENCODE_ACP_TESTS=1 npm run test:acp');
+    expect(section).not.toContain('opencode-ai');
+  });
+
   it('documents every installed command whose tool binding is not a direct name mapping', () => {
     const commands = read('docs/commands.md');
     const exceptions = INSTALLED_COMMANDS.filter((definition) => {

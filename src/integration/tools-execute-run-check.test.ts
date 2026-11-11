@@ -57,6 +57,8 @@ import {
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
+import { defaultReasonRegistry } from '../config/reasons.js';
+import * as errorFormat from './tools/error-format.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
@@ -356,10 +358,19 @@ describe('run_check', () => {
 
   describe('BAD', () => {
     it('blocks without session', async () => {
+      const boundary = vi.spyOn(errorFormat, 'formatError');
       const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('NO_SESSION');
+      expect(boundary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'NO_SESSION',
+          message: defaultReasonRegistry.format('NO_SESSION').reason,
+        }),
+      );
+      expect(result.recovery).toEqual(defaultReasonRegistry.format('NO_SESSION').recovery);
+      expect(executorMock.executeCheck).not.toHaveBeenCalled();
     });
   });
 

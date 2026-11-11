@@ -44,6 +44,7 @@ import {
 
 import type { SessionState } from '../../../state/schema.js';
 import type { FlowGuardPolicy } from '../../../config/policy.js';
+import { defaultReasonRegistry } from '../../../config/reasons.js';
 import { evaluate } from '../../../machine/evaluate.js';
 import { IntegrationInvariantError } from '../../errors.js';
 import {
@@ -183,7 +184,7 @@ async function validateAndAttest(
   if (!session.state) {
     throw new IntegrationInvariantError(
       'NO_SESSION',
-      'No FlowGuard session found — run /hydrate first.',
+      defaultReasonRegistry.format('NO_SESSION').reason,
     );
   }
   const { sessDir, state } = session;
