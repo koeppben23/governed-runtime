@@ -347,7 +347,7 @@ export const REVIEW_VALIDATION_REASONS = [
     category: 'state',
     messageTemplate: 'Session aborted: {reason}',
     recoverySteps: [
-      'For new work, prepare a trusted pre-change baseline and explicitly activate governance through host Start in a new host session with a different host-session id; hydrate and repeated Start do not restart the old ACTIVE binding',
+      'For new work, prepare a trusted pre-change baseline and follow the documented host session-start procedure in a new host session with a different host-session id; hydrate does not restart the old terminal workflow',
       'The aborted session is preserved in the audit trail',
     ],
   },
@@ -571,7 +571,7 @@ export const REVIEW_VALIDATION_REASONS = [
     recoverySteps: [
       'Run flowguard_status to see activeChecks',
       'Only execute checks listed in activeChecks',
-      'Existing sessions retain frozen checks; configure new checks before explicitly activating a distinct host session',
+      'Existing sessions retain frozen checks; configure new checks before preparing a distinct host session through its documented start procedure',
     ],
   },
 
@@ -581,7 +581,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Policy requires validation evidence before progressing past VALIDATION, but no Discovery-derived verification commands are active. VALIDATION must not pass vacuously under this policy.',
     recoverySteps: [
-      'Inspect the frozen discovery and checks. New discovery requires a distinct host session explicitly activated from a trustworthy pre-change baseline; hydrate does not recollect existing sessions',
+      'Inspect the frozen discovery and checks. New discovery requires the documented session-start procedure in a distinct host session at a trustworthy pre-change baseline; hydrate does not recollect existing sessions',
       'Execute the discovered checks with flowguard_run_check (the runtime-executed verification tool that records pass/fail evidence)',
       'If this repository genuinely has no verification commands, set validationEvidence.allowNoCommands=true in policy with explicit governance approval (the only sanctioned exception)',
     ],
@@ -605,7 +605,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Discovery detected a technology stack for this repository, but no verification commands were derived, so VALIDATION cannot pass vacuously. A detected stack with zero active checks is treated as a mis-detection hazard, not a verified "no commands" property.',
     recoverySteps: [
-      'Inspect the frozen discovery and stack commands. To collect new discovery, explicitly activate a distinct host session at a trustworthy pre-change baseline; hydrate does not recollect existing sessions',
+      'Inspect the frozen discovery and stack commands. To collect new discovery, follow the documented session-start procedure in a distinct host session at a trustworthy pre-change baseline; hydrate does not recollect existing sessions',
       'Ensure the stack wrapper/manifest (package.json scripts, mvnw/gradlew, pyproject) is at the resolved worktree root',
       'If this stack genuinely has no verification commands, set validationEvidence.allowNoCommands=true in policy with explicit governance approval (the only sanctioned exception)',
     ],

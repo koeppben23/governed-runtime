@@ -940,6 +940,15 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Correct PR #1221's shared Hydrate metadata and generic session-recovery copy:
+  canonical preparation/reload remains available to the installed Claude Code
+  and Codex MCP Start skills; native OpenCode activation stays enforced only by
+  its existing host boundary. Test real MCP `tools/list` metadata against both
+  filesystem-installed Start skills without changing runtime admission.
+- Make `CONFIG_INVALID` recovery backup-first and field-specific: preserve
+  unrelated settings, manually correct invalid keys, and retry. Never recommend
+  deleting `flowguard.json` or treating `install --force` as config migration.
+
 - Align OpenCode command templates, directly affected recovery reasons and
   product documentation with explicit V2 Start authority. Hydrate remains the
   internal preparation/reload mechanism, not external activation or authority

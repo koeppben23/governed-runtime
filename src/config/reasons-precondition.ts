@@ -46,7 +46,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     category: 'precondition',
     messageTemplate: 'Explicit policy mode violates central minimum: {message}',
     recoverySteps: [
-      'For a new workflow, explicitly activate governance with a policy mode that satisfies the central minimum through the host Start operation',
+      "For a new workflow, follow the installed host integration's documented session-start procedure with a policy mode that satisfies the central minimum",
       'Or remove explicit policyMode and allow central minimum to apply',
     ],
   },
@@ -94,7 +94,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'No validation checks configured. Configure activeChecks before starting a new governed session.',
     recoverySteps: [
-      'Configure a profile with activeChecks before explicit activation; an existing session retains its frozen checks',
+      'Configure a profile with activeChecks before preparing a new session; an existing session retains its frozen checks',
       'Ensure discovery finds verificationCandidates with commands (e.g., package.json scripts)',
     ],
   },
@@ -103,10 +103,10 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'NO_SESSION',
     category: 'precondition',
     messageTemplate:
-      'No FlowGuard session found. Explicit activation is required; hydrate cannot activate governance.',
+      "No FlowGuard session found. Follow the installed host integration's documented session-start procedure.",
     recoverySteps: [
-      'If governance is verifiably inactive, explicitly activate it through the host Start operation or an authorized StartGovernance request',
-      'If activation exists but its workflow binding is missing or unavailable, stop and restore trustworthy authority; do not recreate it',
+      'For a genuinely uninitialized session, use the documented host start procedure; it may call flowguard_hydrate to prepare workflow state where supported',
+      'If an existing session or activation binding is missing, damaged or unavailable, stop and restore trustworthy authority; do not recreate it',
     ],
   },
 
@@ -515,7 +515,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'FLOWGUARD_SESSION_DIR cannot be resolved to an existing path and is not accepted as a session authority.',
     recoverySteps: [
       'Unset FLOWGUARD_SESSION_DIR or fix the path so it names the canonical session directory',
-      'Only verified absence permits explicit host Start; unavailable or damaged authority must be restored, not initialized again',
+      'Only verified absence permits the documented host session-start procedure; unavailable or damaged authority must be restored, not initialized again',
     ],
   },
 
@@ -526,7 +526,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Hydrate cannot change the claimed task class of a terminal session (phase {phase}, current {currentTaskClass}, requested {requestedTaskClass}). Terminal sessions are read-only.',
     recoverySteps: [
       'Reload the terminal session without a claimedTaskClass argument',
-      'Start a distinct host session and explicitly activate governance there for a different task class; hydrate and repeated Start do not restart this ACTIVE binding',
+      'For a different task class, use a distinct host session and its documented start procedure; hydrate does not restart the old terminal workflow',
     ],
   },
 ];

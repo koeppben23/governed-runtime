@@ -285,11 +285,11 @@ async function executeHydrateTool(args: HydrateArgs, context: ToolContext): Prom
 
 export const hydrate: ToolDefinition = {
   description:
-    'Prepare or reload canonical workflow state inside an already authorized host path. ' +
-    'Only the explicit host Start operation or authorized StartGovernance activates governance; ' +
-    'direct hydrate cannot bootstrap activation or recreate missing authority. ' +
+    'Prepare canonical FlowGuard workflow state when no session exists, or reload the existing bound session. ' +
     'Existing sessions are retained except explicit claimedTaskClass escalation; terminal reload is read-only. ' +
-    'Internal Start preparation retains policy mode (solo/team/team-ci/regulated) and profile configuration.',
+    'Preparation supports policy mode (solo/team/team-ci/regulated) and profile configuration. ' +
+    'The host integration owns any separate activation and admission requirements. ' +
+    'Missing or damaged existing authority must not be recreated.',
   args: {
     policyMode: PolicyModeSchema.optional().describe(
       'FlowGuard policy mode. When omitted, reads from repo config ' +

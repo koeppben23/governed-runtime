@@ -311,8 +311,10 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'input',
     messageTemplate: 'Config file is invalid: {message}',
     recoverySteps: [
-      'Fix flowguard.json to match FlowGuard schema',
-      'If unsure, remove flowguard.json and re-run flowguard install to create defaults',
+      'Back up the reported flowguard.json before editing it; preserve unrelated supported settings',
+      'Manually correct the reported invalid fields against the current schema; see docs/configuration.md#breaking-change-manual-configuration-recovery',
+      'Do not delete the configuration or reset session state, activation or audit evidence; install --force does not migrate unsupported keys',
+      'After saving valid JSON, retry the failed installation or authorized operation',
     ],
   },
 
@@ -332,7 +334,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Central policy file is invalid JSON: {message}',
     recoverySteps: [
       'Fix JSON syntax in the central policy file',
-      'Validate file structure before retrying the interrupted authorized Start operation',
+      'Validate file structure before retrying the interrupted operation through the documented host session-start procedure',
     ],
   },
 
@@ -352,7 +354,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Central policy minimumMode is invalid: {message}',
     recoverySteps: [
       'Set minimumMode to one of: solo, team, regulated',
-      'Retry the interrupted authorized Start operation after updating the central policy file',
+      'After correcting the central policy file, retry through the documented host session-start procedure',
     ],
   },
 
@@ -362,7 +364,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Profile "{profile}" from config is not registered.',
     recoverySteps: [
       'Register the profile in the profile registry',
-      'Configure a supported profile before explicitly starting a new governed session',
+      'Configure a supported profile before preparing a new governed session through its host integration',
       'Remove config.profile.defaultId from flowguard.json',
     ],
   },
@@ -372,7 +374,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'state',
     messageTemplate: 'Hydrate discovery contract failed: {message}',
     recoverySteps: [
-      'Inspect the failed authorized Start preparation; retry only through its canonical recovery and verify discovery artifacts',
+      'Inspect the failed session preparation; retry only through the documented host recovery and verify discovery artifacts',
       'Do not proceed until discoveryDigest and discoverySummary are present',
     ],
   },
@@ -502,7 +504,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Policy snapshot digest version is not supported: {message}',
     recoverySteps: [
       'Use the FlowGuard version that wrote the policy snapshot',
-      'Do not mint a replacement snapshot for the existing session. New work requires a distinct host session and explicit host Start under the current contract',
+      'Do not mint a replacement snapshot for the existing session. New work requires a distinct host session and its documented session-start procedure under the current contract',
     ],
   },
 
@@ -512,7 +514,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Policy mode is invalid: {message}',
     recoverySteps: [
       'Set the policy mode to one of: solo, team, team-ci, regulated',
-      'Correct the central policy file or flowguard.json before retrying authorized Start; existing sessions retain their frozen policy',
+      'Correct the central policy file or flowguard.json before retrying the documented host session-start procedure; existing sessions retain their frozen policy',
     ],
   },
 

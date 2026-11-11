@@ -66,7 +66,7 @@ function installedPreflight(
       reasonCode: 'SESSION_REQUIRED',
       message: 'This command requires a FlowGuard session.',
       recovery:
-        'Only verified inactivity permits explicit host Start; missing or damaged bound authority must be restored, not recreated.',
+        "Follow the installed host integration's documented session-start procedure; missing or damaged bound authority must be restored, not recreated.",
     };
   }
   const operation = explicitOperationPreflight(definition, state);

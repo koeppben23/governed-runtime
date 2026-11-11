@@ -332,7 +332,7 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Worktree mismatch: expected {expected}, got {actual}',
     recoverySteps: [
       'The session was created for a different worktree',
-      'For new work, use a distinct host session in the correct directory and explicitly activate governance through host Start; do not rebind the old session',
+      'For new work, use a distinct host session in the correct directory and follow its documented session-start procedure; do not rebind the old session',
     ],
   },
 
@@ -387,7 +387,7 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'The session predates the durable audit outbox and its transition was never audited',
       'Do not advance the session — contemporaneous audit evidence is absent',
-      'Do not manufacture missing audit evidence. New work requires a distinct host session, a trustworthy pre-change baseline and explicit host Start',
+      'Do not manufacture missing audit evidence. New work requires a distinct host session, a trustworthy pre-change baseline and the documented host session-start procedure',
     ],
   },
 
@@ -398,7 +398,7 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Do not rely on completion evidence from this session',
       'Inspect the durable transition audit operation for the terminal transition',
-      'If terminal authority cannot be recovered, retain the block. New work requires a distinct host session and explicit host Start, not recreation of this binding',
+      'If terminal authority cannot be recovered, retain the block. New work requires a distinct host session and its documented start procedure, not recreation of this binding',
     ],
   },
 

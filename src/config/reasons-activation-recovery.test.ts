@@ -3,13 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { defaultReasonRegistry } from './reasons.js';
 
 describe('activation and authority recovery guidance', () => {
-  it('distinguishes verified inactivity from missing bound authority without an unconditional quick fix', () => {
+  it('defers fresh-session preparation to the host contract without imposing native activation on MCP', () => {
     const reason = defaultReasonRegistry.get('NO_SESSION');
-    expect(reason?.recoverySteps.join(' ')).toContain('verifiably inactive');
+    expect(reason?.messageTemplate).toContain('documented session-start procedure');
     expect(reason?.recoverySteps.join(' ')).toContain(
-      'host Start operation or an authorized StartGovernance',
+      'may call flowguard_hydrate to prepare workflow state where supported',
     );
     expect(reason?.recoverySteps.join(' ')).toContain('do not recreate it');
+    expect(JSON.stringify(reason)).not.toMatch(
+      /Explicit activation is required|hydrate cannot activate|StartGovernance|host Start operation/,
+    );
     expect(reason?.quickFixCommand).toBeUndefined();
   });
 
@@ -31,11 +34,46 @@ describe('activation and authority recovery guidance', () => {
     );
   });
 
-  it('keeps terminal workflows terminal and demands separate activation for new work', () => {
+  it('keeps terminal workflows terminal and requires the documented host start for new work', () => {
     const reason = defaultReasonRegistry.get('ABORTED');
     expect(reason?.recoverySteps.join(' ')).toContain('different host-session id');
-    expect(reason?.recoverySteps.join(' ')).toContain('through host Start');
-    expect(reason?.recoverySteps.join(' ')).toContain('do not restart the old ACTIVE binding');
+    expect(reason?.recoverySteps.join(' ')).toContain('documented host session-start procedure');
+    expect(reason?.recoverySteps.join(' ')).toContain('does not restart the old terminal workflow');
+  });
+
+  it('CONFIG_INVALID requires targeted manual repair, never deleting the entire configuration', () => {
+    const reason = defaultReasonRegistry.get('CONFIG_INVALID');
+    expect(reason).toBeDefined();
+    const recovery = reason?.recoverySteps.join(' ');
+    expect(recovery).toContain('Back up');
+    expect(recovery).toContain('preserve unrelated supported settings');
+    expect(recovery).toContain('Manually correct the reported invalid fields');
+    expect(recovery).toContain(
+      'docs/configuration.md#breaking-change-manual-configuration-recovery',
+    );
+    expect(recovery).toContain('install --force does not migrate unsupported keys');
+    expect(recovery).toContain('Do not delete the configuration');
+    expect(recovery).not.toMatch(/remove flowguard\.json|create defaults/);
+    expect(reason?.quickFixCommand).toBeUndefined();
+  });
+
+  it.each([
+    'NO_SESSION',
+    'EXPLICIT_WEAKER_THAN_CENTRAL',
+    'SESSION_OVERRIDE_UNRESOLVABLE',
+    'WORKTREE_MISMATCH',
+    'ABORTED',
+    'MUTATION_EPISODE_CONTROL_PLANE_MUTATED',
+    'INVALID_POLICY_MODE',
+    'HYDRATE_DISCOVERY_CONTRACT_FAILED',
+    'VALIDATION_EVIDENCE_REQUIRED',
+    'INVALID_POLICY_DIGEST_VERSION',
+  ])('%s does not impose the native activation protocol on all hosts', (code) => {
+    const reason = defaultReasonRegistry.get(code);
+    expect(reason).toBeDefined();
+    expect(JSON.stringify(reason)).not.toMatch(
+      /explicit host Start|through host Start|authorized Start|StartGovernance|Explicit activation is required|hydrate cannot activate/,
+    );
   });
 
   it('does not retain the removed non-emitted iteration reason as a compatibility registry entry', () => {
