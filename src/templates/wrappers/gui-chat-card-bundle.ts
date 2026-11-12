@@ -145,6 +145,27 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   const [snapshot, setSnapshot] = createSignal(null);
   const [presentation, setPresentation] = createSignal(null);
   const [latestReport, setLatestReport] = createSignal(null);
+  function openChoice(session) {
+    if (disposed || !isCurrentSession(ctx, session)) return;
+    void choose(ctx, session, () => !disposed).catch(() => {
+      if (!disposed && isCurrentSession(ctx, session))
+        toast(ctx, 'FlowGuard action could not be confirmed. Read /status before retrying.', 'error');
+    });
+  }
+  async function openReport(session) {
+    try {
+      const next = await getView(session);
+      if (disposed || !isCurrentSession(ctx, session) || !next || next.sessionID !== session.id) return;
+      const report = latestReport();
+      const reportText = report && report.sessionID === session.id ? report.message : null;
+      await ctx.dialogs.alert({ title: 'FlowGuard session and report',
+        description: [next.summary, reportText].filter(Boolean).join('\\n\\n') ||
+          'Canonical FlowGuard status is unavailable. Use /status for recovery.' });
+    } catch (_) {
+      if (!disposed && isCurrentSession(ctx, session))
+        toast(ctx, 'FlowGuard report unavailable. Use /status.', 'error');
+    }
+  }
   let announcedPresentation = null;
   function announceCurrentPresentation(session, next) {
     const event = presentation();
@@ -152,6 +173,9 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         event.phase !== next.phase || event.id === announcedPresentation) return;
     announcedPresentation = event.id;
     toast(ctx, event.message, event.kind === 'decision' ? 'success' : 'default');
+    // An explicit Start notice can open the chooser, never choose a workflow.
+    if (event.kind === 'notice' && next.kind === 'choose_flow' && !ctx.dialogs.active())
+      openChoice(session);
   }
   const presentationWatcher = createFlowGuardPresentationWatcher(ctx,
     (session, after) => flowguardGuiRpcClient(session).getPresentation(after),
@@ -294,6 +318,19 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
           detail: 'Read-only; no agent prompt or governance mutation',
           run: () => void inspect(input.session),
         }];
+        if (matched && (state.status === 'choose_flow' || state.status === 'next_action' ||
+            state.status === 'decision_required')) {
+          rows.unshift({ id: 'choose',
+            label: state.status === 'choose_flow' ? 'Choose workflow' : 'Open next action or decision',
+            detail: state.actionHint || 'Re-read canonical state before any action',
+            run: () => openChoice(input.session) });
+        }
+        const report = latestReport();
+        if ((matched && state.summary) || (report && report.sessionID === input.session.id)) {
+          rows.push({ id: 'report', label: 'Read Start, approval and check results',
+            detail: 'Read-only canonical session report',
+            run: () => void openReport(input.session) });
+        }
         if (latestForSession) {
           rows.unshift({ id: 'presentation', label: latestForSession.message,
             detail: latestForSession.kind + ' · ' + latestForSession.occurredAt });
@@ -312,28 +349,6 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
             state.status === 'stale') ? 'warning' : undefined),
           rows: rows,
         };
-      },
-      menu: (input) => {
-        const report = latestReport();
-        const state = snapshot();
-        const summary = state && state.key === probeSessionKey(input.session) ? state.summary : null;
-        const reportText = report && input.session && report.sessionID === input.session.id ? report.message : null;
-        const text = [summary, reportText].filter(Boolean).join('\\n\\n') ||
-          'Canonical FlowGuard status is unavailable. Inspect or refresh this session; use /status for recovery.';
-        try {
-          const { createComponent } = require('solid-js');
-          if (typeof createComponent === 'function' && ctx.ui && typeof ctx.ui.Markdown === 'function') {
-            return createComponent(ctx.ui.Markdown, { text: text });
-          }
-        } catch (error) {
-          console.warn('[FlowGuard] Markdown report rendering unavailable.', error);
-        }
-        const pre = document.createElement('pre');
-        pre.textContent = text;
-        pre.style.whiteSpace = 'pre-wrap';
-        pre.style.overflowWrap = 'anywhere';
-        pre.style.margin = '0';
-        return pre;
       },
     });
   } catch (error) {

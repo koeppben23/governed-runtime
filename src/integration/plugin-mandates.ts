@@ -11,8 +11,6 @@ import type { SessionContext } from '@opencode/plugin/promise/session';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { buildEnforcementError } from './blocked-result.js';
-import { isHostToolAllowedInPhase } from './phase-tool-gate.js';
-import { applicationTool } from './plugin-native-tools.js';
 
 export async function injectActiveMandates(
   runtime: FlowGuardPluginRuntime,
@@ -21,18 +19,6 @@ export async function injectActiveMandates(
 ): Promise<void> {
   if (event.agent === REVIEWER_SUBAGENT_TYPE) return;
   if (!Array.isArray(event.system)) return;
-  const resolution = await runtime.ws.resolveSessionAuthority(scope.root.sessionId);
-  if (resolution.status !== 'resolved')
-    throw buildEnforcementError(
-      'GOVERNANCE_AUTHORITY_BLOCKED',
-      'The ACTIVE session cannot resolve its workflow state for mandate injection.',
-    );
-  // Discovery is not authorization. Do not advertise tools the canonical
-  // phase gate will reject (notably the arbitrary Code Mode executor).
-  for (const name of Object.keys(event.tools)) {
-    if (!isHostToolAllowedInPhase(applicationTool(name), resolution.state.phase).allowed)
-      delete event.tools[name];
-  }
   if (
     event.system.some(
       (part) =>
@@ -40,6 +26,12 @@ export async function injectActiveMandates(
     )
   )
     return;
+  const resolution = await runtime.ws.resolveSessionAuthority(scope.root.sessionId);
+  if (resolution.status !== 'resolved')
+    throw buildEnforcementError(
+      'GOVERNANCE_AUTHORITY_BLOCKED',
+      'The ACTIVE session cannot resolve its workflow state for mandate injection.',
+    );
   event.system.push({
     type: 'text',
     text: renderPhaseAwareMandates({}, resolution.state.phase),

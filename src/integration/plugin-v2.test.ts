@@ -471,7 +471,7 @@ describe('native V2 entrypoint', () => {
     expect(host.prompt).not.toHaveBeenCalled();
   });
 
-  it('preserves parent model/variant and options while hiding canonically denied ACTIVE tools', async () => {
+  it('does not change parent model/variant, options or tools; adds only ACTIVE mandates', async () => {
     const host = await setup(['parent']);
     const request = {
       sessionID: 'parent',
@@ -479,14 +479,14 @@ describe('native V2 entrypoint', () => {
       model: { providerID: 'any-provider', id: 'any-model', variant: 'custom-native-effort' },
       system: [] as Array<{ type: string; text: string; metadata?: Record<string, unknown> }>,
       messages: [],
-      tools: { shell: {}, read: {} },
+      tools: { shell: {} },
       options: { reasoningEffort: 'native' },
     };
     const before = structuredClone(request);
     await host.request(request);
     expect(request.model).toEqual(before.model);
     expect(request.options).toEqual(before.options);
-    expect(request.tools).toEqual({ read: {} });
+    expect(request.tools).toEqual(before.tools);
     expect(request.messages).toEqual(before.messages);
     expect(request.system).toHaveLength(1);
     expect(request.system[0]).toMatchObject({
@@ -740,11 +740,7 @@ describe('native V2 entrypoint', () => {
         system: [],
       };
       await host.sessionHooks.get(hook)!(view);
-      expect(view.tools).toEqual(
-        hook === 'context'
-          ? { flowguard_plan: {}, flowguard_help: {} }
-          : { flowguard_plan: {}, flowguard_help: {}, shell: {} },
-      );
+      expect(view.tools).toEqual({ flowguard_plan: {}, flowguard_help: {}, shell: {} });
     },
   );
 

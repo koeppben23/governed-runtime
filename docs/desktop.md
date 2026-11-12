@@ -53,19 +53,27 @@ The optional ComposerPill appears above the OpenCode Desktop chat composer, not
 in the conversation transcript. It is a live, read-only diagnostic view.
 
 - It renders a session-bound status label and an explicit Inspect/Refresh row.
+  Its menu also offers **Choose workflow** or **Open next action or decision**
+  when the canonical state permits one. Selecting an action opens the existing
+  revision-bound chooser; it never automatically chooses a command. A fresh
+  `/start` notice opens the workflow choice once unless another dialog is open.
 - It reads canonical `GetNextAction` and, at review gates,
   `GetWorkbenchReview`. It also reads the ephemeral, non-authoritative
   `GetPresentation` page while mounted, so validation progress and decision
   notices are visible without creating a user message or model turn. A
-  diagnostic report is available from the pill popover. It never starts a
-  workflow, hydrates a session, submits a decision, writes audit events or asks
-  the model to continue.
+  canonical Start/approval/check report is available through **Read Start,
+  approval and check results**, which opens a read-only native dialog and
+  survives an empty presentation queue after reload. Reading status/report data
+  never starts a workflow, hydrates a session, submits a decision, writes audit
+  events or asks the model to continue. Explicit chooser selections use the
+  existing command/decision path with state/session revalidation.
 - `GetPresentation` is a bounded in-memory convenience channel. It is not audit
   or workflow evidence; a reload loses it and canonical reads remain the source
   of truth. Failed reads are ignored, not promoted into a governance failure.
-- The canonical pill read is not fetched at plugin registration. A user refresh
-  or an observed current-session `session.execution.succeeded` event triggers
-  it. A best-effort 30-second reconciler refreshes only the visible current
+- The canonical pill read is not fetched at plugin registration. First display,
+  session changes, user refresh, presentation notices and an observed
+  current-session `session.execution.succeeded` event trigger it. A best-effort
+  five-second reconciler refreshes only the visible current
   session while the GUI is connected. Presentation polling starts only when the
   pill is mounted, runs about once per second while the window is visible, and
   stops with the plugin.
@@ -76,6 +84,8 @@ in the conversation transcript. It is a live, read-only diagnostic view.
 - The pill never inserts a synthetic message into model context. The earlier
   synthetic-message prototype was removed.
 - The pill relies on the host's native button/menu semantics and exposed label.
+  It does not supply a custom `ComposerPill.menu`, which would suppress the
+  host's normal action rows in the pinned SDK.
   The chat card and Workbench expose named regions with polite, atomic status
   announcements. Static accessibility hardening is installed-verified; an
   independent VoiceOver/screenreader acceptance remains open.

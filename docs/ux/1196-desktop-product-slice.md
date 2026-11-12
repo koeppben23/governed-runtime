@@ -148,9 +148,11 @@ Both surfaces are installed-verified on Desktop 2.2.6 artifact `e054159a`
 - The palette action **FlowGuard: inspect status beside chat** (`flowguard-inline`)
   refreshes one session-bound status pill by calling the existing read-only
   `GetNextAction` and, for review gates, `GetWorkbenchReview` RPCs.
-- The pill also exposes **Inspect/Refresh canonical status**. Nothing is
-  fetched on plugin registration. User action or an observed current-session
-  execution-completed event performs the RPC reads.
+- The pill exposes **Inspect/Refresh canonical status**, a canonical report
+  dialog, and an explicit workflow/next-action chooser row. It uses native rows,
+  not a custom popover that suppresses those rows. Nothing is fetched on plugin
+  registration; first display/session change, user action, presentation events,
+  completion events and five-second visible reconciliation perform the reads.
 - No synthetic message is inserted. An earlier prototype used
   `session.synthetic({ resume: false })`, but that could introduce
   otherwise non-authoritative UI notices into future model context.
@@ -162,7 +164,10 @@ Both surfaces are installed-verified on Desktop 2.2.6 artifact `e054159a`
   review snapshots, and never authorize decisions. Review digest/phase
   consistency is re-read; missing or stale data fails closed.
 - No automatic host-command execution, decision RPC, hydration or audit write
-  occurs from the pill or block. Existing `/status` portable fallback remains.
+  occurs from the pill or block. Explicit menu selection opens the existing
+  chooser and retains its canonical state/session checks. A fresh Start notice
+  opens workflow choice once unless another dialog is open, without selecting
+  a workflow. Existing `/status` portable fallback remains.
 - Unsupported GUI contributions must degrade without disabling other parts of
   FlowGuard. TUI/headless and existing command templates are unchanged.
 - Installed Desktop 2.2.6 acceptance on artifact `e054159a` covers actual pill

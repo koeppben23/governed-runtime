@@ -199,7 +199,7 @@ Desktop acceptance.
   grants no decision authority, and does not insert a model message. Foreign
   native locations receive no summary.
 - The Desktop status pill inspects on first display/session change and
-  reconciles every five seconds while visible. Its popover retains the
+  reconciles every five seconds while visible. Its report menu action opens the
   reconstructible summary after plugin/server reload. Canonical phase labels
   take precedence over old presentation events; notices from an earlier phase
   cannot replace the current status. The small progress/status surface is kept.
@@ -209,16 +209,51 @@ Desktop acceptance.
   validation callback as native decisions, including `IMPL_VALIDATION`.
   Preparation is still not a confirmed subprocess start. Completed check facts
   come from persisted `ValidationAttempt`s, not from progress notifications.
-- ACTIVE model catalogues omit host tools rejected by the canonical phase
-  gate. In particular, Code Mode `execute` is not newly authorized; direct
-  invocation is still denied. INACTIVE sessions keep their native catalogue.
-- The demo's positive and adversarial declarations used the same JUnit oracle
-  under `test` and `build`. Declaration admission and persisted-contract
-  evaluation now reject that reuse as `evidence_role_collision`. Distinct
-  runner/attempt IDs do not establish oracle independence. This is not proof
-  that a faulty variant ran: plans requiring that execution must use verified
-  mutation evidence; free-text promises are not automatically converted into
-  executable mutation profiles.
+
+The `fd4c845e` follow-up also changed assertion-role admission and ACTIVE tool
+catalogue filtering. Those were outside the GUI request and are **reverted**:
+the production authorities are restored byte-for-byte to `f5fb1b8a`, not
+replaced with a compatibility mode or a special exception for the demo. Existing
+same-check/execution collision checks and host execution guards remain intact.
+The current GUI correction does not claim stronger oracle independence or
+faulty-variant execution.
+
+#### Installed live counterexample and GUI correction
+
+The subsequent installed Desktop 2.2.7 run used `fd4c845e`, root session
+`ses_e2f8dde83ffejOscS1zLde2i6g`. Start activated at 15:48:23 UTC and task
+capture succeeded at 15:53:47 UTC. Plan admission at 15:54:14 UTC failed because
+the added assertion-role rule rejected the same JUnit assertion under `test`
+and `build`. That is an observable out-of-scope regression, not a failed GUI
+test or a reason to withdraw the operator's claims. The live session was only
+read; no decisions, tool calls, resets or installation changes were made by
+this diagnosis.
+
+The GUI had also supplied both `ComposerPill.menu` and `show().rows`. The pinned
+SDK explicitly states that a custom `menu` makes `rows` unused, so the report
+popover hid all ordinary action rows. The correction removes that custom menu
+and exposes workflow/next-action selection, refresh, and a canonical report
+dialog through actual host menu rows. A fresh Start notice opens the chooser
+once if no dialog is already open; it never selects or executes a workflow.
+Session/state revalidation still owns every selected action. `/approve` does
+not open an automatic next-action dialog or start implementation.
+
+During a three-minute read-only watch the live phase stayed TICKET and the
+Desktop logged another 180 event-stream disconnects. The existing
+`ERR_INSUFFICIENT_RESOURCES` message is corroborated, but its cause is not
+established and no host fix is claimed.
+
+The correction's GUI tests exercise the actual menu rows, Start cancellation
+and a busy dialog, report reads after reload, stale sessions and plugin unload,
+and approval feedback with no automatic implementation. The real candidate
+2.2.5 decision/resume/Start suites passed 11/11. A byte comparison confirms the
+six restored production authorities plus `docs/proofgraph.md` exactly match
+`f5fb1b8a`. Focused mutation of the restored independence module scored 96.55%
+(28 killed, one survived, zero uncovered, 21 compile-rejected) against the
+unchanged 80% break threshold. The surviving optional-adversarial branch is a
+test gap, not a reason to change the restored production contract. Report:
+`opencode/flowguard-last-run-repair/scope-restoration-mutation.json`. This is
+not whole-profile mutation or installed GUI acceptance.
 
 The same Desktop run logged 399 global event-stream disconnects and an
 `ERR_INSUFFICIENT_RESOURCES` diagnostic. A later restart failed to load a
@@ -227,7 +262,7 @@ cause nor the removal of the local config/demo directories was established.
 This repair does not restart the user's service, recreate those directories,
 alter incident sessions, or claim to fix those separate host failures.
 
-#### Follow-up verification
+#### Historical verification of superseded `fd4c845e`
 
 Final functional unit tests passed **8,643** (57 skipped), integration passed
 **4,642** across 264 files, and architecture passed **554**. Build, TypeScript,
@@ -249,7 +284,8 @@ script, and two Start location-activation HTTP 503 responses. The Start failures
 did not reproduce in an isolated 2/2 rerun or the final serial 11/11 run; their
 cause remains unverified. No host-read retry policy was relaxed.
 
-Focused mutation of `src/audit/proofgraph/evidence-role-independence.ts` scored
+Before the scope restoration, focused mutation of
+`src/audit/proofgraph/evidence-role-independence.ts` scored
 **100%**: 41 killed, zero survived, zero uncovered, 32 compile-rejected, with
 the existing 80% break threshold unchanged. The first run scored 95% with two
 survivors; new distinct-oracle and optional-adversarial tests cover both gaps.

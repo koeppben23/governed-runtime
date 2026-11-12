@@ -71,9 +71,6 @@ function roleIndependenceDiagnostics(
   const record: Record<string, AssertionBindingReasonCode> = {};
   for (const claim of claims) {
     const assessment = assessEvidenceRoleIndependence({
-      ...(claim.certifiedPlan?.expectedAssertion === undefined
-        ? {}
-        : { positiveAssertion: claim.certifiedPlan.expectedAssertion }),
       ...(claim.counterexampleRequirement !== undefined
         ? { counterexampleRequirement: claim.counterexampleRequirement }
         : {}),

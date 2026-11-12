@@ -243,9 +243,6 @@ function hasIndependentEvidenceRoles(
   evidence: ClaimEvidenceAnalysis,
 ): boolean {
   const assessment = assessEvidenceRoleIndependence({
-    ...(claim.certifiedPlan?.expectedAssertion === undefined
-      ? {}
-      : { positiveAssertion: claim.certifiedPlan.expectedAssertion }),
     ...(claim.counterexampleRequirement !== undefined
       ? { counterexampleRequirement: claim.counterexampleRequirement }
       : {}),

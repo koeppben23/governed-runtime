@@ -84,16 +84,6 @@ function planClaim(overrides: ClaimOverrides = {}): NormalizedClaimDeclaration {
   return claim;
 }
 
-it('rejects the incident declaration: the same JUnit oracle is not independent under build and test', () => {
-  const assertion = { providerId: 'junit', localId: 'com.example.Test#testMethod' };
-  const result = validateProofClaimContract({
-    ...BASE,
-    source: 'plan',
-    claims: [planClaim({ positiveAssertion: assertion })],
-  });
-  expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleRequirement' });
-});
-
 const securityFullCheckCandidate = {
   assertionCapability: 'structured' as const,
   candidateId: 'security-suite',

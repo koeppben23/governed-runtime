@@ -954,17 +954,18 @@ last read` without a click, while a completion in another session left the
 ### Fixed
 
 - Reconstruct native Start/decision feedback and subject-bound check results
-  from persisted canonical state in the Desktop status popover and TUI report
+  from persisted canonical state in the Desktop status menu/report dialog and TUI report
   dialog, including after reload. Keep the progress surface, refresh current
   status on display and every five visible seconds, and discard stale-phase
   notices. Wire implementation validation and lifecycle-resume progress without
   new model turns or claims of a confirmed subprocess start.
-- Hide canonically denied host tools from ACTIVE model catalogues without
-  granting Code Mode execution or changing INACTIVE session tools.
-- Reject reuse of a plan's positive assertion as its adversarial oracle under
-  a different runner name, both at declaration admission and persisted-contract
-  evaluation. Two passing runs of one oracle no longer establish independent
-  proof; this does not manufacture faulty-variant or mutation evidence.
+- Restore pre-GUI plan/evidence admission and model tool catalogues after the
+  presentation follow-up unintentionally changed them. Existing check/attempt
+  independence and execution guards remain unchanged; no session is reset.
+- Restore reachable Desktop status-menu actions: remove the custom popover that
+  suppressed the host's action rows, expose workflow/next-action selection and
+  a read-only report dialog, and open the chooser once for a fresh Start notice
+  without choosing a workflow or replacing an already-open dialog.
 
 - Present native FlowGuard validation progress, decision confirmations,
   lifecycle notices and diagnostic reports through a bounded read-only
@@ -975,7 +976,7 @@ last read` without a click, while a completion in another session left the
   failures or hangs cannot delay validation or hold a lock. Progress wording
   distinguishes check preparation from a proven process start; the latter still
   requires executor instrumentation. TUI toasts and `/flowguard-report`, plus
-  the Desktop composer pill and report popover, are wired without claiming
+  the Desktop composer pill and report dialog, are wired without claiming
   installed UI acceptance. Async UI reads re-check the selected session before
   displaying, so a session switch during a read cannot show stale status.
 

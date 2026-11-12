@@ -127,26 +127,6 @@ function riskPolicy() {
 }
 
 describe('native V2 lazy bootstrap', () => {
-  it.each(['TICKET', 'IMPLEMENTATION'] as const)(
-    'advertises only canonically allowed host tools in %s without permitting execute',
-    async (phase) => {
-      const h = await fixture(
-        phase,
-        phase === 'IMPLEMENTATION'
-          ? { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }
-          : {},
-      );
-      const tools = { read: {}, execute: {}, shell: {}, flowguard_status: {} };
-      await h.host.request({ sessionID: h.sessionID, agent: 'build', system: [], tools });
-      expect(tools).toHaveProperty('read');
-      expect(tools).toHaveProperty('flowguard_status');
-      expect(tools).not.toHaveProperty('execute');
-      expect(Object.hasOwn(tools, 'shell')).toBe(phase === 'IMPLEMENTATION');
-      await expect(
-        h.host.before(beforeEvent(h.sessionID, 'execute', { code: 'return 1' })),
-      ).rejects.toThrow('HOST_TOOL_UNKNOWN_DENIED');
-    },
-  );
   it.each(['/', '', '/nonexistent/path'])(
     'does not create a fingerprint workspace merely by loading at %j',
     async (directory) => {

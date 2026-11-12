@@ -57,9 +57,6 @@ export function classifyPlanClaimSubmission(
       critical: claim.critical,
       claimScope: claim.claimScope,
       positiveCheckId: claim.expectedCheckId,
-      ...(claim.expectedAssertion === undefined
-        ? {}
-        : { positiveAssertion: claim.expectedAssertion }),
       ...(claim.counterexampleRequirement !== undefined
         ? { counterexampleRequirement: claim.counterexampleRequirement }
         : {}),

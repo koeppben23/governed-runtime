@@ -33,9 +33,11 @@ function load(
     add,
     layout: { open: vi.fn() },
     dialogs: {
-      select: vi.fn(async () => '/task'),
+      select: vi.fn(async (): Promise<string | undefined> => '/task'),
       prompt: vi.fn(async () => 'Task description.'),
       confirm: vi.fn(async () => true),
+      alert: vi.fn(async (_options: { title: string; description?: string }) => {}),
+      active: vi.fn(() => false),
     },
     sessions: { current: () => session },
     toast: { show: vi.fn() },
@@ -450,7 +452,7 @@ describe('installed Desktop GUI bundle', () => {
     },
   );
 
-  it('recovers decision and check feedback after reload with an empty presentation queue', async () => {
+  it('exposes approval results through a real pill row after reload, without suppressing actions with a custom menu', async () => {
     vi.stubGlobal('document', {
       createElement: (tag: string) => new FakeDomNode(tag),
       visibilityState: 'visible',
@@ -458,7 +460,7 @@ describe('installed Desktop GUI bundle', () => {
     try {
       for (let reload = 0; reload < 2; reload++) {
         const loaded = load({}, {});
-        loaded.views.push({
+        const view = {
           kind: 'next_action',
           sessionID: 'ses_root',
           stateDigest: 'current',
@@ -467,18 +469,34 @@ describe('installed Desktop GUI bundle', () => {
           actions: [{ invocation: '/implement' }],
           summary:
             'Plan approval recorded.\nbaseline / build: passed; attempt durable-id.\nNext: /implement',
-        });
-        const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
-          show(input: { session: unknown }): { label: string };
-          menu(input: { session: unknown }): FakeDomNode;
         };
+        loaded.views.push(view);
+        const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+          show(input: { session: unknown }): {
+            label: string;
+            rows: Array<{ id: string; run?: () => void }>;
+          };
+        };
+        // The pinned SDK ignores rows when menu is defined. Do not test a
+        // renderer directly while the actual host hides its action rows.
+        expect(pill).not.toHaveProperty('menu');
         const input = { session: loaded.host.sessions.current() };
         pill.show(input);
         await vi.waitFor(() =>
-          expect(pill.menu(input).textContent).toContain('Plan approval recorded'),
+          expect(pill.show(input).rows.some((row) => row.id === 'report')).toBe(true),
         );
-        expect(pill.menu(input).textContent).toContain('attempt durable-id');
-        expect(pill.menu(input).textContent).toContain('/implement');
+        expect(pill.show(input).rows.some((row) => row.id === 'choose')).toBe(true);
+        loaded.views.push(view);
+        pill
+          .show(input)
+          .rows.find((row) => row.id === 'report')
+          ?.run?.();
+        await vi.waitFor(() =>
+          expect(loaded.host.dialogs.alert).toHaveBeenCalledWith({
+            title: 'FlowGuard session and report',
+            description: view.summary,
+          }),
+        );
         expect(loaded.commandCalls).toEqual([]);
       }
     } finally {
@@ -516,6 +534,238 @@ describe('installed Desktop GUI bundle', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(pill.show({ session }).rows.some((row) => row.label.includes('PLAN'))).toBe(false);
     expect(loaded.commandCalls).toHaveLength(0);
+  });
+
+  it('opens the workflow chooser from the actual status-pill action row', async () => {
+    const loaded = load({}, {});
+    const view = {
+      kind: 'choose_flow',
+      sessionID: 'ses_root',
+      phase: 'READY',
+      stateDigest: 'a',
+      activationId: 'activation',
+      activationGeneration: 1,
+      policyDigest: 'policy',
+      decisionBinding: null,
+      title: 'Choose workflow',
+      summary: 'Governance ACTIVE',
+      actions: ['/task', '/architecture', '/review'].map((invocation) => ({
+        invocation,
+        description: invocation,
+        visibility: 'available',
+      })),
+    };
+    loaded.views.push(view);
+    const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+      show(input: { session: unknown }): { rows: Array<{ id: string; run?: () => void }> };
+    };
+    const input = { session: loaded.host.sessions.current() };
+    pill.show(input);
+    await vi.waitFor(() =>
+      expect(pill.show(input).rows.some((row) => row.id === 'choose')).toBe(true),
+    );
+    expect(pill).not.toHaveProperty('menu');
+    expect(loaded.host.dialogs.select).not.toHaveBeenCalled();
+    loaded.views.push(view, view);
+    pill
+      .show(input)
+      .rows.find((row) => row.id === 'choose')
+      ?.run?.();
+    await vi.waitFor(() =>
+      expect(loaded.commandCalls).toEqual([
+        { sessionID: 'ses_root', name: 'task', text: 'Task description.' },
+      ]),
+    );
+    expect(loaded.host.dialogs.select).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.arrayContaining(
+          ['/task', '/architecture', '/review'].map((value) => expect.objectContaining({ value })),
+        ),
+      }),
+    );
+  });
+
+  it.each([false, true])(
+    'presents the Start choice once without automatically selecting a workflow (dialog busy: %s)',
+    async (busy) => {
+      vi.useFakeTimers();
+      try {
+        const loaded = load({}, {});
+        loaded.host.dialogs.active.mockReturnValue(busy);
+        loaded.host.dialogs.select.mockResolvedValue(undefined);
+        const ready = {
+          kind: 'choose_flow',
+          sessionID: 'ses_root',
+          stateDigest: 'ready',
+          phase: 'READY',
+          title: 'Choose workflow',
+          summary: 'Governance ACTIVE',
+          actions: [
+            { invocation: '/task', description: 'Capture a task', visibility: 'available' },
+          ],
+        };
+        const page = {
+          events: [
+            {
+              id: 'start',
+              sessionID: 'ses_root',
+              kind: 'notice',
+              phase: 'READY',
+              message: 'FlowGuard governance is ACTIVE',
+              occurredAt: '2026-11-12T15:48:23Z',
+            },
+          ],
+          cursor: 'start',
+        };
+        loaded.views.push(ready, page, ready);
+        if (!busy) loaded.views.push(ready);
+        const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+          show(input: { session: unknown }): { rows: Array<{ id: string }> };
+        };
+        const input = { session: loaded.host.sessions.current() };
+        pill.show(input);
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(loaded.host.dialogs.select).toHaveBeenCalledTimes(busy ? 0 : 1);
+        expect(pill.show(input).rows.some((row) => row.id === 'choose')).toBe(true);
+        expect(loaded.commandCalls).toEqual([]);
+        expect(loaded.host.dialogs.prompt).not.toHaveBeenCalled();
+        loaded.views.push(page, ready);
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(loaded.host.dialogs.select).toHaveBeenCalledTimes(busy ? 0 : 1);
+        expect(loaded.commandCalls).toEqual([]);
+      } finally {
+        for (const cleanup of pluginCleanups.splice(0).reverse()) cleanup();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('keeps approval feedback visible without opening a chooser or starting implementation automatically', async () => {
+    vi.useFakeTimers();
+    try {
+      const loaded = load({}, {});
+      const view = {
+        kind: 'next_action',
+        sessionID: 'ses_root',
+        stateDigest: 'impl',
+        phase: 'IMPLEMENTATION',
+        title: 'Implementation required',
+        actions: [{ invocation: '/implement', description: 'Record implementation' }],
+        summary: 'Plan approval recorded. Baseline checks passed. Next: /implement',
+      };
+      loaded.views.push(
+        view,
+        {
+          events: [
+            {
+              id: 'approved',
+              sessionID: 'ses_root',
+              kind: 'decision',
+              phase: 'IMPLEMENTATION',
+              message: 'Decision recorded',
+              occurredAt: '2026-11-12T00:00:00Z',
+            },
+          ],
+          cursor: 'approved',
+        },
+        view,
+      );
+      const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+        show(input: { session: unknown }): { rows: Array<{ id: string }> };
+      };
+      const input = { session: loaded.host.sessions.current() };
+      pill.show(input);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(pill.show(input).rows.map((row) => row.id)).toEqual(
+        expect.arrayContaining(['choose', 'report', 'refresh']),
+      );
+      expect(loaded.host.dialogs.select).not.toHaveBeenCalled();
+      expect(loaded.commandCalls).toEqual([]);
+    } finally {
+      for (const cleanup of pluginCleanups.splice(0).reverse()) cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not run a pill workflow selection that returns after plugin unload', async () => {
+    const loaded = load({}, {});
+    const view = {
+      kind: 'choose_flow',
+      sessionID: 'ses_root',
+      stateDigest: 'ready',
+      phase: 'READY',
+      title: 'Choose workflow',
+      actions: [{ invocation: '/task', description: 'Capture task' }],
+    };
+    loaded.views.push(view);
+    const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+      show(input: { session: unknown }): { rows: Array<{ id: string; run?: () => void }> };
+    };
+    const input = { session: loaded.host.sessions.current() };
+    pill.show(input);
+    await vi.waitFor(() =>
+      expect(pill.show(input).rows.some((row) => row.id === 'choose')).toBe(true),
+    );
+    let resolve: (value: string) => void = () => {};
+    loaded.host.dialogs.select.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    loaded.views.push(view);
+    pill
+      .show(input)
+      .rows.find((row) => row.id === 'choose')
+      ?.run?.();
+    await vi.waitFor(() => expect(loaded.host.dialogs.select).toHaveBeenCalledOnce());
+    for (const cleanup of pluginCleanups.splice(0).reverse()) cleanup();
+    resolve('/task');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(loaded.host.dialogs.prompt).not.toHaveBeenCalled();
+    expect(loaded.commandCalls).toEqual([]);
+  });
+
+  it('does not show a late canonical report for a different session', async () => {
+    const loaded = load({}, {});
+    const view = {
+      kind: 'next_action',
+      sessionID: 'ses_root',
+      stateDigest: 'impl',
+      phase: 'IMPLEMENTATION',
+      title: 'Implement',
+      actions: [{ invocation: '/implement' }],
+      summary: 'Plan approval recorded',
+    };
+    loaded.views.push(view);
+    const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+      show(input: { session: unknown }): { rows: Array<{ id: string; run?: () => void }> };
+    };
+    const session = loaded.host.sessions.current();
+    const input = { session };
+    pill.show(input);
+    await vi.waitFor(() =>
+      expect(pill.show(input).rows.some((row) => row.id === 'report')).toBe(true),
+    );
+    const client = (session.server as { client: { rpc: { call: unknown } } }).client;
+    let resolve: (value: unknown) => void = () => {};
+    client.rpc.call = vi.fn(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    pill
+      .show(input)
+      .rows.find((row) => row.id === 'report')
+      ?.run?.();
+    loaded.host.sessions.current = () => ({ id: 'other', server: { id: 'sidecar' } });
+    resolve({ output: view });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(loaded.host.dialogs.alert).not.toHaveBeenCalled();
+    expect(loaded.commandCalls).toEqual([]);
   });
 
   it('subscribes to the sidecar completion event and refreshes only the current session', async () => {

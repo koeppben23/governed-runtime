@@ -40,6 +40,47 @@ const state = makeState('TICKET', {
 });
 
 describe('plan claim admission boundary', () => {
+  it.each(['build', 'test'] as const)(
+    'preserves the pre-GUI declaration contract for counterexample check %s',
+    (checkId) => {
+      const assertion = {
+        providerId: 'junit',
+        localId:
+          'com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404',
+      };
+      const input: PlanArgs = {
+        planText: '## Implementation\nFix the missing-task response.',
+        claims: [
+          {
+            statement: 'The missing-task regression returns HTTP 404 with the requested task id.',
+            critical: true,
+            claimScope: 'specific_behavior',
+            authoritySectionId: 'implementation-step-2',
+            expectedCheckId: 'test',
+            expectedAssertion: assertion,
+            counterexampleRequirement: { kind: 'assertion', checkId, assertion },
+          },
+        ],
+      };
+      const current = {
+        ...state,
+        activeChecks: ['test', 'build'],
+        verificationCandidates: [
+          ...state.verificationCandidates!,
+          {
+            ...state.verificationCandidates![0]!,
+            candidateId: 'vc_build_junit',
+            kind: 'build' as const,
+          },
+        ],
+      };
+      const before = canonicalJsonStringify(current);
+      const result = classifyPlanClaimSubmission(input, current, hashText);
+      expect(result.kind).toBe(checkId === 'build' ? 'ok' : 'blocked');
+      if (result.kind === 'ok') expect(result.args.claims).toEqual(input.claims);
+      expect(canonicalJsonStringify(current)).toBe(before);
+    },
+  );
   it('retains valid declarations and filters only nonblocking unsatisfiable declarations', () => {
     const args: PlanArgs = {
       planText: '## Plan',
