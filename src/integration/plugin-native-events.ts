@@ -116,7 +116,7 @@ export function startEventLoop(deps: EventLoopDeps): Promise<void> {
   );
 }
 
-export async function consumeEvents(
+async function consumeEvents(
   ctx: Plugin.Context,
   signal: AbortSignal,
   consume: (event: OpenCodeEvent) => Promise<void>,
