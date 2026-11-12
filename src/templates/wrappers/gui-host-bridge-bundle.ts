@@ -73,6 +73,11 @@ function createFlowGuardPresentationWatcher(ctx, getPresentation, notify) {
     try {
       const page = await getPresentation(session, cursor);
       if (disposed || key !== sessionKey) return;
+      // Re-read the routed session: a switch during the read must not show
+      // session A's notice in session B.
+      const latest = ctx.sessions.current();
+      if (!latest || !latest.server || latest.server.id !== 'sidecar' ||
+          latest.server.id + ':' + latest.id !== key) return;
       const events = page && Array.isArray(page.events) ? page.events : [];
       for (let index = 0; index < events.length; index++) {
         const event = events[index];

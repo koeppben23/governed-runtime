@@ -154,7 +154,9 @@ channel:
 - The validation runner reports `starting`, `check_started` and
   `check_finished` presentation events. The callback is invoked without awaiting
   it; a throwing or never-settling presentation callback cannot delay checks,
-  hold a lock or change a result.
+  hold a lock or change a result. `check_started` means the runner requested the
+  check, so the UI says **preparing**, not "running". A confirmed process start
+  requires executor instrumentation and remains `NOT_VERIFIED`.
 - Decision, Start, lifecycle, diagnostics and debug-export text is recorded as a
   notice, validation event or report. `/check` and reviewer orchestration remain
   intentional model prompts because they request agent work.
@@ -162,7 +164,10 @@ channel:
   deduplicates event IDs, announces the newest baseline event and adds a
   `/flowguard-report` dialog for the latest report. The Desktop ComposerPill
   polls only while mounted and visible, shows the latest validation/decision
-  notice and exposes the latest report in its popover.
+  notice and exposes the latest report in its popover. Every asynchronous read
+  re-checks the actually selected session before displaying anything; a switch
+  during the read discards the stale page. Negative tests cover the watcher,
+  Desktop bridge and TUI report paths.
 
 The native decision smoke test now asserts that `/approve` creates **zero**
 additional provider requests, that no validation/decision status text enters the

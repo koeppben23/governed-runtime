@@ -304,7 +304,7 @@ describe('installed Desktop GUI bundle', () => {
             id: 'event-1',
             sessionID: 'ses_root',
             kind: 'validation',
-            message: '**Validation started** — running `build`.',
+            message: '**Validation started** — preparing `build`.',
             phase: 'VALIDATION',
             occurredAt: '2026-11-12T00:00:00.000Z',
           },

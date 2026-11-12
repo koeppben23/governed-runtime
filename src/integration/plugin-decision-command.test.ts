@@ -173,11 +173,11 @@ describe('native decision commands', () => {
           kind: 'validation',
           phase: 'VALIDATION',
           checks: ['build', 'test'],
-          message: expect.stringContaining('**Validation started** — running `build`, `test`.'),
+          message: expect.stringContaining('**Validation started** — preparing `build`, `test`.'),
         }),
         expect.objectContaining({
           kind: 'validation',
-          message: expect.stringContaining('**Validation in progress** — running `build`.'),
+          message: expect.stringContaining('**Validation in progress** — preparing `build` check.'),
         }),
         expect.objectContaining({
           kind: 'validation',
@@ -200,6 +200,7 @@ describe('native decision commands', () => {
       expect.stringContaining('**Validation started**'),
     ]);
     expect(validationMessages.join('\n')).not.toContain('`undefined`');
+    expect(validationMessages.join('\n')).not.toMatch(/\brunning\b/i);
     expect(host.prompt).not.toHaveBeenCalled();
     expect(host.synthetic).not.toHaveBeenCalled();
   });
@@ -548,8 +549,8 @@ describe('native decision commands', () => {
         .events.filter((event) => event.kind === 'validation')
         .map((event) => event.message);
       expect(messages).toEqual([
-        expect.stringContaining('**Validation started** — running `build`.'),
-        expect.stringContaining('**Validation in progress** — running `build`.'),
+        expect.stringContaining('**Validation started** — preparing `build`.'),
+        expect.stringContaining('**Validation in progress** — preparing `build` check.'),
       ]);
     });
     it('keeps the committed decision when presentation recording fails', async () => {

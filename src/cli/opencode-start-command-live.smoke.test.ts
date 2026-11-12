@@ -60,33 +60,28 @@ describe.skipIf(!LIVE)('native /start command on the pinned host', () => {
       { sessionID: governed.id },
       { signal: AbortSignal.timeout(120_000) },
     );
-    // The activation report is a visible user turn; the previous synthetic
-    // inbox delivery was not rendered in the Desktop transcript.
-    expect(probe.requests.length, probe.output()).toBe(before + 1);
+    // The activation report is host presentation only. It must not create a
+    // user turn, inbox item or provider request.
+    expect(probe.requests.length, probe.output()).toBe(before);
     const authority = await resolveSessionAuthority({
       root: await realpath(probe.project),
       sessionId: governed.id,
     });
     expect(authority.status, probe.output()).toBe('resolved');
     const report = 'FlowGuard governance is ACTIVE';
-    let location: 'history' | 'inbox' | undefined;
-    for (let attempt = 0; attempt < 40 && location === undefined; attempt++) {
-      if (
-        JSON.stringify(await probe.client.session.context({ sessionID: governed.id })).includes(
-          report,
-        )
-      )
-        location = 'history';
-      else if (
-        JSON.stringify(await probe.client.session.inbox.list({ sessionID: governed.id })).includes(
-          report,
-        )
-      )
-        location = 'inbox';
-      else await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    console.log('[start-report-location]', location);
-    expect(location, probe.output()).toBe('history');
+    const presentation = await probe.client.rpc.call({
+      location: probe.location,
+      rpcID: 'flowguard-governance',
+      method: 'GetPresentation',
+      input: { sessionID: governed.id },
+    });
+    expect(JSON.stringify(presentation.output), probe.output()).toContain(report);
+    expect(
+      JSON.stringify(await probe.client.session.context({ sessionID: governed.id })),
+    ).not.toContain(report);
+    expect(
+      JSON.stringify(await probe.client.session.inbox.list({ sessionID: governed.id })),
+    ).not.toContain(report);
 
     if (authority.status !== 'resolved') throw new Error('Expected native Start workflow');
     const activationEvents = (await readAuditTrail(authority.sessDir)).filter(
@@ -124,22 +119,20 @@ describe.skipIf(!LIVE)('native /start command on the pinned host', () => {
       ),
     ).toEqual(activationEvents);
     await probe.prompt(governed.id, 'After start.');
-    // resume:false admits a synthetic report without waking the model. The
-    // next user turn delivers it into history; admission is not transcript delivery.
-    const history = await probe.client.session.context({ sessionID: governed.id });
-    expect(JSON.stringify(history), probe.output()).toContain('FlowGuard governance is ACTIVE');
     expect(productiveTools(probe.requests.at(-1)!)).toContain('flowguard_status');
-    // At the latest the next turn carries the report into the conversation.
-    expect(JSON.stringify(probe.requests.at(-1)!.body.messages)).toContain(report);
+    // Presentation never enters model context, not even on a later turn.
+    expect(JSON.stringify(probe.requests.at(-1)!.body.messages)).not.toContain(report);
 
     await probe.restart('SIGKILL');
     await probe.prompt(governed.id, 'After restart.');
     expect(productiveTools(probe.requests.at(-1)!)).toContain('flowguard_status');
+    const beforeRepeat = probe.requests.length;
     await probe.client.session.command({ sessionID: governed.id, name: 'start', text: '' });
     await probe.client.session.wait(
       { sessionID: governed.id },
       { signal: AbortSignal.timeout(120_000) },
     );
+    expect(probe.requests.length, probe.output()).toBe(beforeRepeat);
     const audit = await readAuditTrail(authority.sessDir);
     expect(audit.filter((event) => event.event === 'governance:activated')).toEqual(
       activationEvents,

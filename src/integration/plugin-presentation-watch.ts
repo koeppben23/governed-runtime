@@ -24,6 +24,13 @@ const DEFAULT_INTERVAL_MS = 1_000;
 const MAX_SEEN_IDS = 512;
 const KEEP_SEEN_IDS = 256;
 
+function pruneSeen(seen: Set<string>): void {
+  if (seen.size <= MAX_SEEN_IDS) return;
+  const keep = [...seen].slice(-KEEP_SEEN_IDS);
+  seen.clear();
+  for (const id of keep) seen.add(id);
+}
+
 /**
  * Poll the current session's presentation page.
  *
@@ -40,8 +47,8 @@ export function createPresentationWatcher(deps: PresentationWatchDeps): Presenta
   let disposed = false;
   const seen = new Set<string>();
 
-  const reset = (): void => {
-    currentSessionID = null;
+  const resetSession = (sessionID: string | null): void => {
+    currentSessionID = sessionID;
     cursor = null;
     baseline = true;
     seen.clear();
@@ -49,12 +56,14 @@ export function createPresentationWatcher(deps: PresentationWatchDeps): Presenta
 
   const isActive = (): boolean => !disposed && deps.isAlive();
   const canStart = (): boolean => isActive() && !reading;
-
-  const beginSession = (sessionID: string): void => {
-    currentSessionID = sessionID;
-    cursor = null;
-    baseline = true;
-    seen.clear();
+  /** Re-read the actual selection, not only the session captured before I/O. */
+  const isStillCurrent = (sessionID: string): boolean => {
+    if (!isActive() || currentSessionID !== sessionID) return false;
+    try {
+      return deps.currentSessionID() === sessionID;
+    } catch {
+      return false;
+    }
   };
 
   const applyPage = (page: PresentationPage): void => {
@@ -66,10 +75,7 @@ export function createPresentationWatcher(deps: PresentationWatchDeps): Presenta
     }
     cursor = page.cursor ?? cursor;
     baseline = false;
-    if (seen.size <= MAX_SEEN_IDS) return;
-    const keep = [...seen].slice(-KEEP_SEEN_IDS);
-    seen.clear();
-    for (const id of keep) seen.add(id);
+    pruneSeen(seen);
   };
 
   const poll = async (): Promise<void> => {
@@ -81,15 +87,15 @@ export function createPresentationWatcher(deps: PresentationWatchDeps): Presenta
       return;
     }
     if (sessionID === null) {
-      if (currentSessionID !== null) reset();
+      if (currentSessionID !== null) resetSession(null);
       return;
     }
-    if (sessionID !== currentSessionID) beginSession(sessionID);
+    if (sessionID !== currentSessionID) resetSession(sessionID);
     reading = true;
     try {
       const page = await deps.getPresentation(sessionID, cursor);
       // A session switch while the read was in flight invalidates the page.
-      if (!isActive() || currentSessionID !== sessionID) return;
+      if (!isStillCurrent(sessionID)) return;
       applyPage(page);
     } catch {
       // A presentation read is not an authority check. The canonical read-only
@@ -114,7 +120,7 @@ export function createPresentationWatcher(deps: PresentationWatchDeps): Presenta
         clearInterval(timer);
         timer = undefined;
       }
-      reset();
+      resetSession(null);
     },
     poll,
   };

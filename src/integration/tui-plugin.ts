@@ -328,7 +328,10 @@ function createDeps(ctx: Plugin.Context, isAlive: () => boolean): WorkflowChoose
   };
 }
 
-async function openLatestReport(ctx: Plugin.Context, deps: WorkflowChooserDeps): Promise<void> {
+export async function openLatestReport(
+  ctx: Plugin.Context,
+  deps: WorkflowChooserDeps,
+): Promise<void> {
   const sessionID = deps.currentSessionID();
   if (sessionID === null) {
     deps.notify('Open a session before reading a FlowGuard report.', 'warning');
@@ -336,6 +339,10 @@ async function openLatestReport(ctx: Plugin.Context, deps: WorkflowChooserDeps):
   }
   try {
     const page = await getPresentation(ctx, sessionID, null);
+    if (deps.currentSessionID() !== sessionID) {
+      deps.notify('Session changed; no FlowGuard report was shown.', 'warning');
+      return;
+    }
     const report = [...page.events].reverse().find((event) => event.kind === 'report');
     if (report === undefined) {
       deps.notify('No FlowGuard report is available for this session.', 'info');

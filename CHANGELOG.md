@@ -959,9 +959,12 @@ last read` without a click, while a completion in another session left the
   creates a second apparent interaction, user message or model turn; `/check`
   and reviewer orchestration keep their intentional agent prompts. The channel
   is ephemeral and non-authoritative, never audit or workflow evidence, and its
-  failures or hangs cannot delay validation or hold a lock. TUI toasts and
-  `/flowguard-report`, plus the Desktop composer pill and report popover, are
-  wired without claiming installed UI acceptance.
+  failures or hangs cannot delay validation or hold a lock. Progress wording
+  distinguishes check preparation from a proven process start; the latter still
+  requires executor instrumentation. TUI toasts and `/flowguard-report`, plus
+  the Desktop composer pill and report popover, are wired without claiming
+  installed UI acceptance. Async UI reads re-check the selected session before
+  displaying, so a session switch during a read cannot show stale status.
 
 - Align native host-adapter contract tests with timestamped execution-success
   wakeups, using complete typed notification fixtures and exact projection

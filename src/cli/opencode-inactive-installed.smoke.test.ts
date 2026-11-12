@@ -226,8 +226,14 @@ describe.skipIf(!LIVE)('packed installed INACTIVE native parity', () => {
           );
           checkpoint('native-start-completed');
           const activeStart = requestBodies(active.id, beforeStart);
-          expect(activeStart, probe.output()).toHaveLength(1);
-          expect(JSON.stringify(activeStart[0]!.messages)).toContain(
+          expect(activeStart, probe.output()).toHaveLength(0);
+          const presentation = await probe.client.rpc.call({
+            location: probe.location,
+            rpcID: 'flowguard-governance',
+            method: 'GetPresentation',
+            input: { sessionID: active.id },
+          });
+          expect(JSON.stringify(presentation.output), probe.output()).toContain(
             'FlowGuard governance is ACTIVE',
           );
           expect(requestBodies(inactive.id, beforeStart)).toHaveLength(1);

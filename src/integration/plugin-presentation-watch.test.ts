@@ -170,6 +170,30 @@ describe('presentation watcher', () => {
     expect(notifications).toEqual([]);
   });
 
+  it('discards a page when the selected session changes during the read', async () => {
+    let resolve: (page: PresentationPage) => void = () => {};
+    const getPresentation = vi.fn(
+      () =>
+        new Promise<PresentationPage>((next) => {
+          resolve = next;
+        }),
+    );
+    let sessionID = 'root';
+    const notifications: string[] = [];
+    const watcher = createPresentationWatcher({
+      getPresentation,
+      currentSessionID: () => sessionID,
+      notify: (value) => notifications.push(value.message),
+      isAlive: () => true,
+    });
+    const poll = watcher.poll();
+    sessionID = 'child';
+    resolve({ events: [event('stale', 'root')], cursor: 'stale' });
+    await poll;
+    expect(getPresentation).toHaveBeenCalledWith('root', null);
+    expect(notifications).toEqual([]);
+  });
+
   it('resets after a missing session and baselines the next session read', async () => {
     const f = fixture([
       { events: [event('one')], cursor: 'one' },

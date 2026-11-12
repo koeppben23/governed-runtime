@@ -213,6 +213,64 @@ describe('Desktop GUI client and host bridges', () => {
     expect(clear).toHaveBeenCalledWith(9);
   });
 
+  it('discards a presentation page when the routed session changes during the read', async () => {
+    const ticks: Array<() => void> = [];
+    const schedule = vi.fn((callback: () => void) => {
+      ticks.push(callback);
+      return 9;
+    });
+    const clear = vi.fn();
+    const factory = new Function(
+      'setInterval',
+      'clearInterval',
+      'document',
+      GUI_HOST_BRIDGE_BUNDLE + '\nreturn createFlowGuardPresentationWatcher;',
+    );
+    let resolve: (page: {
+      events: Array<Record<string, unknown>>;
+      cursor: string | null;
+    }) => void = () => {};
+    const getPresentation = vi.fn(
+      () =>
+        new Promise<{ events: Array<Record<string, unknown>>; cursor: string | null }>((next) => {
+          resolve = next;
+        }),
+    );
+    const notify = vi.fn();
+    let current = { id: 'session-a', server: { id: 'sidecar' } };
+    const create = factory(schedule, clear, { visibilityState: 'visible' }) as (
+      context: unknown,
+      get: (
+        session: unknown,
+        after: string | null,
+      ) => Promise<{
+        events: Array<Record<string, unknown>>;
+        cursor: string | null;
+      }>,
+      callback: (value: Record<string, unknown>) => void,
+    ) => { start(): void; stop(): void };
+    const watcher = create({ sessions: { current: () => current } }, getPresentation, notify);
+    watcher.start();
+    ticks[0]?.();
+    expect(getPresentation).toHaveBeenCalledTimes(1);
+    current = { id: 'session-b', server: { id: 'sidecar' } };
+    resolve({
+      events: [
+        {
+          id: 'stale',
+          sessionID: 'session-a',
+          kind: 'notice',
+          message: 'stale',
+          occurredAt: '2026-11-12T00:00:00.000Z',
+        },
+      ],
+      cursor: 'stale',
+    });
+    await new Promise((next) => setTimeout(next, 10));
+    expect(notify).not.toHaveBeenCalled();
+    watcher.stop();
+  });
+
   it.each(['serverEndpoints', 'servers'])(
     'subscribes to the supported %s lookup, with no foreign-session callback',
     (name) => {

@@ -184,10 +184,10 @@ function presentValidationProgress(
 ): void {
   const message =
     event.stage === 'check_started' && event.check !== undefined
-      ? `**Validation in progress** — running \`${event.check}\`.`
+      ? `**Validation in progress** — preparing \`${event.check}\` check.`
       : event.stage === 'check_finished' && event.check !== undefined
         ? `**Validation in progress** — \`${event.check}\` returned; the canonical check result remains authoritative.`
-        : `**Validation started** — running ${event.checks.map((check) => `\`${check}\``).join(', ')}.`;
+        : `**Validation started** — preparing ${event.checks.map((check) => `\`${check}\``).join(', ')}.`;
   recordPresentation(presentation, sessionID, {
     kind: 'validation',
     message,
