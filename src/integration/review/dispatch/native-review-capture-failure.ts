@@ -2,6 +2,7 @@
 import { abandonReviewDispatch, ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { blockObligation } from '../obligations/obligation-state.js';
 import { updateAttemptStatus } from '../obligations/attempt-lifecycle.js';
+import { registerPendingReviewForAttempt } from '../enforcement/enforcement.js';
 import {
   nativeReviewDispatchLineage,
   type NativeReviewStateAuthority,
@@ -197,6 +198,11 @@ export async function closeNativeReviewerCapture(input: {
   const { runtime, sessDir, authority, nativeCallId, childSessionId, outcome } = input;
   const decision = classifyReviewerCaptureFailure(outcome.code);
   if (decision.retryable) {
+    const enforcement = runtime.ws.getEnforcementState(authority.parentSessionId);
+    const pending = [...enforcement.pendingReviews.entries()].filter(
+      ([, review]) =>
+        review.obligationId === input.obligationId && review.attemptId === input.attemptId,
+    );
     const diagnostics = buildCaptureFailureDiagnostics(
       outcome.code,
       parseCaptureDetails(outcome.reason),
@@ -208,7 +214,17 @@ export async function closeNativeReviewerCapture(input: {
       undefined,
       { code: outcome.code, diagnostics, childSessionId },
     );
-    if (rearm.kind === 'rearmed')
+    if (rearm.kind === 'rearmed' && pending.length === 1 && pending[0] !== undefined) {
+      registerPendingReviewForAttempt(
+        enforcement,
+        pending[0][0],
+        {
+          obligationId: rearm.obligationId,
+          attemptId: rearm.attempt.attemptId,
+          retryDiagnostics: diagnostics,
+        },
+        rearm.attempt.createdAt,
+      );
       return {
         kind: 'retry',
         output: buildReviewerCaptureRetryOutput({
@@ -218,6 +234,7 @@ export async function closeNativeReviewerCapture(input: {
           diagnostics,
         }),
       };
+    }
     return {
       kind: 'blocked',
       code: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',

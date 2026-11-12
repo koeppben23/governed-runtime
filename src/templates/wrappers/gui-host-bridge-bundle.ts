@@ -1,9 +1,7 @@
-/** OpenCode Desktop host-capability compatibility boundary; no governance authority. */
+/** OpenCode Desktop event/reconciliation boundary; no governance authority. */
 export const GUI_HOST_BRIDGE_BUNDLE = `
 function subscribeFlowGuardSessionCompletion(ctx, callback) {
-  // Desktop 2.2.6 exposes servers; newer SDK types expose serverEndpoints.
-  const endpoints = ctx.serverEndpoints && typeof ctx.serverEndpoints.get === 'function'
-    ? ctx.serverEndpoints : ctx.servers;
+  const endpoints = ctx.servers;
   if (!endpoints || typeof endpoints.get !== 'function') return false;
   try {
     const { createKeyed } = require('@opencode/plugin/gui');
@@ -29,94 +27,90 @@ function subscribeFlowGuardSessionCompletion(ctx, callback) {
   }
 }
 /**
- * Bounded reconciliation for transitions that do not emit a host completion
- * event. A live event is an optimization, not an authoritative audit feed.
- * Nothing is fetched at registration or on the first pill render.
- */
-/**
- * Read-only presentation polling. This is not a governance or evidence feed:
- * every failure is ignored and the canonical Next Action read remains the
- * authoritative status source. Only the newest baseline event is announced.
+ * A progress event only invalidates a read-only snapshot. No polling, model
+ * prompt or state mutation. Read the current generation before displaying it.
  */
 function createFlowGuardPresentationWatcher(ctx, getPresentation, notify) {
-  let timer = null;
   let disposed = false;
   let reading = false;
+  let queued = false;
   let sessionKey = null;
-  let cursor = null;
-  let baseline = true;
-  const seen = new Set();
-
-  const reset = () => {
-    sessionKey = null;
-    cursor = null;
-    baseline = true;
-    seen.clear();
-  };
+  let mounted = false;
+  let generation = 0;
+  const routedKey = (session) => session && session.server && session.location ?
+    session.server.id + ':' + session.id + ':' + session.location.directory : null;
 
   const tick = async () => {
-    if (disposed || reading) return;
+    if (disposed) return;
+    if (reading) { queued = true; return; }
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     const session = ctx.sessions.current();
     if (!session || !session.server || session.server.id !== 'sidecar') {
-      reset();
       return;
     }
-    const key = session.server.id + ':' + session.id;
-    if (key !== sessionKey) {
-      sessionKey = key;
-      cursor = null;
-      baseline = true;
-      seen.clear();
-    }
+    const key = routedKey(session);
+    const readGeneration = generation;
+    sessionKey = key;
     reading = true;
     try {
-      const page = await getPresentation(session, cursor);
-      if (disposed || key !== sessionKey) return;
+      const page = await getPresentation(session);
+      if (disposed || readGeneration !== generation || key !== sessionKey) return;
       // Re-read the routed session: a switch during the read must not show
       // session A's notice in session B.
       const latest = ctx.sessions.current();
-      if (!latest || !latest.server || latest.server.id !== 'sidecar' ||
-          latest.server.id + ':' + latest.id !== key) return;
-      const events = page && Array.isArray(page.events) ? page.events : [];
-      for (let index = 0; index < events.length; index++) {
-        const event = events[index];
-        if (!event || typeof event.id !== 'string' || seen.has(event.id)) continue;
-        seen.add(event.id);
-        if (!baseline || index === events.length - 1) notify(event);
-      }
-      cursor = page && page.cursor ? page.cursor : cursor;
-      baseline = false;
-      if (seen.size > 512) {
-        const keep = [...seen].slice(-256);
-        seen.clear();
-        for (const id of keep) seen.add(id);
-      }
-    } catch {
-      // Presentation is an optional convenience channel, never an authority check.
+      if (!latest || !latest.server || latest.server.id !== 'sidecar' || routedKey(latest) !== key) return;
+      const events = page && page.sessionID === session.id && Array.isArray(page.events) ? page.events : [];
+      const event = events[events.length - 1];
+      notify(event && event.stage !== 'finished' ? event : null);
+    } catch (error) {
+      console.warn('[FlowGuard] Progress snapshot unavailable.', error);
+      const latest = ctx.sessions.current();
+      if (!disposed && readGeneration === generation && routedKey(latest) === key) notify(null);
     } finally {
       reading = false;
+      if (queued && !disposed) { queued = false; void tick(); }
     }
   };
 
+  // Own subscriptions in plugin setup, never in the reactive pill renderer.
+  if (ctx.servers && typeof ctx.servers.get === 'function') {
+    const { createKeyed } = require('@opencode/plugin/gui');
+    const { onCleanup } = require('solid-js');
+    createKeyed(() => ctx.servers.get('sidecar')?.data, (data) => {
+      generation += 1;
+      if (mounted) notify(null);
+      if (!data || typeof data.on !== 'function') return;
+      const off = data.on('rpc.flowguard-governance.PresentationUpdated', (event) => {
+        const session = ctx.sessions.current();
+        if (!mounted || !session || !event || !event.data || event.data.sessionID !== session.id ||
+            !event.location || !session.location || event.location.directory !== session.location.directory) return;
+        void tick();
+      });
+      onCleanup(off);
+      if (mounted) void tick();
+    });
+  }
+
   return {
     start: () => {
-      if (timer !== null || disposed) return;
-      timer = setInterval(() => void tick().catch(() => {}), 1000);
-      if (timer && typeof timer.unref === 'function') timer.unref();
+      if (disposed) return;
+      mounted = true;
+      const session = ctx.sessions.current();
+      const key = routedKey(session);
+      if (key !== sessionKey) { generation += 1; notify(null); void tick(); }
     },
     stop: () => {
       disposed = true;
-      if (timer !== null) {
-        clearInterval(timer);
-        timer = null;
-      }
-      reset();
+      generation += 1;
+      mounted = false;
+      sessionKey = null;
+      queued = false;
     },
     tick,
   };
 }
 
+/** Original visible-sidecar status reconciliation, independent of progress. */
 function createFlowGuardStatusReconciler(ctx, callback) {
   const intervalMs = 30000;
   let timer = null;

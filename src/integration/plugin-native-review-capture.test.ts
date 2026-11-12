@@ -258,6 +258,72 @@ async function fixture(observation = false) {
 }
 
 describe('native capture composition with durable evidence', () => {
+  it('can actually dispatch the fresh attempt promised after an unobserved reviewer citation', async () => {
+    const h = await fixture(true);
+    h.controls.payload = JSON.stringify({
+      ...JSON.parse(h.controls.payload),
+      majorRisks: [
+        {
+          severity: 'minor',
+          category: 'quality',
+          message: 'Unobserved repository citation.',
+          relation: {
+            subjectAnchors: [
+              {
+                kind: 'artifact_section',
+                artifactKind: 'plan',
+                artifactDigest: 'test-subject-digest',
+                sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
+              },
+            ],
+            evidenceLocations: [{ path: 'context.txt', revision: 'head', line: 1 }],
+          },
+        },
+      ],
+    });
+    await h.reviewer.capture(h.root, h.event);
+    h.governance.quarantineReviewerDispatch(h.event);
+    const result = JSON.parse(h.event.result.content);
+    expect(result.reviewRetry).toMatchObject({
+      code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
+      retryable: true,
+    });
+    const pending = h.workspace.getEnforcementState('root').pendingReviews.get('flowguard_plan');
+    expect(pending).toMatchObject({
+      obligationId: h.seeded.obligationId,
+      attemptId: result.reviewRetry.attemptId,
+      retryDiagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: 'REVIEW_EVIDENCE_NOT_OBSERVED' }),
+      ]),
+    });
+    const retry = v2ToolEvent({
+      sessionID: 'root',
+      tool: 'subagent',
+      id: 'retry',
+      input: { agent: 'flowguard-reviewer', description: 'retry', prompt: 'untrusted' },
+    }) as NativeBefore;
+    await h.governance.authorizeDispatch(h.root, retry);
+    const assurance = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(assurance.dispatches).toHaveLength(2);
+    expect(assurance.dispatches[1]).toMatchObject({
+      attemptId: result.reviewRetry.attemptId,
+      dispatchStatus: 'authorized',
+    });
+    expect((retry.input as { prompt: string }).prompt).toContain('context.txt');
+    await expect(
+      h.governance.authorizeDispatch(
+        h.root,
+        v2ToolEvent({
+          tool: 'subagent',
+          sessionID: 'root',
+          id: 'duplicate',
+          input: retry.input,
+        }) as NativeBefore,
+      ),
+    ).rejects.toThrow();
+    expect((await readState(h.seeded.sessDir))!.reviewAssurance!.attempts).toHaveLength(2);
+  });
+
   it.each(['replay', 'persistence'] as const)(
     're-arms the same frozen obligation when observation %s fails',
     async (phase) => {

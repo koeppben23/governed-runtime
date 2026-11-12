@@ -157,6 +157,7 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
     (session, after) => flowguardGuiRpcClient(session).getPresentation(after),
     (event) => {
       const current = ctx.sessions.current();
+      if (event === null) { setPresentation(null); return; }
       if (!current || event.sessionID !== current.id || event.kind !== 'validation' ||
           event.phase !== 'VALIDATION') return;
       setPresentation(event);
@@ -277,7 +278,7 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         const latestForSession = latest && latest.sessionID === input.session.id &&
           matched && state.status !== 'loading' && state.phase === 'VALIDATION' &&
           latest.phase === state.phase ? latest : null;
-        const label = latestForSession ? state.label :
+        const label = latestForSession ? 'FlowGuard · ' + latestForSession.message.replace(/[*\x60]/g, '') :
           matched ? state.label + ' · last read' : 'FlowGuard · inspect';
         const rows = [{
           id: 'refresh',

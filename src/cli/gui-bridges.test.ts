@@ -116,7 +116,11 @@ describe('Desktop GUI client and host bridges', () => {
       GUI_HOST_BRIDGE_BUNDLE + '\nreturn createFlowGuardStatusReconciler;',
     );
     const visibility = { visibilityState: 'visible' };
-    let current = { id: 'session-a', server: { id: 'sidecar' } };
+    let current = {
+      id: 'session-a',
+      server: { id: 'sidecar' },
+      location: { directory: '/worktree' },
+    };
     const notify = vi.fn();
     const create = factory(schedule, clear, visibility) as (
       context: unknown,
@@ -131,10 +135,10 @@ describe('Desktop GUI client and host bridges', () => {
     ticks[0]?.();
     expect(notify).not.toHaveBeenCalled();
     visibility.visibilityState = 'visible';
-    current = { id: 'session-a', server: { id: 'remote' } };
+    current = { id: 'session-a', server: { id: 'remote' }, location: { directory: '/worktree' } };
     ticks[0]?.();
     expect(notify).not.toHaveBeenCalled();
-    current = { id: 'session-a', server: { id: 'sidecar' } };
+    current = { id: 'session-a', server: { id: 'sidecar' }, location: { directory: '/worktree' } };
     ticks[0]?.();
     expect(notify).toHaveBeenCalledOnce();
     expect(notify).toHaveBeenCalledWith(current);
@@ -146,11 +150,11 @@ describe('Desktop GUI client and host bridges', () => {
     expect(schedule).toHaveBeenCalledTimes(1);
   });
 
-  it('polls only visible sidecar presentation pages and announces one baseline event', async () => {
+  it('reads only visible current-sidecar snapshots without a polling timer', async () => {
     const event = (id: string, sessionID = 'session-a') => ({
       id,
       sessionID,
-      kind: 'notice',
+      kind: 'validation',
       message: id,
       occurredAt: '2026-11-12T00:00:00.000Z',
     });
@@ -169,12 +173,16 @@ describe('Desktop GUI client and host bridges', () => {
       GUI_HOST_BRIDGE_BUNDLE + '\nreturn createFlowGuardPresentationWatcher;',
     );
     const pages = [
-      { events: [event('one'), event('two')], cursor: 'two' },
-      { events: [event('two'), event('three')], cursor: 'three' },
+      { sessionID: 'session-a', events: [event('one'), event('two')], cursor: 'two' },
+      { sessionID: 'session-a', events: [event('two'), event('three')], cursor: 'three' },
     ];
     const getPresentation = vi.fn(async () => pages.shift() ?? { events: [], cursor: null });
     const notify = vi.fn();
-    let current = { id: 'session-a', server: { id: 'sidecar' } };
+    let current = {
+      id: 'session-a',
+      server: { id: 'sidecar' },
+      location: { directory: '/worktree' },
+    };
     const create = factory(schedule, clear, visibility) as (
       context: unknown,
       get: (
@@ -185,32 +193,30 @@ describe('Desktop GUI client and host bridges', () => {
         cursor: string | null;
       }>,
       callback: (value: ReturnType<typeof event>) => void,
-    ) => { start(): void; stop(): void };
+    ) => { start(): void; stop(): void; tick(): Promise<void> };
     const watcher = create({ sessions: { current: () => current } }, getPresentation, notify);
-    watcher.start();
-    expect(schedule).toHaveBeenCalledOnce();
-
-    ticks[0]?.();
+    await watcher.tick();
+    expect(schedule).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(1));
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ id: 'two' }));
-    ticks[0]?.();
+    await watcher.tick();
     await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(2));
     expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'three' }));
 
     visibility.visibilityState = 'hidden';
-    ticks[0]?.();
+    await watcher.tick();
     expect(getPresentation).toHaveBeenCalledTimes(2);
     visibility.visibilityState = 'visible';
-    current = { id: 'session-b', server: { id: 'sidecar' } };
-    pages.push({ events: [event('b1', 'session-b')], cursor: 'b1' });
-    ticks[0]?.();
+    current = { id: 'session-b', server: { id: 'sidecar' }, location: { directory: '/worktree' } };
+    pages.push({ sessionID: 'session-b', events: [event('b1', 'session-b')], cursor: 'b1' });
+    await watcher.tick();
     await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(3));
     expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'b1' }));
 
     watcher.stop();
-    ticks[0]?.();
+    await watcher.tick();
     expect(getPresentation).toHaveBeenCalledTimes(3);
-    expect(clear).toHaveBeenCalledWith(9);
+    expect(clear).not.toHaveBeenCalled();
   });
 
   it('discards a presentation page when the routed session changes during the read', async () => {
@@ -237,7 +243,11 @@ describe('Desktop GUI client and host bridges', () => {
         }),
     );
     const notify = vi.fn();
-    let current = { id: 'session-a', server: { id: 'sidecar' } };
+    let current = {
+      id: 'session-a',
+      server: { id: 'sidecar' },
+      location: { directory: '/worktree' },
+    };
     const create = factory(schedule, clear, { visibilityState: 'visible' }) as (
       context: unknown,
       get: (
@@ -248,12 +258,11 @@ describe('Desktop GUI client and host bridges', () => {
         cursor: string | null;
       }>,
       callback: (value: Record<string, unknown>) => void,
-    ) => { start(): void; stop(): void };
+    ) => { start(): void; stop(): void; tick(): Promise<void> };
     const watcher = create({ sessions: { current: () => current } }, getPresentation, notify);
-    watcher.start();
-    ticks[0]?.();
+    const reading = watcher.tick();
     expect(getPresentation).toHaveBeenCalledTimes(1);
-    current = { id: 'session-b', server: { id: 'sidecar' } };
+    current = { id: 'session-b', server: { id: 'sidecar' }, location: { directory: '/worktree' } };
     resolve({
       events: [
         {
@@ -266,12 +275,12 @@ describe('Desktop GUI client and host bridges', () => {
       ],
       cursor: 'stale',
     });
-    await new Promise((next) => setTimeout(next, 10));
+    await reading;
     expect(notify).not.toHaveBeenCalled();
     watcher.stop();
   });
 
-  it.each(['serverEndpoints', 'servers'])(
+  it.each(['servers'])(
     'subscribes to the supported %s lookup, with no foreign-session callback',
     (name) => {
       const subscriptions = new Map<string, (event: unknown) => void>();

@@ -1,6 +1,7 @@
 /** Public native RPC contract. Transport input never supplies actor or provenance. */
 import { Rpc } from '@opencode/plugin/rpc';
 import { z } from 'zod';
+import { SystemWorkOperation } from '../state/system-work.js';
 import { POLICY_DIGEST_PATTERN } from '../state/evidence-identifiers.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
 import { DecisionBinding } from './status/decision-binding.js';
@@ -53,6 +54,9 @@ export type NextActionDecisionResult = z.infer<typeof NextActionDecisionResult>;
 export const PresentationEventSchema = z
   .object({
     id: z.string().min(1).max(128),
+    operation: SystemWorkOperation,
+    runID: z.string().uuid(),
+    stage: z.enum(['starting', 'check_started', 'check_finished', 'finished']),
     sessionID: z.string().min(1),
     kind: z.literal('validation'),
     message: z.string().max(32768),
@@ -115,5 +119,7 @@ export const FlowGuardGovernance = Rpc.define({
       errors: {},
     },
   },
-  events: {},
+  events: {
+    PresentationUpdated: { schema: z.object({ sessionID: z.string().min(1) }).strict() },
+  },
 });

@@ -273,9 +273,10 @@ export async function handleNativeCompletion(
   };
 }
 
-/** Current native shell identity projected into the application classifier. */
+/** Native tool identities projected into the canonical application classifiers. */
 export function applicationTool(tool: string): string {
-  return tool === 'shell' ? 'bash' : tool;
+  if (tool === 'shell') return 'bash';
+  return tool === 'patch' ? 'apply_patch' : tool;
 }
 /** A semantic text view, never concatenation or replacement of native evidence. */
 function nativeCompletionText(content: Completion['result']['content']): string {

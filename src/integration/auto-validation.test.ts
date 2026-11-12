@@ -325,8 +325,13 @@ describe('automatic validation', () => {
       expect(vi.mocked(executorMock.executeCheck).mock.calls).toHaveLength(
         state!.activeChecks.length,
       );
-      expect(progress).toHaveBeenCalledTimes(1 + state!.activeChecks.length * 2);
+      expect(progress).toHaveBeenCalledTimes(2 + state!.activeChecks.length * 2);
+      const binding = {
+        operation: expect.objectContaining({ kind: 'validation', attempt: 0 }),
+        runID: expect.any(String),
+      };
       expect(progress).toHaveBeenNthCalledWith(1, {
+        ...binding,
         phase: 'VALIDATION',
         checks: state!.activeChecks,
         stage: 'starting',
@@ -336,12 +341,14 @@ describe('automatic validation', () => {
           phase: 'VALIDATION',
           checks: state!.activeChecks,
           stage: 'check_started',
+          ...binding,
           check,
         });
         expect(progress).toHaveBeenNthCalledWith(3 + index * 2, {
           phase: 'VALIDATION',
           checks: state!.activeChecks,
           stage: 'check_finished',
+          ...binding,
           check,
         });
       }

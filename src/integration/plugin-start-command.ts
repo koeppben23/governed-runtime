@@ -35,12 +35,7 @@ import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { hydrate, resolveHydratePolicy } from './tools/index.js';
-import {
-  FlowGuardGovernance,
-  type AutonomousStartRequest,
-  type PresentationRequest,
-  type PresentationResult,
-} from './opencode-governance-rpc.js';
+import { FlowGuardGovernance, type AutonomousStartRequest } from './opencode-governance-rpc.js';
 import { buildReviewView } from './diagnostics/review-view.js';
 import { projectWorkbenchReview } from './status/workbench-review-projection.js';
 import { buildWorkbenchDiagnostics } from './status/workbench-diagnostics-reader.js';
@@ -53,7 +48,7 @@ import {
 import { addCheckCommand } from './plugin-check-command.js';
 import { addDebugExportCommand } from './plugin-debug-export-command.js';
 import { addDiagnosticsCommand } from './plugin-diagnostics-command.js';
-import type { PresentationStore } from './plugin-presentation.js';
+import { getPresentation, type PresentationStore } from './plugin-presentation.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import {
   appendAuditEventAlreadyLocked,
@@ -136,11 +131,11 @@ function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Prom
 }
 
 /** Dedicated native operation, never installed as a model tool or prompt trigger. */
-function registerAutonomousStart(
+async function registerAutonomousStart(
   ctx: Plugin.Context,
   deps: StartCommandDeps,
 ): Promise<Registration> {
-  return ctx.rpc.register(FlowGuardGovernance, {
+  const registration = await ctx.rpc.register(FlowGuardGovernance, {
     StartGovernance: (request) =>
       deps.guard(async () => {
         try {
@@ -182,42 +177,16 @@ function registerAutonomousStart(
     GetPresentation: (request) => getPresentation(ctx, deps.presentation, request),
     SubmitDecision: (request) => deps.guard(() => submitDecision(ctx, deps, request)),
   });
-}
-
-/**
- * Read-only ephemeral presentation. This is not a governance operation: a
- * missing/foreign session yields an empty page instead of fencing a scope. The
- * UI must fall back to canonical Next Action/status when this is unavailable.
- */
-async function getPresentation(
-  ctx: Pick<Plugin.Context, 'session' | 'location'>,
-  presentation: PresentationStore,
-  request: PresentationRequest,
-): Promise<PresentationResult> {
-  const empty: PresentationResult = { sessionID: request.sessionID, events: [], cursor: null };
-  try {
-    const session = await ctx.session.get(
-      { sessionID: request.sessionID },
-      { signal: AbortSignal.timeout(2_000) },
-    );
-    if (session.id !== request.sessionID || session.location.directory !== ctx.location.directory)
-      return empty;
-  } catch {
-    return empty;
-  }
-  const page = presentation.read(request.sessionID, request.after);
+  const unsubscribe = deps.presentation.subscribe((sessionID) => {
+    void registration.events.emit('PresentationUpdated', { sessionID }).catch((error: unknown) => {
+      console.warn('[FlowGuard] Progress notification failed; validation is unchanged.', error);
+    });
+  });
   return {
-    sessionID: request.sessionID,
-    events: page.events.map((event) => ({
-      id: event.id,
-      sessionID: event.sessionID,
-      kind: event.kind,
-      message: event.message,
-      ...(event.phase === undefined ? {} : { phase: event.phase }),
-      ...(event.checks === undefined ? {} : { checks: [...event.checks] }),
-      occurredAt: event.occurredAt,
-    })),
-    cursor: page.cursor,
+    dispose: async () => {
+      unsubscribe();
+      await registration.dispose();
+    },
   };
 }
 

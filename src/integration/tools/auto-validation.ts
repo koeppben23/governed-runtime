@@ -32,6 +32,7 @@
  * @version v3
  */
 
+import { randomUUID } from 'node:crypto';
 import type { Phase, SessionState } from '../../state/schema.js';
 import type { SystemWorkOperation } from '../../state/system-work.js';
 import type { AutoValidationProgress, ToolResult, WorkspaceToolContext } from './helpers.js';
@@ -354,48 +355,55 @@ async function runActiveCheckSequence(
   context: WorkspaceToolContext,
   phase: ValidationPhase,
   activeChecks: readonly string[],
+  operation: SystemWorkOperation | null,
   progress?: AutoValidationProgress,
 ): Promise<CheckSequenceResult> {
-  emitValidationProgress(progress, { phase, checks: activeChecks, stage: 'starting' });
-  let lastResponse: string | null = null;
-  for (const kind of activeChecks) {
-    emitValidationProgress(progress, {
-      phase,
-      checks: activeChecks,
-      stage: 'check_started',
-      check: kind,
-    });
-    const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
-    emitValidationProgress(progress, {
-      phase,
-      checks: activeChecks,
-      stage: 'check_finished',
-      check: kind,
-    });
-    lastResponse = text;
+  const runID = randomUUID();
+  const emit = (stage: Parameters<AutoValidationProgress>[0]['stage'], check?: string): void => {
+    if (operation !== null)
+      emitValidationProgress(progress, {
+        phase,
+        checks: activeChecks,
+        operation,
+        runID,
+        stage,
+        ...(check === undefined ? {} : { check }),
+      });
+  };
+  emit('starting');
+  try {
+    let lastResponse: string | null = null;
+    for (const kind of activeChecks) {
+      emit('check_started', kind);
+      const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
+      emit('check_finished', kind);
+      lastResponse = text;
 
-    if (responseReportsError(text)) break;
+      if (responseReportsError(text)) break;
 
-    const fresh = await readSession(context);
-    if (fresh.kind === 'unreadable') {
-      return {
-        kind: 'blocked',
-        code: 'SYSTEM_WORK_STATE_UNREADABLE',
-        response: unreadableResponse(fresh),
-      };
+      const fresh = await readSession(context);
+      if (fresh.kind === 'unreadable') {
+        return {
+          kind: 'blocked',
+          code: 'SYSTEM_WORK_STATE_UNREADABLE',
+          response: unreadableResponse(fresh),
+        };
+      }
+      if (fresh.kind === 'none') {
+        return unavailableAfterAttemptResponse(
+          'session disappeared while automatic validation was running',
+        );
+      }
+      if (fresh.session.phase !== phase) {
+        return { kind: 'completed', phase: fresh.session.phase, response: text };
+      }
     }
-    if (fresh.kind === 'none') {
-      return unavailableAfterAttemptResponse(
-        'session disappeared while automatic validation was running',
-      );
-    }
-    if (fresh.session.phase !== phase) {
-      return { kind: 'completed', phase: fresh.session.phase, response: text };
-    }
+
+    if (lastResponse === null) return { kind: 'empty' };
+    return { kind: 'finished', lastResponse };
+  } finally {
+    emit('finished');
   }
-
-  if (lastResponse === null) return { kind: 'empty' };
-  return { kind: 'finished', lastResponse };
 }
 
 async function rearmAfterTechnicalOutcome(input: {
@@ -505,7 +513,13 @@ async function runAutomaticValidationAttempt(
       ...getLogTraceFields(),
     });
 
-    const sequence = await runActiveCheckSequence(context, phase, checks, progress);
+    const sequence = await runActiveCheckSequence(
+      context,
+      phase,
+      checks,
+      pendingSystemWork,
+      progress,
+    );
     if (sequence.kind === 'completed' || sequence.kind === 'blocked') return sequence;
     if (sequence.kind === 'empty') return { kind: 'none' };
 

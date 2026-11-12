@@ -30,6 +30,15 @@ let ws: TestWorkspace;
 let host: ReturnType<typeof createV2Host>;
 let cleanup: (() => void | Promise<void>) | undefined;
 let sessionID: string;
+const progressBinding = {
+  operation: {
+    kind: 'validation' as const,
+    requestedAt: '2026-11-12T00:00:00.000Z',
+    attempt: 0,
+    retryAfter: null,
+  },
+  runID: '11111111-2222-4111-8111-111111111111',
+};
 beforeEach(async () => {
   ws = await createTestWorkspace();
   host = createV2Host(ws.tmpDir);
@@ -129,17 +138,20 @@ describe('native decision commands', () => {
     host.prompt.mockClear();
     const execute = vi.spyOn(decision, 'execute').mockImplementation(async (_args, context) => {
       void context.autoValidationProgress?.({
+        ...progressBinding,
         phase: 'VALIDATION',
         checks: ['build', 'test'],
         stage: 'starting',
       });
       void context.autoValidationProgress?.({
+        ...progressBinding,
         phase: 'VALIDATION',
         checks: ['build', 'test'],
         stage: 'check_started',
         check: 'build',
       });
       void context.autoValidationProgress?.({
+        ...progressBinding,
         phase: 'VALIDATION',
         checks: ['build', 'test'],
         stage: 'check_finished',
@@ -147,11 +159,13 @@ describe('native decision commands', () => {
       });
       // A malformed optional check detail must fall back to the phase summary.
       void context.autoValidationProgress?.({
+        ...progressBinding,
         phase: 'VALIDATION',
         checks: ['build', 'test'],
         stage: 'check_started',
       });
       void context.autoValidationProgress?.({
+        ...progressBinding,
         phase: 'VALIDATION',
         checks: ['build', 'test'],
         stage: 'check_finished',
@@ -167,37 +181,10 @@ describe('native decision commands', () => {
     } finally {
       execute.mockRestore();
     }
-    const events = (await host.presentation(sessionID)).events;
-    expect(events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'validation',
-          phase: 'VALIDATION',
-          checks: ['build', 'test'],
-          message: expect.stringContaining('**Validation started** — preparing `build`, `test`.'),
-        }),
-        expect.objectContaining({
-          kind: 'validation',
-          message: expect.stringContaining('**Validation in progress** — preparing `build` check.'),
-        }),
-        expect.objectContaining({
-          kind: 'validation',
-          message: expect.stringContaining(
-            '`build` returned; the canonical check result remains authoritative.',
-          ),
-        }),
-      ]),
-    );
-    const validationMessages = events
-      .filter((event) => event.kind === 'validation')
-      .map((event) => event.message);
-    expect(validationMessages).toHaveLength(5);
-    expect(validationMessages.slice(-2)).toEqual([
-      expect.stringContaining('**Validation started**'),
-      expect.stringContaining('**Validation started**'),
-    ]);
-    expect(validationMessages.join('\n')).not.toContain('`undefined`');
-    expect(validationMessages.join('\n')).not.toMatch(/\brunning\b/i);
+    expect((await host.presentation(sessionID)).events).toEqual([]);
+    // This fixture never entered VALIDATION; it cannot expose live progress.
+    const events = host.emitRpcEvent.mock.calls.map(([, data]) => data);
+    expect(events).toEqual(Array.from({ length: 5 }, () => ({ sessionID })));
     expect(host.prompt).toHaveBeenCalledOnce();
     expect(host.prompt).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -563,11 +550,13 @@ describe('native decision commands', () => {
       const f = await unitCommandFixture();
       vi.spyOn(decision, 'execute').mockImplementation(async (_args, context) => {
         void context.autoValidationProgress?.({
+          ...progressBinding,
           phase: 'VALIDATION',
           checks: ['build'],
           stage: 'starting',
         });
         void context.autoValidationProgress?.({
+          ...progressBinding,
           phase: 'VALIDATION',
           checks: ['build'],
           stage: 'check_started',
@@ -596,6 +585,7 @@ describe('native decision commands', () => {
       });
       vi.mocked(decision.execute).mockImplementation(async (_args, context) => {
         await context.autoValidationProgress?.({
+          ...progressBinding,
           phase: 'VALIDATION',
           checks: ['build'],
           stage: 'starting',

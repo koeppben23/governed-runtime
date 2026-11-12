@@ -953,6 +953,16 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Synchronize native review retries with the exact durably re-armed attempt before
+  offering another reviewer dispatch; retain provenance checks and attempt budgets.
+  Project native OpenCode `patch` to the canonical `apply_patch` mutation path in
+  both hooks without widening tool permissions.
+- Bind baseline progress to its current operation and attempt, discard superseded
+  updates, and close the display when execution ends. Show the current check in
+  the existing Desktop status label. Replace the added one-second presentation
+  poller with read-only RPC invalidations; keep original chat responses and controls.
+  Installed Desktop rendering acceptance remains unverified.
+
 - Limit model-free progress to baseline validation after `/approve` and before
   `/implement`. Restore the original `/start` workflow-choice chat response,
   final decision/check-result chat report with the next command, lifecycle and

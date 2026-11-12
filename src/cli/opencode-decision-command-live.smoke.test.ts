@@ -1,7 +1,7 @@
 /** Actual pinned native command/model boundaries. Core review gates are explicit fixtures,
  * not proof of native reviewer execution, installed acceptance, or human provenance. */
 import { afterEach, describe, expect, it } from 'vitest';
-import { realpath } from 'node:fs/promises';
+import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { createNativeHostProbe, type NativeHostProbe } from './opencode-native-test-helpers.js';
 import { prepareComponentDecisionGate } from '../integration/component-decision-test-helpers.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
@@ -14,9 +14,13 @@ import { freezePolicySnapshot } from '../config/policy-snapshot.js';
 import { hashText } from '../shared/hashing.js';
 import { REVIEWER_AGENT } from '../templates/mandates.js';
 import { execFileSync } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import {
+  FlowGuardGovernance,
+  type PresentationResult,
+} from '../integration/opencode-governance-rpc.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
+const incidentCLI = process.env.FLOWGUARD_OPENCODE_INCIDENT_CLI;
 let probe: NativeHostProbe | undefined;
 let restore: (() => void) | undefined;
 afterEach(async () => {
@@ -110,7 +114,13 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
     async (command) => {
       let rootID = '';
       let stage = 0;
+      let mutationRequested = false;
+      let implementationStep: number | null = null;
+      let exportRequested = false;
       const p = await createNativeHostProbe({
+        ...(incidentCLI
+          ? { host: { command: incidentCLI, argsPrefix: [], version: 'opencode v2.2.7', env: {} } }
+          : {}),
         product: true,
         agent: REVIEWER_AGENT,
         flowguardConfig: JSON.stringify({
@@ -118,6 +128,14 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
           policy: { defaultMode: 'team', reviewBudget: { plan: 1 } },
         }),
         prepare: async (project) => {
+          // Native patch is offered only to supported GPT-family models. The
+          // deterministic local wire provider still owns every fixture reply.
+          const configPath = project + '/opencode.json';
+          const config = JSON.parse(await readFile(configPath, 'utf8'));
+          config.model = 'capture/gpt-5-probe';
+          config.providers.capture.models['gpt-5-probe'] = config.providers.capture.models.probe;
+          delete config.providers.capture.models.probe;
+          await writeFile(configPath, JSON.stringify(config));
           await writeFile(project + '/README.md', '# Decision pipeline fixture\n');
           await writeFile(
             project + '/package.json',
@@ -125,7 +143,7 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
               name: 'decision-pipeline',
               version: '1.0.0',
               scripts: {
-                test: 'node -e "console.log(\'OK\')"',
+                test: 'node -e "setTimeout(() => console.log(\'OK\'), 1000)"',
                 lint: 'node -e "console.log(\'OK\')"',
                 typecheck: 'node -e "console.log(\'OK\')"',
               },
@@ -162,7 +180,10 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
                   iteration: obligation.iteration,
                   planVersion: obligation.planVersion,
                   reviewMode: 'subagent',
-                  overallVerdict: command === 'approve' ? 'accept' : 'changes_requested',
+                  overallVerdict:
+                    obligation.obligationType === 'implement' || command === 'approve'
+                      ? 'accept'
+                      : 'changes_requested',
                   blockingIssues: [],
                   majorRisks: [],
                   missingVerification: [],
@@ -174,6 +195,46 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
               };
             }
             return { text: 'Independent review completed. No blocking findings.' };
+          }
+          if (mutationRequested) {
+            mutationRequested = false;
+            return {
+              tool: {
+                name: 'patch',
+                arguments: {
+                  patchText:
+                    '*** Begin Patch\n*** Update File: README.md\n@@\n-# Decision pipeline fixture\n+# Verified native patch fixture\n*** End Patch',
+                },
+              },
+            };
+          }
+          if (implementationStep !== null) {
+            const steps = [
+              { tool: { name: 'flowguard_implement', arguments: {} } },
+              {
+                tool: {
+                  name: 'subagent',
+                  arguments: {
+                    agent: 'flowguard-reviewer',
+                    description: 'Independent implementation review',
+                    prompt: 'Review the recorded implementation independently.',
+                  },
+                },
+              },
+              {
+                tool: {
+                  name: 'flowguard_review_implementation',
+                  arguments: { reviewVerdict: 'accept' },
+                },
+              },
+            ];
+            const next = steps[implementationStep++];
+            if (next) return next;
+            implementationStep = null;
+          }
+          if (exportRequested) {
+            exportRequested = false;
+            return { tool: { name: 'flowguard_export', arguments: {} } };
           }
           const steps = [
             {
@@ -226,7 +287,12 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       probe = p;
       restore = withTestEnv({ OPENCODE_CONFIG_DIR: p.env.OPENCODE_CONFIG_DIR! });
       await p.client.command.list({ location: p.location });
-      const root = await p.session();
+      const root = await p.client.session.create({
+        title: 'Native GPT patch pipeline fixture',
+        location: p.location,
+        agent: 'build',
+        model: { providerID: 'capture', id: 'gpt-5-probe', variant: 'chosen' },
+      });
       rootID = root.id;
       await activate(p, root.id);
       await p.prompt(
@@ -255,12 +321,33 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
         ).rejects.toThrow();
       }
       const requestsBeforeApproval = p.requests.length;
-      await p.client.session.command({
-        sessionID: root.id,
-        name: command,
-        text: 'Accept the independently reviewed README plan with the stated residual documentation risk.',
+      const snapshots: PresentationResult[] = [];
+      const reads: Promise<void>[] = [];
+      const rpc = p.client.rpc(FlowGuardGovernance);
+      const unsubscribe = rpc.events.on('PresentationUpdated', (event) => {
+        if (event.data.sessionID !== root.id) return;
+        const reading = rpc
+          .GetPresentation({ sessionID: root.id }, { location: p.location })
+          .then((page) => {
+            snapshots.push(page);
+          });
+        reads.push(reading);
+        return reading;
       });
-      await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
+      try {
+        await p.client.session.command({
+          sessionID: root.id,
+          name: command,
+          text: 'Accept the independently reviewed README plan with the stated residual documentation risk.',
+        });
+        await p.client.session.wait(
+          { sessionID: root.id },
+          { signal: AbortSignal.timeout(120_000) },
+        );
+      } finally {
+        unsubscribe();
+        await Promise.all(reads);
+      }
       // Only baseline progress is model-free. The original final chat report
       // still carries check results and the /implement recommendation.
       const approvalRequests = p.requests.slice(requestsBeforeApproval);
@@ -278,11 +365,14 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       });
       const events = (presentation.output as { events: Array<{ kind: string; message: string }> })
         .events;
-      expect(events).toEqual(
+      expect(events).toEqual([]);
+      expect(snapshots.flatMap((page) => page.events)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             kind: 'validation',
-            message: expect.stringContaining('Validation started'),
+            operation: expect.objectContaining({ kind: 'validation', attempt: 0 }),
+            runID: expect.any(String),
+            stage: 'check_started',
           }),
         ]),
       );
@@ -295,6 +385,48 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
         },
       ]);
       expect((await workflow(p, root.id)).state.plan?.approvalCertificate).toBeDefined();
+      expect((await workflow(p, root.id)).state.phase).toBe('IMPLEMENTATION');
+      mutationRequested = true;
+      await p.prompt(root.id, 'Apply the approved README-only change with the native patch tool.');
+      expect(
+        await readFile(p.project + '/README.md', 'utf8'),
+        JSON.stringify(await p.client.session.context({ sessionID: root.id })) + '\n' + p.output(),
+      ).toBe('# Verified native patch fixture\n');
+      const mutated = await workflow(p, root.id);
+      expect(mutated.state.mutationEpisodes).toEqual([
+        expect.objectContaining({
+          toolName: 'apply_patch',
+          status: 'completed',
+          outcome: 'success',
+        }),
+      ]);
+      expect(verifyChain(await readAuditTrail(mutated.sessDir)).valid).toBe(true);
+      implementationStep = 0;
+      await p.prompt(
+        root.id,
+        '/implement — record the change, run the post-implementation checks and obtain the independent implementation review.',
+      );
+      const implemented = await workflow(p, root.id);
+      expect(
+        implemented.state.phase,
+        JSON.stringify(await p.client.session.context({ sessionID: root.id })),
+      ).toBe('EVIDENCE_REVIEW');
+      expect(implemented.state.reviewAssurance!.invocations).toHaveLength(2);
+      await p.client.session.command({
+        sessionID: root.id,
+        name: 'approve',
+        text: 'Approve the independently reviewed documentation implementation.',
+      });
+      await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
+      expect((await workflow(p, root.id)).state.phase).toBe('EXPORT_READY');
+      exportRequested = true;
+      await p.prompt(root.id, '/export — create and verify the completion package.');
+      const completed = await workflow(p, root.id);
+      expect(
+        completed.state.phase,
+        JSON.stringify(await p.client.session.context({ sessionID: root.id })),
+      ).toBe('COMPLETE');
+      expect(verifyChain(await readAuditTrail(completed.sessDir)).valid).toBe(true);
     },
     300_000,
   );

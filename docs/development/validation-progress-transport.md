@@ -366,6 +366,42 @@ RPC response or the fixture's observation file.
 The TUI context's location can also be absent during setup. Diagnostic output
 uses the known fixture path; RPC routing never guesses from that path.
 
+## Forensic retry, native patch and baseline-display correction
+
+The comparison baseline is `41b2932e`, before the first progress change. The
+installed `/plan` incident exposed a durable re-arm without a matching transient
+pending-review update. The correction registers the exact fresh attempt through
+`registerPendingReviewForAttempt()` only after the durable write succeeds. An
+absent/ambiguous originating binding never produces an executable retry promise.
+Budgets, old-child quarantine and durable dispatch guards remain unchanged.
+
+Native `patch` is projected to canonical `apply_patch` in both hooks, retaining
+the native `patchText`, host-call identity and result metadata. The real-host
+fixture selects a GPT-family test model because OpenCode does not expose `patch`
+for the generic probe model. This remains a deterministic local provider, not a
+real-provider acceptance claim.
+
+Baseline events carry the existing `SystemWorkOperation` and an ephemeral run
+ID. The reader filters against the current durable operation/attempt and serves
+nothing outside VALIDATION. The store rejects superseded runs and post-terminal
+updates. The Desktop channel now uses `PresentationUpdated` invalidations rather
+than the added one-second poller, with coalesced snapshot reads and no model
+turn. The existing pill label exposes the check text directly. The original
+30-second status reconciler, command responses and controls remain unchanged.
+Window setup uses the SDK's `ctx.servers`; `ctx.serverEndpoints` is a main-process
+domain, not an alternative window contract.
+
+The repaired native modules are **not** in any committed mutation profile. A
+probe that added them to `review-capture` measured 69.97% aggregate (below the
+unchanged 80% break gate) and was reverted rather than weakening the gate or
+claiming admission. Their mutation coverage remains `NOT_VERIFIED`; the
+registered profile is unchanged and covers only its pre-existing candidates.
+
+**NOT_VERIFIED:** installed Desktop rendering, eventstream-disconnect causality,
+real-provider behavior and confirmed subprocess-start instrumentation. Check
+preparation/return notifications do not claim process start or a persisted PASS.
+No live installation or incident session is changed by these tests.
+
 ## Reproduce
 
 Use the pinned repository Node toolchain and either install the exact declared
