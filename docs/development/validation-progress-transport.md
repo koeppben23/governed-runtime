@@ -7,22 +7,25 @@ gate is BLOCKED, not passed.**
 
 The candidate-host probe establishes some transport mechanics. A follow-up
 product regression reproduces and repairs its lifecycle finding. The current
-presentation change is limited to baseline progress after `/approve` and before
-`/implement`. Start/workflow-choice, final decision/check-result, lifecycle and
-diagnostic chat responses retain the pre-overhaul contract (`e2565223`). There
-is no new `/implement` button, automatic Start dialog, report dialog/command or
-`GetNextAction.summary`. Installed visual acceptance and executor-start
-instrumentation remain gated. State schemas, audit contracts, reviewer
-admission and retry/backoff persistence remain unchanged.
+presentation change is limited to baseline progress after `/approve` and
+post-implementation check progress after `/implement`; it does not show a
+fabricated implementation-phase percentage. Start/workflow-choice, final
+decision/check-result, lifecycle and diagnostic chat responses retain the
+pre-overhaul contract (`e2565223`). There is no new `/implement` button,
+automatic Start dialog, report dialog/command or `GetNextAction.summary`.
+Installed visual acceptance and executor-start instrumentation remain gated.
+State schemas, audit contracts, reviewer admission and retry/backoff persistence
+remain unchanged.
 
 The model-free status overhaul and compensating UI additions described in the
 historical sections below were rejected by the operator and removed. Their
 green checks are historical evidence, not acceptance of the narrowed change.
-Only `VALIDATION` progress is published on `GetPresentation`; other phases,
-decisions and reports are excluded. The original explicit workflow chooser
-and 30-second status reconciler remain. The TUI plugin is restored byte-for-byte;
-the added TUI polling watcher and report command are removed. No incident session is reset and the
-separate native `patch` admission error is not addressed here.
+Only `VALIDATION` and `IMPL_VALIDATION` progress is published on
+`GetPresentation`; other phases, decisions and reports are excluded. The original
+explicit workflow chooser and 30-second status reconciler remain. The TUI plugin
+is restored byte-for-byte; the added TUI polling watcher and report command are
+removed. No incident session is reset and the separate native `patch` admission
+error is not addressed here.
 
 ### Scope-restoration verification (12 November 2026)
 
@@ -366,7 +369,7 @@ RPC response or the fixture's observation file.
 The TUI context's location can also be absent during setup. Diagnostic output
 uses the known fixture path; RPC routing never guesses from that path.
 
-## Forensic retry, native patch and baseline-display correction
+## Forensic retry, native patch and validation-display correction
 
 The comparison baseline is `41b2932e`, before the first progress change. The
 installed `/plan` incident exposed a durable re-arm without a matching transient
@@ -381,15 +384,18 @@ fixture selects a GPT-family test model because OpenCode does not expose `patch`
 for the generic probe model. This remains a deterministic local provider, not a
 real-provider acceptance claim.
 
-Baseline events carry the existing `SystemWorkOperation` and an ephemeral run
-ID. The reader filters against the current durable operation/attempt and serves
-nothing outside VALIDATION. The store rejects superseded runs and post-terminal
-updates. The Desktop channel now uses `PresentationUpdated` invalidations rather
-than the added one-second poller, with coalesced snapshot reads and no model
-turn. The existing pill label exposes the check text directly. The original
-30-second status reconciler, command responses and controls remain unchanged.
-Window setup uses the SDK's `ctx.servers`; `ctx.serverEndpoints` is a main-process
-domain, not an alternative window contract.
+Baseline and implementation-validation events carry the existing
+`SystemWorkOperation` and an ephemeral run ID. The reader filters against the
+current durable operation/attempt and phase and serves nothing outside
+`VALIDATION`/`IMPL_VALIDATION`. The store rejects superseded runs and
+post-terminal updates. The initial `/implement` tool execution injects the same
+non-blocking progress callback as the baseline decision path. The Desktop channel
+uses `PresentationUpdated` invalidations rather than the added one-second poller,
+with coalesced snapshot reads and no model turn. The existing pill label exposes
+the current check text directly. The original 30-second status reconciler,
+command responses and controls remain unchanged. Window setup uses the SDK's
+`ctx.servers`; `ctx.serverEndpoints` is a main-process domain, not an alternative
+window contract.
 
 The repaired native modules are **not** in any committed mutation profile. A
 probe that added them to `review-capture` measured 69.97% aggregate (below the
@@ -420,10 +426,11 @@ OPENCODE_LIVE=1 npm run test:smoke -- \
 ```
 
 The decision-command smoke test asserts that the real `/approve` path retains
-one final decision/check-result chat response with `/implement`, while baseline
+one final decision/check-result chat response with `/implement`, while validation
 progress adds no provider request or user message. The read-only presentation
-RPC contains only baseline progress. It uses explicit
-component review-gate fixtures; it is not independent reviewer provenance.
+RPC contains only baseline or post-implementation validation progress. It uses
+explicit component review-gate fixtures; it is not independent reviewer
+provenance.
 
 For the incident-only regression, set `FLOWGUARD_OPENCODE_INCIDENT_CLI` to the
 exact 2.2.7 executable. Its version is checked; this does not alter the canonical
@@ -443,15 +450,16 @@ either live-host flag skips the suite and is **not transport evidence**.
 
 ## Product implementation remains gated
 
-The supported native success route has product-path evidence. Only the former
-`presentValidationProgress()` prompt is replaced by the model-free baseline
-channel; the original final decision-confirmation chat response is preserved.
-Before claiming the complete feature, independently verify the
-required installed UI scope. The remaining product implementation must:
+The supported native success route has product-path evidence. The former
+`presentValidationProgress()` prompt is replaced by the model-free validation
+channel for both baseline and post-implementation checks; the original final
+decision-confirmation chat response is preserved. Before claiming the complete
+feature, independently verify the required installed UI scope. The remaining
+product implementation must:
 
-- prove the baseline presentation channel in the packed Desktop product,
-  including plan approval and supported baseline resume, without changing
-  `/start`, `/implement` or other command presentation;
+- prove the validation presentation channel in the packed Desktop product,
+  including plan approval, post-implementation checks and supported resumption,
+  without changing `/start`, `/implement` or other command presentation;
 - observe a confirmed shell `spawn` before claiming process start, without
   changing executor output/digest/error semantics;
 - use the existing `ValidationAttempt.attemptId` and baseline/implementation

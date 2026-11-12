@@ -6,13 +6,14 @@
  * plugin reload loses it, and the UI falls back to canonical read-only state.
  */
 import { randomUUID } from 'node:crypto';
-import type { AutoValidationProgressEvent } from './tools/helpers.js';
+import { isValidationProgressPhase, type AutoValidationProgressEvent } from './tools/helpers.js';
 import type { SystemWorkOperation } from '../state/system-work.js';
 import type { Plugin } from '@opencode/plugin';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import type { PresentationRequest, PresentationResult } from './opencode-governance-rpc.js';
 
 export type PresentationKind = 'validation';
+export type PresentationPhase = 'VALIDATION' | 'IMPL_VALIDATION';
 
 export interface PresentationEvent {
   readonly operation: SystemWorkOperation;
@@ -22,7 +23,7 @@ export interface PresentationEvent {
   readonly sessionID: string;
   readonly kind: PresentationKind;
   readonly message: string;
-  readonly phase?: 'VALIDATION';
+  readonly phase?: PresentationPhase;
   readonly checks?: readonly string[];
   readonly occurredAt: string;
 }
@@ -33,7 +34,7 @@ export interface PresentationInput {
   readonly stage: AutoValidationProgressEvent['stage'];
   readonly kind: PresentationKind;
   readonly message: string;
-  readonly phase?: 'VALIDATION';
+  readonly phase?: PresentationPhase;
   readonly checks?: readonly string[];
 }
 
@@ -208,15 +209,18 @@ export function recordValidationProgress(
   sessionID: string,
   event: AutoValidationProgressEvent,
 ): void {
-  if (event.phase !== 'VALIDATION') return;
+  if (!isValidationProgressPhase(event.phase)) return;
+  const implementation = event.phase === 'IMPL_VALIDATION';
+  const label = implementation ? 'Implementation validation' : 'Validation';
+  const finished = implementation ? 'Implementation validation' : 'Baseline validation';
   const message =
     event.stage === 'finished'
-      ? 'Baseline validation attempt ended; canonical results remain authoritative.'
+      ? `${finished} attempt ended; canonical results remain authoritative.`
       : event.stage === 'check_started' && event.check !== undefined
-        ? `**Validation in progress** — preparing \`${event.check}\` check.`
+        ? `**${label} in progress** — preparing \`${event.check}\` check.`
         : event.stage === 'check_finished' && event.check !== undefined
-          ? `**Validation in progress** — \`${event.check}\` returned; the canonical check result remains authoritative.`
-          : `**Validation started** — preparing ${event.checks.map((check) => `\`${check}\``).join(', ')}.`;
+          ? `**${label} in progress** — \`${event.check}\` returned; the canonical check result remains authoritative.`
+          : `**${label} started** — preparing ${event.checks.map((check) => `\`${check}\``).join(', ')}.`;
   recordPresentation(store, sessionID, {
     operation: event.operation,
     runID: event.runID,
@@ -228,7 +232,7 @@ export function recordValidationProgress(
   });
 }
 
-/** Read only the current durable baseline generation, never an earlier run. */
+/** Read only the current durable validation operation, never an earlier run. */
 export async function getPresentation(
   ctx: Pick<Plugin.Context, 'session' | 'location'>,
   presentation: PresentationStore,
@@ -246,13 +250,19 @@ export async function getPresentation(
       root: ctx.location.directory,
       sessionId: request.sessionID,
     });
-    if (bound.status !== 'resolved' || bound.state.phase !== 'VALIDATION' || bound.state.error)
+    if (
+      bound.status !== 'resolved' ||
+      !isValidationProgressPhase(bound.state.phase) ||
+      bound.state.error
+    )
       return empty;
+    const phase = bound.state.phase;
     const operation = bound.state.pendingSystemWork;
     const page = presentation.read(request.sessionID, request.after);
     const events = page.events.filter(
       (event) =>
         operation !== null &&
+        event.phase === phase &&
         event.operation.requestedAt === operation.requestedAt &&
         event.operation.attempt === operation.attempt &&
         event.operation.retryAfter === operation.retryAfter,
@@ -266,7 +276,7 @@ export async function getPresentation(
       cursor: page.cursor,
     };
   } catch (error) {
-    console.warn('[FlowGuard] Current baseline presentation unavailable.', error);
+    console.warn('[FlowGuard] Current validation presentation unavailable.', error);
     return empty;
   }
 }

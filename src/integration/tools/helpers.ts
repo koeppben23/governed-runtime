@@ -39,6 +39,9 @@ const lockedSessionDir = new AsyncLocalStorage<string>();
 export type AutoValidationProgressStage =
   'starting' | 'check_started' | 'check_finished' | 'finished';
 
+export function isValidationProgressPhase(phase: Phase): phase is 'VALIDATION' | 'IMPL_VALIDATION' {
+  return phase === 'VALIDATION' || phase === 'IMPL_VALIDATION';
+}
 export interface AutoValidationProgressEvent {
   readonly operation: SystemWorkOperation;
   readonly runID: string;

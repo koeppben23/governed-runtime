@@ -962,13 +962,16 @@ last read` without a click, while a completion in another session left the
   the existing Desktop status label. Replace the added one-second presentation
   poller with read-only RPC invalidations; keep original chat responses and controls.
   Installed Desktop rendering acceptance remains unverified.
+- Show the existing model-free check display during post-implementation
+  validation (`IMPL_VALIDATION`) after `/implement`, using the same current
+  operation binding, existing label, and no additional controls or model turns.
 
-- Limit model-free progress to baseline validation after `/approve` and before
+- Limit model-free progress to canonical validation after `/approve` and after
   `/implement`. Restore the original `/start` workflow-choice chat response,
   final decision/check-result chat report with the next command, lifecycle and
   diagnostic responses. Remove the added `/implement` button, automatic Start
   dialog, report dialogs/command and summary API; preserve the original explicit
-  chooser and 30-second read-only status reconciliation. Baseline progress uses
+  chooser and 30-second read-only status reconciliation. Validation progress uses
   a bounded ephemeral channel without extra model turns or changes to plan,
   evidence, tool permissions or canonical validation. Installed visual acceptance
   and confirmed subprocess-start instrumentation remain unverified.

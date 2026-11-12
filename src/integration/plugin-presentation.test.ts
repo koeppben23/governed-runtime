@@ -1,5 +1,6 @@
 /** Ephemeral presentation is never audit, workflow, model or approval evidence. */
 import { describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import {
   createPresentationStore as createStore,
   recordPresentation,
@@ -37,13 +38,32 @@ function createPresentationStore(options?: Parameters<typeof createStore>[0]) {
 }
 
 describe('ephemeral host presentation', () => {
-  it('serves only the exact current durable baseline generation and exact native location', async () => {
+  it('serves only the exact current durable validation operation and exact native location', async () => {
     const ws = await createTestWorkspace();
     try {
       const seeded = await seedStrictPlanSession(ws.tmpDir, 'root');
       const state = (await readState(seeded.sessDir))!;
       const store = createStore();
+      const implStore = createStore();
+      const mismatchedStore = createStore();
       const host = createV2Host(ws.tmpDir);
+      const implOperation = {
+        ...binding.operation,
+        requestedAt: '2026-11-12T00:01:00.000Z',
+        attempt: 1,
+      };
+      const implBinding = {
+        operation: implOperation,
+        runID: '22222222-2222-4222-8222-222222222222',
+      };
+      mismatchedStore.record('root', {
+        ...implBinding,
+        stage: 'starting',
+        kind: 'validation',
+        phase: 'VALIDATION',
+        checks: ['build'],
+        message: 'baseline event during implementation validation',
+      });
       store.record('root', {
         ...binding,
         stage: 'starting',
@@ -51,6 +71,14 @@ describe('ephemeral host presentation', () => {
         phase: 'VALIDATION',
         checks: ['build'],
         message: 'preparing build',
+      });
+      implStore.record('root', {
+        ...implBinding,
+        stage: 'starting',
+        kind: 'validation',
+        phase: 'IMPL_VALIDATION',
+        checks: ['test'],
+        message: 'preparing test',
       });
       expect((await getPresentation(host.ctx, store, { sessionID: 'root' })).events).toEqual([]);
       await writeStateWithArtifacts(seeded.sessDir, {
@@ -67,6 +95,40 @@ describe('ephemeral host presentation', () => {
         pendingSystemWork: { ...binding.operation, attempt: 1 },
       });
       expect((await getPresentation(host.ctx, store, { sessionID: 'root' })).events).toEqual([]);
+      execFileSync(
+        'git',
+        [
+          '-c',
+          'user.name=FlowGuard Test',
+          '-c',
+          'user.email=test@example.invalid',
+          'commit',
+          '--allow-empty',
+          '--quiet',
+          '-m',
+          'implementation base',
+        ],
+        { cwd: ws.tmpDir },
+      );
+      await writeStateWithArtifacts(seeded.sessDir, {
+        ...state,
+        phase: 'IMPL_VALIDATION',
+        pendingSystemWork: implOperation,
+      });
+      expect(
+        (await getPresentation(host.ctx, implStore, { sessionID: 'root' })).events,
+      ).toMatchObject([{ phase: 'IMPL_VALIDATION', checks: ['test'] }]);
+      expect(
+        (await getPresentation(host.ctx, mismatchedStore, { sessionID: 'root' })).events,
+      ).toEqual([]);
+      await writeStateWithArtifacts(seeded.sessDir, {
+        ...state,
+        phase: 'IMPLEMENTATION',
+        pendingSystemWork: implOperation,
+      });
+      expect((await getPresentation(host.ctx, implStore, { sessionID: 'root' })).events).toEqual(
+        [],
+      );
       await writeStateWithArtifacts(seeded.sessDir, {
         ...state,
         phase: 'VALIDATION',
@@ -148,23 +210,68 @@ describe('ephemeral host presentation', () => {
       warn.mockRestore();
     }
   });
-  it('publishes only baseline progress, never implementation validation or other phases', () => {
-    const store = createPresentationStore();
-    for (const phase of ['READY', 'IMPLEMENTATION', 'IMPL_VALIDATION'] as const)
-      recordValidationProgress(store, 'root', {
+  it('publishes baseline and implementation validation progress, never other phases', () => {
+    const baseline = createStore();
+    const implementation = createStore();
+    for (const phase of ['READY', 'IMPLEMENTATION', 'IMPL_REVIEW', 'COMPLETE'] as const) {
+      recordValidationProgress(baseline, 'root', {
         ...binding,
         phase,
         checks: ['build'],
         stage: 'starting',
       });
-    expect(store.read('root').events).toEqual([]);
-    recordValidationProgress(store, 'root', {
+      recordValidationProgress(implementation, 'root', {
+        ...binding,
+        phase,
+        checks: ['build'],
+        stage: 'starting',
+      });
+    }
+    expect(baseline.read('root').events).toEqual([]);
+    expect(implementation.read('root').events).toEqual([]);
+    recordValidationProgress(baseline, 'root', {
       ...binding,
       phase: 'VALIDATION',
       checks: ['build'],
       stage: 'starting',
     });
-    expect(store.read('root').events).toMatchObject([{ kind: 'validation', phase: 'VALIDATION' }]);
+    recordValidationProgress(implementation, 'root', {
+      ...binding,
+      phase: 'IMPL_VALIDATION',
+      checks: ['build'],
+      stage: 'starting',
+    });
+    expect(baseline.read('root').events).toMatchObject([
+      { kind: 'validation', phase: 'VALIDATION' },
+    ]);
+    expect(implementation.read('root').events).toMatchObject([
+      { kind: 'validation', phase: 'IMPL_VALIDATION' },
+    ]);
+  });
+  it('keeps baseline wording and labels implementation validation distinctly', () => {
+    const baseline = createStore();
+    const implementation = createStore();
+    const events = (phase: 'VALIDATION' | 'IMPL_VALIDATION') => [
+      { ...binding, phase, checks: ['build'], stage: 'starting' as const },
+      { ...binding, phase, checks: ['build'], stage: 'check_started' as const, check: 'build' },
+      { ...binding, phase, checks: ['build'], stage: 'check_finished' as const, check: 'build' },
+      { ...binding, phase, checks: ['build'], stage: 'finished' as const },
+    ];
+    for (const event of events('VALIDATION')) recordValidationProgress(baseline, 'root', event);
+    for (const event of events('IMPL_VALIDATION'))
+      recordValidationProgress(implementation, 'root', event);
+    expect(baseline.read('root').events.map((event) => event.message)).toEqual([
+      '**Validation started** — preparing `build`.',
+      '**Validation in progress** — preparing `build` check.',
+      '**Validation in progress** — `build` returned; the canonical check result remains authoritative.',
+      'Baseline validation attempt ended; canonical results remain authoritative.',
+    ]);
+    expect(implementation.read('root').events.map((event) => event.message)).toEqual([
+      '**Implementation validation started** — preparing `build`.',
+      '**Implementation validation in progress** — preparing `build` check.',
+      '**Implementation validation in progress** — `build` returned; the canonical check result remains authoritative.',
+      'Implementation validation attempt ended; canonical results remain authoritative.',
+    ]);
   });
   it('keeps events scoped to their exact session and supports cursor reads', () => {
     const store = createPresentationStore();

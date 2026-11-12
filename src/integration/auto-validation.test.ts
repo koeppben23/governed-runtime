@@ -371,7 +371,38 @@ describe('automatic validation', () => {
 
       const state = await readState(await getSessDir());
       expect(state!.phase).toBe('IMPL_REVIEW');
-      expect(progress).not.toHaveBeenCalled();
+      expect(progress).toHaveBeenCalledTimes(2 + state!.activeChecks.length * 2);
+      expect(progress).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          phase: 'IMPL_VALIDATION',
+          checks: state!.activeChecks,
+          stage: 'starting',
+        }),
+      );
+      for (const [index, check] of state!.activeChecks.entries()) {
+        expect(progress).toHaveBeenNthCalledWith(
+          2 + index * 2,
+          expect.objectContaining({
+            phase: 'IMPL_VALIDATION',
+            checks: state!.activeChecks,
+            stage: 'check_started',
+            check,
+          }),
+        );
+        expect(progress).toHaveBeenNthCalledWith(
+          3 + index * 2,
+          expect.objectContaining({
+            phase: 'IMPL_VALIDATION',
+            checks: state!.activeChecks,
+            stage: 'check_finished',
+            check,
+          }),
+        );
+      }
+      expect(progress).toHaveBeenLastCalledWith(
+        expect.objectContaining({ phase: 'IMPL_VALIDATION', stage: 'finished' }),
+      );
       expect(state!.implValidation.map((entry) => entry.checkId)).toEqual(state!.activeChecks);
       expect(state!.implValidation.every((entry) => entry.passed)).toBe(true);
       expect(vi.mocked(executorMock.executeCheck).mock.calls).toHaveLength(

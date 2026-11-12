@@ -56,20 +56,21 @@ in the conversation transcript. It is a live, read-only diagnostic view.
 - It reads canonical `GetNextAction` and, at review gates,
   `GetWorkbenchReview`. It also reads the ephemeral, non-authoritative
   `GetPresentation` page while mounted for baseline progress after `/approve`
-  and before `/implement` only. This in-flight display creates no user message
-  or model turn. Reading status/progress never starts a workflow, hydrates a
-  session, submits a decision, writes audit events or asks the model to continue.
+  and post-implementation check progress after `/implement`. This in-flight
+  display creates no user message or model turn. Reading status/progress never
+  starts a workflow, hydrates a session, submits a decision, writes audit
+  events or asks the model to continue.
 - `/start` keeps its original chat report and Markdown workflow choice. The
   final approval/check-result chat response still recommends `/implement`.
   No extra action button, automatic Start dialog or replacement report dialog
   is added; the existing chooser opens only on explicit `/choose-workflow`.
 - `GetPresentation` is a bounded in-memory convenience channel. It is not audit
   or workflow evidence; a reload loses it and canonical reads remain the source
-  of truth. Only events matching the current durable baseline operation and retry
-  attempt are served. Late runs and updates after closure are discarded. Failed
-  reads clear progress, not governance state; failures are diagnosed.
+  of truth. Only events matching the current durable validation operation and
+  retry attempt are served. Late runs and updates after closure are discarded.
+  Failed reads clear progress, not governance state; failures are diagnosed.
 - The canonical pill read is not fetched at plugin registration or first render.
-  User refresh, baseline progress notices and an observed
+  User refresh, validation progress notices and an observed
   current-session `session.execution.succeeded` event trigger it. A best-effort
   30-second reconciler refreshes only the visible current
   session while the GUI is connected. Progress uses `PresentationUpdated` RPC
@@ -122,7 +123,7 @@ The following gates remain open and are not implied by this document:
 - zero-restart host upgrade;
 - live-profile uninstall;
 - automatic refresh across every governance transition.
-- installed acceptance of the changed baseline-progress bundle on Desktop 2.2.7.
+- installed acceptance of the changed validation-progress bundle on Desktop 2.2.7.
 
 See [Desktop UX product slice](./ux/1196-desktop-product-slice.md) and the
 [installed acceptance records](./host-probes/opencode-v2/desktop-2.2.6-workbench-acceptance.md)

@@ -4,6 +4,10 @@ function probeSessionKey(session) {
   return session && session.server ? session.server.id + ':' + session.id : null;
 }
 
+function isFlowGuardProgressPhase(phase) {
+  return phase === 'VALIDATION' || phase === 'IMPL_VALIDATION';
+}
+
 /** Inline FlowGuard cards are live diagnostics, never historic approvals. */
 function renderFlowGuardChatCard(ctx, props) {
   const { createEffect, createSignal, onCleanup } = require('solid-js');
@@ -148,8 +152,8 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   function announceCurrentPresentation(session, next) {
     const event = presentation();
     if (!event || event.sessionID !== session.id || event.kind !== 'validation' ||
-        event.phase !== 'VALIDATION' || next.phase !== 'VALIDATION' ||
-        event.id === announcedPresentation) return;
+        !isFlowGuardProgressPhase(event.phase) || !isFlowGuardProgressPhase(next.phase) ||
+        event.phase !== next.phase || event.id === announcedPresentation) return;
     announcedPresentation = event.id;
     toast(ctx, event.message, 'default');
   }
@@ -159,7 +163,7 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
       const current = ctx.sessions.current();
       if (event === null) { setPresentation(null); return; }
       if (!current || event.sessionID !== current.id || event.kind !== 'validation' ||
-          event.phase !== 'VALIDATION') return;
+          !isFlowGuardProgressPhase(event.phase)) return;
       setPresentation(event);
       void inspect(current);
       // A cached phase can lag a legitimate new event. Announce only after
@@ -276,7 +280,7 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         const matched = state && state.key === key;
         const latest = presentation();
         const latestForSession = latest && latest.sessionID === input.session.id &&
-          matched && state.status !== 'loading' && state.phase === 'VALIDATION' &&
+          matched && state.status !== 'loading' && isFlowGuardProgressPhase(state.phase) &&
           latest.phase === state.phase ? latest : null;
         const label = latestForSession ? 'FlowGuard · ' + latestForSession.message.replace(/[*\x60]/g, '') :
           matched ? state.label + ' · last read' : 'FlowGuard · inspect';

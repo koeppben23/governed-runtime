@@ -106,6 +106,7 @@ export const FlowGuardAuditPlugin = Plugin.define({
       assertLifecycle,
       assertAvailable,
       directory: ctx.location.directory,
+      presentation,
     });
 
     const dispose = (): Promise<void> => {
@@ -167,6 +168,7 @@ type RuntimeActionInput = {
   assertLifecycle: () => void;
   assertAvailable: (scope: ActiveGovernanceScope) => void;
   directory: string;
+  presentation: PresentationStore;
 };
 
 type RuntimeLoadOptions = {
@@ -184,6 +186,7 @@ function createRuntimeActions(input: RuntimeActionInput) {
     assertLifecycle,
     assertAvailable,
     directory,
+    presentation,
   } = input;
   const resolveEntry = async (
     sessionId: string,
@@ -236,6 +239,7 @@ function createRuntimeActions(input: RuntimeActionInput) {
           return { content: help.description, metadata: {} };
         return executeCanonicalNativeTool(name, definition, args, context, {
           ...entry,
+          presentation,
           assertScopeCurrent: async () => {
             await governance.assertScopeCurrent(context.sessionID, entry.scope);
             await governance.assertActivationAuditConfirmed(entry.scope.root);

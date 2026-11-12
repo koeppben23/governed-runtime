@@ -430,7 +430,7 @@ describe('installed Desktop GUI bundle', () => {
     expect(loaded.commandCalls).toHaveLength(0);
   });
 
-  it.each(['VALIDATION', 'IMPLEMENTATION'])(
+  it.each(['VALIDATION', 'IMPL_VALIDATION', 'IMPLEMENTATION'])(
     'reconciles progress against fresh %s state, not a cached phase',
     async (phase) => {
       vi.useFakeTimers();
@@ -446,6 +446,7 @@ describe('installed Desktop GUI bundle', () => {
         });
         loaded.presentations.push({ sessionID: 'ses_root', events: [], cursor: null });
         loaded.views.push(view('TICKET'));
+        const progressPhase = phase === 'IMPL_VALIDATION' ? 'IMPL_VALIDATION' : 'VALIDATION';
         const progressPage = {
           sessionID: 'ses_root',
           events: [
@@ -453,15 +454,18 @@ describe('installed Desktop GUI bundle', () => {
               id: 'new-phase',
               sessionID: 'ses_root',
               kind: 'validation',
-              phase: 'VALIDATION',
-              message: 'Preparing build check',
+              phase: progressPhase,
+              message:
+                phase === 'IMPL_VALIDATION'
+                  ? '**Implementation validation in progress** — preparing `build` check.'
+                  : 'Preparing build check',
               occurredAt: '2026-11-12T00:00:00Z',
             },
           ],
           cursor: 'new-phase',
         };
         const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
-          show(input: { session: unknown }): { rows: Array<{ id: string }> };
+          show(input: { session: unknown }): { label: string; rows: Array<{ id: string }> };
         };
         const input = { session: loaded.host.sessions.current() };
         pill.show(input);
@@ -471,10 +475,15 @@ describe('installed Desktop GUI bundle', () => {
         loaded.views.push(view(phase));
         loaded.progressChanged();
         await vi.advanceTimersByTimeAsync(0);
-        expect(pill.show(input).rows.some((row) => row.id === 'presentation')).toBe(
-          phase === 'VALIDATION',
-        );
-        expect(loaded.host.toast.show.mock.calls.length).toBe(phase === 'VALIDATION' ? 1 : 0);
+        const surface = pill.show(input);
+        const showsProgress = phase === 'VALIDATION' || phase === 'IMPL_VALIDATION';
+        expect(surface.rows.some((row) => row.id === 'presentation')).toBe(showsProgress);
+        expect(loaded.host.toast.show.mock.calls.length).toBe(showsProgress ? 1 : 0);
+        if (phase === 'VALIDATION') expect(surface.label).toContain('Preparing build check');
+        if (phase === 'IMPL_VALIDATION')
+          expect(surface.label).toContain('Implementation validation in progress');
+        if (phase === 'IMPLEMENTATION')
+          expect(surface.label).not.toContain('Preparing build check');
         expect(loaded.commandCalls).toEqual([]);
       } finally {
         for (const cleanup of pluginCleanups.splice(0).reverse()) cleanup();

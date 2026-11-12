@@ -35,6 +35,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Phase, SessionState } from '../../state/schema.js';
 import type { SystemWorkOperation } from '../../state/system-work.js';
+import { isValidationProgressPhase } from './helpers.js';
 import type { AutoValidationProgress, ToolResult, WorkspaceToolContext } from './helpers.js';
 import { formatBlocked } from '../blocked-result.js';
 import {
@@ -341,13 +342,13 @@ function emitValidationProgress(
   progress: AutoValidationProgress | undefined,
   event: Parameters<AutoValidationProgress>[0],
 ): void {
-  if (progress === undefined || event.phase !== 'VALIDATION') return;
+  if (progress === undefined || !isValidationProgressPhase(event.phase)) return;
   try {
     void Promise.resolve(progress(event)).catch((error: unknown) => {
-      console.warn('[FlowGuard] Baseline progress delivery failed; validation continues.', error);
+      console.warn('[FlowGuard] Validation progress delivery failed; validation continues.', error);
     });
   } catch (error) {
-    console.warn('[FlowGuard] Baseline progress delivery failed; validation continues.', error);
+    console.warn('[FlowGuard] Validation progress delivery failed; validation continues.', error);
   }
 }
 

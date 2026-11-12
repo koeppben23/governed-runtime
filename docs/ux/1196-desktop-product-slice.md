@@ -148,13 +148,14 @@ Both surfaces are installed-verified on Desktop 2.2.6 artifact `e054159a`
   `GetNextAction` and, for review gates, `GetWorkbenchReview` RPCs.
 - The pill exposes **Inspect/Refresh canonical status**. Nothing is fetched on
   registration for canonical status. A mounted/session-switched pill reads its
-  current ephemeral baseline snapshot. User action, baseline progress notices,
-  completion events and 30-second visible reconciliation perform the reads.
-  Only baseline validation after `/approve` uses model-free progress; Start and
-  final decision/result chat responses retain their original presentation.
-  Progress invalidations are read-only RPC events, not a one-second poller;
-  the current check text is displayed directly in the existing label. The
-  changed baseline bundle still requires installed Desktop 2.2.7 acceptance.
+  current ephemeral validation snapshot. User action, validation progress
+  notices, completion events and 30-second visible reconciliation perform the
+  reads. Baseline validation after `/approve` and post-implementation checks
+  after `/implement` use model-free progress; Start and final decision/result
+  chat responses retain their original presentation. Progress invalidations are
+  read-only RPC events, not a one-second poller; the current check text is
+  displayed directly in the existing label. The changed validation bundle still
+  requires installed Desktop 2.2.7 acceptance.
 - No synthetic message is inserted. An earlier prototype used
   `session.synthetic({ resume: false })`, but that could introduce
   otherwise non-authoritative UI notices into future model context.

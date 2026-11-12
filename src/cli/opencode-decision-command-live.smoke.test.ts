@@ -402,9 +402,40 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       ]);
       expect(verifyChain(await readAuditTrail(mutated.sessDir)).valid).toBe(true);
       implementationStep = 0;
-      await p.prompt(
-        root.id,
-        '/implement — record the change, run the post-implementation checks and obtain the independent implementation review.',
+      const implementationSnapshots: PresentationResult[] = [];
+      const implementationReads: Promise<void>[] = [];
+      const unsubscribeImplementation = rpc.events.on('PresentationUpdated', (event) => {
+        if (event.data.sessionID !== root.id) return;
+        const reading = rpc
+          .GetPresentation({ sessionID: root.id }, { location: p.location })
+          .then((page) => {
+            implementationSnapshots.push(page);
+          });
+        implementationReads.push(reading);
+        return reading;
+      });
+      try {
+        await p.prompt(
+          root.id,
+          '/implement — record the change, run the post-implementation checks and obtain the independent implementation review.',
+        );
+      } finally {
+        unsubscribeImplementation();
+        await Promise.all(implementationReads);
+      }
+      const implementationEvents = [
+        ...new Map(
+          implementationSnapshots.flatMap((page) => page.events).map((event) => [event.id, event]),
+        ).values(),
+      ];
+      expect(implementationEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            phase: 'IMPL_VALIDATION',
+            stage: 'check_started',
+            message: expect.stringContaining('preparing `test` check'),
+          }),
+        ]),
       );
       const implemented = await workflow(p, root.id);
       expect(

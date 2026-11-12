@@ -283,6 +283,7 @@ describe('native V2 entrypoint', () => {
             directory: process.cwd(),
             worktree: process.cwd(),
             abort: signal,
+            autoValidationProgress: expect.any(Function),
           });
           context.metadata({ metadata: { first: true } });
           context.metadata({ title: 'Status', metadata: { second: true } });

@@ -60,7 +60,7 @@ export const PresentationEventSchema = z
     sessionID: z.string().min(1),
     kind: z.literal('validation'),
     message: z.string().max(32768),
-    phase: z.literal('VALIDATION').optional(),
+    phase: z.enum(['VALIDATION', 'IMPL_VALIDATION']).optional(),
     checks: z.array(z.string().max(128)).max(32).optional(),
     occurredAt: z.string().min(1).max(64),
   })
