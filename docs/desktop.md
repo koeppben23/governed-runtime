@@ -53,13 +53,22 @@ The optional ComposerPill appears above the OpenCode Desktop chat composer, not
 in the conversation transcript. It is a live, read-only diagnostic view.
 
 - It renders a session-bound status label and an explicit Inspect/Refresh row.
-- It reads only canonical `GetNextAction` and, at review gates,
-  `GetWorkbenchReview`. It never starts a workflow, hydrates a session, submits
-  a decision, writes audit events or asks the model to continue.
-- Nothing is fetched at plugin registration or first render. A user refresh or
-  an observed current-session `session.execution.succeeded` event triggers a
-  read. A best-effort 30-second reconciler refreshes only the visible current
-  session while the GUI is connected.
+- It reads canonical `GetNextAction` and, at review gates,
+  `GetWorkbenchReview`. It also reads the ephemeral, non-authoritative
+  `GetPresentation` page while mounted, so validation progress and decision
+  notices are visible without creating a user message or model turn. A
+  diagnostic report is available from the pill popover. It never starts a
+  workflow, hydrates a session, submits a decision, writes audit events or asks
+  the model to continue.
+- `GetPresentation` is a bounded in-memory convenience channel. It is not audit
+  or workflow evidence; a reload loses it and canonical reads remain the source
+  of truth. Failed reads are ignored, not promoted into a governance failure.
+- The canonical pill read is not fetched at plugin registration. A user refresh
+  or an observed current-session `session.execution.succeeded` event triggers
+  it. A best-effort 30-second reconciler refreshes only the visible current
+  session while the GUI is connected. Presentation polling starts only when the
+  pill is mounted, runs about once per second while the window is visible, and
+  stops with the plugin.
 - A completion event is an optimization, not a durable audit feed. Missed
   events leave the last read visible until refresh; failed or unavailable reads
   are marked `NOT_VERIFIED`, and a mid-read state change is marked `STALE`.

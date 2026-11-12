@@ -35,9 +35,14 @@ const lockedSessionDir = new AsyncLocalStorage<string>();
  * signal/progress and resolve canonical worktree authority in plugin.ts;
  * this application contract is not a native SDK ToolContext.
  */
+export type AutoValidationProgressStage = 'starting' | 'check_started' | 'check_finished';
+
 export interface AutoValidationProgressEvent {
   readonly phase: Phase;
   readonly checks: readonly string[];
+  /** Presentation lifecycle only; never a check-result or PASS authority. */
+  readonly stage?: AutoValidationProgressStage;
+  readonly check?: string;
 }
 
 export type AutoValidationProgress = (event: AutoValidationProgressEvent) => void | Promise<void>;

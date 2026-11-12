@@ -12,6 +12,7 @@ import {
 } from '../adapters/diagnostics/index.js';
 import { resolveRoot } from '../adapters/git.js';
 import { NATIVE_DEBUG_EXPORT_COMMAND } from '../shared/flowguard-identifiers.js';
+import { recordPresentation, type PresentationStore } from './plugin-presentation.js';
 
 type CommandEditor = Parameters<Parameters<Plugin.Context['command']['transform']>[0]>[0];
 
@@ -99,18 +100,18 @@ async function runDebugExport(ctx: Plugin.Context, sessionId: string): Promise<s
   ].join('\n\n');
 }
 
-export function addDebugExportCommand(ctx: Plugin.Context, editor: CommandEditor): void {
+export function addDebugExportCommand(
+  ctx: Plugin.Context,
+  presentation: PresentationStore,
+  editor: CommandEditor,
+): void {
   editor.add({
     name: NATIVE_DEBUG_EXPORT_COMMAND,
     description:
       'Create a bounded diagnostic snapshot for this session and its verified reviewer descendants; it writes files but never mutates governance.',
     execute: async (input) => {
       const text = await runDebugExport(ctx, input.sessionID);
-      try {
-        await ctx.session.prompt({ sessionID: input.sessionID, text });
-      } catch (error) {
-        console.warn('[FlowGuard] Diagnostic snapshot written; presentation failed.', error);
-      }
+      recordPresentation(presentation, input.sessionID, { kind: 'report', message: text });
     },
   });
 }

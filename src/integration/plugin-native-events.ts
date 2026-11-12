@@ -9,10 +9,11 @@ import { projectOpenCodeEvent } from './opencode-host-adapter.js';
 import { resolveGovernanceActivation } from '../adapters/governance-activation.js';
 import { handlePluginEvent } from './plugin-afterhooks.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
+import type { PresentationStore } from './plugin-presentation.js';
 
 type EventRuntime = { readonly runtime: FlowGuardPluginRuntime };
 type ScopedEventRuntime = EventRuntime & { readonly scope: ActiveGovernanceScope };
-interface EventDispatchDeps {
+export interface EventDispatchDeps {
   readonly runtimes: ReadonlyMap<string, Promise<EventRuntime>>;
   readonly sessionRoots: Map<string, string>;
   readonly governance: OpenCodeGovernance;
@@ -87,6 +88,32 @@ export function createEventFence(governance: OpenCodeGovernance, adapter: OpenCo
       adapter.log('error', 'V2 event stream unavailable', serializeError(error));
     },
   };
+}
+
+export interface EventLoopDeps extends EventDispatchDeps {
+  readonly ctx: Plugin.Context;
+  readonly signal: AbortSignal;
+  readonly presentation: PresentationStore;
+  readonly failed: (error: unknown, event?: OpenCodeEvent) => void;
+  readonly operations: Set<Promise<unknown>>;
+}
+
+/**
+ * Subscribe once to the native stream. Presentation is cleared for a deleted
+ * session before any workflow cleanup, and a status record never becomes a
+ * governance operation.
+ */
+export function startEventLoop(deps: EventLoopDeps): Promise<void> {
+  return consumeEvents(
+    deps.ctx,
+    deps.signal,
+    (event) => {
+      if (event.type === 'session.deleted') deps.presentation.clear(event.data.sessionID);
+      return deps.governance.observeProgress(event) ?? dispatchEvent(event, deps);
+    },
+    deps.failed,
+    deps.operations,
+  );
 }
 
 export async function consumeEvents(

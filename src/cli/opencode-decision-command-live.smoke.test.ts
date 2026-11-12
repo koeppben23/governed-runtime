@@ -260,11 +260,32 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
         text: 'Accept the independently reviewed README plan with the stated residual documentation risk.',
       });
       await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
-      expect(
-        p.requests
-          .slice(requestsBeforeApproval)
-          .some((request) => JSON.stringify(request.body.messages).includes('Decision recorded')),
-      ).toBe(true);
+      // The decision and validation status are host presentation only. They
+      // must not create a user inbox item or another model request.
+      expect(p.requests.slice(requestsBeforeApproval)).toHaveLength(0);
+      const context = await p.client.session.context({ sessionID: root.id });
+      expect(JSON.stringify(context)).not.toContain('Validation started');
+      expect(JSON.stringify(context)).not.toContain('Decision recorded');
+      const presentation = await p.client.rpc.call({
+        location: p.location,
+        rpcID: 'flowguard-governance',
+        method: 'GetPresentation',
+        input: { sessionID: root.id },
+      });
+      const events = (presentation.output as { events: Array<{ kind: string; message: string }> })
+        .events;
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'validation',
+            message: expect.stringContaining('Validation started'),
+          }),
+          expect.objectContaining({
+            kind: 'decision',
+            message: expect.stringContaining('Decision recorded'),
+          }),
+        ]),
+      );
       expect(await receipts(p, root.id)).toMatchObject([
         {
           detail: {
@@ -277,7 +298,7 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
     },
     300_000,
   );
-  it('approves with a visible decision turn, audits the actual source and keeps one receipt across repeat and SIGKILL/reload', async () => {
+  it('approves without a model turn, audits the actual source and keeps one receipt across repeat and SIGKILL/reload', async () => {
     const p = await open();
     const root = await p.session();
     await activate(p, root.id);
@@ -289,11 +310,26 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       text: 'Reviewed current ADR.',
     });
     await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
+    expect(p.requests.slice(beforeDecision)).toHaveLength(0);
+    expect(JSON.stringify(await p.client.session.context({ sessionID: root.id }))).not.toContain(
+      'Decision recorded',
+    );
+    const presentation = await p.client.rpc.call({
+      location: p.location,
+      rpcID: 'flowguard-governance',
+      method: 'GetPresentation',
+      input: { sessionID: root.id },
+    });
     expect(
-      p.requests
-        .slice(beforeDecision)
-        .some((request) => JSON.stringify(request.body.messages).includes('Decision recorded')),
-    ).toBe(true);
+      (presentation.output as { events: Array<{ kind: string; message: string }> }).events,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'decision',
+          message: expect.stringContaining('Decision recorded'),
+        }),
+      ]),
+    );
     expect((await workflow(p, root.id)).state.phase).toBe('ARCH_COMPLETE');
     const events = await receipts(p, root.id);
     expect(events).toMatchObject([

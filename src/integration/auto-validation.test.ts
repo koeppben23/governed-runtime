@@ -325,11 +325,26 @@ describe('automatic validation', () => {
       expect(vi.mocked(executorMock.executeCheck).mock.calls).toHaveLength(
         state!.activeChecks.length,
       );
-      expect(progress).toHaveBeenCalledTimes(1);
-      expect(progress).toHaveBeenCalledWith({
+      expect(progress).toHaveBeenCalledTimes(1 + state!.activeChecks.length * 2);
+      expect(progress).toHaveBeenNthCalledWith(1, {
         phase: 'VALIDATION',
         checks: state!.activeChecks,
+        stage: 'starting',
       });
+      for (const [index, check] of state!.activeChecks.entries()) {
+        expect(progress).toHaveBeenNthCalledWith(2 + index * 2, {
+          phase: 'VALIDATION',
+          checks: state!.activeChecks,
+          stage: 'check_started',
+          check,
+        });
+        expect(progress).toHaveBeenNthCalledWith(3 + index * 2, {
+          phase: 'VALIDATION',
+          checks: state!.activeChecks,
+          stage: 'check_finished',
+          check,
+        });
+      }
     });
 
     it('team /implement runs the post-implementation checks automatically and activates the review obligation', async () => {
@@ -636,6 +651,35 @@ describe('automatic validation', () => {
       const again = await resumePendingSystemWork(ctx);
       expect(again).toEqual({ kind: 'none' });
       expect(vi.mocked(executorMock.executeCheck)).not.toHaveBeenCalled();
+    });
+
+    it('runs checks even when a presentation callback never settles', async () => {
+      await reachTeamPlanReview();
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        phase: 'VALIDATION',
+        pendingSystemWork: {
+          kind: 'validation',
+          requestedAt: new Date().toISOString(),
+          attempt: 0,
+          retryAfter: null,
+        },
+        validation: [],
+      });
+      vi.mocked(executorMock.executeCheck).mockClear();
+      const hanging: TestToolContext = {
+        ...ctx,
+        autoValidationProgress: () => new Promise<void>(() => {}),
+      };
+
+      const resumed = await resumePendingSystemWork(hanging);
+
+      expect(resumed).toMatchObject({ kind: 'completed', phase: 'IMPLEMENTATION' });
+      expect(vi.mocked(executorMock.executeCheck)).toHaveBeenCalledTimes(
+        state!.activeChecks.length,
+      );
     });
 
     it('a technical resume outcome keeps the marker pending and reports still_pending', async () => {

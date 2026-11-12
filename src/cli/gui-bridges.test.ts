@@ -34,6 +34,7 @@ describe('Desktop GUI client and host bridges', () => {
     await client.getNextAction();
     await client.getWorkbenchReview();
     await client.getWorkbenchDiagnostics();
+    await client.getPresentation('cursor-1');
     await client.submitDecision({
       invocation: '/approve',
       expected: {
@@ -68,6 +69,12 @@ describe('Desktop GUI client and host bridges', () => {
         method: 'GetWorkbenchDiagnostics',
         location: { directory: '/workspace/root' },
         input: { sessionID: 'session-bound' },
+      },
+      {
+        rpcID: 'flowguard-governance',
+        method: 'GetPresentation',
+        location: { directory: '/workspace/root' },
+        input: { sessionID: 'session-bound', after: 'cursor-1' },
       },
       {
         rpcID: 'flowguard-governance',
@@ -137,6 +144,73 @@ describe('Desktop GUI client and host bridges', () => {
     expect(clear).toHaveBeenCalledWith(7);
     controller.begin();
     expect(schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('polls only visible sidecar presentation pages and announces one baseline event', async () => {
+    const event = (id: string, sessionID = 'session-a') => ({
+      id,
+      sessionID,
+      kind: 'notice',
+      message: id,
+      occurredAt: '2026-11-12T00:00:00.000Z',
+    });
+    const ticks: Array<() => void> = [];
+    const clear = vi.fn();
+    const schedule = vi.fn((callback: () => void, period: number) => {
+      expect(period).toBe(1_000);
+      ticks.push(callback);
+      return 9;
+    });
+    const visibility = { visibilityState: 'visible' };
+    const factory = new Function(
+      'setInterval',
+      'clearInterval',
+      'document',
+      GUI_HOST_BRIDGE_BUNDLE + '\nreturn createFlowGuardPresentationWatcher;',
+    );
+    const pages = [
+      { events: [event('one'), event('two')], cursor: 'two' },
+      { events: [event('two'), event('three')], cursor: 'three' },
+    ];
+    const getPresentation = vi.fn(async () => pages.shift() ?? { events: [], cursor: null });
+    const notify = vi.fn();
+    let current = { id: 'session-a', server: { id: 'sidecar' } };
+    const create = factory(schedule, clear, visibility) as (
+      context: unknown,
+      get: (
+        session: unknown,
+        after: string | null,
+      ) => Promise<{
+        events: Array<ReturnType<typeof event>>;
+        cursor: string | null;
+      }>,
+      callback: (value: ReturnType<typeof event>) => void,
+    ) => { start(): void; stop(): void };
+    const watcher = create({ sessions: { current: () => current } }, getPresentation, notify);
+    watcher.start();
+    expect(schedule).toHaveBeenCalledOnce();
+
+    ticks[0]?.();
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(1));
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ id: 'two' }));
+    ticks[0]?.();
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(2));
+    expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'three' }));
+
+    visibility.visibilityState = 'hidden';
+    ticks[0]?.();
+    expect(getPresentation).toHaveBeenCalledTimes(2);
+    visibility.visibilityState = 'visible';
+    current = { id: 'session-b', server: { id: 'sidecar' } };
+    pages.push({ events: [event('b1', 'session-b')], cursor: 'b1' });
+    ticks[0]?.();
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(3));
+    expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'b1' }));
+
+    watcher.stop();
+    ticks[0]?.();
+    expect(getPresentation).toHaveBeenCalledTimes(3);
+    expect(clear).toHaveBeenCalledWith(9);
   });
 
   it.each(['serverEndpoints', 'servers'])(

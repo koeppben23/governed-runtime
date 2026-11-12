@@ -332,16 +332,44 @@ type CheckSequenceResult =
   | { readonly kind: 'finished'; readonly lastResponse: string }
   | { readonly kind: 'empty' };
 
+/**
+ * A presentation callback is not a validation authority. Never await it: a
+ * broken or hanging UI must not delay checks, hold a lock or change results.
+ */
+function emitValidationProgress(
+  progress: AutoValidationProgress | undefined,
+  event: Parameters<AutoValidationProgress>[0],
+): void {
+  if (progress === undefined) return;
+  try {
+    void Promise.resolve(progress(event)).catch(() => {});
+  } catch {
+    // A presentation callback cannot fail the canonical check sequence.
+  }
+}
+
 async function runActiveCheckSequence(
   context: WorkspaceToolContext,
   phase: ValidationPhase,
   activeChecks: readonly string[],
   progress?: AutoValidationProgress,
 ): Promise<CheckSequenceResult> {
-  await progress?.({ phase, checks: activeChecks });
+  emitValidationProgress(progress, { phase, checks: activeChecks, stage: 'starting' });
   let lastResponse: string | null = null;
   for (const kind of activeChecks) {
+    emitValidationProgress(progress, {
+      phase,
+      checks: activeChecks,
+      stage: 'check_started',
+      check: kind,
+    });
     const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
+    emitValidationProgress(progress, {
+      phase,
+      checks: activeChecks,
+      stage: 'check_finished',
+      check: kind,
+    });
     lastResponse = text;
 
     if (responseReportsError(text)) break;

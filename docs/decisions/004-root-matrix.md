@@ -10,17 +10,22 @@ The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
 (counts updated 2026-11-12):
 
-- `root-composition`: 37 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 39 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 8 named files (`gui-rpc-client-contract.ts`,
   `host-mutation-observation.ts`, `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 60 root production files
+- total: 62 root production files
 
 The native event-lifecycle repair adds `plugin-session-error-audit.ts` as
 composition of the canonical audit lock, trail reader and idempotent writer.
 It binds native notification identity to the existing audit envelope; it does
 not define a second audit schema, persistence lock or reviewer authority.
+
+The model-free presentation repair adds `plugin-presentation.ts` (bounded,
+ephemeral status/report store) and `plugin-presentation-watch.ts` (read-only UI
+polling bridge). Neither is durable, audited, model-visible or authoritative;
+canonical state and Next Action remain the source of truth.
 
 The #1196 Desktop-layer isolation adds `gui-rpc-client-contract.ts` as a
 host-runtime **type-only port** reusing the canonical Next Action, review,

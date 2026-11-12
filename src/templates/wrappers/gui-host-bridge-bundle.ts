@@ -33,6 +33,85 @@ function subscribeFlowGuardSessionCompletion(ctx, callback) {
  * event. A live event is an optimization, not an authoritative audit feed.
  * Nothing is fetched at registration or on the first pill render.
  */
+/**
+ * Read-only presentation polling. This is not a governance or evidence feed:
+ * every failure is ignored and the canonical Next Action read remains the
+ * authoritative status source. Only the newest baseline event is announced.
+ */
+function createFlowGuardPresentationWatcher(ctx, getPresentation, notify) {
+  let timer = null;
+  let disposed = false;
+  let reading = false;
+  let sessionKey = null;
+  let cursor = null;
+  let baseline = true;
+  const seen = new Set();
+
+  const reset = () => {
+    sessionKey = null;
+    cursor = null;
+    baseline = true;
+    seen.clear();
+  };
+
+  const tick = async () => {
+    if (disposed || reading) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const session = ctx.sessions.current();
+    if (!session || !session.server || session.server.id !== 'sidecar') {
+      reset();
+      return;
+    }
+    const key = session.server.id + ':' + session.id;
+    if (key !== sessionKey) {
+      sessionKey = key;
+      cursor = null;
+      baseline = true;
+      seen.clear();
+    }
+    reading = true;
+    try {
+      const page = await getPresentation(session, cursor);
+      if (disposed || key !== sessionKey) return;
+      const events = page && Array.isArray(page.events) ? page.events : [];
+      for (let index = 0; index < events.length; index++) {
+        const event = events[index];
+        if (!event || typeof event.id !== 'string' || seen.has(event.id)) continue;
+        seen.add(event.id);
+        if (!baseline || index === events.length - 1) notify(event);
+      }
+      cursor = page && page.cursor ? page.cursor : cursor;
+      baseline = false;
+      if (seen.size > 512) {
+        const keep = [...seen].slice(-256);
+        seen.clear();
+        for (const id of keep) seen.add(id);
+      }
+    } catch {
+      // Presentation is an optional convenience channel, never an authority check.
+    } finally {
+      reading = false;
+    }
+  };
+
+  return {
+    start: () => {
+      if (timer !== null || disposed) return;
+      timer = setInterval(() => void tick().catch(() => {}), 1000);
+      if (timer && typeof timer.unref === 'function') timer.unref();
+    },
+    stop: () => {
+      disposed = true;
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+      reset();
+    },
+    tick,
+  };
+}
+
 function createFlowGuardStatusReconciler(ctx, callback) {
   const intervalMs = 30000;
   let timer = null;

@@ -35,7 +35,12 @@ import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { hydrate, resolveHydratePolicy } from './tools/index.js';
-import { FlowGuardGovernance, type AutonomousStartRequest } from './opencode-governance-rpc.js';
+import {
+  FlowGuardGovernance,
+  type AutonomousStartRequest,
+  type PresentationRequest,
+  type PresentationResult,
+} from './opencode-governance-rpc.js';
 import { buildReviewView } from './diagnostics/review-view.js';
 import { projectWorkbenchReview } from './status/workbench-review-projection.js';
 import { buildWorkbenchDiagnostics } from './status/workbench-diagnostics-reader.js';
@@ -48,6 +53,7 @@ import {
 import { addCheckCommand } from './plugin-check-command.js';
 import { addDebugExportCommand } from './plugin-debug-export-command.js';
 import { addDiagnosticsCommand } from './plugin-diagnostics-command.js';
+import { recordPresentation, type PresentationStore } from './plugin-presentation.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import {
   appendAuditEventAlreadyLocked,
@@ -98,6 +104,8 @@ export interface StartCommandDeps {
     options?: { readonly allowPendingActivationAudit?: boolean },
   ) => Promise<T | undefined>;
   readonly signal: AbortSignal;
+  /** Ephemeral host presentation; never workflow, audit or model authority. */
+  readonly presentation: PresentationStore;
 }
 
 export async function registerStartCommands(
@@ -116,14 +124,14 @@ function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Prom
       description: `FlowGuard — start governance for this session (optional policy mode: ${POLICY_MODES.join(', ')}).`,
       execute: (input) =>
         deps.guard(async () => {
-          await runStart(ctx, deps, input);
+          await runStart(deps, input);
         }),
     });
-    addDecisionCommands(ctx, deps, editor);
-    addGovernanceLifecycleCommands(ctx, deps, editor);
+    addDecisionCommands(deps, editor);
+    addGovernanceLifecycleCommands(deps, editor);
     addCheckCommand(ctx, deps, editor);
-    addDebugExportCommand(ctx, editor);
-    addDiagnosticsCommand(ctx, editor);
+    addDebugExportCommand(ctx, deps.presentation, editor);
+    addDiagnosticsCommand(ctx, deps.presentation, editor);
   });
 }
 
@@ -137,7 +145,6 @@ function registerAutonomousStart(
       deps.guard(async () => {
         try {
           return await runStart(
-            ctx,
             deps,
             {
               sessionID: request.sessionID,
@@ -171,12 +178,49 @@ function registerAutonomousStart(
         root: ctx.location.directory,
         sessionID: request.sessionID,
       }),
+    GetPresentation: (request) => getPresentation(ctx, deps.presentation, request),
     SubmitDecision: (request) => deps.guard(() => submitDecision(ctx, deps, request)),
   });
 }
 
+/**
+ * Read-only ephemeral presentation. This is not a governance operation: a
+ * missing/foreign session yields an empty page instead of fencing a scope. The
+ * UI must fall back to canonical Next Action/status when this is unavailable.
+ */
+async function getPresentation(
+  ctx: Pick<Plugin.Context, 'session' | 'location'>,
+  presentation: PresentationStore,
+  request: PresentationRequest,
+): Promise<PresentationResult> {
+  const empty: PresentationResult = { sessionID: request.sessionID, events: [], cursor: null };
+  try {
+    const session = await ctx.session.get(
+      { sessionID: request.sessionID },
+      { signal: AbortSignal.timeout(2_000) },
+    );
+    if (session.id !== request.sessionID || session.location.directory !== ctx.location.directory)
+      return empty;
+  } catch {
+    return empty;
+  }
+  const page = presentation.read(request.sessionID, request.after);
+  return {
+    sessionID: request.sessionID,
+    events: page.events.map((event) => ({
+      id: event.id,
+      sessionID: event.sessionID,
+      kind: event.kind,
+      message: event.message,
+      ...(event.phase === undefined ? {} : { phase: event.phase }),
+      ...(event.checks === undefined ? {} : { checks: [...event.checks] }),
+      occurredAt: event.occurredAt,
+    })),
+    cursor: page.cursor,
+  };
+}
+
 async function runStart(
-  ctx: Pick<Plugin.Context, 'session'>,
   deps: StartCommandDeps,
   input: CommandInvocation,
   autonomous?: AutonomousStartRequest & { readonly directory: string },
@@ -251,11 +295,13 @@ async function runStart(
     ...(choice === null ? [] : [choice]),
     "This is a FlowGuard host status report. Do not select a workflow automatically; wait for the user's explicit command.",
   ].join('\n\n');
-  await presentCommittedStart(
-    () => ctx.session.prompt({ sessionID: input.sessionID, text }),
-    'status report',
-    input.sessionID,
-  );
+  // The status is presented on the model-free host channel. Never manufacture a
+  // user turn merely to show a report the operator did not ask the model about.
+  recordPresentation(deps.presentation, input.sessionID, {
+    kind: 'notice',
+    message: text,
+    phase: workflow.state.phase,
+  });
   return { kind: result.kind, activationId: result.record.activationId };
 }
 

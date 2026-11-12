@@ -10,6 +10,7 @@ import { resolveRoot } from '../adapters/git.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { getLogDir } from '../logging/file-sink.js';
 import { NATIVE_DIAGNOSTICS_COMMAND } from '../shared/flowguard-identifiers.js';
+import { recordPresentation, type PresentationStore } from './plugin-presentation.js';
 import {
   buildExplorerView,
   buildNotificationView,
@@ -194,7 +195,11 @@ function failureText(error: unknown): string {
   );
 }
 
-export function addDiagnosticsCommand(ctx: Plugin.Context, editor: CommandEditor): void {
+export function addDiagnosticsCommand(
+  ctx: Plugin.Context,
+  presentation: PresentationStore,
+  editor: CommandEditor,
+): void {
   editor.add({
     name: NATIVE_DIAGNOSTICS_COMMAND,
     description:
@@ -207,11 +212,7 @@ export function addDiagnosticsCommand(ctx: Plugin.Context, editor: CommandEditor
         if (!(error instanceof DiagnosticViewError)) throw error;
         output = failureText(error);
       }
-      try {
-        await ctx.session.prompt({ sessionID: input.sessionID, text: output });
-      } catch (error) {
-        console.warn('[FlowGuard] Diagnostic view could not be presented.', error);
-      }
+      recordPresentation(presentation, input.sessionID, { kind: 'report', message: output });
     },
   });
 }

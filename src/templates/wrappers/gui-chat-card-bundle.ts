@@ -143,6 +143,20 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   if (!ComposerPill) return;
   const { createSignal, onCleanup } = require('solid-js');
   const [snapshot, setSnapshot] = createSignal(null);
+  const [presentation, setPresentation] = createSignal(null);
+  const [latestReport, setLatestReport] = createSignal(null);
+  const presentationWatcher = createFlowGuardPresentationWatcher(ctx,
+    (session, after) => flowguardGuiRpcClient(session).getPresentation(after),
+    (event) => {
+      setPresentation(event);
+      if (event.kind === 'report') {
+        setLatestReport(event);
+        toast(ctx, 'FlowGuard report ready. Open the FlowGuard status pill to read it.', 'default');
+        return;
+      }
+      toast(ctx, event.message, event.kind === 'decision' ? 'success' : 'default');
+    });
+  onCleanup(() => presentationWatcher.stop());
   let readGeneration = 0;
   let reading = false;
   let queuedSession = null;
@@ -244,27 +258,60 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         const key = probeSessionKey(input.session);
         if (!key || !isCurrentSession(ctx, input.session)) return undefined;
         reconciler.begin();
+        // Start only when the pill is actually mounted; a hidden/unmounted
+        // surface must not poll the server.
+        presentationWatcher.start();
         const state = snapshot();
         const matched = state && state.key === key;
-        const label = matched ? state.label + ' · last read' : 'FlowGuard · inspect';
+        const latest = presentation();
+        const latestForSession = latest && latest.sessionID === input.session.id ? latest : null;
+        const label = latestForSession
+          ? 'FlowGuard · ' + latestForSession.kind + (latestForSession.phase ? ' · ' + latestForSession.phase : '')
+          : matched ? state.label + ' · last read' : 'FlowGuard · inspect';
         const rows = [{
           id: 'refresh',
           label: matched ? 'Refresh canonical status' : 'Inspect canonical status',
           detail: 'Read-only; no agent prompt or governance mutation',
           run: () => void inspect(input.session),
         }];
+        if (latestForSession) {
+          rows.unshift({ id: 'presentation', label: latestForSession.message,
+            detail: latestForSession.kind + ' · ' + latestForSession.occurredAt });
+        }
         if (matched && state.note) {
           rows.unshift({ id: 'status', label: state.note,
             detail: state.actionHint || 'Last read only; refresh for current state' });
         }
+        const presentationTone = latestForSession && latestForSession.kind === 'decision'
+          ? 'success' : latestForSession && latestForSession.kind === 'validation' ? 'warning' : undefined;
         return {
           label: label,
           title: 'FlowGuard · chat status (read-only)',
           icon: 'shield',
-          tone: matched && (state.status === 'blocked' || state.status === 'not_verified' ||
-            state.status === 'stale') ? 'warning' : undefined,
+          tone: presentationTone ?? (matched && (state.status === 'blocked' || state.status === 'not_verified' ||
+            state.status === 'stale') ? 'warning' : undefined),
           rows: rows,
         };
+      },
+      menu: (input) => {
+        const report = latestReport();
+        const text = report && input.session && report.sessionID === input.session.id
+          ? report.message
+          : 'No FlowGuard report is available for this session yet. Use /diagnostics or /debug-export to create one.';
+        try {
+          const { createComponent } = require('solid-js');
+          if (typeof createComponent === 'function' && ctx.ui && typeof ctx.ui.Markdown === 'function') {
+            return createComponent(ctx.ui.Markdown, { text: text });
+          }
+        } catch (error) {
+          console.warn('[FlowGuard] Markdown report rendering unavailable.', error);
+        }
+        const pre = document.createElement('pre');
+        pre.textContent = text;
+        pre.style.whiteSpace = 'pre-wrap';
+        pre.style.overflowWrap = 'anywhere';
+        pre.style.margin = '0';
+        return pre;
       },
     });
   } catch (error) {

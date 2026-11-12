@@ -7,12 +7,15 @@ import type { WorkbenchDiagnosticsResult } from './status/workbench-diagnostics-
 import type {
   NextActionDecisionRequest,
   NextActionDecisionResult,
+  PresentationResult,
 } from './opencode-governance-rpc.js';
 
 export interface FlowGuardGuiRpcClient {
   getNextAction(): Promise<NextActionResult>;
   getWorkbenchReview(): Promise<WorkbenchReviewResult>;
   getWorkbenchDiagnostics(): Promise<WorkbenchDiagnosticsResult>;
+  /** Ephemeral, non-authoritative presentation page for one session. */
+  getPresentation(after?: string): Promise<PresentationResult>;
   /** The host session supplies sessionID; the UI cannot override it. */
   submitDecision(
     decision: Omit<NextActionDecisionRequest, 'sessionID'>,

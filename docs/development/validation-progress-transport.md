@@ -6,9 +6,12 @@
 gate is BLOCKED, not passed.**
 
 The candidate-host probe establishes some transport mechanics. A follow-up
-product regression reproduces and repairs its lifecycle finding. Neither
-implements the product progress UI nor instruments the executor. State schemas,
-audit contracts, reviewer admission and retry/backoff persistence remain unchanged.
+product regression reproduces and repairs its lifecycle finding. A later repair
+replaces model-visible status prompts with a bounded, model-free presentation
+channel. This is **not** the complete product progress UI: installed UI
+acceptance, attempt-bound result projection and executor-start instrumentation
+remain gated. State schemas, audit contracts, reviewer admission and
+retry/backoff persistence remain unchanged.
 
 Reference source: `develop` at `41b2932e32fc84b64af435486c0ecfa3ad837c15`.
 Local execution: 11 November 2026, macOS arm64, Node 22.22.2 / npm 10.9.7,
@@ -124,6 +127,58 @@ The private native helper waits boundedly for required plugin registration:
 2.2.7 can initially expose an empty registry before registration. Explicitly
 failed/inactive plugins and transport errors are never hidden by that wait.
 
+### Model-free status presentation (12 November 2026)
+
+A follow-up forensic report found `/approve` apparently shown again after a
+successful decision. The reported debug export showed two additional `user`
+messages and two independent model responses with no tool call. The
+repository's earlier native smoke log independently corroborates the mechanism:
+the validation and decision status texts appeared verbatim as `type: "user"`
+in the provider request and produced model turns.
+
+`ctx.session.prompt()` is an inbox admission, not a UI status API. The previous
+`presentValidationProgress()` and `presentDecision()` calls therefore created a
+new user turn merely to display text. The same pattern existed in the Start,
+End/RecoverCapacity, diagnostics and debug-export status paths.
+
+The repair introduces a separate, explicitly non-authoritative presentation
+channel:
+
+- `plugin-presentation.ts` keeps a bounded in-memory page per session. It has no
+  durable storage, is never appended to the audit trail and is never model
+  context. A bounded message/event count prevents unbounded host memory use.
+- `GetPresentation` is a read-only RPC. It verifies the requested session's
+  exact native location, returns an empty page for an unavailable or foreign
+  session, and never fences a scope. The UI falls back to canonical
+  `GetNextAction`/status. The server never awaits a UI reader.
+- The validation runner reports `starting`, `check_started` and
+  `check_finished` presentation events. The callback is invoked without awaiting
+  it; a throwing or never-settling presentation callback cannot delay checks,
+  hold a lock or change a result.
+- Decision, Start, lifecycle, diagnostics and debug-export text is recorded as a
+  notice, validation event or report. `/check` and reviewer orchestration remain
+  intentional model prompts because they request agent work.
+- The TUI plugin polls the presentation page only for its current session,
+  deduplicates event IDs, announces the newest baseline event and adds a
+  `/flowguard-report` dialog for the latest report. The Desktop ComposerPill
+  polls only while mounted and visible, shows the latest validation/decision
+  notice and exposes the latest report in its popover.
+
+The native decision smoke test now asserts that `/approve` creates **zero**
+additional provider requests, that no validation/decision status text enters the
+session context, and that the read-only RPC contains the validation and decision
+events. Unit and integration tests cover store bounds, replay/cursor behavior,
+session switching, duplicate suppression, transport failure, a hanging
+progress callback, and the absence of `session.prompt`/`session.synthetic` on
+the status paths.
+
+**NOT_VERIFIED:** installed packed-product TUI/Desktop visual acceptance,
+Windows/real-provider behavior and screen-reader acceptance. The Desktop bundle
+is template-tested with host-shaped stubs; that is not installed GUI proof.
+Presentation is ephemeral by design, so a reload loses pending notices; the
+canonical Next Action projection remains the fallback. Diagnostic report text is
+local UI text, not audit evidence or an approval.
+
 ### Snapshot location is not an arbitrary UI location
 
 An initial RPC reader used the TUI plugin location. On macOS, `/var/...` and
@@ -153,7 +208,14 @@ OPENCODE_LIVE=1 npm run test:smoke -- \
   src/cli/opencode-validation-resume.smoke.test.ts
 OPENCODE_LIVE=1 npm run test:smoke -- \
   src/cli/opencode-reviewer-event-lifecycle.smoke.test.ts
+OPENCODE_LIVE=1 npm run test:smoke -- \
+  src/cli/opencode-decision-command-live.smoke.test.ts
 ```
+
+The decision-command smoke test asserts that the real `/approve` path creates
+no extra provider request or status user message, and that the read-only
+presentation RPC contains the validation and decision notices. It uses explicit
+component review-gate fixtures; it is not independent reviewer provenance.
 
 For the incident-only regression, set `FLOWGUARD_OPENCODE_INCIDENT_CLI` to the
 exact 2.2.7 executable. Its version is checked; this does not alter the canonical
@@ -173,11 +235,14 @@ either live-host flag skips the suite and is **not transport evidence**.
 
 ## Product implementation remains gated
 
-The supported native success route now has product-path evidence. Before claiming
-the complete feature, independently verify the required UI scope. The product implementation must:
+The supported native success route now has product-path evidence. The former
+`presentValidationProgress()` and decision-confirmation prompts are replaced by
+the model-free presentation channel; they are not supplemented by a prompt
+fallback. Before claiming the complete feature, independently verify the
+required installed UI scope. The remaining product implementation must:
 
-- replace, not supplement, the current `presentValidationProgress()` prompt;
-- cover explicit/automatic plan approval, `/implement` and supported resume;
+- prove the presentation channel in the packed TUI and Desktop product, including
+  explicit/automatic plan approval, `/implement` and supported resume;
 - observe a confirmed shell `spawn` before claiming process start, without
   changing executor output/digest/error semantics;
 - use the existing `ValidationAttempt.attemptId` and baseline/implementation
@@ -189,12 +254,14 @@ the complete feature, independently verify the required UI scope. The product im
 - reject stale attempt/subject updates and distinguish unknown display state
   from actual running or completed work.
 
-**NOT_VERIFIED:** installed packed-product progress, Desktop rendering,
-Windows rendering, real-provider acceptance, native tool rendering,
-ValidationAttempt-bound result projection, confirmed subprocess-start
-instrumentation, reload/stale-update behavior and a hanging consumer.
-Recovery requires the corresponding installed-host/UI and product negative
-tests; rerunning this fixture alone cannot establish those claims.
+**NOT_VERIFIED:** installed packed-product progress, installed TUI/Desktop
+presentation, Desktop rendering, Windows rendering, real-provider acceptance,
+native tool rendering, ValidationAttempt-bound result projection, confirmed
+subprocess-start instrumentation, reload/stale-update behavior and a hanging
+consumer. The model-free channel and its failure isolation are tested at the
+component and native `/approve` boundary, but that is not installed GUI
+acceptance. Recovery requires the corresponding installed-host/UI and product
+negative tests; rerunning this fixture alone cannot establish those claims.
 
 No new state schema, second executor, PASS/FAIL authority, console streaming,
 or fix for process quiescence [#1173](https://github.com/koeppben23/governed-runtime/issues/1173)

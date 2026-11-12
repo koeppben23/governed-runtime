@@ -953,6 +953,16 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Present native FlowGuard validation progress, decision confirmations,
+  lifecycle notices and diagnostic reports through a bounded read-only
+  `GetPresentation` RPC instead of `ctx.session.prompt`. `/approve` no longer
+  creates a second apparent interaction, user message or model turn; `/check`
+  and reviewer orchestration keep their intentional agent prompts. The channel
+  is ephemeral and non-authoritative, never audit or workflow evidence, and its
+  failures or hangs cannot delay validation or hold a lock. TUI toasts and
+  `/flowguard-report`, plus the Desktop composer pill and report popover, are
+  wired without claiming installed UI acceptance.
+
 - Align native host-adapter contract tests with timestamped execution-success
   wakeups, using complete typed notification fixtures and exact projection
   assertions. Remove the superseded expectation that success is unhandled;

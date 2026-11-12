@@ -30,6 +30,7 @@ import { buildEnforcementError } from './blocked-result.js';
 import { governanceEndBlocker } from './governance-end-preconditions.js';
 import type { ActiveGovernanceScope, OpenCodeGovernance } from './opencode-governance.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
+import { recordPresentation, type PresentationStore } from './plugin-presentation.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import {
   capacityRecoveryAuditIntents,
@@ -48,12 +49,13 @@ interface GovernanceLifecycleCommandDeps {
     }) => Promise<T>,
     required?: boolean,
   ) => Promise<T | undefined>;
+  /** Ephemeral host presentation; never workflow, audit or model authority. */
+  readonly presentation: PresentationStore;
 }
 
 type CommandEditor = Parameters<Parameters<Plugin.Context['command']['transform']>[0]>[0];
 
 export function addGovernanceLifecycleCommands(
-  ctx: Plugin.Context,
   deps: GovernanceLifecycleCommandDeps,
   editor: CommandEditor,
 ): void {
@@ -61,18 +63,17 @@ export function addGovernanceLifecycleCommands(
     name: NATIVE_RECOVER_CAPACITY_COMMAND,
     description:
       'FlowGuard — explicitly release a proven terminal reviewer closure lock after its durable lineage is verified.',
-    execute: (input) => deps.guard(() => executeRecoverCapacity(ctx, deps, input.sessionID)),
+    execute: (input) => deps.guard(() => executeRecoverCapacity(deps, input.sessionID)),
   });
   editor.add({
     name: NATIVE_END_GOVERNANCE_COMMAND,
     description:
       'FlowGuard — end opt-in governance for this root session after safe workflow closure; this is not /finish or /abort.',
-    execute: (input) => deps.guard(() => executeEndGovernance(ctx, deps, input.sessionID)),
+    execute: (input) => deps.guard(() => executeEndGovernance(deps, input.sessionID)),
   });
 }
 
 async function executeRecoverCapacity(
-  ctx: Plugin.Context,
   deps: GovernanceLifecycleCommandDeps,
   sessionID: string,
 ): Promise<void> {
@@ -126,11 +127,10 @@ async function executeRecoverCapacity(
           reconciliation.code,
           `The capacity lock was released, but its audit is unconfirmed. ${reconciliation.reason}`,
         );
-      await presentLifecycle(
-        ctx,
+      presentLifecycle(
+        deps.presentation,
         sessionID,
         `Review capacity lock ${target.lock.code} was released for obligation ${target.lock.obligationId}. The obligation remains blocked; run a new explicit review command to submit a fresh review.`,
-        'capacity status',
       );
     },
     true,
@@ -152,7 +152,6 @@ function capacityFailure(code: string | undefined): Error {
 }
 
 async function executeEndGovernance(
-  ctx: Plugin.Context,
   deps: GovernanceLifecycleCommandDeps,
   sessionID: string,
 ): Promise<void> {
@@ -222,13 +221,12 @@ async function executeEndGovernance(
       'No governance activation exists for this session; there is nothing to end.',
     );
   await recordEndAudit(sessionID, result.record);
-  await presentLifecycle(
-    ctx,
+  presentLifecycle(
+    deps.presentation,
     sessionID,
     result.kind === 'ended'
       ? `FlowGuard governance is INACTIVE for this session${result.resumed ? ' (an interrupted End was completed)' : ''}.`
       : 'FlowGuard governance was already INACTIVE for this session.',
-    'End status',
   );
 }
 
@@ -310,18 +308,9 @@ export async function recordEndAudit(
   }
 }
 
-async function presentLifecycle(
-  ctx: Plugin.Context,
-  sessionID: string,
-  text: string,
-  step: string,
-): Promise<void> {
-  try {
-    await ctx.session.prompt({
-      sessionID,
-      text: `${text}\n\nThis is a FlowGuard host status report. Do not continue automatically; wait for the user's explicit command.`,
-    });
-  } catch (error) {
-    console.warn(`[FlowGuard] ${step} presentation failed after the durable transition.`, error);
-  }
+function presentLifecycle(presentation: PresentationStore, sessionID: string, text: string): void {
+  recordPresentation(presentation, sessionID, {
+    kind: 'notice',
+    message: `${text}\n\nThis is a FlowGuard host status report. Do not continue automatically; wait for the user's explicit command.`,
+  });
 }

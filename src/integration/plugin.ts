@@ -33,9 +33,10 @@ import {
 } from './plugin-native-tools.js';
 import { OpenCodeGovernance, type ActiveGovernanceScope } from './opencode-governance.js';
 import { createNativeReviewerAuthority } from './plugin-native-review.js';
-import { createEventFence, consumeEvents, dispatchEvent } from './plugin-native-events.js';
+import { createEventFence, startEventLoop } from './plugin-native-events.js';
 import { registerStartCommands } from './plugin-start-command.js';
 import { injectActiveMandates } from './plugin-mandates.js';
+import { createPresentationStore, type PresentationStore } from './plugin-presentation.js';
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
   const normalized = path.resolve(worktree);
@@ -65,6 +66,7 @@ export const FlowGuardAuditPlugin = Plugin.define({
   async setup(ctx) {
     const controller = new AbortController();
     const adapter = new OpenCodeHostAdapter(ctx, controller.signal);
+    const presentation = createPresentationStore();
     const registrations: Registration[] = [];
     const runtimes = new Map<string, Promise<RuntimeEntry>>();
     const sessionRoots = new Map<string, string>();
@@ -119,24 +121,21 @@ export const FlowGuardAuditPlugin = Plugin.define({
       await adapter.initialize();
       await createFlowGuardPluginHooks(
         ctx,
-        { ...actions, governance, reviewer, signal: controller.signal },
+        { ...actions, governance, reviewer, signal: controller.signal, presentation },
         registrations,
       );
-      eventLoop = consumeEvents(
+      eventLoop = startEventLoop({
         ctx,
-        controller.signal,
-        (event) =>
-          governance.observeProgress(event) ??
-          dispatchEvent(event, {
-            runtimes,
-            sessionRoots,
-            invoke: actions.invoke,
-            governance,
-            adapter,
-          }),
-        fence.failed,
+        signal: controller.signal,
+        presentation,
+        governance,
+        runtimes,
+        sessionRoots,
+        invoke: actions.invoke,
+        adapter,
+        failed: fence.failed,
         operations,
-      );
+      });
       ready = true;
       return dispose;
     } catch (error) {
@@ -476,6 +475,7 @@ async function createFlowGuardPluginHooks(
     readonly observe: (event: NativeToolCompletion) => Promise<void>;
     readonly guard: <T>(run: () => Promise<T>) => Promise<T>;
     readonly signal: AbortSignal;
+    readonly presentation: PresentationStore;
   },
   registrations: Registration[],
 ): Promise<void> {

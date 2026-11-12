@@ -12,6 +12,8 @@ import type { Plugin } from '@opencode/plugin/tui';
 import { FlowGuardGovernance, type NextActionDecisionResult } from './opencode-governance-rpc.js';
 import type { DecisionBinding } from './status/decision-binding.js';
 import type { NextActionResult } from './status/next-action-projection.js';
+import type { PresentationEvent } from './plugin-presentation.js';
+import { createPresentationWatcher } from './plugin-presentation-watch.js';
 
 type NotifyVariant = 'info' | 'success' | 'warning' | 'error';
 
@@ -263,10 +265,42 @@ export async function chooseWorkflow(
   });
 }
 
+/** Use the selected session's exact location, never only the TUI plugin's. */
+function sessionLocation(ctx: Plugin.Context, sessionID: string) {
+  return ctx.data.session.get(sessionID)?.location ?? ctx.location;
+}
+
+async function getPresentation(
+  ctx: Plugin.Context,
+  sessionID: string,
+  after: string | null,
+): Promise<{ events: readonly PresentationEvent[]; cursor: string | null }> {
+  const page = await ctx.client
+    .rpc(FlowGuardGovernance)
+    .GetPresentation(
+      { sessionID, ...(after === null ? {} : { after }) },
+      { location: sessionLocation(ctx, sessionID), signal: AbortSignal.timeout(2_000) },
+    );
+  return {
+    events: page.events.map((event) => ({
+      id: event.id,
+      sessionID: event.sessionID,
+      kind: event.kind,
+      message: event.message,
+      ...(event.phase === undefined ? {} : { phase: event.phase }),
+      ...(event.checks === undefined ? {} : { checks: event.checks }),
+      occurredAt: event.occurredAt,
+    })),
+    cursor: page.cursor,
+  };
+}
+
 function createDeps(ctx: Plugin.Context, isAlive: () => boolean): WorkflowChooserDeps {
   return {
     getView: (sessionID) =>
-      ctx.client.rpc(FlowGuardGovernance).GetNextAction({ sessionID }, { location: ctx.location }),
+      ctx.client
+        .rpc(FlowGuardGovernance)
+        .GetNextAction({ sessionID }, { location: sessionLocation(ctx, sessionID) }),
     currentSessionID: () => {
       const route = ctx.ui.router.current();
       return route.type === 'session' ? route.sessionID : null;
@@ -294,6 +328,45 @@ function createDeps(ctx: Plugin.Context, isAlive: () => boolean): WorkflowChoose
   };
 }
 
+async function openLatestReport(ctx: Plugin.Context, deps: WorkflowChooserDeps): Promise<void> {
+  const sessionID = deps.currentSessionID();
+  if (sessionID === null) {
+    deps.notify('Open a session before reading a FlowGuard report.', 'warning');
+    return;
+  }
+  try {
+    const page = await getPresentation(ctx, sessionID, null);
+    const report = [...page.events].reverse().find((event) => event.kind === 'report');
+    if (report === undefined) {
+      deps.notify('No FlowGuard report is available for this session.', 'info');
+      return;
+    }
+    await ctx.ui.dialog.alert({ title: 'FlowGuard report', message: report.message });
+  } catch (error) {
+    deps.notify(
+      `FlowGuard report unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      'error',
+    );
+  }
+}
+
+function startPresentation(ctx: Plugin.Context, deps: WorkflowChooserDeps, isAlive: () => boolean) {
+  const watcher = createPresentationWatcher({
+    getPresentation: (sessionID, after) => getPresentation(ctx, sessionID, after),
+    currentSessionID: deps.currentSessionID,
+    notify: (event) => {
+      if (event.kind === 'report') {
+        deps.notify('A FlowGuard report is ready. Run /flowguard-report to read it.', 'info');
+        return;
+      }
+      deps.notify(event.message, event.kind === 'decision' ? 'success' : 'info');
+    },
+    isAlive,
+  });
+  watcher.start();
+  return watcher;
+}
+
 interface TuiPluginDefinition {
   readonly id: string;
   readonly setup: (ctx: Plugin.Context) => (() => void) | void;
@@ -305,6 +378,8 @@ const plugin: TuiPluginDefinition = {
     const inFlight = new Set<string>();
     let disposed = false;
     const deps = createDeps(ctx, () => !disposed);
+    // Read-only status channel: never a model turn, never persisted state.
+    const presentation = startPresentation(ctx, deps, () => !disposed);
 
     const openChooser = async (sessionID: string): Promise<void> => {
       if (disposed || inFlight.has(sessionID)) return;
@@ -350,11 +425,21 @@ const plugin: TuiPluginDefinition = {
             await openChooser(sessionID);
           },
         },
+        {
+          id: 'flowguard.report',
+          title: 'FlowGuard: latest report',
+          description: 'Read the latest model-free FlowGuard diagnostic report.',
+          group: 'FlowGuard',
+          palette: true,
+          slash: { name: 'flowguard-report' },
+          run: () => openLatestReport(ctx, deps),
+        },
       ],
     }));
 
     return () => {
       disposed = true;
+      presentation.stop();
     };
   },
 };

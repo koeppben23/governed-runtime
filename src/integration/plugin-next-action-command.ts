@@ -129,7 +129,7 @@ export async function submitDecision(
       verdict: ReviewVerdict.parse(verdict),
       rationale: request.rationale ?? '',
     });
-    await executeDecisionCommand(ctx, deps, {
+    await executeDecisionCommand(deps, {
       sessionID: request.sessionID,
       command: request.invocation,
       args,

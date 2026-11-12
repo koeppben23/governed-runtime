@@ -50,6 +50,36 @@ export const NextActionDecisionResult = z.union([
 ]);
 export type NextActionDecisionResult = z.infer<typeof NextActionDecisionResult>;
 
+export const PresentationEventSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    sessionID: z.string().min(1),
+    kind: z.enum(['notice', 'validation', 'decision', 'report']),
+    message: z.string().max(32768),
+    phase: z.string().min(1).max(128).optional(),
+    checks: z.array(z.string().max(128)).max(32).optional(),
+    occurredAt: z.string().min(1).max(64),
+  })
+  .strict();
+export type PresentationEvent = z.infer<typeof PresentationEventSchema>;
+
+export const PresentationRequest = z
+  .object({
+    sessionID: z.string().min(1),
+    after: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+export type PresentationRequest = z.infer<typeof PresentationRequest>;
+
+export const PresentationResult = z
+  .object({
+    sessionID: z.string().min(1),
+    events: z.array(PresentationEventSchema).max(64),
+    cursor: z.string().max(128).nullable(),
+  })
+  .strict();
+export type PresentationResult = z.infer<typeof PresentationResult>;
+
 export const FlowGuardGovernance = Rpc.define({
   id: 'flowguard-governance',
   methods: {
@@ -71,6 +101,12 @@ export const FlowGuardGovernance = Rpc.define({
     GetWorkbenchDiagnostics: {
       input: WorkbenchDiagnosticsRequest,
       output: WorkbenchDiagnosticsResult,
+      errors: {},
+    },
+    /** Read-only, ephemeral host presentation; never workflow or audit evidence. */
+    GetPresentation: {
+      input: PresentationRequest,
+      output: PresentationResult,
       errors: {},
     },
     SubmitDecision: {

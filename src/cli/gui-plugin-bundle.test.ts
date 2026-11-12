@@ -294,6 +294,55 @@ describe('installed Desktop GUI bundle', () => {
     expect(loaded.commandCalls).toHaveLength(0);
   });
 
+  it('shows model-free presentation progress without creating a chat message', async () => {
+    vi.useFakeTimers();
+    try {
+      const loaded = load({}, {});
+      loaded.views.push({
+        events: [
+          {
+            id: 'event-1',
+            sessionID: 'ses_root',
+            kind: 'validation',
+            message: '**Validation started** — running `build`.',
+            phase: 'VALIDATION',
+            occurredAt: '2026-11-12T00:00:00.000Z',
+          },
+        ],
+        cursor: 'event-1',
+      });
+      const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+        show: (input: { session: Record<string, unknown> }) => {
+          label: string;
+          rows: Array<{ id: string; label: string }>;
+        };
+      };
+      const initial = pill.show({ session: loaded.host.sessions.current() });
+      expect(initial.rows.map((row) => row.id)).toEqual(['refresh']);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(loaded.rpcCalls.some((call) => call.method === 'GetPresentation')).toBe(true);
+      expect(loaded.host.toast.show).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: expect.stringContaining('Validation started'),
+        }),
+      );
+      const updated = pill.show({ session: loaded.host.sessions.current() });
+      expect(updated.label).toContain('validation');
+      expect(updated.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'presentation',
+            label: expect.stringContaining('Validation started'),
+          }),
+        ]),
+      );
+      expect(loaded.commandCalls).toHaveLength(0);
+    } finally {
+      for (const cleanup of pluginCleanups.splice(0).reverse()) cleanup();
+      vi.useRealTimers();
+    }
+  });
+
   it('coalesces overlapping status reads into one in-flight and one catch-up read', async () => {
     const loaded = load({}, {});
     const pending: Array<(result: unknown) => void> = [];

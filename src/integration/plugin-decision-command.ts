@@ -20,6 +20,7 @@ import { buildEnforcementError, parseToolResult } from './blocked-result.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { toolBefore } from './plugin-beforehooks.js';
 import { toolAfter } from './plugin-afterhooks.js';
+import { recordPresentation, type PresentationStore } from './plugin-presentation.js';
 
 export interface DecisionCommandDeps {
   readonly governance: Pick<
@@ -36,13 +37,11 @@ export interface DecisionCommandDeps {
     required?: boolean,
   ) => Promise<T | undefined>;
   readonly signal: AbortSignal;
+  /** Ephemeral host presentation; never workflow, audit or model authority. */
+  readonly presentation: PresentationStore;
 }
 type CommandEditor = Parameters<Parameters<Plugin.Context['command']['transform']>[0]>[0];
-export function addDecisionCommands(
-  ctx: Plugin.Context,
-  deps: DecisionCommandDeps,
-  editor: CommandEditor,
-): void {
+export function addDecisionCommands(deps: DecisionCommandDeps, editor: CommandEditor): void {
   for (const command of INSTALLED_COMMANDS.filter(
     (command) => command.target.toolName === TOOL_FLOWGUARD_DECISION,
   ))
@@ -58,7 +57,7 @@ export function addDecisionCommands(
             verdict: ReviewVerdict.parse(token),
             rationale: fixed === undefined ? text.slice(String(token).length).trim() : text,
           });
-          return executeDecisionCommand(ctx, deps, {
+          return executeDecisionCommand(deps, {
             sessionID: input.sessionID,
             command: command.invocation,
             args,
@@ -68,7 +67,6 @@ export function addDecisionCommands(
 }
 
 export async function executeDecisionCommand(
-  ctx: Plugin.Context,
   deps: DecisionCommandDeps,
   request: {
     readonly sessionID: string;
@@ -127,7 +125,8 @@ export async function executeDecisionCommand(
             worktree: authority.worktreeRoot,
             abort: deps.signal,
             metadata: () => {},
-            autoValidationProgress: (event) => presentValidationProgress(ctx, sessionID, event),
+            autoValidationProgress: (event) =>
+              presentValidationProgress(deps.presentation, sessionID, event),
           }),
       );
       const audited = {
@@ -136,7 +135,7 @@ export async function executeDecisionCommand(
         metadata: {},
       };
       await toolAfter(runtime, event, audited);
-      await presentDecision(ctx, sessionID, audited.output, args.verdict);
+      presentDecision(deps.presentation, sessionID, audited.output, args.verdict);
     },
     true,
   );
@@ -178,28 +177,31 @@ function decisionConfirmation(result: Record<string, unknown>, verdict: ReviewVe
   return `${summary}\n\n${status}${next}\n\n${instruction}`;
 }
 
-async function presentValidationProgress(
-  ctx: Plugin.Context,
+function presentValidationProgress(
+  presentation: PresentationStore,
   sessionID: string,
   event: AutoValidationProgressEvent,
-): Promise<void> {
-  const checks = event.checks.map((check) => `\`${check}\``).join(', ');
-  try {
-    await ctx.session.prompt({
-      sessionID,
-      text: `**Validation started** — running ${checks}. Results will follow automatically.`,
-    });
-  } catch (error) {
-    console.warn('[FlowGuard] Validation is running; the progress presentation failed.', error);
-  }
+): void {
+  const message =
+    event.stage === 'check_started' && event.check !== undefined
+      ? `**Validation in progress** — running \`${event.check}\`.`
+      : event.stage === 'check_finished' && event.check !== undefined
+        ? `**Validation in progress** — \`${event.check}\` returned; the canonical check result remains authoritative.`
+        : `**Validation started** — running ${event.checks.map((check) => `\`${check}\``).join(', ')}.`;
+  recordPresentation(presentation, sessionID, {
+    kind: 'validation',
+    message,
+    phase: event.phase,
+    checks: event.checks,
+  });
 }
 
-async function presentDecision(
-  ctx: Plugin.Context,
+function presentDecision(
+  presentation: PresentationStore,
   sessionID: string,
   output: string,
   verdict: ReviewVerdict,
-): Promise<void> {
+): void {
   const result = parseToolResult(output);
   if (result === null)
     throw buildEnforcementError(
@@ -211,15 +213,9 @@ async function presentDecision(
       typeof result.code === 'string' ? result.code : 'GOVERNANCE_AUTHORITY_BLOCKED',
       typeof result.message === 'string' ? result.message : output,
     );
-  try {
-    await ctx.session.prompt({
-      sessionID,
-      text: decisionConfirmation(result, verdict),
-    });
-  } catch (error) {
-    console.warn(
-      '[FlowGuard] Decision is committed and audited; status presentation failed.',
-      error,
-    );
-  }
+  recordPresentation(presentation, sessionID, {
+    kind: 'decision',
+    message: decisionConfirmation(result, verdict),
+    ...(typeof result.phase === 'string' ? { phase: result.phase } : {}),
+  });
 }

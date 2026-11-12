@@ -158,23 +158,16 @@ describe('native /start command', () => {
       tool: 'flowguard_hydrate',
       success: true,
     });
-    expect(host.prompt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionID: sessionId,
-        text: expect.stringContaining('governance is ACTIVE'),
-      }),
+    const startNotice = (await host.presentation(sessionId)).events.at(-1);
+    expect(startNotice).toMatchObject({ kind: 'notice', phase: 'READY' });
+    expect(startNotice?.message).toContain('governance is ACTIVE');
+    expect(startNotice?.message).toMatch(
+      /## Decision required[\s\S]*Choose one workflow to start\. Nothing runs until you send a command\.[\s\S]*- `\/task` — Capture the task and start the standard governed flow \(recommended\)[\s\S]*- `\/architecture` — Create or revise an ADR without starting a task flow[\s\S]*- `\/review` — Review a diff, branch, PR, or pasted text/,
     );
-    expect(host.prompt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        text: expect.stringMatching(
-          /## Decision required[\s\S]*Choose one workflow to start\. Nothing runs until you send a command\.[\s\S]*- `\/task` — Capture the task and start the standard governed flow \(recommended\)[\s\S]*- `\/architecture` — Create or revise an ADR without starting a task flow[\s\S]*- `\/review` — Review a diff, branch, PR, or pasted text/,
-        ),
-      }),
-    );
-    const startText =
-      (host.prompt.mock.calls.at(-1)?.[0] as { text?: string } | undefined)?.text ?? '';
-    expect(startText).not.toContain('## Workflows');
-    expect(startText).not.toContain('## Next');
+    expect(startNotice?.message).not.toContain('## Workflows');
+    expect(startNotice?.message).not.toContain('## Next');
+    expect(host.prompt).not.toHaveBeenCalled();
+    expect(host.synthetic).not.toHaveBeenCalled();
     const events = await audit.readAuditTrail(authority.sessDir);
     const activated = events.filter((event) => event.event === 'governance:activated');
     expect(activated).toHaveLength(1);
@@ -211,14 +204,14 @@ describe('native /start command', () => {
     const authority = await workflow(sessionId);
     if (authority.status !== 'resolved') throw new Error('Expected workflow state');
     expect(authority.state.policySnapshot.mode).toBe('solo');
-    expect(host.prompt).toHaveBeenCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('Auto-approve is active') }),
+    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
+      'Auto-approve is active',
     );
     const hydrate = vi.spyOn(tools.hydrate, 'execute');
     await host.command('start', sessionId);
     expect(hydrate).not.toHaveBeenCalled();
-    expect(host.prompt).toHaveBeenLastCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('Auto-approve is active') }),
+    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
+      'Auto-approve is active',
     );
   });
 
@@ -254,8 +247,8 @@ describe('native /start command', () => {
     expect(hydrate).not.toHaveBeenCalled();
     expect(await workflow(sessionId)).toEqual(before);
     expect(revisions().map((item) => item.status)).toEqual(['activating', 'active']);
-    expect(host.prompt).toHaveBeenLastCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('was already ACTIVE') }),
+    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
+      'was already ACTIVE',
     );
   });
 
@@ -271,6 +264,44 @@ describe('native /start command', () => {
     expect((await workflow(childId)).status).not.toBe('resolved');
     expect(revisions()).toEqual([]);
     expect(host.prompt).not.toHaveBeenCalled();
+  });
+
+  it('serves presentation only for the exact native location and never fences on read failure', async () => {
+    await open();
+    const sessionId = randomUUID();
+    await host.command('diagnostics', sessionId, 'review');
+    expect((await host.presentation(sessionId)).events).toHaveLength(1);
+
+    host.sessionGet.mockResolvedValueOnce({
+      id: sessionId,
+      location: { directory: '/foreign-location' },
+    });
+    await expect(host.presentation(sessionId)).resolves.toEqual({
+      sessionID: sessionId,
+      events: [],
+      cursor: null,
+    });
+
+    host.sessionGet.mockResolvedValueOnce({
+      id: 'another-session',
+      location: { directory: ws.tmpDir },
+    });
+    await expect(host.presentation(sessionId)).resolves.toEqual({
+      sessionID: sessionId,
+      events: [],
+      cursor: null,
+    });
+
+    host.sessionGet.mockRejectedValueOnce(new Error('host read unavailable'));
+    await expect(host.presentation(sessionId)).resolves.toEqual({
+      sessionID: sessionId,
+      events: [],
+      cursor: null,
+    });
+    expect(host.sessionGet).toHaveBeenCalledWith(
+      { sessionID: sessionId },
+      { signal: expect.any(AbortSignal) },
+    );
   });
 
   it('rejects unsupported arguments before any effect', async () => {
@@ -331,8 +362,8 @@ describe('native /start command', () => {
         detail: expect.objectContaining({ decisionId: pending!.decisionId, generation: 1 }),
       }),
     ]);
-    expect(host.prompt).toHaveBeenLastCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('interrupted Start was completed') }),
+    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
+      'interrupted Start was completed',
     );
   });
 
@@ -636,39 +667,31 @@ describe('native /start command', () => {
     expect(verifyChain(before).valid).toBe(true);
   });
 
-  it.each(['publish', 'prompt'] as const)(
-    'reports the committed activation truthfully when %s presentation fails',
-    async (phase) => {
-      await open();
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const sessionId = randomUUID();
-      if (phase === 'publish')
-        host.context.tool.transform.mockRejectedValueOnce(new Error('publication failed'));
-      else host.prompt.mockRejectedValueOnce(new Error('prompt failed'));
-      await expect(host.command('start', sessionId)).resolves.toBeUndefined();
-      expect(await resolveGovernanceActivation(host.activation.store, sessionId)).toMatchObject({
-        kind: 'active',
-      });
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('durably ACTIVE'),
-        expect.any(Error),
-      );
-      const hydrate = vi.spyOn(tools.hydrate, 'execute');
-      await host.command('start', sessionId);
-      expect(hydrate).not.toHaveBeenCalled();
-      expect(host.definitions.has('flowguard_status')).toBe(true);
-      expect(host.prompt).toHaveBeenLastCalledWith(
-        expect.objectContaining({ text: expect.stringContaining('was already ACTIVE') }),
-      );
-      const authority = await workflow(sessionId);
-      if (authority.status !== 'resolved') throw new Error('Expected workflow');
-      expect(
-        (await audit.readAuditTrail(authority.sessDir)).filter(
-          (event) => event.event === 'governance:activated',
-        ),
-      ).toHaveLength(1);
-    },
-  );
+  it('reports the committed activation truthfully when catalogue publication fails', async () => {
+    await open();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sessionId = randomUUID();
+    host.context.tool.transform.mockRejectedValueOnce(new Error('publication failed'));
+    await expect(host.command('start', sessionId)).resolves.toBeUndefined();
+    expect(await resolveGovernanceActivation(host.activation.store, sessionId)).toMatchObject({
+      kind: 'active',
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('durably ACTIVE'), expect.any(Error));
+    const hydrate = vi.spyOn(tools.hydrate, 'execute');
+    await host.command('start', sessionId);
+    expect(hydrate).not.toHaveBeenCalled();
+    expect(host.definitions.has('flowguard_status')).toBe(true);
+    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
+      'was already ACTIVE',
+    );
+    const authority = await workflow(sessionId);
+    if (authority.status !== 'resolved') throw new Error('Expected workflow');
+    expect(
+      (await audit.readAuditTrail(authority.sessDir)).filter(
+        (event) => event.event === 'governance:activated',
+      ),
+    ).toHaveLength(1);
+  });
 
   it('rejects Start after the plugin stopped', async () => {
     const dispose = await open();

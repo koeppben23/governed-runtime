@@ -212,6 +212,24 @@ export function createV2Host(directory: string) {
     command: async (name: string, sessionID: string, text = '') => {
       await commands.get(name)!.execute({ sessionID, prompt: { text }, delivery: 'queue' });
     },
+    /** Read-only ephemeral presentation page; not audit or workflow evidence. */
+    presentation: async (sessionID: string) => {
+      const method = rpcMethods.get('GetPresentation');
+      if (!method) throw new Error('GetPresentation is not registered');
+      return (await method({ sessionID })) as {
+        sessionID: string;
+        events: Array<{
+          id: string;
+          sessionID: string;
+          kind: 'notice' | 'validation' | 'decision' | 'report';
+          message: string;
+          phase?: string;
+          checks?: string[];
+          occurredAt: string;
+        }>;
+        cursor: string | null;
+      };
+    },
   };
 }
 

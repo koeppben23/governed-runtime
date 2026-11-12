@@ -839,6 +839,15 @@ projection. The Desktop palette and its optional ComposerPill are documented in
   Desktop availability `not_verified` without a trusted host snapshot. The
   portable Markdown chooser from `/start` and `/status` remains complete.
 
+### TUI companion
+
+The optional TUI plugin adds `/choose-workflow` and `/flowguard-report`.
+`/flowguard-report` reads the latest report from the ephemeral
+`GetPresentation` page and shows it in a dialog. Validation and decision notices
+are announced as model-free toasts. The presentation page is not audit or
+workflow evidence and is lost on plugin reload; canonical status remains the
+fallback. A presentation failure never blocks validation or a decision.
+
 ### Desktop GUI companion
 
 The optional Desktop bundle at `plugins/flowguard/gui-experimental.cjs` adds
@@ -856,10 +865,12 @@ unavailable. Missing optional APIs degrade only that surface; they never
 disable the portable Markdown fallback or the canonical command path.
 
 The Desktop composer status is a live read-only projection over
-`GetNextAction` and `GetWorkbenchReview`. It does not insert synthetic
-messages, start workflows, submit decisions, write audit events or claim
-verified human authorship. See [Desktop GUI Companion](./desktop.md) for
-refresh/reconciliation behavior, accessibility limits and installed evidence.
+`GetNextAction`, `GetWorkbenchReview` and the ephemeral `GetPresentation` page.
+It shows validation/decision notices and the latest diagnostic report, without
+inserting synthetic messages, starting workflows, submitting decisions, writing
+audit events or claiming verified human authorship. See
+[Desktop GUI Companion](./desktop.md) for refresh/reconciliation behavior,
+accessibility limits and installed evidence.
 
 ### Native review decisions
 
