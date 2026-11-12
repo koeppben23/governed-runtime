@@ -953,6 +953,13 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Route native OpenCode events only to their exact session-location owner and
+  exclude completed-child idle/success wakeups before execution admission, so
+  an independent `changes_requested` review no longer fences its parent.
+  Persist one audit record per native session-error identity under the canonical
+  audit lock; replay survives reload/phase changes while conflicting content
+  and persistence failures still fail closed. Reviewer admission is unchanged.
+
 - Use canonical host-neutral session reasons in tool helpers, verification-check
   errors and hook session resolution instead of direct Hydrate bootstrap advice.
   Preserve error codes and fail-closed authority checks; native OpenCode

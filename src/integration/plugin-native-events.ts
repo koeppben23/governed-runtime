@@ -29,6 +29,9 @@ export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDep
   if (!projected) return;
   const { adapter, governance, runtimes, sessionRoots, invoke } = deps;
   if (event.type === 'session.deleted') {
+    // Deleted sessions cannot be looked up. Only a runtime that previously
+    // admitted this session owns its in-memory cleanup.
+    if (!sessionRoots.has(projected.sessionId)) return;
     adapter.forgetSession(projected.sessionId);
     const authority = await resolveGovernanceActivation(governance.store, projected.sessionId);
     if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
@@ -40,6 +43,13 @@ export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDep
     sessionRoots.delete(projected.sessionId);
     return;
   }
+  if (
+    !(await adapter.ownsSessionEvent(
+      projected.sessionId,
+      event.type === 'session.execution.succeeded' || event.type === 'session.idle',
+    ))
+  )
+    return;
   await invoke(projected.sessionId, async (entry) => {
     if (event.type === 'session.execution.succeeded') {
       if (projected.sessionId !== entry.scope.root.sessionId) return;

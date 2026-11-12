@@ -22,7 +22,7 @@ import { getToolOutput, getAutoAdvanceOverflow, getSessionLockSignal } from './p
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
-import { appendReviewAuditEventForState } from './review/evidence/audit-events.js';
+import { appendSessionErrorAuditOnce } from './plugin-session-error-audit.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import {
   isReviewableFlowGuardTool,
@@ -416,18 +416,14 @@ export async function handlePluginEvent(
             resolution.status === 'unavailable' ? resolution.code : 'SESSION_DIR_NOT_FOUND',
             'The ACTIVE session error cannot be persisted to its governed audit trail.',
           );
-        await appendReviewAuditEventForState(
-          resolution.sessDir,
+        await appendSessionErrorAuditOnce({
+          sessDir: resolution.sessDir,
           governedSessionId,
-          resolution.state,
-          'error:SESSION_ERROR',
-          {
-            code: 'SESSION_ERROR',
-            message: errorMessage,
-            ...detail,
-            ...(sessionId === governedSessionId ? {} : { nativeSessionId: sessionId }),
-          },
-        );
+          state: resolution.state,
+          nativeSessionId: sessionId,
+          errorMessage,
+          detail,
+        });
       },
     };
     await handleEvent(eventDeps, event as Parameters<typeof handleEvent>[1]);

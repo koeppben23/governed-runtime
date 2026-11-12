@@ -88,7 +88,7 @@ describe('native V2 event contract', () => {
       expect(d.emitSessionErrorAudit).toHaveBeenCalledWith('session', error.message, {
         eventType: event.type,
         errorType: error.type,
-        supplementary: { hostEventId: event.id },
+        supplementary: { hostEventId: event.id, hostCreatedAt: event.created },
       });
       expect(d.cleanupSession).not.toHaveBeenCalled();
     },
@@ -166,6 +166,38 @@ describe('native V2 event contract', () => {
 });
 
 describe('native successful-execution wakeup admission', () => {
+  it.each([
+    ['/worktree', undefined, false, true],
+    ['/worktree', undefined, true, true],
+    ['/worktree', 'parent', true, false],
+    ['/worktree', 'parent', false, true],
+    ['/other', undefined, false, false],
+    ['/worktree/nested', undefined, true, false],
+  ] as const)(
+    'routes exact native location %s parent %s rootOnly %s',
+    async (directory, parentID, rootOnly, expected) => {
+      const host = createV2Host('/worktree');
+      host.sessionGet.mockResolvedValue({
+        id: 'session',
+        location: { directory },
+        ...(parentID ? { parentID } : {}),
+      });
+      const adapter = new OpenCodeHostAdapter(host.ctx, new AbortController().signal);
+      expect(await adapter.ownsSessionEvent('session', rootOnly)).toBe(expected);
+    },
+  );
+  it('does not conceal ownership read errors or another returned session identity', async () => {
+    const host = createV2Host('/worktree');
+    const adapter = new OpenCodeHostAdapter(host.ctx, new AbortController().signal);
+    const failure = new Error('unavailable');
+    host.sessionGet.mockRejectedValueOnce(failure);
+    await expect(adapter.ownsSessionEvent('session', true)).rejects.toBe(failure);
+    host.sessionGet.mockResolvedValue({ id: 'different', location: { directory: '/worktree' } });
+    await expect(adapter.ownsSessionEvent('session', true)).rejects.toHaveProperty(
+      'code',
+      'HOST_ADAPTER_INIT_FAILED',
+    );
+  });
   const success = {
     ...envelope,
     created: 100,

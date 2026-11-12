@@ -9,6 +9,7 @@ import {
   isServiceUnavailableError,
   type SessionInfo,
   type SessionInboxUser,
+  type PluginListOutput,
 } from '@opencode/client';
 import {
   createIsolatedOpenCodeEnvironment,
@@ -54,6 +55,27 @@ export async function awaitLocationActivation(
   }
 }
 
+/** A location read can precede registration on newer hosts. Missing required
+ * plugins are transient; an explicitly failed/inactive plugin is never retried. */
+export async function awaitNativePlugins(
+  client: Pick<ReturnType<typeof OpenCode.make>, 'plugin'>,
+  location: { directory: string },
+  required: (plugins: PluginListOutput['data']) => boolean,
+  timeoutMs = 60_000,
+  pauseMs = 100,
+): Promise<void> {
+  const signal = AbortSignal.timeout(timeoutMs);
+  for (;;) {
+    const plugins = await client.plugin.list({ location }, { signal });
+    if (plugins.data.some((plugin) => plugin.state.status !== 'active'))
+      throw new Error(`Native fixture plugin activation failed: ${JSON.stringify(plugins)}`);
+    if (required(plugins.data)) return;
+    if (signal.aborted)
+      throw new Error(`Native fixture plugin registration timed out: ${JSON.stringify(plugins)}`);
+    await new Promise((resolve) => setTimeout(resolve, pauseMs));
+  }
+}
+
 /**
  * Shell-neutral `node -e` command for native shell-tool fixtures. The script travels
  * as base64 (no quotes or backslashes to escape). The pinned host runs Windows shell
@@ -89,6 +111,8 @@ export interface NativeHostProbe {
 }
 export async function createNativeHostProbe(
   options: {
+    /** Explicit incident reproduction target; does not change the canonical candidate pin. */
+    host?: PinnedOpenCodeHost;
     agent?: string;
     product?: boolean;
     /** Explicit component-only setup in the product's private test namespace.
@@ -109,7 +133,7 @@ export async function createNativeHostProbe(
     ) => NativeProbeReply | Promise<NativeProbeReply>;
   } = {},
 ): Promise<NativeHostProbe> {
-  const host = resolvePinnedOpenCodeHost();
+  const host = options.host ?? resolvePinnedOpenCodeHost();
   const root = await mkdtemp(join(tmpdir(), 'fg-native-host-'));
   const project = join(root, 'project');
   const env = createIsolatedOpenCodeEnvironment(root, host);
@@ -334,17 +358,17 @@ export default Plugin.define({ id: Product.id, async setup(ctx) {
       if (deferrals > 0) output += `[fixture] location activation deferred ${deferrals} read(s)\n`;
     };
     await settle();
-    const plugins = await client.plugin.list({ location });
-    if (
-      plugins.data.some((plugin) => plugin.state.status !== 'active') ||
-      (options.product && !plugins.data.some((plugin) => plugin.id === 'flowguard')) ||
-      (options.plugin &&
-        !plugins.data.some(
-          (plugin) => plugin.source.type === 'local' && plugin.source.path.endsWith('00-observer'),
-        ))
-    ) {
-      throw new Error(`Native fixture plugin load failed: ${JSON.stringify(plugins)}\n${output}`);
-    }
+    await awaitNativePlugins(
+      client,
+      location,
+      (plugins) =>
+        (!options.product || plugins.some((plugin) => plugin.id === 'flowguard')) &&
+        (!options.plugin ||
+          plugins.some(
+            (plugin) =>
+              plugin.source.type === 'local' && plugin.source.path.endsWith('00-observer'),
+          )),
+    );
     return {
       root,
       project,

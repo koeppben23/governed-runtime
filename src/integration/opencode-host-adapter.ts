@@ -66,6 +66,18 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
     };
   }
 
+  /** The public stream is server-wide; native hooks/storage are not subscriber
+   * ownership. Ignore other locations and child-only completion wakeups before
+   * invoking governance execution admission (a finished reviewer is no longer
+   * authorized to execute). This grants no workflow or reviewer authority. */
+  async ownsSessionEvent(sessionId: string, rootOnly: boolean): Promise<boolean> {
+    const session = await this.readSession(sessionId);
+    return (
+      session.location.directory === this.context.location.directory &&
+      (!rootOnly || session.parentID === undefined)
+    );
+  }
+
   /** A notification is only a wakeup, never check evidence. Claim before the
    * read/runner so concurrent delivery and replay after backoff cannot retry it.
    * A fresh native read must still describe this exact successful terminal run;
@@ -120,17 +132,13 @@ export function projectOpenCodeEvent(event: OpenCodeEvent): {
       },
     };
   }
-  if (
-    event.type === 'session.deleted' ||
-    event.type === 'session.idle' ||
-    event.type === 'session.execution.failed'
-  ) {
+  if (event.type === 'session.deleted' || event.type === 'session.idle') {
     return {
       sessionId: event.data.sessionID,
       event: { type: event.type, data: { ...event.data, hostEventId: event.id } },
     };
   }
-  if (event.type === 'session.execution.succeeded') {
+  if (event.type === 'session.execution.succeeded' || event.type === 'session.execution.failed') {
     return {
       sessionId: event.data.sessionID,
       event: {

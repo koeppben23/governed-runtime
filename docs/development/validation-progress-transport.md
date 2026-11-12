@@ -84,6 +84,46 @@ uses an explicit scoped-port fixture, not native delegation provenance.
 Notifications never supply check-result or reviewer evidence. No timer-driven
 retry or process-quiescence guarantee is added.
 
+### Completed-review event ownership and audit replay
+
+A subsequent incident ran OpenCode **2.2.7**, with the earlier lifecycle repair
+installed. Its independent reviewer successfully returned `changes_requested`;
+that verdict was not a build failure. Four location instances shared plugin
+storage and the server-wide event stream. Completed-child success handling
+could re-enter execution-specific reviewer admission, which correctly rejects a
+finished dispatch, and then fence the parent. The original incident's first
+exception is absent from the inspected logs; the new native regression exposes
+the admission errors directly. Repeated delivery of one failure notification
+also produced separate audit UUIDs.
+
+`opencode-reviewer-event-lifecycle.smoke.test.ts` now drives native Start,
+ticket, plan and independent reviewer return across four locations, without
+seeded review evidence. It asserts the captured `changes_requested`, fulfilled
+obligation, successful parent continuation and unchanged PLAN phase. On
+12 November 2026 it passes with both candidate **2.2.5** and the exact incident
+**2.2.7** binary, using a deterministic local provider. This is not installed
+packed-product, Desktop UI or real-provider certification.
+
+The adapter compares the exact native session `location.directory` to its
+plugin location before governance execution admission. No filesystem alias or
+workspace inference substitutes for this identity. Idle/success notifications
+from children are excluded before reviewer admission; genuine owning-scope
+read/handler errors still fence. Deletion cleans only previously cached session
+metadata, without looking up an already deleted native session.
+
+Session-error audit IDs derive from the FlowGuard session and native event ID.
+The existing canonical audit lock serializes trail lookup and append. A replay
+uses the first committed phase and native creation time; the canonical writer
+still rejects changed immutable notification content. Missing identity/time or
+failed persistence cannot silently create fallback identities or mark success.
+No audit schema, reviewer guard, validation authority or retry policy changes.
+The event fence still reports its original exception through the host console;
+this repair does not add a durable host-log collector or repair incident data.
+
+The private native helper waits boundedly for required plugin registration:
+2.2.7 can initially expose an empty registry before registration. Explicitly
+failed/inactive plugins and transport errors are never hidden by that wait.
+
 ### Snapshot location is not an arbitrary UI location
 
 An initial RPC reader used the TUI plugin location. On macOS, `/var/...` and
@@ -111,7 +151,14 @@ OPENCODE_LIVE=1 npm run test:smoke -- --no-file-parallelism \
   src/cli/opencode-validation-progress.smoke.test.ts
 OPENCODE_LIVE=1 npm run test:smoke -- \
   src/cli/opencode-validation-resume.smoke.test.ts
+OPENCODE_LIVE=1 npm run test:smoke -- \
+  src/cli/opencode-reviewer-event-lifecycle.smoke.test.ts
 ```
+
+For the incident-only regression, set `FLOWGUARD_OPENCODE_INCIDENT_CLI` to the
+exact 2.2.7 executable. Its version is checked; this does not alter the canonical
+candidate pin or replace the user's CLI. All probes use isolated native storage
+and never replay the original affected session.
 
 Optionally set `FLOWGUARD_PROGRESS_PROBE_REPORT_DIR` to an owned evidence
 directory. Before fixture cleanup, each case saves the exact host version,
