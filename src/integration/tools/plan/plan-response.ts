@@ -41,6 +41,7 @@ import { materializeReviewCardArtifact } from '../../../adapters/workspace/index
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
 import {
+  automaticPlanBaselineBlock,
   persistBlockedAutomaticPlanApproval,
   prepareAutomaticPlanApproval,
 } from './plan-auto-approval.js';
@@ -537,6 +538,8 @@ function nonConvergedPlanResponse(
   return {
     phase: finalState.phase,
     status: `Plan revised (v${nextPlanVersion}) after changes_requested. Independent review iteration ${nextIteration}/${scope.maxPlanReviewIterations} is pending; dispatch the reviewer per reviewInvocation.`,
+    agentInstruction:
+      'Dispatch the flowguard-reviewer subagent for the pending plan review attempt before calling flowguard_status or submitting any verdict. Do not treat the previous changes_requested verdict as the result of this review.',
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: nextIteration,
     revisionDelta: revision.revisionDelta,
@@ -578,6 +581,8 @@ export async function persistPlanReview(
       block: preparation.block,
     });
   }
+  const baselineBlock = await automaticPlanBaselineBlock(reviewedState, scope, preparation);
+  if (baselineBlock !== null) return baselineBlock;
   const nextState = preparation.state;
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
   const advanced = autoAdvance(nextState, evalFn, scope.ctx);

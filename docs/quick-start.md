@@ -46,6 +46,12 @@ authority. Terminal workflows remain terminal: new work requires a distinct
 host session and explicit activation, with a trustworthy pre-change worktree
 when recovering implementation evidence.
 
+A successful `/export` does not commit the implementation changes. If you start
+another FlowGuard session on the same worktree, those uncommitted files are
+captured as the new session's baseline and cannot become implementation
+evidence, even if you clean and re-apply them. Commit or stash them outside the
+session before a new `/start`, or use a clean worktree.
+
 Upgrading an existing installation? Follow the
 [manual configuration recovery](./configuration.md#breaking-change-manual-configuration-recovery)
 for retired keys; `install --force` does not migrate them.

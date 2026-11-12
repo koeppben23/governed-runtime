@@ -15,6 +15,8 @@ import { normalizeRepoRelativePath } from '../shared/repo-path.js';
 
 import { changedFiles, hashWorktreeFiles } from '../adapters/git.js';
 import { isVerificationCandidateBound } from '../state/candidate-identity.js';
+import { ensureReviewAssurance } from '../state/review-dispatch.js';
+import { findLatestReviewObligation } from '../state/review-continuation.js';
 import type { SessionState } from '../state/schema.js';
 
 /** Scoped governed implementation files plus the scoping disposition. */
@@ -26,6 +28,53 @@ export interface ScopedImplementationFiles {
 export type ScopedImplementationFilesResult =
   | { readonly kind: 'ok'; readonly subject: ScopedImplementationFiles }
   | { readonly kind: 'empty'; readonly rawFiles: readonly string[] };
+
+/** Latest plan obligation target paths, normalized for worktree comparison. */
+export function latestPlanTargetPaths(
+  state: Pick<SessionState, 'reviewAssurance'>,
+): readonly string[] {
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const plan = findLatestReviewObligation(assurance.obligations, 'plan');
+  const paths = plan?.metadata?.targetPaths;
+  if (!Array.isArray(paths) || !paths.every((path): path is string => typeof path === 'string'))
+    return [];
+  return [...new Set(paths.map((path) => normalizeRepoRelativePath(path)))];
+}
+
+export type PreexistingTargetCheck =
+  | { readonly kind: 'ok' }
+  | { readonly kind: 'unavailable' }
+  | {
+      readonly kind: 'dirty';
+      readonly baselinePaths: readonly string[];
+      readonly currentPaths: readonly string[];
+    };
+
+/**
+ * A plan must not enter IMPLEMENTATION when any target path was already dirty
+ * at session start or is dirty now. The baseline hash survives an in-session
+ * cleanup, so re-applying the same bytes later would still be scoped out.
+ */
+export async function preexistingTargetCheck(input: {
+  readonly worktree: string;
+  readonly baseline: SessionState['implementationBaseline'];
+  readonly targetPaths: readonly string[];
+}): Promise<PreexistingTargetCheck> {
+  const targets = new Set(input.targetPaths.map((path) => normalizeRepoRelativePath(path)));
+  if (targets.size === 0) return { kind: 'ok' };
+  if (input.baseline.dirtyFiles === null) return { kind: 'unavailable' };
+  const baseline = new Set(
+    input.baseline.dirtyFiles.map((file) => normalizeRepoRelativePath(file.path)),
+  );
+  const current = new Set(
+    (await changedFiles(input.worktree)).map((path) => normalizeRepoRelativePath(path)),
+  );
+  const baselinePaths = [...targets].filter((path) => baseline.has(path));
+  const currentPaths = [...targets].filter((path) => current.has(path));
+  return baselinePaths.length > 0 || currentPaths.length > 0
+    ? { kind: 'dirty', baselinePaths, currentPaths }
+    : { kind: 'ok' };
+}
 
 /**
  * Apply pre-implementation baseline scoping: subtract files that were already

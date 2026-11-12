@@ -204,6 +204,26 @@ All BLOCKED responses carry a `code`, a `reason`, and a `recovery` array. The
 canonical registry is in `src/config/reasons.ts`. Every code listed below is a
 real, registered reason.
 
+### Pre-existing worktree changes at plan approval or implementation
+
+A plan target that was already dirty when the session started is baseline, not
+implementation evidence. The same is true if it is dirty at approval. Cleaning
+and re-applying the same bytes in the same session does not change the captured
+baseline hash, so a new session is required.
+
+- `PLAN_TARGETS_PREEXISTING_DIRTY` — the target path was captured in
+  `implementationBaseline.dirtyFiles` at session start.
+- `PLAN_TARGETS_DIRTY_AT_APPROVAL` — the target path is dirty now.
+- `IMPLEMENTATION_BASELINE_UNAVAILABLE` — the baseline dirty-file capture is
+  unavailable; implementation evidence cannot be attributed safely.
+- `IMPLEMENTATION_BASELINE_PREEXISTING` — all changed files are pre-existing dirty
+  files unchanged since session start.
+
+Recovery: preserve the worktree diff as a patch outside the worktree, restore a
+clean worktree before starting a new host session, complete plan approval there,
+and apply the patch only during the new `IMPLEMENTATION` phase. Do not commit or
+stash inside the active session: the control-plane marker includes `HEAD`.
+
 ### Session & State
 
 | Code                             | Description                                                                                        | Solution                                                                                                                                                                                                                                                                           |
@@ -491,6 +511,8 @@ IMPLEMENTATION_CHALLENGE_ALREADY_RESOLVED
 IMPLEMENTATION_CHALLENGE_NOT_FAILED
 IMPLEMENTATION_CHALLENGE_UNKNOWN
 IMPLEMENTATION_EVIDENCE_EMPTY
+IMPLEMENTATION_BASELINE_PREEXISTING
+IMPLEMENTATION_BASELINE_UNAVAILABLE
 IMPLEMENTATION_EVIDENCE_REQUIRED
 IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED
 IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH
@@ -557,6 +579,8 @@ PLAN_REVIEW_IN_PROGRESS
 PLAN_REVIEW_LOOP_REQUIRED
 PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH
 PLAN_SUBMISSION_REQUIRED
+PLAN_TARGETS_DIRTY_AT_APPROVAL
+PLAN_TARGETS_PREEXISTING_DIRTY
 PLUGIN_ENFORCEMENT_UNAVAILABLE
 POLICY_SNAPSHOT_INTEGRITY_MISMATCH
 POLICY_SNAPSHOT_MISSING

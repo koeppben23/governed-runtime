@@ -965,6 +965,13 @@ last read` without a click, while a completion in another session left the
 - Show the existing model-free check display during post-implementation
   validation (`IMPL_VALIDATION`) after `/implement`, using the same current
   operation binding, existing label, and no additional controls or model turns.
+- Block plan approval when a plan target path was already dirty at session start
+  or is dirty at approval; report the affected paths and require a clean
+  baseline/new session. `/implement` now distinguishes pre-existing worktree
+  changes from genuinely missing evidence.
+- Instruct a revised plan response to dispatch the fresh reviewer explicitly
+  before requesting review feedback, and cover interrupted reviewer children
+  with the canonical fresh-submission recovery path.
 - Report a revised plan response as pending a fresh independent review instead of
   presenting the prior `changes_requested` verdict as the current result. The
   response continues to require the exact reviewer dispatch.

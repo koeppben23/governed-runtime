@@ -22,6 +22,7 @@ import { IMPL_EVIDENCE, makeProgressedState, makeState, VALIDATION_PASSED } from
 import {
   computeImplementationDigest,
   flowguardReportArtifacts,
+  preexistingTargetCheck,
   reattestImplementationSubject,
 } from './implementation-subject.js';
 
@@ -244,6 +245,73 @@ describe('flowguardReportArtifacts', () => {
       ],
     });
     expect(flowguardReportArtifacts(state)).toEqual([]);
+  });
+});
+
+describe('preexistingTargetCheck', () => {
+  const baseline = (dirtyFiles: Array<{ path: string; hash: string | null }> | null) => ({
+    dirtyFiles,
+    capturedAt: new Date().toISOString(),
+    controlPlaneMarker: 'marker',
+  });
+
+  it('blocks baseline-dirty target paths even when they are currently clean', async () => {
+    const dir = makeRepo();
+    const result = await preexistingTargetCheck({
+      worktree: dir,
+      baseline: baseline([{ path: 'target.txt', hash: 'old-hash' }]),
+      targetPaths: ['target.txt'],
+    });
+    expect(result).toEqual({
+      kind: 'dirty',
+      baselinePaths: ['target.txt'],
+      currentPaths: [],
+    });
+  });
+
+  it('blocks a target that is dirty now even if it was clean at session start', async () => {
+    const dir = makeRepo();
+    write(dir, 'target.txt', 'changed');
+    const result = await preexistingTargetCheck({
+      worktree: dir,
+      baseline: baseline([]),
+      targetPaths: ['target.txt'],
+    });
+    expect(result).toEqual({
+      kind: 'dirty',
+      baselinePaths: [],
+      currentPaths: ['target.txt'],
+    });
+  });
+
+  it('allows a clean target that was not dirty at session start', async () => {
+    const dir = makeRepo();
+    const result = await preexistingTargetCheck({
+      worktree: dir,
+      baseline: baseline([]),
+      targetPaths: ['target.txt'],
+    });
+    expect(result).toEqual({ kind: 'ok' });
+  });
+
+  it('fails closed when the baseline capture is unavailable and targets exist', async () => {
+    const dir = makeRepo();
+    const result = await preexistingTargetCheck({
+      worktree: dir,
+      baseline: baseline(null),
+      targetPaths: ['target.txt'],
+    });
+    expect(result).toEqual({ kind: 'unavailable' });
+  });
+
+  it('normalizes repository-relative target paths', async () => {
+    const dir = makeRepo();
+    const result = await preexistingTargetCheck({
+      worktree: dir,
+      baseline: baseline([{ path: './target.txt', hash: 'old-hash' }]),
+      targetPaths: ['target.txt'],
+    });
+    expect(result).toMatchObject({ kind: 'dirty', baselinePaths: ['target.txt'] });
   });
 });
 

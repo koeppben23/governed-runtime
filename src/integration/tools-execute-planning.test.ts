@@ -615,6 +615,7 @@ describe('plan', () => {
       expect(result.status).toContain('Plan revised (v2) after changes_requested');
       expect(result.status).toContain('is pending; dispatch the reviewer');
       expect(result.status).not.toContain('Verdict:');
+      expect(result.agentInstruction).toContain('Dispatch the flowguard-reviewer subagent');
       expect((result.reviewInvocation as { status?: string }).status).toBe('pending_review');
       const revisionState = await readState(await currentSessionDir());
       expect(result.reviewAttemptId).toBe(

@@ -234,7 +234,9 @@ change. No in-session post-approval replan is available:
    in that prepared worktree. Verify a distinct FlowGuard session identity and
    `READY`. Hydrate in the old terminal binding is a read-only reload, not a
    restart. A new session on unchanged pre-existing dirty files excludes those
-   bytes from its implementation scope and is not a recovery substitute.
+   bytes from its implementation scope and is not a recovery substitute. Plan
+   approval rejects target paths that were already dirty at session start; do not
+   clean and re-apply the same bytes inside the old session.
 4. Run `/ticket`, then `/plan` with the complete corrected declarations and
    applicable coverage. Complete independent review and obtain a new certificate
    under the active policy. This is an independent plan lineage starting at v1,
