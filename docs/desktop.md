@@ -57,6 +57,12 @@ in the conversation transcript. It is a live, read-only diagnostic view.
   when the canonical state permits one. Selecting an action opens the existing
   revision-bound chooser; it never automatically chooses a command. A fresh
   `/start` notice opens the workflow choice once unless another dialog is open.
+- After plan approval and persisted baseline success, a separate **`/implement`**
+  action appears above the composer when `GetNextAction` recommends it in
+  IMPLEMENTATION. It is not hidden inside the status menu. Clicking opens the
+  existing canonical chooser/confirmation path; appearing never executes it.
+  Loading, blocked, different-session or no-action state hides it. The progress
+  status pill remains separate, and no chat/model message is inserted.
 - It reads canonical `GetNextAction` and, at review gates,
   `GetWorkbenchReview`. It also reads the ephemeral, non-authoritative
   `GetPresentation` page while mounted, so validation progress and decision

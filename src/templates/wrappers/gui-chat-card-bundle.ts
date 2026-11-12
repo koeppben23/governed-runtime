@@ -238,7 +238,9 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
       }
       announceCurrentPresentation(session, next);
       const base = { key: key, phase: next.phase, summary: next.summary,
-        status: next.kind, label: 'FlowGuard · ' + (next.phase || 'NOT_VERIFIED') };
+        status: next.kind, label: 'FlowGuard · ' + (next.phase || 'NOT_VERIFIED'),
+        implementationAction: next.kind === 'next_action' && next.phase === 'IMPLEMENTATION' &&
+          Array.isArray(next.actions) ? next.actions.find((action) => action.invocation === '/implement') : null };
       if (next.kind === 'blocked') {
         const blocker = next.blocker;
         setSnapshot({ ...base, status: 'blocked', note: blocker && blocker.code ?
@@ -348,6 +350,24 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
           tone: presentationTone ?? (matched && (state.status === 'blocked' || state.status === 'not_verified' ||
             state.status === 'stale') ? 'warning' : undefined),
           rows: rows,
+        };
+      },
+    });
+    // Keep progress/status separate from the explicit operator action. A
+    // completed baseline must expose /implement without opening a status menu.
+    ctx.add(ComposerPill, {
+      id: 'flowguard-implement-action',
+      order: 81,
+      show: (input) => {
+        const key = probeSessionKey(input.session);
+        const state = snapshot();
+        if (disposed || !key || !isCurrentSession(ctx, input.session) || !state ||
+            state.key !== key || state.status !== 'next_action' || !state.implementationAction) return undefined;
+        return {
+          label: state.implementationAction.invocation,
+          title: state.implementationAction.description,
+          icon: 'shield',
+          run: () => openChoice(input.session),
         };
       },
     });

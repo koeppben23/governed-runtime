@@ -953,6 +953,12 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Show an explicit `/implement` action above the Desktop composer after the
+  canonical projection reaches IMPLEMENTATION following approved baseline
+  validation. Keep it separate from the status menu; clicking still re-reads
+  state and requires the existing chooser/confirmation path. No automatic
+  implementation, plan-admission change or host-tool authorization change.
+
 - Reconstruct native Start/decision feedback and subject-bound check results
   from persisted canonical state in the Desktop status menu/report dialog and TUI report
   dialog, including after reload. Keep the progress surface, refresh current

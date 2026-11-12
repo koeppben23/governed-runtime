@@ -255,6 +255,19 @@ test gap, not a reason to change the restored production contract. Report:
 `opencode/flowguard-last-run-repair/scope-restoration-mutation.json`. This is
 not whole-profile mutation or installed GUI acceptance.
 
+The next live run (`ses_e2efa1645ffeii1lkghQupnuiQ`) exposed a remaining
+discoverability failure after `/approve`: the server entered IMPLEMENTATION,
+both baseline attempts passed, and read-only `GetNextAction` recommended
+`/implement`, but the GUI only offered a generic chooser row inside the status
+menu. A follow-up adds a separate `/implement` composer action using that exact
+canonical recommendation. It stays absent during validation, blocked/loading
+state, or when the action is not present; it never infers readiness from a toast.
+Clicks retain the existing chooser, state/session binding checks and explicit
+confirmation. The status/progress surface remains separate. This changes only
+GUI presentation, not plan rules or host-tool admission. The observed
+`HOST_TOOL_UNKNOWN_DENIED` for native `patch`, missing transcript Start output,
+and repeated Desktop event-stream disconnects remain separate unresolved issues.
+
 The same Desktop run logged 399 global event-stream disconnects and an
 `ERR_INSUFFICIENT_RESOURCES` diagnostic. A later restart failed to load a
 missing GUI bundle after the workflow had completed. Neither the disconnect

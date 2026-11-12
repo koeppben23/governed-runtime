@@ -878,6 +878,12 @@ requests a canonical command or decision. See
 [Desktop GUI Companion](./desktop.md) for refresh/reconciliation behavior,
 accessibility limits and installed evidence.
 
+After `/approve` and successful baseline checks, Desktop also exposes an explicit
+`/implement` action above the composer when the canonical IMPLEMENTATION view
+recommends it. This is a separate visible action, not just a phase label or a
+generic status-menu entry. Clicking retains state revalidation and confirmation;
+it does not begin implementation automatically.
+
 ### Native review decisions
 
 At `PLAN_REVIEW`, `ARCH_REVIEW` and `EVIDENCE_REVIEW`, `/choose-workflow` opens

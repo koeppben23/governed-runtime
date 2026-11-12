@@ -687,6 +687,110 @@ describe('installed Desktop GUI bundle', () => {
     }
   });
 
+  it.each([false, true])(
+    'shows /implement outside the status menu after baseline completion and requires confirmation (%s)',
+    async (confirmed) => {
+      const loaded = load({}, {});
+      const status = loaded.additions.find(
+        (item) =>
+          item.registry === 'composer-pill' &&
+          (item.value as { id: string }).id === 'flowguard-chat-status',
+      )?.value as {
+        show(input: { session: unknown }): { rows: Array<{ id: string; run?: () => void }> };
+      };
+      const action = loaded.additions.find(
+        (item) =>
+          item.registry === 'composer-pill' &&
+          (item.value as { id: string }).id === 'flowguard-implement-action',
+      )?.value as {
+        show(input: { session: unknown }): { label: string; run(): void } | undefined;
+      };
+      const input = { session: loaded.host.sessions.current() };
+      const validation = {
+        sessionID: 'ses_root',
+        kind: 'system_work',
+        phase: 'VALIDATION',
+        stateDigest: 'baseline-running',
+        title: 'Validation in progress',
+        actions: [],
+      };
+      const ready = {
+        ...validation,
+        kind: 'next_action',
+        phase: 'IMPLEMENTATION',
+        stateDigest: 'baseline-persisted',
+        title: 'Implementation required',
+        actions: [
+          {
+            invocation: '/implement',
+            description: 'Record implementation evidence',
+            visibility: 'recommended',
+          },
+        ],
+      };
+      loaded.views.push(validation);
+      status.show(input);
+      await vi.waitFor(() =>
+        expect(status.show(input).rows.some((row) => row.id === 'status')).toBe(true),
+      );
+      expect(action.show(input)).toBeUndefined();
+      loaded.views.push(ready);
+      status
+        .show(input)
+        .rows.find((row) => row.id === 'refresh')
+        ?.run?.();
+      await vi.waitFor(() => expect(action.show(input)?.label).toBe('/implement'));
+      expect(action).not.toHaveProperty('menu');
+      expect(action.show(input)).not.toHaveProperty('rows');
+      expect(loaded.host.dialogs.select).not.toHaveBeenCalled();
+      expect(loaded.commandCalls).toEqual([]);
+      loaded.host.dialogs.select.mockResolvedValue('/implement');
+      loaded.host.dialogs.confirm.mockResolvedValue(confirmed);
+      loaded.views.push(ready, ready, ready);
+      action.show(input)?.run();
+      await vi.waitFor(() =>
+        expect(loaded.host.dialogs.confirm).toHaveBeenCalledWith(
+          expect.objectContaining({ confirm: '/implement' }),
+        ),
+      );
+      if (confirmed) {
+        await vi.waitFor(() =>
+          expect(loaded.commandCalls).toEqual([
+            { sessionID: 'ses_root', name: 'implement', text: '' },
+          ]),
+        );
+      } else expect(loaded.commandCalls).toEqual([]);
+    },
+  );
+
+  it.each([
+    { kind: 'system_work', phase: 'VALIDATION', actions: [{ invocation: '/implement' }] },
+    { kind: 'blocked', phase: 'IMPLEMENTATION', actions: [{ invocation: '/implement' }] },
+    { kind: 'next_action', phase: 'IMPLEMENTATION', actions: [] },
+  ])('does not invent an implement action for $kind/$phase', async (view) => {
+    const loaded = load({}, {});
+    loaded.views.push({
+      sessionID: 'ses_root',
+      stateDigest: 'current',
+      title: 'Current state',
+      ...view,
+    });
+    const pills = loaded.additions
+      .filter((item) => item.registry === 'composer-pill')
+      .map((item) => item.value) as Array<{
+      id: string;
+      show(input: { session: unknown }): unknown;
+    }>;
+    const input = { session: loaded.host.sessions.current() };
+    pills.find((pill) => pill.id === 'flowguard-chat-status')?.show(input);
+    await vi.waitFor(() => expect(loaded.rpcCalls).toHaveLength(1));
+    await Promise.resolve();
+    expect(
+      pills.find((pill) => pill.id === 'flowguard-implement-action')?.show(input),
+    ).toBeUndefined();
+    expect(loaded.commandCalls).toEqual([]);
+  });
+
   it('does not run a pill workflow selection that returns after plugin unload', async () => {
     const loaded = load({}, {});
     const view = {
