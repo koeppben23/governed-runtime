@@ -965,6 +965,9 @@ last read` without a click, while a completion in another session left the
 - Show the existing model-free check display during post-implementation
   validation (`IMPL_VALIDATION`) after `/implement`, using the same current
   operation binding, existing label, and no additional controls or model turns.
+- Report a revised plan response as pending a fresh independent review instead of
+  presenting the prior `changes_requested` verdict as the current result. The
+  response continues to require the exact reviewer dispatch.
 
 - Limit model-free progress to canonical validation after `/approve` and after
   `/implement`. Restore the original `/start` workflow-choice chat response,

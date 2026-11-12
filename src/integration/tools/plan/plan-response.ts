@@ -536,7 +536,7 @@ function nonConvergedPlanResponse(
   });
   return {
     phase: finalState.phase,
-    status: `Independent review iteration ${nextIteration}/${scope.maxPlanReviewIterations}. Verdict: ${revision.verdict}.`,
+    status: `Plan revised (v${nextPlanVersion}) after changes_requested. Independent review iteration ${nextIteration}/${scope.maxPlanReviewIterations} is pending; dispatch the reviewer per reviewInvocation.`,
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: nextIteration,
     revisionDelta: revision.revisionDelta,

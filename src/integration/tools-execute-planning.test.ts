@@ -612,6 +612,10 @@ describe('plan', () => {
       expect(result.error).toBeUndefined();
       expect(typeof result.selfReviewIteration).toBe('number');
       expect(result.reviewDispatch).toEqual({ required: true });
+      expect(result.status).toContain('Plan revised (v2) after changes_requested');
+      expect(result.status).toContain('is pending; dispatch the reviewer');
+      expect(result.status).not.toContain('Verdict:');
+      expect((result.reviewInvocation as { status?: string }).status).toBe('pending_review');
       const revisionState = await readState(await currentSessionDir());
       expect(result.reviewAttemptId).toBe(
         revisionState?.reviewAssurance?.attempts.find(
