@@ -953,6 +953,11 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Align native host-adapter contract tests with timestamped execution-success
+  wakeups, using complete typed notification fixtures and exact projection
+  assertions. Remove the superseded expectation that success is unhandled;
+  notifications still supply no review approval or check-result evidence.
+
 - Route native OpenCode events only to their exact session-location owner and
   exclude completed-child idle/success wakeups before execution admission, so
   an independent `changes_requested` review no longer fences its parent.
