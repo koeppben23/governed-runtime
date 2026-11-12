@@ -19,11 +19,7 @@ import { buildEnforcementError, parseToolResult } from './blocked-result.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { toolBefore } from './plugin-beforehooks.js';
 import { toolAfter } from './plugin-afterhooks.js';
-import {
-  recordPresentation,
-  recordValidationProgress,
-  type PresentationStore,
-} from './plugin-presentation.js';
+import { recordValidationProgress, type PresentationStore } from './plugin-presentation.js';
 
 export interface DecisionCommandDeps {
   readonly governance: Pick<
@@ -44,7 +40,11 @@ export interface DecisionCommandDeps {
   readonly presentation: PresentationStore;
 }
 type CommandEditor = Parameters<Parameters<Plugin.Context['command']['transform']>[0]>[0];
-export function addDecisionCommands(deps: DecisionCommandDeps, editor: CommandEditor): void {
+export function addDecisionCommands(
+  ctx: Plugin.Context,
+  deps: DecisionCommandDeps,
+  editor: CommandEditor,
+): void {
   for (const command of INSTALLED_COMMANDS.filter(
     (command) => command.target.toolName === TOOL_FLOWGUARD_DECISION,
   ))
@@ -60,7 +60,7 @@ export function addDecisionCommands(deps: DecisionCommandDeps, editor: CommandEd
             verdict: ReviewVerdict.parse(token),
             rationale: fixed === undefined ? text.slice(String(token).length).trim() : text,
           });
-          return executeDecisionCommand(deps, {
+          return executeDecisionCommand(ctx, deps, {
             sessionID: input.sessionID,
             command: command.invocation,
             args,
@@ -70,6 +70,7 @@ export function addDecisionCommands(deps: DecisionCommandDeps, editor: CommandEd
 }
 
 export async function executeDecisionCommand(
+  ctx: Plugin.Context,
   deps: DecisionCommandDeps,
   request: {
     readonly sessionID: string;
@@ -138,7 +139,7 @@ export async function executeDecisionCommand(
         metadata: {},
       };
       await toolAfter(runtime, event, audited);
-      presentDecision(deps.presentation, sessionID, audited.output, args.verdict);
+      await presentDecision(ctx, sessionID, audited.output, args.verdict);
     },
     true,
   );
@@ -180,12 +181,12 @@ function decisionConfirmation(result: Record<string, unknown>, verdict: ReviewVe
   return `${summary}\n\n${status}${next}\n\n${instruction}`;
 }
 
-function presentDecision(
-  presentation: PresentationStore,
+async function presentDecision(
+  ctx: Plugin.Context,
   sessionID: string,
   output: string,
   verdict: ReviewVerdict,
-): void {
+): Promise<void> {
   const result = parseToolResult(output);
   if (result === null)
     throw buildEnforcementError(
@@ -197,9 +198,15 @@ function presentDecision(
       typeof result.code === 'string' ? result.code : 'GOVERNANCE_AUTHORITY_BLOCKED',
       typeof result.message === 'string' ? result.message : output,
     );
-  recordPresentation(presentation, sessionID, {
-    kind: 'decision',
-    message: decisionConfirmation(result, verdict),
-    ...(typeof result.phase === 'string' ? { phase: result.phase } : {}),
-  });
+  try {
+    await ctx.session.prompt({
+      sessionID,
+      text: decisionConfirmation(result, verdict),
+    });
+  } catch (error) {
+    console.warn(
+      '[FlowGuard] Decision is committed and audited; status presentation failed.',
+      error,
+    );
+  }
 }

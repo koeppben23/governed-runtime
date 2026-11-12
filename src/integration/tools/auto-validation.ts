@@ -340,11 +340,13 @@ function emitValidationProgress(
   progress: AutoValidationProgress | undefined,
   event: Parameters<AutoValidationProgress>[0],
 ): void {
-  if (progress === undefined) return;
+  if (progress === undefined || event.phase !== 'VALIDATION') return;
   try {
-    void Promise.resolve(progress(event)).catch(() => {});
-  } catch {
-    // A presentation callback cannot fail the canonical check sequence.
+    void Promise.resolve(progress(event)).catch((error: unknown) => {
+      console.warn('[FlowGuard] Baseline progress delivery failed; validation continues.', error);
+    });
+  } catch (error) {
+    console.warn('[FlowGuard] Baseline progress delivery failed; validation continues.', error);
   }
 }
 

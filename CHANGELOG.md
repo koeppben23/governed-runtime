@@ -953,38 +953,15 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
-- Show an explicit `/implement` action above the Desktop composer after the
-  canonical projection reaches IMPLEMENTATION following approved baseline
-  validation. Keep it separate from the status menu; clicking still re-reads
-  state and requires the existing chooser/confirmation path. No automatic
-  implementation, plan-admission change or host-tool authorization change.
-
-- Reconstruct native Start/decision feedback and subject-bound check results
-  from persisted canonical state in the Desktop status menu/report dialog and TUI report
-  dialog, including after reload. Keep the progress surface, refresh current
-  status on display and every five visible seconds, and discard stale-phase
-  notices. Wire implementation validation and lifecycle-resume progress without
-  new model turns or claims of a confirmed subprocess start.
-- Restore pre-GUI plan/evidence admission and model tool catalogues after the
-  presentation follow-up unintentionally changed them. Existing check/attempt
-  independence and execution guards remain unchanged; no session is reset.
-- Restore reachable Desktop status-menu actions: remove the custom popover that
-  suppressed the host's action rows, expose workflow/next-action selection and
-  a read-only report dialog, and open the chooser once for a fresh Start notice
-  without choosing a workflow or replacing an already-open dialog.
-
-- Present native FlowGuard validation progress, decision confirmations,
-  lifecycle notices and diagnostic reports through a bounded read-only
-  `GetPresentation` RPC instead of `ctx.session.prompt`. `/approve` no longer
-  creates a second apparent interaction, user message or model turn; `/check`
-  and reviewer orchestration keep their intentional agent prompts. The channel
-  is ephemeral and non-authoritative, never audit or workflow evidence, and its
-  failures or hangs cannot delay validation or hold a lock. Progress wording
-  distinguishes check preparation from a proven process start; the latter still
-  requires executor instrumentation. TUI toasts and `/flowguard-report`, plus
-  the Desktop composer pill and report dialog, are wired without claiming
-  installed UI acceptance. Async UI reads re-check the selected session before
-  displaying, so a session switch during a read cannot show stale status.
+- Limit model-free progress to baseline validation after `/approve` and before
+  `/implement`. Restore the original `/start` workflow-choice chat response,
+  final decision/check-result chat report with the next command, lifecycle and
+  diagnostic responses. Remove the added `/implement` button, automatic Start
+  dialog, report dialogs/command and summary API; preserve the original explicit
+  chooser and 30-second read-only status reconciliation. Baseline progress uses
+  a bounded ephemeral channel without extra model turns or changes to plan,
+  evidence, tool permissions or canonical validation. Installed visual acceptance
+  and confirmed subprocess-start instrumentation remain unverified.
 
 - Align native host-adapter contract tests with timestamped execution-success
   wakeups, using complete typed notification fixtures and exact projection

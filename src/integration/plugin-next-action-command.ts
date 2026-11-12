@@ -42,7 +42,7 @@ export async function getNextAction(
   request: { readonly sessionID: string },
 ): Promise<NextActionResult> {
   const activation = await resolveGovernanceActivation(governance.store, request.sessionID);
-  if (activation.kind !== 'active' || activation.record.directory !== ctx.location.directory) {
+  if (activation.kind !== 'active') {
     return {
       schemaVersion: 'next-action.v1',
       kind: 'blocked',
@@ -53,21 +53,13 @@ export async function getNextAction(
       policyDigest: null,
       title: 'FlowGuard governance is not active',
       question: null,
-      summary: null,
       actions: [],
       blocker: {
-        code:
-          activation.kind === 'blocked'
-            ? activation.code
-            : activation.kind === 'active'
-              ? 'GOVERNANCE_AUTHORITY_BLOCKED'
-              : 'GOVERNANCE_INACTIVE',
+        code: activation.kind === 'blocked' ? activation.code : 'GOVERNANCE_INACTIVE',
         message:
           activation.kind === 'blocked'
             ? activation.reason
-            : activation.kind === 'active'
-              ? 'The session belongs to a different native location.'
-              : 'Run /start before choosing a workflow.',
+            : 'Run /start before choosing a workflow.',
         recovery: 'Run /start to activate governance, then choose a workflow.',
       },
     } satisfies NextActionResult;
@@ -99,7 +91,6 @@ export async function getNextAction(
     policyDigest: null,
     title: 'FlowGuard session unavailable',
     question: null,
-    summary: null,
     actions: [],
     blocker: {
       code: authority.status === 'absent' ? 'SESSION_STATE_ABSENT' : authority.code,
@@ -138,7 +129,7 @@ export async function submitDecision(
       verdict: ReviewVerdict.parse(verdict),
       rationale: request.rationale ?? '',
     });
-    await executeDecisionCommand(deps, {
+    await executeDecisionCommand(ctx, deps, {
       sessionID: request.sessionID,
       command: request.invocation,
       args,

@@ -1,21 +1,21 @@
 /**
  * @module integration/plugin-presentation
- * @description Ephemeral, non-authoritative host presentation for native status
- * and report text. Presentation is never audit evidence, workflow state, model
+ * @description Ephemeral baseline progress between /approve and /implement.
+ * Presentation is never audit evidence, workflow state, model
  * context or approval authority. It intentionally has no durable storage: a
  * plugin reload loses it, and the UI falls back to canonical read-only state.
  */
 import { randomUUID } from 'node:crypto';
 import type { AutoValidationProgressEvent } from './tools/helpers.js';
 
-export type PresentationKind = 'notice' | 'validation' | 'decision' | 'report';
+export type PresentationKind = 'validation';
 
 export interface PresentationEvent {
   readonly id: string;
   readonly sessionID: string;
   readonly kind: PresentationKind;
   readonly message: string;
-  readonly phase?: string;
+  readonly phase?: 'VALIDATION';
   readonly checks?: readonly string[];
   readonly occurredAt: string;
 }
@@ -23,7 +23,7 @@ export interface PresentationEvent {
 export interface PresentationInput {
   readonly kind: PresentationKind;
   readonly message: string;
-  readonly phase?: string;
+  readonly phase?: 'VALIDATION';
   readonly checks?: readonly string[];
 }
 
@@ -47,7 +47,6 @@ const DEFAULT_MAX_EVENTS_PER_SESSION = 64;
 const DEFAULT_MAX_SESSIONS = 128;
 const DEFAULT_MAX_MESSAGE_LENGTH = 32_768;
 const MAX_CHECKS = 32;
-const MAX_PHASE_LENGTH = 128;
 const MAX_CHECK_LENGTH = 128;
 
 const TRUNCATION_SUFFIX = '\n\n[truncated]';
@@ -101,7 +100,7 @@ export function createPresentationStore(
         sessionID,
         kind: input.kind,
         message: bounded(input.message, maxMessageLength),
-        ...(input.phase === undefined ? {} : { phase: bounded(input.phase, MAX_PHASE_LENGTH) }),
+        ...(input.phase === undefined ? {} : { phase: input.phase }),
         ...(input.checks === undefined ? {} : { checks: boundedChecks(input.checks) }),
         occurredAt: new Date().toISOString(),
       };
@@ -149,6 +148,7 @@ export function recordValidationProgress(
   sessionID: string,
   event: AutoValidationProgressEvent,
 ): void {
+  if (event.phase !== 'VALIDATION') return;
   const message =
     event.stage === 'check_started' && event.check !== undefined
       ? `**Validation in progress** — preparing \`${event.check}\` check.`

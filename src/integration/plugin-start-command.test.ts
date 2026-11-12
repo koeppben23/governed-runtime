@@ -125,18 +125,7 @@ describe('native /start command', () => {
     expect(view.stateDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(view.activationId).toMatch(/^[0-9a-f-]{36}$/);
     expect(view.activationGeneration).toBeGreaterThan(0);
-    expect(view).toHaveProperty('summary', expect.stringContaining('Governance ACTIVE'));
-    const originalDirectory = host.context.location.directory;
-    try {
-      host.context.location.directory = originalDirectory + '/foreign';
-      expect(await rpc!({ sessionID: sessionId })).toMatchObject({
-        kind: 'blocked',
-        summary: null,
-        blocker: { code: 'GOVERNANCE_AUTHORITY_BLOCKED' },
-      });
-    } finally {
-      host.context.location.directory = originalDirectory;
-    }
+    expect(view).not.toHaveProperty('summary');
   });
 
   it('hydrates, binds the frozen policy and activates the root via host_command', async () => {
@@ -170,15 +159,16 @@ describe('native /start command', () => {
       tool: 'flowguard_hydrate',
       success: true,
     });
-    const startNotice = (await host.presentation(sessionId)).events.at(-1);
-    expect(startNotice).toMatchObject({ kind: 'notice', phase: 'READY' });
-    expect(startNotice?.message).toContain('governance is ACTIVE');
-    expect(startNotice?.message).toMatch(
+    const startText =
+      (host.prompt.mock.calls.at(-1)?.[0] as { text?: string } | undefined)?.text ?? '';
+    expect(host.prompt).toHaveBeenCalledWith(expect.objectContaining({ sessionID: sessionId }));
+    expect(startText).toContain('governance is ACTIVE');
+    expect(startText).toMatch(
       /## Decision required[\s\S]*Choose one workflow to start\. Nothing runs until you send a command\.[\s\S]*- `\/task` — Capture the task and start the standard governed flow \(recommended\)[\s\S]*- `\/architecture` — Create or revise an ADR without starting a task flow[\s\S]*- `\/review` — Review a diff, branch, PR, or pasted text/,
     );
-    expect(startNotice?.message).not.toContain('## Workflows');
-    expect(startNotice?.message).not.toContain('## Next');
-    expect(host.prompt).not.toHaveBeenCalled();
+    expect(startText).not.toContain('## Workflows');
+    expect(startText).not.toContain('## Next');
+    expect((await host.presentation(sessionId)).events).toEqual([]);
     expect(host.synthetic).not.toHaveBeenCalled();
     const events = await audit.readAuditTrail(authority.sessDir);
     const activated = events.filter((event) => event.event === 'governance:activated');
@@ -216,14 +206,14 @@ describe('native /start command', () => {
     const authority = await workflow(sessionId);
     if (authority.status !== 'resolved') throw new Error('Expected workflow state');
     expect(authority.state.policySnapshot.mode).toBe('solo');
-    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
-      'Auto-approve is active',
+    expect(host.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('Auto-approve is active') }),
     );
     const hydrate = vi.spyOn(tools.hydrate, 'execute');
     await host.command('start', sessionId);
     expect(hydrate).not.toHaveBeenCalled();
-    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
-      'Auto-approve is active',
+    expect(host.prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('Auto-approve is active') }),
     );
   });
 
@@ -259,8 +249,8 @@ describe('native /start command', () => {
     expect(hydrate).not.toHaveBeenCalled();
     expect(await workflow(sessionId)).toEqual(before);
     expect(revisions().map((item) => item.status)).toEqual(['activating', 'active']);
-    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
-      'was already ACTIVE',
+    expect(host.prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('was already ACTIVE') }),
     );
   });
 
@@ -282,7 +272,7 @@ describe('native /start command', () => {
     await open();
     const sessionId = randomUUID();
     await host.command('diagnostics', sessionId, 'review');
-    expect((await host.presentation(sessionId)).events).toHaveLength(1);
+    expect((await host.presentation(sessionId)).events).toEqual([]);
 
     host.sessionGet.mockResolvedValueOnce({
       id: sessionId,
@@ -374,8 +364,8 @@ describe('native /start command', () => {
         detail: expect.objectContaining({ decisionId: pending!.decisionId, generation: 1 }),
       }),
     ]);
-    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
-      'interrupted Start was completed',
+    expect(host.prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('interrupted Start was completed') }),
     );
   });
 
@@ -679,31 +669,39 @@ describe('native /start command', () => {
     expect(verifyChain(before).valid).toBe(true);
   });
 
-  it('reports the committed activation truthfully when catalogue publication fails', async () => {
-    await open();
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const sessionId = randomUUID();
-    host.context.tool.transform.mockRejectedValueOnce(new Error('publication failed'));
-    await expect(host.command('start', sessionId)).resolves.toBeUndefined();
-    expect(await resolveGovernanceActivation(host.activation.store, sessionId)).toMatchObject({
-      kind: 'active',
-    });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('durably ACTIVE'), expect.any(Error));
-    const hydrate = vi.spyOn(tools.hydrate, 'execute');
-    await host.command('start', sessionId);
-    expect(hydrate).not.toHaveBeenCalled();
-    expect(host.definitions.has('flowguard_status')).toBe(true);
-    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
-      'was already ACTIVE',
-    );
-    const authority = await workflow(sessionId);
-    if (authority.status !== 'resolved') throw new Error('Expected workflow');
-    expect(
-      (await audit.readAuditTrail(authority.sessDir)).filter(
-        (event) => event.event === 'governance:activated',
-      ),
-    ).toHaveLength(1);
-  });
+  it.each(['publish', 'prompt'] as const)(
+    'reports the committed activation truthfully when %s presentation fails',
+    async (phase) => {
+      await open();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const sessionId = randomUUID();
+      if (phase === 'publish')
+        host.context.tool.transform.mockRejectedValueOnce(new Error('publication failed'));
+      else host.prompt.mockRejectedValueOnce(new Error('prompt failed'));
+      await expect(host.command('start', sessionId)).resolves.toBeUndefined();
+      expect(await resolveGovernanceActivation(host.activation.store, sessionId)).toMatchObject({
+        kind: 'active',
+      });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('durably ACTIVE'),
+        expect.any(Error),
+      );
+      const hydrate = vi.spyOn(tools.hydrate, 'execute');
+      await host.command('start', sessionId);
+      expect(hydrate).not.toHaveBeenCalled();
+      expect(host.definitions.has('flowguard_status')).toBe(true);
+      expect(host.prompt).toHaveBeenLastCalledWith(
+        expect.objectContaining({ text: expect.stringContaining('was already ACTIVE') }),
+      );
+      const authority = await workflow(sessionId);
+      if (authority.status !== 'resolved') throw new Error('Expected workflow');
+      expect(
+        (await audit.readAuditTrail(authority.sessDir)).filter(
+          (event) => event.event === 'governance:activated',
+        ),
+      ).toHaveLength(1);
+    },
+  );
 
   it('rejects Start after the plugin stopped', async () => {
     const dispose = await open();

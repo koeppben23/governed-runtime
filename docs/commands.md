@@ -815,10 +815,8 @@ projection. The Desktop palette and its optional ComposerPill are documented in
 
 - The chooser uses the canonical `CHOOSE_FLOW` projection and shows exactly
   `/task` (recommended), `/architecture` and `/review`.
-- It opens when the user invokes `/choose-workflow` or selects the action in
-  the Desktop status pill. On Desktop a fresh native `/start` notice also opens
-  the workflow choice once, unless another dialog is already open. No workflow
-  is selected automatically. There is no automatic idle modal and the
+- It opens only when the user explicitly invokes `/choose-workflow` or runs
+  `/choose-workflow` in the host. There is no automatic idle modal and the
   chooser itself creates no persistent composer pill. Cancelling, closing,
   switching sessions or plugin reload performs no command, including a dialog
   result that arrives after unload.
@@ -843,19 +841,15 @@ projection. The Desktop palette and its optional ComposerPill are documented in
 
 ### TUI companion
 
-The optional TUI plugin adds `/choose-workflow` and `/flowguard-report`.
-`/flowguard-report` reconstructs recorded decisions, current subject-bound check
-results and the next action from canonical state, including after reload. It
-also reads the latest report from the ephemeral
-`GetPresentation` page and shows it in a dialog. Validation and decision notices
-are announced as model-free toasts. The presentation page is not audit or
-workflow evidence and is lost on plugin reload; canonical status remains the
-fallback. A presentation failure never blocks validation or a decision.
+The optional TUI plugin keeps its original explicit `/choose-workflow` command.
+No report command, presentation polling or new toast/dialog is added to the TUI.
+`/start` and the final approval/check-result report retain their original chat
+responses, including the `/implement` recommendation.
 
 ### Desktop GUI companion
 
 The optional Desktop bundle at `plugins/flowguard/gui-experimental.cjs` adds
-three palette commands, read-only status/report UI, and explicit chooser actions:
+three palette commands and read-only UI surfaces:
 
 | Command               | Purpose                                                                               |
 | --------------------- | ------------------------------------------------------------------------------------- |
@@ -869,20 +863,16 @@ unavailable. Missing optional APIs degrade only that surface; they never
 disable the portable Markdown fallback or the canonical command path.
 
 The Desktop composer status is a live read-only projection over
-`GetNextAction`, `GetWorkbenchReview` and the ephemeral `GetPresentation` page.
-It shows validation/decision notices and offers a canonical report dialog.
-Status/report reads never insert synthetic messages, start workflows, submit
-decisions, write audit events or claim verified human authorship. A separate
-menu action opens the existing chooser; only an explicit confirmed selection
-requests a canonical command or decision. See
+`GetNextAction` and `GetWorkbenchReview`. During baseline validation only, the
+ephemeral `GetPresentation` page supplies progress without extra chat/model
+turns. Status/progress reads never start workflows, submit decisions, write
+audit events or claim verified human authorship. See
 [Desktop GUI Companion](./desktop.md) for refresh/reconciliation behavior,
 accessibility limits and installed evidence.
 
-After `/approve` and successful baseline checks, Desktop also exposes an explicit
-`/implement` action above the composer when the canonical IMPLEMENTATION view
-recommends it. This is a separate visible action, not just a phase label or a
-generic status-menu entry. Clicking retains state revalidation and confirmation;
-it does not begin implementation automatically.
+After `/approve` and successful baseline checks, the original final chat response
+contains results and recommends `/implement`. There is no separate action button
+or replacement report dialog. `/start` still presents the Markdown workflow choice.
 
 ### Native review decisions
 
@@ -898,7 +888,6 @@ decision path and rejects a stale or mismatched view with
 A governance override (`/override-approve`) requires a non-empty rationale
 entered in the dialog. The rationale is durable decision evidence. The native
 channel remains `host_command`; a UI click never raises actor assurance or
-claims verified human authorship. Review-decision dialogs never open
-automatically: use `/choose-workflow` or the status-menu action. The one-time
-Desktop `/start` notification opens only the workflow-choice dialog, without
-selecting a workflow.
+claims verified human authorship. The chooser never opens automatically:
+workflow selection and review decisions both require an explicit
+`/choose-workflow` request.

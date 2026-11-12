@@ -54,12 +54,12 @@ describe('native /debug-export', () => {
 
     await host.command('debug-export', sessionId);
 
-    const report = (await host.presentation(sessionId)).events.at(-1);
-    expect(report).toMatchObject({
-      kind: 'report',
-      message: expect.stringContaining('Diagnostic export: NOT_VERIFIED'),
-    });
-    expect(host.prompt).not.toHaveBeenCalled();
+    expect(host.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionID: sessionId,
+        text: expect.stringContaining('Diagnostic export: NOT_VERIFIED'),
+      }),
+    );
     const manifest = JSON.parse(
       await readFile(path.join(await latestExportDir(), 'manifest.json'), 'utf8'),
     );
@@ -113,9 +113,10 @@ describe('native /debug-export', () => {
     );
     expect(hostTranscript).toContain('part_1');
     expect(hostTranscript).not.toContain('SECRET_REVIEWER_PROMPT');
-    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
-      'This snapshot is diagnostic only.',
+    expect(host.prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('This snapshot is diagnostic only.'),
+      }),
     );
-    expect(host.prompt).not.toHaveBeenCalled();
   });
 });

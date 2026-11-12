@@ -6,13 +6,51 @@
 gate is BLOCKED, not passed.**
 
 The candidate-host probe establishes some transport mechanics. A follow-up
-product regression reproduces and repairs its lifecycle finding. A later repair
-replaces model-visible status prompts with a bounded, model-free presentation
-channel. This is **not** the complete product progress UI: installed UI
-acceptance and executor-start instrumentation remain gated. The follow-up
-described below adds persisted attempt-bound result display. State schemas,
-audit contracts, reviewer admission and
-retry/backoff persistence remain unchanged.
+product regression reproduces and repairs its lifecycle finding. The current
+presentation change is limited to baseline progress after `/approve` and before
+`/implement`. Start/workflow-choice, final decision/check-result, lifecycle and
+diagnostic chat responses retain the pre-overhaul contract (`e2565223`). There
+is no new `/implement` button, automatic Start dialog, report dialog/command or
+`GetNextAction.summary`. Installed visual acceptance and executor-start
+instrumentation remain gated. State schemas, audit contracts, reviewer
+admission and retry/backoff persistence remain unchanged.
+
+The model-free status overhaul and compensating UI additions described in the
+historical sections below were rejected by the operator and removed. Their
+green checks are historical evidence, not acceptance of the narrowed change.
+Only `VALIDATION` progress is published on `GetPresentation`; other phases,
+decisions and reports are excluded. The original explicit workflow chooser
+and 30-second status reconciler remain. The TUI plugin is restored byte-for-byte;
+the added TUI polling watcher and report command are removed. No incident session is reset and the
+separate native `patch` admission error is not addressed here.
+
+### Scope-restoration verification (12 November 2026)
+
+The restored Start execution, decision-confirmation renderer and final decision
+chat delivery match `e2565223` byte-for-byte, as do nine non-progress production
+files including the TUI plugin, GUI chooser and implementation tool. Source
+checks passed: 8,641 functional unit tests; 4,614 functional integration tests
+plus all 13 integration PERF cases in a separate serial run; 554 architecture
+tests; 34 focused GUI/bridge tests; 11 isolated native Start/decision/resume
+cases; and 60 packed inactive/running-install cases. Packed checks preceded the
+final removal of the unrelated TUI watcher; they are not an installed Desktop
+visual acceptance or an exact committed-artifact certification.
+
+The initial concurrent run had a process-signal timeout and two PERF budget
+failures. Isolated/full functional reruns and the serial PERF run passed without
+changing budgets or those tests; the initial causes remain unproven. The native
+decision fixture now waits for the restored Start chat response before counting
+requests for the subsequent decision. It verifies one final response containing
+`/implement`, with no progress-induced provider request.
+
+Focused diagnostic mutation on the restored next-action command scored 100%
+(six killed, zero survivors/uncovered, 46 compile-rejected, 28 ignored static
+mutants; unchanged 80% break threshold). An initial 50% result exposed missing
+unsupported-invocation/rationale assertions, now covered without production
+changes. Configs/report: session-owned `opencode/flowguard-last-run-repair/`.
+**NOT_VERIFIED:** full canonical mutation profile admission (`npm run mutation`),
+exact committed-artifact installed Desktop visual/screen-reader/Windows/real-provider
+acceptance and confirmed subprocess start. No local live update is claimed.
 
 Reference source: `develop` at `41b2932e32fc84b64af435486c0ecfa3ad837c15`.
 Local execution: 11 November 2026, macOS arm64, Node 22.22.2 / npm 10.9.7,
@@ -128,7 +166,7 @@ The private native helper waits boundedly for required plugin registration:
 2.2.7 can initially expose an empty registry before registration. Explicitly
 failed/inactive plugins and transport errors are never hidden by that wait.
 
-### Model-free status presentation (12 November 2026)
+### Historical, superseded model-free status overhaul (12 November 2026)
 
 A follow-up forensic report found `/approve` apparently shown again after a
 successful decision. The reported debug export showed two additional `user`
@@ -185,7 +223,7 @@ Presentation is ephemeral by design, so a reload loses pending notices; the
 canonical Next Action projection remains the fallback. Diagnostic report text is
 local UI text, not audit evidence or an approval.
 
-### Last-run forensic follow-up (12 November 2026)
+### Historical, superseded last-run UI follow-up (12 November 2026)
 
 Read-only inspection of the last local demo's OpenCode database established
 that the workflow reached `COMPLETE`, but native Start/approval confirmations
@@ -345,9 +383,10 @@ OPENCODE_LIVE=1 npm run test:smoke -- \
   src/cli/opencode-decision-command-live.smoke.test.ts
 ```
 
-The decision-command smoke test asserts that the real `/approve` path creates
-no extra provider request or status user message, and that the read-only
-presentation RPC contains the validation and decision notices. It uses explicit
+The decision-command smoke test asserts that the real `/approve` path retains
+one final decision/check-result chat response with `/implement`, while baseline
+progress adds no provider request or user message. The read-only presentation
+RPC contains only baseline progress. It uses explicit
 component review-gate fixtures; it is not independent reviewer provenance.
 
 For the incident-only regression, set `FLOWGUARD_OPENCODE_INCIDENT_CLI` to the
@@ -368,14 +407,15 @@ either live-host flag skips the suite and is **not transport evidence**.
 
 ## Product implementation remains gated
 
-The supported native success route now has product-path evidence. The former
-`presentValidationProgress()` and decision-confirmation prompts are replaced by
-the model-free presentation channel; they are not supplemented by a prompt
-fallback. Before claiming the complete feature, independently verify the
+The supported native success route has product-path evidence. Only the former
+`presentValidationProgress()` prompt is replaced by the model-free baseline
+channel; the original final decision-confirmation chat response is preserved.
+Before claiming the complete feature, independently verify the
 required installed UI scope. The remaining product implementation must:
 
-- prove the presentation channel in the packed TUI and Desktop product, including
-  explicit/automatic plan approval, `/implement` and supported resume;
+- prove the baseline presentation channel in the packed Desktop product,
+  including plan approval and supported baseline resume, without changing
+  `/start`, `/implement` or other command presentation;
 - observe a confirmed shell `spawn` before claiming process start, without
   changing executor output/digest/error semantics;
 - use the existing `ValidationAttempt.attemptId` and baseline/implementation
@@ -389,9 +429,9 @@ required installed UI scope. The remaining product implementation must:
 
 **NOT_VERIFIED:** installed packed-product progress, installed TUI/Desktop
 presentation, Desktop rendering, Windows rendering, real-provider acceptance,
-native tool rendering and confirmed subprocess-start instrumentation. Persisted
-attempt-bound summaries, reload recovery, stale-phase reconciliation and
-nonblocking progress callbacks have component/native test evidence, not installed
+native tool rendering and confirmed subprocess-start instrumentation. Historical
+summary/report tests do not verify the current chat restoration. Stale-phase
+reconciliation and nonblocking progress callbacks have component/native evidence, not installed
 GUI acceptance. Recovery requires the corresponding installed-host/UI and product
 negative tests; rerunning this fixture alone cannot establish those claims.
 

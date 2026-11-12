@@ -68,14 +68,13 @@ interprets missing events as approval.
 
 This PR extends the optional, read-only status path beyond
 `session.execution.succeeded`: after the composer pill has been rendered,
-a five-second reconciler refreshes **only the visible current sidecar session**.
-It skips hidden windows, does not query at registration, reads once on first
-display/session change, and
+a 30-second reconciler refreshes **only the visible current sidecar session**.
+It skips hidden windows, does not query at registration or first render and
 cleans up on GUI unload. Events and timer ticks are serialized and coalesced
 so a slow server cannot accumulate unbounded concurrent reads.
 
 The OpenCode SDK states that live RPC/event subscriptions do not replay
-missed notifications. Thus a five-second reconciler is **best-effort eventual
+missed notifications. Thus a 30-second reconciler is **best-effort eventual
 visibility while the GUI is visible and connected**, not an audit feed or a
 hard latency guarantee for every governance transition. Missing data remains
 `NOT_VERIFIED`; no state, decision or audit mutation is introduced.
@@ -148,11 +147,11 @@ Both surfaces are installed-verified on Desktop 2.2.6 artifact `e054159a`
 - The palette action **FlowGuard: inspect status beside chat** (`flowguard-inline`)
   refreshes one session-bound status pill by calling the existing read-only
   `GetNextAction` and, for review gates, `GetWorkbenchReview` RPCs.
-- The pill exposes **Inspect/Refresh canonical status**, a canonical report
-  dialog, and an explicit workflow/next-action chooser row. It uses native rows,
-  not a custom popover that suppresses those rows. Nothing is fetched on plugin
-  registration; first display/session change, user action, presentation events,
-  completion events and five-second visible reconciliation perform the reads.
+- The pill exposes **Inspect/Refresh canonical status**. Nothing is fetched on
+  registration or first render. User action, baseline progress notices,
+  completion events and 30-second visible reconciliation perform the reads.
+  Only baseline validation after `/approve` uses model-free progress; Start and
+  final decision/result chat responses retain their original presentation.
 - No synthetic message is inserted. An earlier prototype used
   `session.synthetic({ resume: false })`, but that could introduce
   otherwise non-authoritative UI notices into future model context.
@@ -164,10 +163,8 @@ Both surfaces are installed-verified on Desktop 2.2.6 artifact `e054159a`
   review snapshots, and never authorize decisions. Review digest/phase
   consistency is re-read; missing or stale data fails closed.
 - No automatic host-command execution, decision RPC, hydration or audit write
-  occurs from the pill or block. Explicit menu selection opens the existing
-  chooser and retains its canonical state/session checks. A fresh Start notice
-  opens workflow choice once unless another dialog is open, without selecting
-  a workflow. Existing `/status` portable fallback remains.
+  occurs from the pill or block. No new action button, report dialog or automatic
+  Start chooser is added. Existing `/status` portable fallback remains.
 - Unsupported GUI contributions must degrade without disabling other parts of
   FlowGuard. TUI/headless and existing command templates are unchanged.
 - Installed Desktop 2.2.6 acceptance on artifact `e054159a` covers actual pill

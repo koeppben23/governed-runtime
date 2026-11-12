@@ -53,7 +53,7 @@ import {
 import { addCheckCommand } from './plugin-check-command.js';
 import { addDebugExportCommand } from './plugin-debug-export-command.js';
 import { addDiagnosticsCommand } from './plugin-diagnostics-command.js';
-import { recordPresentation, type PresentationStore } from './plugin-presentation.js';
+import type { PresentationStore } from './plugin-presentation.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import {
   appendAuditEventAlreadyLocked,
@@ -124,14 +124,14 @@ function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Prom
       description: `FlowGuard — start governance for this session (optional policy mode: ${POLICY_MODES.join(', ')}).`,
       execute: (input) =>
         deps.guard(async () => {
-          await runStart(deps, input);
+          await runStart(ctx, deps, input);
         }),
     });
-    addDecisionCommands(deps, editor);
-    addGovernanceLifecycleCommands(deps, editor);
+    addDecisionCommands(ctx, deps, editor);
+    addGovernanceLifecycleCommands(ctx, deps, editor);
     addCheckCommand(ctx, deps, editor);
-    addDebugExportCommand(ctx, deps.presentation, editor);
-    addDiagnosticsCommand(ctx, deps.presentation, editor);
+    addDebugExportCommand(ctx, editor);
+    addDiagnosticsCommand(ctx, editor);
   });
 }
 
@@ -145,6 +145,7 @@ function registerAutonomousStart(
       deps.guard(async () => {
         try {
           return await runStart(
+            ctx,
             deps,
             {
               sessionID: request.sessionID,
@@ -221,6 +222,7 @@ async function getPresentation(
 }
 
 async function runStart(
+  ctx: Pick<Plugin.Context, 'session'>,
   deps: StartCommandDeps,
   input: CommandInvocation,
   autonomous?: AutonomousStartRequest & { readonly directory: string },
@@ -295,13 +297,11 @@ async function runStart(
     ...(choice === null ? [] : [choice]),
     "This is a FlowGuard host status report. Do not select a workflow automatically; wait for the user's explicit command.",
   ].join('\n\n');
-  // The status is presented on the model-free host channel. Never manufacture a
-  // user turn merely to show a report the operator did not ask the model about.
-  recordPresentation(deps.presentation, input.sessionID, {
-    kind: 'notice',
-    message: text,
-    phase: workflow.state.phase,
-  });
+  await presentCommittedStart(
+    () => ctx.session.prompt({ sessionID: input.sessionID, text }),
+    'status report',
+    input.sessionID,
+  );
   return { kind: result.kind, activationId: result.record.activationId };
 }
 

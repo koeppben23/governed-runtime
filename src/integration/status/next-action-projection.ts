@@ -66,8 +66,6 @@ export const NextActionResult = z
     question: z.string().nullable(),
     actions: z.array(NextActionAction),
     blocker: NextActionBlocker.nullable(),
-    /** Reconstructed from canonical state, never the ephemeral presentation queue. */
-    summary: z.string().max(32768).nullable(),
   })
   .strict();
 export type NextActionResult = z.infer<typeof NextActionResult>;
@@ -154,57 +152,6 @@ function blockerFor(
   };
 }
 
-function validationLine(attempt: SessionState['validationAttempts'][number]): string {
-  const result = attempt.result;
-  return `- ${attempt.scope} / ${result.checkId}: ${result.passed ? 'passed' : 'not passed'}; attempt ${attempt.attemptId}; ${result.executedAt}.`;
-}
-
-/** Durable facts only. A recorded decision is not an authorization for a later gate. */
-function sessionSummary(
-  state: SessionState,
-  status: ReturnType<typeof buildStatusProjection>,
-): string {
-  const lines = [
-    '# FlowGuard session',
-    `Session: ${state.binding.hostSessionId}`,
-    `Phase: ${state.phase}`,
-    'Read-only persisted facts; recorded decisions do not authorize a different gate.',
-  ];
-  const certificate = state.plan?.approvalCertificate;
-  if (certificate)
-    lines.push(
-      `Plan approval recorded: ${certificate.approvedAt} (plan ${certificate.planVersion}).`,
-    );
-  if (state.reviewDecision) {
-    lines.push(
-      `Workflow decision recorded: ${state.reviewDecision.verdict} at ${state.reviewDecision.decidedAt}.`,
-    );
-  }
-  const attempts = state.validationAttempts.filter((attempt) => {
-    return attempt.scope === 'baseline'
-      ? attempt.planDigest === state.plan?.current.digest
-      : attempt.implementationDigest === state.implementation?.digest;
-  });
-  lines.push('\n## Recorded checks for current subjects');
-  for (const attempt of attempts.slice(-32)) lines.push(validationLine(attempt));
-  if (attempts.length === 0) lines.push('No check results recorded for the current subjects.');
-  if (attempts.length > 32)
-    lines.push('Showing the newest 32 attempts; older attempts are omitted.');
-  const currentIds = new Set(attempts.map((attempt) => attempt.attemptId));
-  const historical = state.validationAttempts
-    .filter((attempt) => !currentIds.has(attempt.attemptId))
-    .slice(-8);
-  if (historical.length > 0) {
-    lines.push('\n## Earlier/other subject attempts (not current evidence; newest eight)');
-    for (const attempt of historical) lines.push(validationLine(attempt));
-  }
-  lines.push('\n## Current next action', directiveLabel(status.directive.code));
-  for (const action of actionsFor(status.conclusion))
-    lines.push(`- ${action.invocation} — ${action.description}`);
-  if (status.blocker?.reasonText) lines.push(`Blocked: ${status.blocker.reasonText}`);
-  return lines.join('\n').slice(0, 32768);
-}
-
 /** Project the canonical directive/status conclusion into the native RPC shape. */
 export function projectNextActionResult(
   state: SessionState,
@@ -232,11 +179,5 @@ export function projectNextActionResult(
     question: conclusion.kind === 'decision_required' ? conclusion.question : null,
     actions: actionsFor(conclusion),
     blocker: blockerFor(status, conclusion),
-    summary: (
-      (activation === undefined
-        ? ''
-        : `Governance ACTIVE · activation ${activation.activationId} · generation ${activation.generation}\n\n`) +
-      sessionSummary(state, status)
-    ).slice(0, 32768),
   };
 }

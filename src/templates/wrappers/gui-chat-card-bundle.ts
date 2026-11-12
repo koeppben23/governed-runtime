@@ -144,51 +144,23 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   const { createSignal, onCleanup } = require('solid-js');
   const [snapshot, setSnapshot] = createSignal(null);
   const [presentation, setPresentation] = createSignal(null);
-  const [latestReport, setLatestReport] = createSignal(null);
-  function openChoice(session) {
-    if (disposed || !isCurrentSession(ctx, session)) return;
-    void choose(ctx, session, () => !disposed).catch(() => {
-      if (!disposed && isCurrentSession(ctx, session))
-        toast(ctx, 'FlowGuard action could not be confirmed. Read /status before retrying.', 'error');
-    });
-  }
-  async function openReport(session) {
-    try {
-      const next = await getView(session);
-      if (disposed || !isCurrentSession(ctx, session) || !next || next.sessionID !== session.id) return;
-      const report = latestReport();
-      const reportText = report && report.sessionID === session.id ? report.message : null;
-      await ctx.dialogs.alert({ title: 'FlowGuard session and report',
-        description: [next.summary, reportText].filter(Boolean).join('\\n\\n') ||
-          'Canonical FlowGuard status is unavailable. Use /status for recovery.' });
-    } catch (_) {
-      if (!disposed && isCurrentSession(ctx, session))
-        toast(ctx, 'FlowGuard report unavailable. Use /status.', 'error');
-    }
-  }
   let announcedPresentation = null;
   function announceCurrentPresentation(session, next) {
     const event = presentation();
-    if (!event || event.sessionID !== session.id || event.kind === 'report' ||
-        event.phase !== next.phase || event.id === announcedPresentation) return;
+    if (!event || event.sessionID !== session.id || event.kind !== 'validation' ||
+        event.phase !== 'VALIDATION' || next.phase !== 'VALIDATION' ||
+        event.id === announcedPresentation) return;
     announcedPresentation = event.id;
-    toast(ctx, event.message, event.kind === 'decision' ? 'success' : 'default');
-    // An explicit Start notice can open the chooser, never choose a workflow.
-    if (event.kind === 'notice' && next.kind === 'choose_flow' && !ctx.dialogs.active())
-      openChoice(session);
+    toast(ctx, event.message, 'default');
   }
   const presentationWatcher = createFlowGuardPresentationWatcher(ctx,
     (session, after) => flowguardGuiRpcClient(session).getPresentation(after),
     (event) => {
       const current = ctx.sessions.current();
-      if (!current || event.sessionID !== current.id) return;
+      if (!current || event.sessionID !== current.id || event.kind !== 'validation' ||
+          event.phase !== 'VALIDATION') return;
       setPresentation(event);
       void inspect(current);
-      if (event.kind === 'report') {
-        setLatestReport(event);
-        toast(ctx, 'FlowGuard report ready. Open the FlowGuard status pill to read it.', 'default');
-        return;
-      }
       // A cached phase can lag a legitimate new event. Announce only after
       // reconciliation, rather than rejecting new progress against that cache.
     });
@@ -197,7 +169,6 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   let reading = false;
   let queuedSession = null;
   let disposed = false;
-  let inspectedSession = null;
   function inspect(session) {
     if (disposed) return;
     if (reading) {
@@ -237,10 +208,8 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         return;
       }
       announceCurrentPresentation(session, next);
-      const base = { key: key, phase: next.phase, summary: next.summary,
-        status: next.kind, label: 'FlowGuard · ' + (next.phase || 'NOT_VERIFIED'),
-        implementationAction: next.kind === 'next_action' && next.phase === 'IMPLEMENTATION' &&
-          Array.isArray(next.actions) ? next.actions.find((action) => action.invocation === '/implement') : null };
+      const base = { key: key, phase: next.phase,
+        status: next.kind, label: 'FlowGuard · ' + (next.phase || 'NOT_VERIFIED') };
       if (next.kind === 'blocked') {
         const blocker = next.blocker;
         setSnapshot({ ...base, status: 'blocked', note: blocker && blocker.code ?
@@ -302,37 +271,20 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         // Start only when the pill is actually mounted; a hidden/unmounted
         // surface must not poll the server.
         presentationWatcher.start();
-        if (inspectedSession !== key) {
-          inspectedSession = key;
-          void inspect(input.session);
-        }
         const state = snapshot();
         const matched = state && state.key === key;
         const latest = presentation();
         const latestForSession = latest && latest.sessionID === input.session.id &&
-          matched && state.status !== 'loading' && latest.phase === state.phase ? latest : null;
-        const label = matched && state.status !== 'loading' ? state.label : latestForSession
-          ? 'FlowGuard · ' + latestForSession.kind + (latestForSession.phase ? ' · ' + latestForSession.phase : '')
-          : matched ? state.label + ' · last read' : 'FlowGuard · inspect';
+          matched && state.status !== 'loading' && state.phase === 'VALIDATION' &&
+          latest.phase === state.phase ? latest : null;
+        const label = latestForSession ? state.label :
+          matched ? state.label + ' · last read' : 'FlowGuard · inspect';
         const rows = [{
           id: 'refresh',
           label: matched ? 'Refresh canonical status' : 'Inspect canonical status',
           detail: 'Read-only; no agent prompt or governance mutation',
           run: () => void inspect(input.session),
         }];
-        if (matched && (state.status === 'choose_flow' || state.status === 'next_action' ||
-            state.status === 'decision_required')) {
-          rows.unshift({ id: 'choose',
-            label: state.status === 'choose_flow' ? 'Choose workflow' : 'Open next action or decision',
-            detail: state.actionHint || 'Re-read canonical state before any action',
-            run: () => openChoice(input.session) });
-        }
-        const report = latestReport();
-        if ((matched && state.summary) || (report && report.sessionID === input.session.id)) {
-          rows.push({ id: 'report', label: 'Read Start, approval and check results',
-            detail: 'Read-only canonical session report',
-            run: () => void openReport(input.session) });
-        }
         if (latestForSession) {
           rows.unshift({ id: 'presentation', label: latestForSession.message,
             detail: latestForSession.kind + ' · ' + latestForSession.occurredAt });
@@ -341,8 +293,7 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
           rows.unshift({ id: 'status', label: state.note,
             detail: state.actionHint || 'Last read only; refresh for current state' });
         }
-        const presentationTone = latestForSession && latestForSession.kind === 'decision'
-          ? 'success' : latestForSession && latestForSession.kind === 'validation' ? 'warning' : undefined;
+        const presentationTone = latestForSession ? 'warning' : undefined;
         return {
           label: label,
           title: 'FlowGuard · chat status (read-only)',
@@ -350,24 +301,6 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
           tone: presentationTone ?? (matched && (state.status === 'blocked' || state.status === 'not_verified' ||
             state.status === 'stale') ? 'warning' : undefined),
           rows: rows,
-        };
-      },
-    });
-    // Keep progress/status separate from the explicit operator action. A
-    // completed baseline must expose /implement without opening a status menu.
-    ctx.add(ComposerPill, {
-      id: 'flowguard-implement-action',
-      order: 81,
-      show: (input) => {
-        const key = probeSessionKey(input.session);
-        const state = snapshot();
-        if (disposed || !key || !isCurrentSession(ctx, input.session) || !state ||
-            state.key !== key || state.status !== 'next_action' || !state.implementationAction) return undefined;
-        return {
-          label: state.implementationAction.invocation,
-          title: state.implementationAction.description,
-          icon: 'shield',
-          run: () => openChoice(input.session),
         };
       },
     });

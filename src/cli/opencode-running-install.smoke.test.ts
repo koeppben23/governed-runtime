@@ -255,19 +255,10 @@ process.exit(result.status ?? 98);
           restore = withTestEnv({ OPENCODE_CONFIG_DIR: config });
           const authority = await resolveSessionAuthority({ root: project, sessionId: session.id });
           expect(authority.status, JSON.stringify(authority)).toBe('resolved');
-          const presentation = await client.rpc.call({
-            location,
-            rpcID: 'flowguard-governance',
-            method: 'GetPresentation',
-            input: { sessionID: session.id },
-          });
-          expect(JSON.stringify(presentation.output)).toContain('FlowGuard governance is ACTIVE');
-          expect(
-            JSON.stringify(await client.session.context({ sessionID: session.id })),
-          ).not.toContain('FlowGuard governance is ACTIVE');
-          expect(
-            JSON.stringify(await client.session.inbox.list({ sessionID: session.id })),
-          ).not.toContain('FlowGuard governance is ACTIVE');
+          const report =
+            JSON.stringify(await client.session.context({ sessionID: session.id })) +
+            JSON.stringify(await client.session.inbox.list({ sessionID: session.id }));
+          expect(report).toContain('FlowGuard governance is ACTIVE');
           expect(host.exitCode).toBeNull();
         } finally {
           try {

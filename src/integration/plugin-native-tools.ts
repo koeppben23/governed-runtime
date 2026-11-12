@@ -20,7 +20,7 @@ import {
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import * as tools from './tools/index.js';
-import type { ToolDefinition, AutoValidationProgress } from './tools/helpers.js';
+import type { ToolDefinition } from './tools/helpers.js';
 import type { HelpCapabilities } from './help/command-catalog.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { buildEnforcementError } from './blocked-result.js';
@@ -171,7 +171,6 @@ export async function executeCanonicalNativeTool(
     readonly runtime: FlowGuardPluginRuntime;
     readonly scope: ActiveGovernanceScope;
     readonly assertScopeCurrent: () => Promise<void>;
-    readonly autoValidationProgress?: AutoValidationProgress;
   },
 ) {
   const { runtime, scope } = entry;
@@ -205,9 +204,6 @@ export async function executeCanonicalNativeTool(
         };
       },
       helpCapabilities: NATIVE_HELP_CAPABILITIES,
-      ...(entry.autoValidationProgress === undefined
-        ? {}
-        : { autoValidationProgress: entry.autoValidationProgress }),
     });
   const result =
     name === TOOL_FLOWGUARD_DECISION

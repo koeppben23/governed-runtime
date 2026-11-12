@@ -118,7 +118,7 @@ function createFlowGuardPresentationWatcher(ctx, getPresentation, notify) {
 }
 
 function createFlowGuardStatusReconciler(ctx, callback) {
-  const intervalMs = 5000;
+  const intervalMs = 30000;
   let timer = null;
   let disposed = false;
   const tick = () => {

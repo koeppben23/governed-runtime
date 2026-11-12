@@ -4,20 +4,14 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import type { Plugin } from '@opencode/plugin/tui';
 
 import type { DecisionBinding } from './status/decision-binding.js';
 import type { NextActionResult } from './status/next-action-projection.js';
-import plugin, {
-  chooseWorkflow,
-  openLatestReport,
-  type WorkflowChooserDeps,
-} from './tui-plugin.js';
+import plugin, { chooseWorkflow, type WorkflowChooserDeps } from './tui-plugin.js';
 
 function choiceView(overrides: Partial<NextActionResult> = {}): NextActionResult {
   return {
     schemaVersion: 'next-action.v1',
-    summary: null,
     kind: 'choose_flow',
     sessionID: 'ses_root',
     phase: 'READY',
@@ -267,87 +261,6 @@ describe('TUI workflow chooser', () => {
     expect(outcome.status).toBe('unavailable');
     expect(d.select).not.toHaveBeenCalled();
     expect(d.submitDecision).not.toHaveBeenCalled();
-  });
-
-  it('does not show a report after the session changed during the RPC read', async () => {
-    let sessionID = 'ses_root';
-    let resolve: (page: {
-      events: Array<{
-        id: string;
-        sessionID: string;
-        kind: string;
-        message: string;
-        occurredAt: string;
-      }>;
-      cursor: string | null;
-    }) => void = () => {};
-    const alert = vi.fn(async () => {});
-    const ctx = {
-      location: { directory: '/worktree' },
-      data: { session: { get: () => undefined } },
-      client: {
-        rpc: () => ({
-          GetPresentation: () =>
-            new Promise<{
-              events: Array<{
-                id: string;
-                sessionID: string;
-                kind: string;
-                message: string;
-                occurredAt: string;
-              }>;
-              cursor: string | null;
-            }>((next) => {
-              resolve = next;
-            }),
-        }),
-      },
-      ui: { dialog: { alert } },
-    } as unknown as Plugin.Context;
-    const d = deps({ currentSessionID: () => sessionID });
-
-    const pending = openLatestReport(ctx, d);
-    sessionID = 'ses_other';
-    resolve({
-      events: [
-        {
-          id: 'report',
-          sessionID: 'ses_root',
-          kind: 'report',
-          message: 'root report',
-          occurredAt: '2026-11-12T00:00:00.000Z',
-        },
-      ],
-      cursor: 'report',
-    });
-    await pending;
-
-    expect(alert).not.toHaveBeenCalled();
-    expect(d.notify).toHaveBeenCalledWith(
-      'Session changed; no FlowGuard report was shown.',
-      'warning',
-    );
-  });
-
-  it('shows canonical decision/check feedback even after ephemeral reports were lost', async () => {
-    const alert = vi.fn(async () => {});
-    const ctx = {
-      location: { directory: '/worktree' },
-      data: { session: { get: () => undefined } },
-      client: { rpc: () => ({ GetPresentation: async () => ({ events: [], cursor: null }) }) },
-      ui: { dialog: { alert } },
-    } as unknown as Plugin.Context;
-    const d = deps({
-      getView: async () =>
-        choiceView({
-          summary: 'Plan approval recorded.\nBuild passed: attempt persisted-id.\n/implement',
-        }),
-    });
-    await openLatestReport(ctx, d);
-    expect(alert).toHaveBeenCalledWith({
-      title: 'FlowGuard session and report',
-      message: expect.stringContaining('persisted-id'),
-    });
   });
 
   it('does not auto-open a review decision from the background idle path', async () => {

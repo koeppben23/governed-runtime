@@ -364,25 +364,7 @@ describe('automatic validation', () => {
 
       const state = await readState(await getSessDir());
       expect(state!.phase).toBe('IMPL_REVIEW');
-      expect(progress).toHaveBeenCalledWith({
-        phase: 'IMPL_VALIDATION',
-        checks: state!.activeChecks,
-        stage: 'starting',
-      });
-      for (const check of state!.activeChecks) {
-        expect(progress).toHaveBeenCalledWith({
-          phase: 'IMPL_VALIDATION',
-          checks: state!.activeChecks,
-          stage: 'check_started',
-          check,
-        });
-        expect(progress).toHaveBeenCalledWith({
-          phase: 'IMPL_VALIDATION',
-          checks: state!.activeChecks,
-          stage: 'check_finished',
-          check,
-        });
-      }
+      expect(progress).not.toHaveBeenCalled();
       expect(state!.implValidation.map((entry) => entry.checkId)).toEqual(state!.activeChecks);
       expect(state!.implValidation.every((entry) => entry.passed)).toBe(true);
       expect(vi.mocked(executorMock.executeCheck).mock.calls).toHaveLength(

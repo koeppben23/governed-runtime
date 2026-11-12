@@ -40,9 +40,9 @@ function toast(ctx, description, variant) {
   ctx.toast.show({ title: 'FlowGuard', description: description, variant: variant || 'default' });
 }
 
-async function choose(ctx, session, isAlive = () => true) {
+async function choose(ctx, session) {
   const first = await getView(session);
-  if (!isAlive() || !isCurrentSession(ctx, session)) return;
+  if (!isCurrentSession(ctx, session)) return;
   if (!first || first.stateDigest === null) {
     toast(ctx, 'No FlowGuard action is available for this session.', 'default');
     return;
@@ -63,7 +63,7 @@ async function choose(ctx, session, isAlive = () => true) {
     })),
   });
   if (selected === undefined) return;
-  if (!isAlive() || !isCurrentSession(ctx, session)) {
+  if (!isCurrentSession(ctx, session)) {
     toast(ctx, 'Session changed; no FlowGuard action was executed.', 'error');
     return;
   }
@@ -87,7 +87,7 @@ async function choose(ctx, session, isAlive = () => true) {
     toast(ctx, 'FlowGuard state changed; no action was executed. Reopen the chooser.', 'error');
     return;
   }
-  if (!isAlive() || !isCurrentSession(ctx, session)) {
+  if (!isCurrentSession(ctx, session)) {
     toast(ctx, 'Session changed; no FlowGuard action was executed.', 'error');
     return;
   }
@@ -100,12 +100,12 @@ async function choose(ctx, session, isAlive = () => true) {
       cancel: 'Cancel',
     });
     if (!confirmed) return;
-    if (!isAlive() || !isCurrentSession(ctx, session)) {
+    if (!isCurrentSession(ctx, session)) {
       toast(ctx, 'Session changed; no FlowGuard action was executed.', 'error');
       return;
     }
     const afterConfirmation = await getView(session);
-    if (!isAlive() || !afterConfirmation || !sameView(first, afterConfirmation, selected) || !isCurrentSession(ctx, session)) {
+    if (!afterConfirmation || !sameView(first, afterConfirmation, selected) || !isCurrentSession(ctx, session)) {
       toast(ctx, 'FlowGuard state or session changed after confirmation; no action was executed.', 'error');
       return;
     }
@@ -130,12 +130,12 @@ async function choose(ctx, session, isAlive = () => true) {
     }
     // A rationale dialog can outlive the visible session or review. Re-read
     // before crossing the canonical server-side decision authority boundary.
-    if (!isAlive() || !isCurrentSession(ctx, session)) {
+    if (!isCurrentSession(ctx, session)) {
       toast(ctx, 'Session changed; no FlowGuard decision was submitted.', 'error');
       return;
     }
     const afterRationale = await getView(session);
-    if (!isAlive() || !afterRationale || !sameView(first, afterRationale, selected) || !isCurrentSession(ctx, session)) {
+    if (!afterRationale || !sameView(first, afterRationale, selected) || !isCurrentSession(ctx, session)) {
       toast(ctx, 'FlowGuard state or session changed; no decision was submitted.', 'error');
       return;
     }

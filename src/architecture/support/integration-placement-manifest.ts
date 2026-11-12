@@ -405,7 +405,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/plugin-native-tools.ts', owner: 'root-composition' },
   { file: 'integration/plugin-native-events.ts', owner: 'root-composition' },
   { file: 'integration/plugin-presentation.ts', owner: 'root-composition' },
-  { file: 'integration/plugin-presentation-watch.ts', owner: 'root-composition' },
   { file: 'integration/plugin-session-error-audit.ts', owner: 'root-composition' },
   { file: 'integration/plugin-native-review.ts', owner: 'root-composition' },
   { file: 'integration/plugin-start-command.ts', owner: 'root-composition' },

@@ -54,9 +54,9 @@ export const PresentationEventSchema = z
   .object({
     id: z.string().min(1).max(128),
     sessionID: z.string().min(1),
-    kind: z.enum(['notice', 'validation', 'decision', 'report']),
+    kind: z.literal('validation'),
     message: z.string().max(32768),
-    phase: z.string().min(1).max(128).optional(),
+    phase: z.literal('VALIDATION').optional(),
     checks: z.array(z.string().max(128)).max(32).optional(),
     occurredAt: z.string().min(1).max(64),
   })

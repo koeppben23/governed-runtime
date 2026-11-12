@@ -44,13 +44,15 @@ describe('native /diagnostics', () => {
 
     await host.command('diagnostics', sessionId, 'explorer');
 
-    const report = (await host.presentation(sessionId)).events.at(-1);
-    expect(report).toMatchObject({
-      kind: 'report',
-      message: expect.stringContaining('FlowGuard Session Explorer'),
-    });
-    expect(report?.message).toContain('Read-only diagnostic projection');
-    expect(host.prompt).not.toHaveBeenCalled();
+    expect(host.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionID: sessionId,
+        text: expect.stringContaining('FlowGuard Session Explorer'),
+      }),
+    );
+    expect(host.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('Read-only diagnostic projection') }),
+    );
   });
 
   it('renders the review shell and the explicit unsupported notification report', async () => {
@@ -58,15 +60,18 @@ describe('native /diagnostics', () => {
     const sessionId = randomUUID();
 
     await host.command('diagnostics', sessionId, 'review');
-    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
-      'No reviewable subject recorded',
+    expect(host.prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('No reviewable subject recorded') }),
     );
 
     await host.command('diagnostics', sessionId, 'notifications');
-    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
-      'No toast, panel, notification or governance action was attempted.',
+    expect(host.prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining(
+          'No toast, panel, notification or governance action was attempted.',
+        ),
+      }),
     );
-    expect(host.prompt).not.toHaveBeenCalled();
   });
 
   it('renders the bounded log view against the existing file sink location', async () => {
@@ -75,10 +80,14 @@ describe('native /diagnostics', () => {
 
     await host.command('diagnostics', sessionId, 'logs');
 
-    const report = (await host.presentation(sessionId)).events.at(-1);
-    expect(report?.message).toContain('FlowGuard Diagnostic Log View');
-    expect(report?.message).toContain('No logger, log file or persistent view state was created');
-    expect(host.prompt).not.toHaveBeenCalled();
+    expect(host.prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('FlowGuard Diagnostic Log View') }),
+    );
+    expect(host.prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('No logger, log file or persistent view state was created'),
+      }),
+    );
   });
 
   it('rejects an unknown mode or filter with a typed usage error', async () => {
@@ -86,14 +95,13 @@ describe('native /diagnostics', () => {
     const sessionId = randomUUID();
 
     await host.command('diagnostics', sessionId, 'unknown-mode');
-    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
-      'Unknown diagnostics mode',
+    expect(host.prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('Unknown diagnostics mode') }),
     );
 
     await host.command('diagnostics', sessionId, 'logs level=loud');
-    expect((await host.presentation(sessionId)).events.at(-1)?.message).toContain(
-      'Unknown log level',
+    expect(host.prompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('Unknown log level') }),
     );
-    expect(host.prompt).not.toHaveBeenCalled();
   });
 });

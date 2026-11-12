@@ -124,8 +124,9 @@ describe('native decision commands', () => {
     ).rejects.toThrow();
     expect(decisions(await readAuditTrail(before.sessDir))).toHaveLength(1);
   });
-  it('records in-flight validation and the decision without a model turn', async () => {
+  it('shows baseline progress without extra chat turns and preserves the final decision chat report', async () => {
     await gate();
+    host.prompt.mockClear();
     const execute = vi.spyOn(decision, 'execute').mockImplementation(async (_args, context) => {
       void context.autoValidationProgress?.({
         phase: 'VALIDATION',
@@ -185,10 +186,6 @@ describe('native decision commands', () => {
             '`build` returned; the canonical check result remains authoritative.',
           ),
         }),
-        expect.objectContaining({
-          kind: 'decision',
-          phase: 'ARCH_COMPLETE',
-        }),
       ]),
     );
     const validationMessages = events
@@ -201,7 +198,15 @@ describe('native decision commands', () => {
     ]);
     expect(validationMessages.join('\n')).not.toContain('`undefined`');
     expect(validationMessages.join('\n')).not.toMatch(/\brunning\b/i);
-    expect(host.prompt).not.toHaveBeenCalled();
+    expect(host.prompt).toHaveBeenCalledOnce();
+    expect(host.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionID,
+        text: expect.stringContaining(
+          '**Decision recorded:** approved; current phase `ARCH_COMPLETE`.',
+        ),
+      }),
+    );
     expect(host.synthetic).not.toHaveBeenCalled();
   });
 
@@ -225,6 +230,7 @@ describe('native decision commands', () => {
       {
         detail: {
           verdict: 'approve',
+          rationale: 'The displayed ADR revision was reviewed.',
           operation: { source: 'host_command', activationId: activation.record.activationId },
         },
       },
@@ -246,6 +252,23 @@ describe('native decision commands', () => {
     });
 
     expect(result).toMatchObject({ kind: 'blocked', code: 'DECISION_BINDING_STALE' });
+    expect((await workflow()).state.phase).toBe('ARCH_REVIEW');
+    expect(decisions(await readAuditTrail(before.sessDir))).toHaveLength(0);
+  });
+
+  it('rejects a non-decision invocation before recording any decision', async () => {
+    const before = await gate();
+    const activation = await resolveGovernanceActivation(host.ctx.storage, sessionID);
+    if (activation.kind !== 'active') throw new Error('Expected active governance');
+    const expected = projectDecisionBinding(before.state, activation.record);
+    if (expected === null) throw new Error('Expected a decision binding');
+    const result = await host.rpcMethods.get('SubmitDecision')!({
+      sessionID,
+      invocation: '/start',
+      rationale: 'This must not be treated as approval.',
+      expected,
+    });
+    expect(result).toMatchObject({ kind: 'blocked', code: 'DECISION_COMMAND_UNSUPPORTED' });
     expect((await workflow()).state.phase).toBe('ARCH_REVIEW');
     expect(decisions(await readAuditTrail(before.sessDir))).toHaveLength(0);
   });
@@ -342,15 +365,19 @@ describe('native decision commands', () => {
       ]);
     },
   );
-  it('commits the decision without depending on host prompt delivery', async () => {
+  it('keeps a committed decision when post-commit chat presentation fails', async () => {
     const before = await gate();
-    const prompt = vi.spyOn(host.ctx.session, 'prompt');
+    const prompt = vi
+      .spyOn(host.ctx.session, 'prompt')
+      .mockRejectedValueOnce(new Error('prompt unavailable'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await host.command('approve', sessionID, 'Committed without a status turn.');
     expect((await workflow()).state.phase).toBe('ARCH_COMPLETE');
-    expect(prompt).not.toHaveBeenCalled();
-    expect((await host.presentation(sessionID)).events.at(-1)).toMatchObject({
-      kind: 'decision',
-    });
+    expect(prompt).toHaveBeenCalledWith(expect.objectContaining({ sessionID }));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Decision is committed and audited'),
+      expect.any(Error),
+    );
     expect(decisions(await readAuditTrail(before.sessDir))).toMatchObject([
       { detail: { verdict: 'approve', operation: { source: 'host_command' } } },
     ]);
@@ -373,7 +400,8 @@ describe('native decision commands', () => {
     );
   });
   describe('decision command failure boundaries', () => {
-    type CommandDeps = Parameters<typeof executeDecisionCommand>[0];
+    type CommandContext = Parameters<typeof executeDecisionCommand>[0];
+    type CommandDeps = Parameters<typeof executeDecisionCommand>[1];
     type InvokeEntry = { runtime: FlowGuardPluginRuntime; scope: ActiveGovernanceScope };
     async function unitCommandFixture() {
       const state = makeState('ARCH_REVIEW');
@@ -402,6 +430,7 @@ describe('native decision commands', () => {
         auditDeps: {},
       } as unknown as FlowGuardPluginRuntime;
       const presentation = createPresentationStore();
+      const prompt = vi.fn(async () => {});
       const assertScopeCurrent = vi.fn(async () => {});
       const assertActivationAuditConfirmed = vi.fn(async () => {});
       const invoke = vi.fn(
@@ -419,6 +448,8 @@ describe('native decision commands', () => {
       vi.spyOn(afterhooks, 'toolAfter').mockResolvedValue(undefined);
       vi.spyOn(auditReconcile, 'reconcilePendingAuditOperations').mockResolvedValue(undefined);
       return {
+        ctx: { session: { prompt } } as unknown as CommandContext,
+        prompt,
         deps,
         invoke,
         runtime,
@@ -440,7 +471,7 @@ describe('native decision commands', () => {
         action({ runtime: f.runtime, scope: { ...f.scope, sessionId: 'child' } }),
       );
       const execute = vi.spyOn(decision, 'execute');
-      await expect(executeDecisionCommand(f.deps, request)).rejects.toThrow(
+      await expect(executeDecisionCommand(f.ctx, f.deps, request)).rejects.toThrow(
         'GOVERNANCE_AUTHORITY_BLOCKED',
       );
       expect(execute).not.toHaveBeenCalled();
@@ -452,7 +483,7 @@ describe('native decision commands', () => {
         code: 'SESSION_DIR_NOT_FOUND',
         reason: 'missing',
       });
-      await expect(executeDecisionCommand(f.deps, request)).rejects.toThrow(
+      await expect(executeDecisionCommand(f.ctx, f.deps, request)).rejects.toThrow(
         'GOVERNANCE_AUTHORITY_BLOCKED',
       );
     });
@@ -465,35 +496,34 @@ describe('native decision commands', () => {
         reason: 'audit down',
       });
       const execute = vi.spyOn(decision, 'execute');
-      await expect(executeDecisionCommand(f.deps, request)).rejects.toThrow(
+      await expect(executeDecisionCommand(f.ctx, f.deps, request)).rejects.toThrow(
         'AUDIT_PERSISTENCE_FAILED',
       );
       expect(execute).not.toHaveBeenCalled();
     });
-    it('records a committed object result and reports unreadable or blocked results', async () => {
+    it('presents a committed object result and reports unreadable or blocked results', async () => {
       const f = await unitCommandFixture();
       const output = JSON.stringify({ phase: 'ARCH_COMPLETE' });
       vi.spyOn(decision, 'execute').mockResolvedValue({ output });
-      await executeDecisionCommand(f.deps, request);
-      const events = f.presentation.read('root').events;
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({
-        kind: 'decision',
-        message: expect.stringContaining(
+      await executeDecisionCommand(f.ctx, f.deps, request);
+      expect(f.prompt).toHaveBeenCalledWith({
+        sessionID: 'root',
+        text: expect.stringContaining(
           '**Decision recorded:** approved; current phase `ARCH_COMPLETE`.',
         ),
       });
-      expect(events[0]!.message).toContain('The decision is durable.');
-      expect(events[0]!.message).not.toContain(output);
+      const calls = f.prompt.mock.calls as unknown as Array<[{ text: string }]>;
+      expect(calls[0]?.[0].text).toContain('The decision is durable.');
+      expect(calls[0]?.[0].text).not.toContain(output);
       vi.mocked(decision.execute).mockResolvedValue('not-json');
-      await expect(executeDecisionCommand(f.deps, request)).rejects.toThrow(
+      await expect(executeDecisionCommand(f.ctx, f.deps, request)).rejects.toThrow(
         'PLUGIN_ENFORCEMENT_UNAVAILABLE',
       );
       vi.mocked(decision.execute).mockResolvedValue(JSON.stringify({ error: true }));
-      await expect(executeDecisionCommand(f.deps, request)).rejects.toThrow(
+      await expect(executeDecisionCommand(f.ctx, f.deps, request)).rejects.toThrow(
         'GOVERNANCE_AUTHORITY_BLOCKED',
       );
-      expect(f.presentation.read('root').events).toHaveLength(1);
+      expect(f.presentation.read('root').events).toEqual([]);
     });
     it('projects the canonical result card instead of the raw decision envelope', async () => {
       const f = await unitCommandFixture();
@@ -502,8 +532,9 @@ describe('native decision commands', () => {
         presentation: { markdown: '## Validation\n\nAll active checks passed.' },
       });
       vi.spyOn(decision, 'execute').mockResolvedValue({ output });
-      await executeDecisionCommand(f.deps, request);
-      const text = f.presentation.read('root').events.at(-1)!.message;
+      await executeDecisionCommand(f.ctx, f.deps, request);
+      const calls = f.prompt.mock.calls as unknown as Array<[{ text: string }]>;
+      const text = calls[0]?.[0].text ?? '';
       expect(text).toContain('**Decision recorded:** approved; current phase `IMPLEMENTATION`.');
       expect(text).toContain('## Validation\n\nAll active checks passed.');
       expect(text).not.toContain('"presentation"');
@@ -520,8 +551,9 @@ describe('native decision commands', () => {
         },
       });
       vi.spyOn(decision, 'execute').mockResolvedValue({ output });
-      await executeDecisionCommand(f.deps, request);
-      const text = f.presentation.read('root').events.at(-1)!.message;
+      await executeDecisionCommand(f.ctx, f.deps, request);
+      const calls = f.prompt.mock.calls as unknown as Array<[{ text: string }]>;
+      const text = calls[0]?.[0].text ?? '';
       expect(text).toContain('**Decision recorded:** approved; current phase `IMPLEMENTATION`.');
       expect(text).toContain("Check 'test' passed with 1 skipped assertion(s).");
       expect(text).toContain('## Next\n\n- `/implement`');
@@ -543,7 +575,7 @@ describe('native decision commands', () => {
         });
         return JSON.stringify({ phase: 'IMPLEMENTATION' });
       });
-      await executeDecisionCommand(f.deps, request);
+      await executeDecisionCommand(f.ctx, f.deps, request);
       const messages = f.presentation
         .read('root')
         .events.filter((event) => event.kind === 'validation')
@@ -562,7 +594,16 @@ describe('native decision commands', () => {
       vi.spyOn(decision, 'execute').mockResolvedValue({
         output: JSON.stringify({ phase: 'IMPLEMENTATION' }),
       });
-      await expect(executeDecisionCommand(f.deps, request)).resolves.toBeUndefined();
+      vi.mocked(decision.execute).mockImplementation(async (_args, context) => {
+        await context.autoValidationProgress?.({
+          phase: 'VALIDATION',
+          checks: ['build'],
+          stage: 'starting',
+        });
+        return { output: JSON.stringify({ phase: 'IMPLEMENTATION' }) };
+      });
+      await expect(executeDecisionCommand(f.ctx, f.deps, request)).resolves.toBeUndefined();
+      expect(f.prompt).toHaveBeenCalledOnce();
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining('Presentation delivery failed'),
         expect.any(Error),

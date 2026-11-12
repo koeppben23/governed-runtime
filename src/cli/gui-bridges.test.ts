@@ -105,7 +105,7 @@ describe('Desktop GUI client and host bridges', () => {
     const ticks: Array<() => void> = [];
     const clear = vi.fn();
     const schedule = vi.fn((callback: () => void, period: number) => {
-      expect(period).toBe(5_000);
+      expect(period).toBe(30_000);
       ticks.push(callback);
       return 7;
     });

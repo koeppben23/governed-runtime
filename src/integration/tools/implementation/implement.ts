@@ -77,9 +77,7 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
   // response is superseded only when checks actually ran.
   const autoValidation = decidePostCommandAutoValidation({ response: recordResponse });
   const autoValidationResponse =
-    autoValidation.kind === 'run'
-      ? await runActiveChecksAutomatically(context, undefined, context.autoValidationProgress)
-      : null;
+    autoValidation.kind === 'run' ? await runActiveChecksAutomatically(context) : null;
   return autoValidationResponse ?? recordResponse;
 }
 

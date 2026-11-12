@@ -261,12 +261,15 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
         text: 'Accept the independently reviewed README plan with the stated residual documentation risk.',
       });
       await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
-      // The decision and validation status are host presentation only. They
-      // must not create a user inbox item or another model request.
-      expect(p.requests.slice(requestsBeforeApproval)).toHaveLength(0);
+      // Only baseline progress is model-free. The original final chat report
+      // still carries check results and the /implement recommendation.
+      const approvalRequests = p.requests.slice(requestsBeforeApproval);
+      expect(approvalRequests).toHaveLength(1);
+      expect(JSON.stringify(approvalRequests[0]!.body.messages)).toContain('Decision recorded');
+      expect(JSON.stringify(approvalRequests[0]!.body.messages)).toContain('/implement');
       const context = await p.client.session.context({ sessionID: root.id });
       expect(JSON.stringify(context)).not.toContain('Validation started');
-      expect(JSON.stringify(context)).not.toContain('Decision recorded');
+      expect(JSON.stringify(context)).toContain('Decision recorded');
       const presentation = await p.client.rpc.call({
         location: p.location,
         rpcID: 'flowguard-governance',
@@ -281,10 +284,6 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
             kind: 'validation',
             message: expect.stringContaining('Validation started'),
           }),
-          expect.objectContaining({
-            kind: 'decision',
-            message: expect.stringContaining('Decision recorded'),
-          }),
         ]),
       );
       expect(await receipts(p, root.id)).toMatchObject([
@@ -296,26 +295,16 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
         },
       ]);
       expect((await workflow(p, root.id)).state.plan?.approvalCertificate).toBeDefined();
-      const canonical = await p.client.rpc.call({
-        location: p.location,
-        rpcID: 'flowguard-governance',
-        method: 'GetNextAction',
-        input: { sessionID: root.id },
-      });
-      expect((canonical.output as { summary: string }).summary).toContain(
-        'Plan approval recorded:',
-      );
-      expect((canonical.output as { summary: string }).summary).toContain('/implement');
-      for (const attempt of (await workflow(p, root.id)).state.validationAttempts) {
-        expect((canonical.output as { summary: string }).summary).toContain(attempt.attemptId);
-      }
     },
     300_000,
   );
-  it('approves without a model turn, audits the actual source and keeps one receipt across repeat and SIGKILL/reload', async () => {
+  it('preserves the visible decision report, actual audit source and one receipt across repeat and SIGKILL/reload', async () => {
     const p = await open();
     const root = await p.session();
     await activate(p, root.id);
+    // Start again has its own original chat response. Finish that turn before
+    // measuring provider requests attributable to the subsequent decision.
+    await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
     await prepareComponentDecisionGate(await workflow(p, root.id));
     const beforeDecision = p.requests.length;
     await p.client.session.command({
@@ -324,8 +313,8 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       text: 'Reviewed current ADR.',
     });
     await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
-    expect(p.requests.slice(beforeDecision)).toHaveLength(0);
-    expect(JSON.stringify(await p.client.session.context({ sessionID: root.id }))).not.toContain(
+    expect(p.requests.slice(beforeDecision)).toHaveLength(1);
+    expect(JSON.stringify(await p.client.session.context({ sessionID: root.id }))).toContain(
       'Decision recorded',
     );
     const presentation = await p.client.rpc.call({
@@ -334,26 +323,8 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       method: 'GetPresentation',
       input: { sessionID: root.id },
     });
-    expect(
-      (presentation.output as { events: Array<{ kind: string; message: string }> }).events,
-    ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'decision',
-          message: expect.stringContaining('Decision recorded'),
-        }),
-      ]),
-    );
+    expect((presentation.output as { events: unknown[] }).events).toEqual([]);
     expect((await workflow(p, root.id)).state.phase).toBe('ARCH_COMPLETE');
-    const snapshot = await p.client.rpc.call({
-      location: p.location,
-      rpcID: 'flowguard-governance',
-      method: 'GetNextAction',
-      input: { sessionID: root.id },
-    });
-    expect((snapshot.output as { summary: string }).summary).toContain(
-      'Workflow decision recorded: approve',
-    );
     const events = await receipts(p, root.id);
     expect(events).toMatchObject([
       {
@@ -380,15 +351,6 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
     ).rejects.toThrow();
     await p.restart('SIGKILL');
     await p.client.command.list({ location: p.location });
-    const afterReload = await p.client.rpc.call({
-      location: p.location,
-      rpcID: 'flowguard-governance',
-      method: 'GetNextAction',
-      input: { sessionID: root.id },
-    });
-    expect((afterReload.output as { summary: string }).summary).toBe(
-      (snapshot.output as { summary: string }).summary,
-    );
     const emptyPresentation = await p.client.rpc.call({
       location: p.location,
       rpcID: 'flowguard-governance',
@@ -396,7 +358,7 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       input: { sessionID: root.id },
     });
     expect((emptyPresentation.output as { events: unknown[] }).events).toEqual([]);
-    expect(p.requests.slice(beforeDecision)).toHaveLength(0);
+    expect(p.requests.slice(beforeDecision)).toHaveLength(1);
     await expect(
       p.client.session.command({
         sessionID: root.id,
