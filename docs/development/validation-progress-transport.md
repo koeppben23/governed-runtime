@@ -9,8 +9,9 @@ The candidate-host probe establishes some transport mechanics. A follow-up
 product regression reproduces and repairs its lifecycle finding. A later repair
 replaces model-visible status prompts with a bounded, model-free presentation
 channel. This is **not** the complete product progress UI: installed UI
-acceptance, attempt-bound result projection and executor-start instrumentation
-remain gated. State schemas, audit contracts, reviewer admission and
+acceptance and executor-start instrumentation remain gated. The follow-up
+described below adds persisted attempt-bound result display. State schemas,
+audit contracts, reviewer admission and
 retry/backoff persistence remain unchanged.
 
 Reference source: `develop` at `41b2932e32fc84b64af435486c0ecfa3ad837c15`.
@@ -184,6 +185,84 @@ Presentation is ephemeral by design, so a reload loses pending notices; the
 canonical Next Action projection remains the fallback. Diagnostic report text is
 local UI text, not audit evidence or an approval.
 
+### Last-run forensic follow-up (12 November 2026)
+
+Read-only inspection of the last local demo's OpenCode database established
+that the workflow reached `COMPLETE`, but native Start/approval confirmations
+were absent from the transcript. Replacing status prompts with transient toasts
+had removed reconstructible operator feedback. Successful CI was not installed
+Desktop acceptance.
+
+- `GetNextAction.summary` reconstructs activation, recorded decisions, current
+  subject-bound validation attempts (including attempt IDs and outcomes), and
+  the canonical next action from persisted authorities. It stores nothing new,
+  grants no decision authority, and does not insert a model message. Foreign
+  native locations receive no summary.
+- The Desktop status pill inspects on first display/session change and
+  reconciles every five seconds while visible. Its popover retains the
+  reconstructible summary after plugin/server reload. Canonical phase labels
+  take precedence over old presentation events; notices from an earlier phase
+  cannot replace the current status. The small progress/status surface is kept.
+- `/flowguard-report` shows this canonical summary even when its ephemeral
+  report queue is empty. Late session-switch responses are discarded.
+- Native tool execution and lifecycle resumes now carry the same non-blocking
+  validation callback as native decisions, including `IMPL_VALIDATION`.
+  Preparation is still not a confirmed subprocess start. Completed check facts
+  come from persisted `ValidationAttempt`s, not from progress notifications.
+- ACTIVE model catalogues omit host tools rejected by the canonical phase
+  gate. In particular, Code Mode `execute` is not newly authorized; direct
+  invocation is still denied. INACTIVE sessions keep their native catalogue.
+- The demo's positive and adversarial declarations used the same JUnit oracle
+  under `test` and `build`. Declaration admission and persisted-contract
+  evaluation now reject that reuse as `evidence_role_collision`. Distinct
+  runner/attempt IDs do not establish oracle independence. This is not proof
+  that a faulty variant ran: plans requiring that execution must use verified
+  mutation evidence; free-text promises are not automatically converted into
+  executable mutation profiles.
+
+The same Desktop run logged 399 global event-stream disconnects and an
+`ERR_INSUFFICIENT_RESOURCES` diagnostic. A later restart failed to load a
+missing GUI bundle after the workflow had completed. Neither the disconnect
+cause nor the removal of the local config/demo directories was established.
+This repair does not restart the user's service, recreate those directories,
+alter incident sessions, or claim to fix those separate host failures.
+
+#### Follow-up verification
+
+Final functional unit tests passed **8,643** (57 skipped), integration passed
+**4,642** across 264 files, and architecture passed **554**. Build, TypeScript,
+strict lint, format, documentation drift and template-hash stability passed.
+The first performance run had one 50 ms state-I/O budget failure at 69.18 ms
+while other verification was running; an isolated full rerun passed **55/55**
+without changing the budget or tests. The precise timing cause is unverified.
+
+On macOS arm64 / Node 22.22.2, the final focused native run on candidate 2.2.5
+passed all **11 tests** across decision, resume and Start suites. It checks
+canonical feedback after SIGKILL/reload with an empty presentation queue,
+attempt-bound results, zero additional decision provider requests, and
+implementation/resume progress. The real Start/approval fixture now declares
+its active `typecheck` script: the new phase assertion exposed that omission
+instead of accepting a return to PLAN as implementation readiness.
+
+The first expanded native run had four failures: two from that missing fixture
+script, and two Start location-activation HTTP 503 responses. The Start failures
+did not reproduce in an isolated 2/2 rerun or the final serial 11/11 run; their
+cause remains unverified. No host-read retry policy was relaxed.
+
+Focused mutation of `src/audit/proofgraph/evidence-role-independence.ts` scored
+**100%**: 41 killed, zero survived, zero uncovered, 32 compile-rejected, with
+the existing 80% break threshold unchanged. The first run scored 95% with two
+survivors; new distinct-oracle and optional-adversarial tests cover both gaps.
+Configs and both reports are retained in the session-owned temporary directory
+`opencode/flowguard-last-run-repair/`. This is one-module diagnostic evidence,
+**not** full-profile or whole-repository mutation admission.
+
+The template-hash and unused-export wrapper commands encountered local `npx`
+resolution of an absent package tarball. Direct local Vitest hash generation
+and stability checks passed; local Knip plus the canonical baseline comparator
+reported zero new unused exports (four baseline entries removed). No dependency,
+baseline, threshold or wrapper behavior was changed to hide these failures.
+
 ### Snapshot location is not an arbitrary UI location
 
 An initial RPC reader used the TUI plugin location. On macOS, `/var/...` and
@@ -261,11 +340,10 @@ required installed UI scope. The remaining product implementation must:
 
 **NOT_VERIFIED:** installed packed-product progress, installed TUI/Desktop
 presentation, Desktop rendering, Windows rendering, real-provider acceptance,
-native tool rendering, ValidationAttempt-bound result projection, confirmed
-subprocess-start instrumentation, reload/stale-update behavior and a hanging
-consumer. The model-free channel and its failure isolation are tested at the
-component and native `/approve` boundary, but that is not installed GUI
-acceptance. Recovery requires the corresponding installed-host/UI and product
+native tool rendering and confirmed subprocess-start instrumentation. Persisted
+attempt-bound summaries, reload recovery, stale-phase reconciliation and
+nonblocking progress callbacks have component/native test evidence, not installed
+GUI acceptance. Recovery requires the corresponding installed-host/UI and product
 negative tests; rerunning this fixture alone cannot establish those claims.
 
 No new state schema, second executor, PASS/FAIL authority, console streaming,

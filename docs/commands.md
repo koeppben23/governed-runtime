@@ -842,7 +842,9 @@ projection. The Desktop palette and its optional ComposerPill are documented in
 ### TUI companion
 
 The optional TUI plugin adds `/choose-workflow` and `/flowguard-report`.
-`/flowguard-report` reads the latest report from the ephemeral
+`/flowguard-report` reconstructs recorded decisions, current subject-bound check
+results and the next action from canonical state, including after reload. It
+also reads the latest report from the ephemeral
 `GetPresentation` page and shows it in a dialog. Validation and decision notices
 are announced as model-free toasts. The presentation page is not audit or
 workflow evidence and is lost on plugin reload; canonical status remains the

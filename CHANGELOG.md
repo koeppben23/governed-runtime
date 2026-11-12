@@ -953,6 +953,19 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Reconstruct native Start/decision feedback and subject-bound check results
+  from persisted canonical state in the Desktop status popover and TUI report
+  dialog, including after reload. Keep the progress surface, refresh current
+  status on display and every five visible seconds, and discard stale-phase
+  notices. Wire implementation validation and lifecycle-resume progress without
+  new model turns or claims of a confirmed subprocess start.
+- Hide canonically denied host tools from ACTIVE model catalogues without
+  granting Code Mode execution or changing INACTIVE session tools.
+- Reject reuse of a plan's positive assertion as its adversarial oracle under
+  a different runner name, both at declaration admission and persisted-contract
+  evaluation. Two passing runs of one oracle no longer establish independent
+  proof; this does not manufacture faulty-variant or mutation evidence.
+
 - Present native FlowGuard validation progress, decision confirmations,
   lifecycle notices and diagnostic reports through a bounded read-only
   `GetPresentation` RPC instead of `ctx.session.prompt`. `/approve` no longer

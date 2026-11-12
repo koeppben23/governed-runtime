@@ -27,6 +27,7 @@ import type { CounterexampleRequirement } from '../../state/proofgraph-approval.
 import { normalizeClaimStatement } from '../../state/proofgraph-approval.js';
 import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
+import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import {
   ASSERTION_FORMATS_BY_PROVIDER,
   ASSERTION_CODEC_BY_PROVIDER,
@@ -52,6 +53,7 @@ export interface NormalizedClaimDeclaration {
   readonly critical: boolean;
   readonly claimScope: 'specific_behavior' | 'suite';
   readonly positiveCheckId: string;
+  readonly positiveAssertion?: AssertionIdentity;
   readonly counterexampleRequirement?: CounterexampleRequirement;
   readonly structuralSurface?: string;
   readonly mutationProfile?: string;
@@ -279,7 +281,7 @@ function checkEvidenceRoleCollision(
     input.source,
     claim,
     'counterexampleRequirement',
-    `the positive check and the counterexample check require different check identities AND different validation attempts; '${claim.positiveCheckId}' cannot serve both evidence roles, even when executed twice`,
+    `the positive check and the counterexample check require different check identities AND different validation attempts, and cannot reuse the same provider-scoped assertion; '${claim.positiveCheckId}' cannot serve both evidence roles, even when executed twice under different runner names. Use an independent adversarial assertion and a verified mutation profile when faulty-variant execution is required`,
   );
 }
 

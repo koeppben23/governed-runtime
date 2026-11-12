@@ -51,6 +51,7 @@ import {
 } from './tool-names.js';
 import { statusProjectionKind } from './status/status-detail-projections.js';
 import { resumePendingSystemWork as runSystemWorkResume } from './tools/auto-validation.js';
+import type { AutoValidationProgress } from './tools/helpers.js';
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
@@ -364,6 +365,7 @@ async function resumeSystemWorkForSession(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
   wakeupCreatedAtMs?: number,
+  autoValidationProgress?: AutoValidationProgress,
 ): Promise<void> {
   const worktreeRoot = runtime.riskDeps.getWorktreeRoot?.();
   if (!worktreeRoot) return;
@@ -372,6 +374,7 @@ async function resumeSystemWorkForSession(
       sessionID: sessionId,
       worktree: worktreeRoot,
       directory: worktreeRoot,
+      ...(autoValidationProgress === undefined ? {} : { autoValidationProgress }),
     },
     undefined,
     wakeupCreatedAtMs,
@@ -395,6 +398,7 @@ export async function handlePluginEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
   governedSessionId: string,
+  autoValidationProgress?: AutoValidationProgress,
 ): Promise<void> {
   return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
     const eventDeps: EventHandlerDeps = {
@@ -403,7 +407,12 @@ export async function handlePluginEvent(
       // Delegated-session completion is not a root lifecycle wakeup.
       resumePendingSystemWork: async (sessionId: string, wakeupCreatedAtMs?: number) => {
         if (sessionId === governedSessionId)
-          await resumeSystemWorkForSession(runtime, governedSessionId, wakeupCreatedAtMs);
+          await resumeSystemWorkForSession(
+            runtime,
+            governedSessionId,
+            wakeupCreatedAtMs,
+            autoValidationProgress,
+          );
       },
       observeMutationEvent: (hostEvent) =>
         reconcileMutationEvent(runtime, hostEvent, governedSessionId),

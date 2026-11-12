@@ -60,6 +60,49 @@ function passResult(boundDigest: string) {
 }
 
 describe('deriveProofGraph', () => {
+  it('fails closed for the incident: two passing runners cannot turn the same oracle into adversarial proof', () => {
+    const assertion = {
+      providerId: 'junit',
+      localId:
+        'com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404',
+    };
+    const c = {
+      ...claim(),
+      claimScope: 'specific_behavior' as const,
+      certifiedPlan: {
+        authoritySectionId: 'implementation-step-2',
+        expectedCheckId: 'test',
+        expectedAssertion: assertion,
+        digest: SHA,
+      },
+      counterexampleRequirement: { kind: 'assertion' as const, checkId: 'build', assertion },
+      requiredEvidence: {
+        positive: ['executed_test' as const],
+        adversarial: ['counterexample' as const],
+      },
+    };
+    const state = makeState('IMPLEMENTATION', {
+      implementation: IMPL,
+      proofContract: { version: 'contract.v2', claims: [c] },
+    });
+    const result = {
+      ...passResult(IMPL_DIGEST),
+      executionRecordId: '00000000-0000-4000-8000-0000000000ab',
+      source: { location: 'validation-check:test', stableId: 'test' },
+    };
+    const cx = {
+      claimId: UUID,
+      attemptId: '00000000-0000-4000-8000-0000000000ac',
+      checkId: 'build',
+      scenario: 'second passing run',
+      outcome: 'supported' as const,
+      boundDigest: IMPL_DIGEST,
+      executedAt: NOW,
+    };
+    const out = deriveProofGraph(state, [result], [cx], NOW);
+    expect(out.claims[0]?.verificationState).toBe('NOT_VERIFIED');
+    expect(out.claimDiagnostics?.[UUID]).toBe('evidence_role_collision');
+  });
   it('returns an empty projection when there is no contract', () => {
     const out = deriveProofGraph(makeState('READY'), [], [], NOW);
     expect(out.claims).toEqual([]);

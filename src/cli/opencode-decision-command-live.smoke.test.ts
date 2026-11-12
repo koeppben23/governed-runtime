@@ -127,6 +127,7 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
               scripts: {
                 test: 'node -e "console.log(\'OK\')"',
                 lint: 'node -e "console.log(\'OK\')"',
+                typecheck: 'node -e "console.log(\'OK\')"',
               },
             }),
           );
@@ -295,6 +296,19 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
         },
       ]);
       expect((await workflow(p, root.id)).state.plan?.approvalCertificate).toBeDefined();
+      const canonical = await p.client.rpc.call({
+        location: p.location,
+        rpcID: 'flowguard-governance',
+        method: 'GetNextAction',
+        input: { sessionID: root.id },
+      });
+      expect((canonical.output as { summary: string }).summary).toContain(
+        'Plan approval recorded:',
+      );
+      expect((canonical.output as { summary: string }).summary).toContain('/implement');
+      for (const attempt of (await workflow(p, root.id)).state.validationAttempts) {
+        expect((canonical.output as { summary: string }).summary).toContain(attempt.attemptId);
+      }
     },
     300_000,
   );
@@ -331,6 +345,15 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       ]),
     );
     expect((await workflow(p, root.id)).state.phase).toBe('ARCH_COMPLETE');
+    const snapshot = await p.client.rpc.call({
+      location: p.location,
+      rpcID: 'flowguard-governance',
+      method: 'GetNextAction',
+      input: { sessionID: root.id },
+    });
+    expect((snapshot.output as { summary: string }).summary).toContain(
+      'Workflow decision recorded: approve',
+    );
     const events = await receipts(p, root.id);
     expect(events).toMatchObject([
       {
@@ -357,6 +380,23 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
     ).rejects.toThrow();
     await p.restart('SIGKILL');
     await p.client.command.list({ location: p.location });
+    const afterReload = await p.client.rpc.call({
+      location: p.location,
+      rpcID: 'flowguard-governance',
+      method: 'GetNextAction',
+      input: { sessionID: root.id },
+    });
+    expect((afterReload.output as { summary: string }).summary).toBe(
+      (snapshot.output as { summary: string }).summary,
+    );
+    const emptyPresentation = await p.client.rpc.call({
+      location: p.location,
+      rpcID: 'flowguard-governance',
+      method: 'GetPresentation',
+      input: { sessionID: root.id },
+    });
+    expect((emptyPresentation.output as { events: unknown[] }).events).toEqual([]);
+    expect(p.requests.slice(beforeDecision)).toHaveLength(0);
     await expect(
       p.client.session.command({
         sessionID: root.id,

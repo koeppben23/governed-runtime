@@ -134,7 +134,15 @@ declaration is therefore rejected when it is authored
 (`PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE`) rather than blocking the approval later.
 
 The positive check and the counterexample check must be **different checks**,
-and they must resolve to **different executions**. A declaration that reuses one
+and they must resolve to **different executions**,
+and a plan's explicit positive assertion must differ from its adversarial
+provider-scoped assertion. Running the same oracle through `build` and `test`
+does not establish independent evidence: declaration admission rejects it and
+persisted contracts evaluate to `NOT_VERIFIED` with `evidence_role_collision`.
+A passing adversarial assertion is not proof that a deliberately faulty variant
+was executed; use the registered, verified mutation-evidence path when that is
+an approved requirement.
+A declaration that reuses one
 check for both evidence roles is rejected at the write boundary for every
 criticality. An already-persisted contract that binds the same check (even from
 two distinct attempts) or the same validation attempt to both roles never

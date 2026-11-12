@@ -9,11 +9,12 @@ import { projectOpenCodeEvent } from './opencode-host-adapter.js';
 import { resolveGovernanceActivation } from '../adapters/governance-activation.js';
 import { handlePluginEvent } from './plugin-afterhooks.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
-import type { PresentationStore } from './plugin-presentation.js';
+import { recordValidationProgress, type PresentationStore } from './plugin-presentation.js';
 
 type EventRuntime = { readonly runtime: FlowGuardPluginRuntime };
 type ScopedEventRuntime = EventRuntime & { readonly scope: ActiveGovernanceScope };
 export interface EventDispatchDeps {
+  readonly presentation?: PresentationStore;
   readonly runtimes: ReadonlyMap<string, Promise<EventRuntime>>;
   readonly sessionRoots: Map<string, string>;
   readonly governance: OpenCodeGovernance;
@@ -56,7 +57,16 @@ export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDep
       if (projected.sessionId !== entry.scope.root.sessionId) return;
       if (!(await adapter.claimSuccessfulExecutionWakeup(event))) return;
     }
-    await handlePluginEvent(entry.runtime, projected.event, entry.scope.root.sessionId);
+    const presentation = deps.presentation;
+    await handlePluginEvent(
+      entry.runtime,
+      projected.event,
+      entry.scope.root.sessionId,
+      presentation === undefined
+        ? undefined
+        : (progress) =>
+            recordValidationProgress(presentation, entry.scope.root.sessionId, progress),
+    );
   });
 }
 

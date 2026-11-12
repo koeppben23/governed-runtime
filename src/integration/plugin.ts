@@ -36,7 +36,11 @@ import { createNativeReviewerAuthority } from './plugin-native-review.js';
 import { createEventFence, startEventLoop } from './plugin-native-events.js';
 import { registerStartCommands } from './plugin-start-command.js';
 import { injectActiveMandates } from './plugin-mandates.js';
-import { createPresentationStore, type PresentationStore } from './plugin-presentation.js';
+import {
+  createPresentationStore,
+  recordValidationProgress,
+  type PresentationStore,
+} from './plugin-presentation.js';
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
   const normalized = path.resolve(worktree);
@@ -106,6 +110,7 @@ export const FlowGuardAuditPlugin = Plugin.define({
       assertLifecycle,
       assertAvailable,
       directory: ctx.location.directory,
+      presentation,
     });
 
     const dispose = (): Promise<void> => {
@@ -159,6 +164,7 @@ async function settleSetupFailure(error: unknown, dispose: () => Promise<void>):
 export default FlowGuardAuditPlugin;
 
 type RuntimeActionInput = {
+  presentation: PresentationStore;
   governance: OpenCodeGovernance;
   adapter: OpenCodeHostAdapter;
   runtimes: Map<string, Promise<RuntimeEntry>>;
@@ -236,6 +242,8 @@ function createRuntimeActions(input: RuntimeActionInput) {
           return { content: help.description, metadata: {} };
         return executeCanonicalNativeTool(name, definition, args, context, {
           ...entry,
+          autoValidationProgress: (event) =>
+            recordValidationProgress(input.presentation, context.sessionID, event),
           assertScopeCurrent: async () => {
             await governance.assertScopeCurrent(context.sessionID, entry.scope);
             await governance.assertActivationAuditConfirmed(entry.scope.root);

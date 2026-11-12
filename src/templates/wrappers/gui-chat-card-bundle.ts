@@ -145,22 +145,35 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   const [snapshot, setSnapshot] = createSignal(null);
   const [presentation, setPresentation] = createSignal(null);
   const [latestReport, setLatestReport] = createSignal(null);
+  let announcedPresentation = null;
+  function announceCurrentPresentation(session, next) {
+    const event = presentation();
+    if (!event || event.sessionID !== session.id || event.kind === 'report' ||
+        event.phase !== next.phase || event.id === announcedPresentation) return;
+    announcedPresentation = event.id;
+    toast(ctx, event.message, event.kind === 'decision' ? 'success' : 'default');
+  }
   const presentationWatcher = createFlowGuardPresentationWatcher(ctx,
     (session, after) => flowguardGuiRpcClient(session).getPresentation(after),
     (event) => {
+      const current = ctx.sessions.current();
+      if (!current || event.sessionID !== current.id) return;
       setPresentation(event);
+      void inspect(current);
       if (event.kind === 'report') {
         setLatestReport(event);
         toast(ctx, 'FlowGuard report ready. Open the FlowGuard status pill to read it.', 'default');
         return;
       }
-      toast(ctx, event.message, event.kind === 'decision' ? 'success' : 'default');
+      // A cached phase can lag a legitimate new event. Announce only after
+      // reconciliation, rather than rejecting new progress against that cache.
     });
   onCleanup(() => presentationWatcher.stop());
   let readGeneration = 0;
   let reading = false;
   let queuedSession = null;
   let disposed = false;
+  let inspectedSession = null;
   function inspect(session) {
     if (disposed) return;
     if (reading) {
@@ -199,7 +212,9 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
           note: 'Canonical state unavailable. Use /status.' });
         return;
       }
-      const base = { key: key, status: next.kind, label: 'FlowGuard · ' + (next.phase || 'NOT_VERIFIED') };
+      announceCurrentPresentation(session, next);
+      const base = { key: key, phase: next.phase, summary: next.summary,
+        status: next.kind, label: 'FlowGuard · ' + (next.phase || 'NOT_VERIFIED') };
       if (next.kind === 'blocked') {
         const blocker = next.blocker;
         setSnapshot({ ...base, status: 'blocked', note: blocker && blocker.code ?
@@ -261,11 +276,16 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         // Start only when the pill is actually mounted; a hidden/unmounted
         // surface must not poll the server.
         presentationWatcher.start();
+        if (inspectedSession !== key) {
+          inspectedSession = key;
+          void inspect(input.session);
+        }
         const state = snapshot();
         const matched = state && state.key === key;
         const latest = presentation();
-        const latestForSession = latest && latest.sessionID === input.session.id ? latest : null;
-        const label = latestForSession
+        const latestForSession = latest && latest.sessionID === input.session.id &&
+          matched && state.status !== 'loading' && latest.phase === state.phase ? latest : null;
+        const label = matched && state.status !== 'loading' ? state.label : latestForSession
           ? 'FlowGuard · ' + latestForSession.kind + (latestForSession.phase ? ' · ' + latestForSession.phase : '')
           : matched ? state.label + ' · last read' : 'FlowGuard · inspect';
         const rows = [{
@@ -295,9 +315,11 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
       },
       menu: (input) => {
         const report = latestReport();
-        const text = report && input.session && report.sessionID === input.session.id
-          ? report.message
-          : 'No FlowGuard report is available for this session yet. Use /diagnostics or /debug-export to create one.';
+        const state = snapshot();
+        const summary = state && state.key === probeSessionKey(input.session) ? state.summary : null;
+        const reportText = report && input.session && report.sessionID === input.session.id ? report.message : null;
+        const text = [summary, reportText].filter(Boolean).join('\\n\\n') ||
+          'Canonical FlowGuard status is unavailable. Inspect or refresh this session; use /status for recovery.';
         try {
           const { createComponent } = require('solid-js');
           if (typeof createComponent === 'function' && ctx.ui && typeof ctx.ui.Markdown === 'function') {

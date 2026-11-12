@@ -6,6 +6,7 @@
  * plugin reload loses it, and the UI falls back to canonical read-only state.
  */
 import { randomUUID } from 'node:crypto';
+import type { AutoValidationProgressEvent } from './tools/helpers.js';
 
 export type PresentationKind = 'notice' | 'validation' | 'decision' | 'report';
 
@@ -140,4 +141,24 @@ export function recordPresentation(
   } catch (error) {
     console.warn('[FlowGuard] Presentation delivery failed; governance is unchanged.', error);
   }
+}
+
+/** Check admission is preparation, never proof that a subprocess has started. */
+export function recordValidationProgress(
+  store: PresentationStore,
+  sessionID: string,
+  event: AutoValidationProgressEvent,
+): void {
+  const message =
+    event.stage === 'check_started' && event.check !== undefined
+      ? `**Validation in progress** — preparing \`${event.check}\` check.`
+      : event.stage === 'check_finished' && event.check !== undefined
+        ? `**Validation in progress** — \`${event.check}\` returned; the canonical check result remains authoritative.`
+        : `**Validation started** — preparing ${event.checks.map((check) => `\`${check}\``).join(', ')}.`;
+  recordPresentation(store, sessionID, {
+    kind: 'validation',
+    message,
+    phase: event.phase,
+    checks: event.checks,
+  });
 }

@@ -6,7 +6,6 @@ import type { ActiveGovernanceScope, OpenCodeGovernance } from './opencode-gover
 import { INSTALLED_COMMANDS } from './installed-commands.js';
 import { TOOL_FLOWGUARD_DECISION } from './tool-names.js';
 import { decision } from './tools/index.js';
-import type { AutoValidationProgressEvent } from './tools/helpers.js';
 import { ReviewVerdict } from '../state/evidence.js';
 import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { checkDecisionBinding, type DecisionBinding } from './status/decision-binding.js';
@@ -20,7 +19,11 @@ import { buildEnforcementError, parseToolResult } from './blocked-result.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { toolBefore } from './plugin-beforehooks.js';
 import { toolAfter } from './plugin-afterhooks.js';
-import { recordPresentation, type PresentationStore } from './plugin-presentation.js';
+import {
+  recordPresentation,
+  recordValidationProgress,
+  type PresentationStore,
+} from './plugin-presentation.js';
 
 export interface DecisionCommandDeps {
   readonly governance: Pick<
@@ -126,7 +129,7 @@ export async function executeDecisionCommand(
             abort: deps.signal,
             metadata: () => {},
             autoValidationProgress: (event) =>
-              presentValidationProgress(deps.presentation, sessionID, event),
+              recordValidationProgress(deps.presentation, sessionID, event),
           }),
       );
       const audited = {
@@ -175,25 +178,6 @@ function decisionConfirmation(result: Record<string, unknown>, verdict: ReviewVe
     commands.length === 0 ? '' : `\n\n## Next\n\n${commands.map((c) => `- \`${c}\``).join('\n')}`;
   const status = typeof result.status === 'string' ? result.status : 'The decision is durable.';
   return `${summary}\n\n${status}${next}\n\n${instruction}`;
-}
-
-function presentValidationProgress(
-  presentation: PresentationStore,
-  sessionID: string,
-  event: AutoValidationProgressEvent,
-): void {
-  const message =
-    event.stage === 'check_started' && event.check !== undefined
-      ? `**Validation in progress** — preparing \`${event.check}\` check.`
-      : event.stage === 'check_finished' && event.check !== undefined
-        ? `**Validation in progress** — \`${event.check}\` returned; the canonical check result remains authoritative.`
-        : `**Validation started** — preparing ${event.checks.map((check) => `\`${check}\``).join(', ')}.`;
-  recordPresentation(presentation, sessionID, {
-    kind: 'validation',
-    message,
-    phase: event.phase,
-    checks: event.checks,
-  });
 }
 
 function presentDecision(

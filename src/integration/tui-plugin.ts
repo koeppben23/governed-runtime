@@ -344,11 +344,16 @@ export async function openLatestReport(
       return;
     }
     const report = [...page.events].reverse().find((event) => event.kind === 'report');
-    if (report === undefined) {
-      deps.notify('No FlowGuard report is available for this session.', 'info');
+    const view = await deps.getView(sessionID);
+    if (!deps.isAlive() || deps.currentSessionID() !== sessionID) return;
+    if (view.summary === null && report === undefined) {
+      deps.notify(view.blocker?.message ?? 'Canonical FlowGuard status is unavailable.', 'warning');
       return;
     }
-    await ctx.ui.dialog.alert({ title: 'FlowGuard report', message: report.message });
+    await ctx.ui.dialog.alert({
+      title: 'FlowGuard session and report',
+      message: [view.summary, report?.message].filter(Boolean).join('\n\n'),
+    });
   } catch (error) {
     deps.notify(
       `FlowGuard report unavailable: ${error instanceof Error ? error.message : String(error)}`,

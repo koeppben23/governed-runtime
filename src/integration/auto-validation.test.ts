@@ -352,7 +352,8 @@ describe('automatic validation', () => {
       await callOk(decision, { verdict: 'approve', rationale: 'Approved' });
       vi.mocked(executorMock.executeCheck).mockClear();
 
-      const result = await callOk(implement, {});
+      const progress = vi.fn();
+      const result = await callOk(implement, {}, { ...ctx, autoValidationProgress: progress });
 
       // IMPL_VALIDATION was crossed automatically; the response is the final
       // post-implementation run_check response at IMPL_REVIEW.
@@ -363,6 +364,25 @@ describe('automatic validation', () => {
 
       const state = await readState(await getSessDir());
       expect(state!.phase).toBe('IMPL_REVIEW');
+      expect(progress).toHaveBeenCalledWith({
+        phase: 'IMPL_VALIDATION',
+        checks: state!.activeChecks,
+        stage: 'starting',
+      });
+      for (const check of state!.activeChecks) {
+        expect(progress).toHaveBeenCalledWith({
+          phase: 'IMPL_VALIDATION',
+          checks: state!.activeChecks,
+          stage: 'check_started',
+          check,
+        });
+        expect(progress).toHaveBeenCalledWith({
+          phase: 'IMPL_VALIDATION',
+          checks: state!.activeChecks,
+          stage: 'check_finished',
+          check,
+        });
+      }
       expect(state!.implValidation.map((entry) => entry.checkId)).toEqual(state!.activeChecks);
       expect(state!.implValidation.every((entry) => entry.passed)).toBe(true);
       expect(vi.mocked(executorMock.executeCheck).mock.calls).toHaveLength(

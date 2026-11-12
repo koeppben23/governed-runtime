@@ -71,7 +71,10 @@ export interface ToolContext {
  * need. Host hooks (which have no message/agent context) can resume canonical
  * system work with this narrower context.
  */
-export type WorkspaceToolContext = Pick<ToolContext, 'sessionID' | 'worktree' | 'directory'>;
+export type WorkspaceToolContext = Pick<
+  ToolContext,
+  'sessionID' | 'worktree' | 'directory' | 'autoValidationProgress'
+>;
 
 /**
  * Result type for FlowGuard tools.

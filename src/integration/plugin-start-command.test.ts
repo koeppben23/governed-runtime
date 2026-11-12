@@ -125,6 +125,18 @@ describe('native /start command', () => {
     expect(view.stateDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(view.activationId).toMatch(/^[0-9a-f-]{36}$/);
     expect(view.activationGeneration).toBeGreaterThan(0);
+    expect(view).toHaveProperty('summary', expect.stringContaining('Governance ACTIVE'));
+    const originalDirectory = host.context.location.directory;
+    try {
+      host.context.location.directory = originalDirectory + '/foreign';
+      expect(await rpc!({ sessionID: sessionId })).toMatchObject({
+        kind: 'blocked',
+        summary: null,
+        blocker: { code: 'GOVERNANCE_AUTHORITY_BLOCKED' },
+      });
+    } finally {
+      host.context.location.directory = originalDirectory;
+    }
   });
 
   it('hydrates, binds the frozen policy and activates the root via host_command', async () => {

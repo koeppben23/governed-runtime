@@ -83,6 +83,32 @@ function assess(input: {
 }
 
 describe('declaredEvidenceRolesCollide', () => {
+  it('rejects the same oracle under different build/test runner names', () => {
+    expect(
+      declaredEvidenceRolesCollide({
+        positiveCheckId: 'test',
+        positiveAssertion: REQUIREMENT.assertion,
+        counterexampleRequirement: REQUIREMENT,
+      }),
+    ).toBe(true);
+    expect(
+      declaredEvidenceRolesCollide({
+        positiveCheckId: 'test',
+        positiveAssertion: { providerId: 'pytest', localId: REQUIREMENT.assertion.localId },
+        counterexampleRequirement: REQUIREMENT,
+      }),
+    ).toBe(false);
+    expect(
+      declaredEvidenceRolesCollide({
+        positiveCheckId: 'test',
+        positiveAssertion: {
+          providerId: 'junit',
+          localId: 'com.example.Test#independentNegativeCase',
+        },
+        counterexampleRequirement: REQUIREMENT,
+      }),
+    ).toBe(false);
+  });
   it('flags a claim whose positive and counterexample checks are identical', () => {
     expect(
       declaredEvidenceRolesCollide({
@@ -107,6 +133,15 @@ describe('declaredEvidenceRolesCollide', () => {
 });
 
 describe('assessEvidenceRoleIndependence', () => {
+  it('engages independence for a declared counterexample even when adversarial evidence is not otherwise mandatory', () => {
+    expect(
+      assess({
+        adversarialCounterexampleRequired: false,
+        counterexampleRequirement: REQUIREMENT,
+        providerResults: [passResult({ executionRecordId: COUNTEREXAMPLE_ATTEMPT })],
+      }),
+    ).toEqual({ kind: 'role_collision' });
+  });
   it('is independent when no adversarial role is engaged', () => {
     expect(
       assess({

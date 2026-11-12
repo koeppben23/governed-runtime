@@ -184,6 +184,20 @@ process.exit(kind === 'lint' && !fs.existsSync('recovered') ? 127 : 0);
       JSON.stringify(await host.client.session.context({ sessionID: root.id })),
     ).toBe('IMPL_VALIDATION');
     expect(implInterrupted.pendingSystemWork).toMatchObject({ kind: 'validation', attempt: 1 });
+    const presentation = async () => {
+      const result = await host.client.rpc.call({
+        location: host.location,
+        rpcID: 'flowguard-governance',
+        method: 'GetPresentation',
+        input: { sessionID: root.id },
+      });
+      return (result.output as { events: Array<{ phase: string; message: string }> }).events;
+    };
+    const initialProgress = (await presentation()).filter(
+      (event) => event.phase === 'IMPL_VALIDATION',
+    );
+    expect(initialProgress.some((event) => event.message.includes('preparing'))).toBe(true);
+    expect(initialProgress.some((event) => /\brunning\b/i.test(event.message))).toBe(false);
     expect(
       implInterrupted.validationAttempts
         .slice(3)
@@ -216,6 +230,20 @@ process.exit(kind === 'lint' && !fs.existsSync('recovered') ? 127 : 0);
     );
     const implResumed = (await workflow(host, root.id)).state;
     expect(implResumed.pendingSystemWork).toBeNull();
+    const resumedProgress = (await presentation()).filter(
+      (event) => event.phase === 'IMPL_VALIDATION',
+    );
+    expect(resumedProgress.length).toBeGreaterThan(initialProgress.length);
+    const canonical = await host.client.rpc.call({
+      location: host.location,
+      rpcID: 'flowguard-governance',
+      method: 'GetNextAction',
+      input: { sessionID: root.id },
+    });
+    const summary = (canonical.output as { summary: string }).summary;
+    for (const attempt of implResumed.validationAttempts)
+      expect(summary).toContain(attempt.attemptId);
+    expect(summary).toContain('not passed');
     expect(
       implResumed.validationAttempts
         .slice(3)

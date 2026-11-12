@@ -68,13 +68,14 @@ interprets missing events as approval.
 
 This PR extends the optional, read-only status path beyond
 `session.execution.succeeded`: after the composer pill has been rendered,
-a 30-second reconciler refreshes **only the visible current sidecar session**.
-It skips hidden windows, does not query at registration or first render and
+a five-second reconciler refreshes **only the visible current sidecar session**.
+It skips hidden windows, does not query at registration, reads once on first
+display/session change, and
 cleans up on GUI unload. Events and timer ticks are serialized and coalesced
 so a slow server cannot accumulate unbounded concurrent reads.
 
 The OpenCode SDK states that live RPC/event subscriptions do not replay
-missed notifications. Thus a 30-second reconciler is **best-effort eventual
+missed notifications. Thus a five-second reconciler is **best-effort eventual
 visibility while the GUI is visible and connected**, not an audit feed or a
 hard latency guarantee for every governance transition. Missing data remains
 `NOT_VERIFIED`; no state, decision or audit mutation is introduced.

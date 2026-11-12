@@ -17,6 +17,7 @@ import plugin, {
 function choiceView(overrides: Partial<NextActionResult> = {}): NextActionResult {
   return {
     schemaVersion: 'next-action.v1',
+    summary: null,
     kind: 'choose_flow',
     sessionID: 'ses_root',
     phase: 'READY',
@@ -326,6 +327,27 @@ describe('TUI workflow chooser', () => {
       'Session changed; no FlowGuard report was shown.',
       'warning',
     );
+  });
+
+  it('shows canonical decision/check feedback even after ephemeral reports were lost', async () => {
+    const alert = vi.fn(async () => {});
+    const ctx = {
+      location: { directory: '/worktree' },
+      data: { session: { get: () => undefined } },
+      client: { rpc: () => ({ GetPresentation: async () => ({ events: [], cursor: null }) }) },
+      ui: { dialog: { alert } },
+    } as unknown as Plugin.Context;
+    const d = deps({
+      getView: async () =>
+        choiceView({
+          summary: 'Plan approval recorded.\nBuild passed: attempt persisted-id.\n/implement',
+        }),
+    });
+    await openLatestReport(ctx, d);
+    expect(alert).toHaveBeenCalledWith({
+      title: 'FlowGuard session and report',
+      message: expect.stringContaining('persisted-id'),
+    });
   });
 
   it('does not auto-open a review decision from the background idle path', async () => {

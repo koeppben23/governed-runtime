@@ -278,10 +278,10 @@ describe('installed Desktop GUI bundle', () => {
     expect(pill).toBeDefined();
     const initial = pill.show({ session: loaded.host.sessions.current() });
     expect(initial.label).toContain('FlowGuard');
-    expect(initial.rows).toHaveLength(1);
-    expect(loaded.rpcCalls).toHaveLength(0);
+    expect(initial.rows.some((row) => row.id === 'refresh')).toBe(true);
+    expect(loaded.rpcCalls).toHaveLength(1);
     expect(loaded.commandCalls).toHaveLength(0);
-    initial.rows[0]?.run?.();
+    initial.rows.find((row) => row.id === 'refresh')?.run?.();
     await vi.waitFor(() => expect(loaded.rpcCalls.length).toBeGreaterThan(0));
     expect(loaded.rpcCalls[0]?.method).toBe('GetNextAction');
     expect(loaded.commandCalls).toHaveLength(0);
@@ -298,19 +298,39 @@ describe('installed Desktop GUI bundle', () => {
     vi.useFakeTimers();
     try {
       const loaded = load({}, {});
-      loaded.views.push({
-        events: [
-          {
-            id: 'event-1',
-            sessionID: 'ses_root',
-            kind: 'validation',
-            message: '**Validation started** — preparing `build`.',
-            phase: 'VALIDATION',
-            occurredAt: '2026-11-12T00:00:00.000Z',
-          },
-        ],
-        cursor: 'event-1',
-      });
+      loaded.views.push(
+        {
+          kind: 'system_work',
+          sessionID: 'ses_root',
+          stateDigest: 'current',
+          phase: 'VALIDATION',
+          title: 'Validation in progress',
+          actions: [],
+          summary: 'Persisted session status',
+        },
+        {
+          events: [
+            {
+              id: 'event-1',
+              sessionID: 'ses_root',
+              kind: 'validation',
+              message: '**Validation started** — preparing `build`.',
+              phase: 'VALIDATION',
+              occurredAt: '2026-11-12T00:00:00.000Z',
+            },
+          ],
+          cursor: 'event-1',
+        },
+        {
+          kind: 'system_work',
+          sessionID: 'ses_root',
+          stateDigest: 'current',
+          phase: 'VALIDATION',
+          title: 'Validation in progress',
+          actions: [],
+          summary: 'Persisted session status',
+        },
+      );
       const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
         show: (input: { session: Record<string, unknown> }) => {
           label: string;
@@ -318,7 +338,7 @@ describe('installed Desktop GUI bundle', () => {
         };
       };
       const initial = pill.show({ session: loaded.host.sessions.current() });
-      expect(initial.rows.map((row) => row.id)).toEqual(['refresh']);
+      expect(initial.rows.map((row) => row.id)).toContain('refresh');
       await vi.advanceTimersByTimeAsync(1_000);
       expect(loaded.rpcCalls.some((call) => call.method === 'GetPresentation')).toBe(true);
       expect(loaded.host.toast.show).toHaveBeenCalledWith(
@@ -327,7 +347,7 @@ describe('installed Desktop GUI bundle', () => {
         }),
       );
       const updated = pill.show({ session: loaded.host.sessions.current() });
-      expect(updated.label).toContain('validation');
+      expect(updated.label).toContain('VALIDATION');
       expect(updated.rows).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -378,6 +398,92 @@ describe('installed Desktop GUI bundle', () => {
     await vi.waitFor(() => expect(pill.show({ session }).rows).toHaveLength(2));
     expect(pending).toHaveLength(2);
     expect(loaded.commandCalls).toHaveLength(0);
+  });
+
+  it.each(['VALIDATION', 'IMPLEMENTATION'])(
+    'reconciles progress against fresh %s state, not a cached phase',
+    async (phase) => {
+      vi.useFakeTimers();
+      try {
+        const loaded = load({}, {});
+        const view = (value: string) => ({
+          kind: 'system_work',
+          sessionID: 'ses_root',
+          stateDigest: value,
+          phase: value,
+          title: value,
+          actions: [],
+          summary: value,
+        });
+        loaded.views.push(
+          view('TICKET'),
+          {
+            events: [
+              {
+                id: 'new-phase',
+                sessionID: 'ses_root',
+                kind: 'validation',
+                phase: 'VALIDATION',
+                message: 'Preparing build check',
+                occurredAt: '2026-11-12T00:00:00Z',
+              },
+            ],
+            cursor: 'new-phase',
+          },
+          view(phase),
+        );
+        const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+          show(input: { session: unknown }): { rows: Array<{ id: string }> };
+        };
+        const input = { session: loaded.host.sessions.current() };
+        pill.show(input);
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(pill.show(input).rows.some((row) => row.id === 'presentation')).toBe(
+          phase === 'VALIDATION',
+        );
+        expect(loaded.host.toast.show.mock.calls.length).toBe(phase === 'VALIDATION' ? 1 : 0);
+        expect(loaded.commandCalls).toEqual([]);
+      } finally {
+        for (const cleanup of pluginCleanups.splice(0).reverse()) cleanup();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('recovers decision and check feedback after reload with an empty presentation queue', async () => {
+    vi.stubGlobal('document', {
+      createElement: (tag: string) => new FakeDomNode(tag),
+      visibilityState: 'visible',
+    });
+    try {
+      for (let reload = 0; reload < 2; reload++) {
+        const loaded = load({}, {});
+        loaded.views.push({
+          kind: 'next_action',
+          sessionID: 'ses_root',
+          stateDigest: 'current',
+          phase: 'IMPLEMENTATION',
+          title: 'Implementation required',
+          actions: [{ invocation: '/implement' }],
+          summary:
+            'Plan approval recorded.\nbaseline / build: passed; attempt durable-id.\nNext: /implement',
+        });
+        const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+          show(input: { session: unknown }): { label: string };
+          menu(input: { session: unknown }): FakeDomNode;
+        };
+        const input = { session: loaded.host.sessions.current() };
+        pill.show(input);
+        await vi.waitFor(() =>
+          expect(pill.menu(input).textContent).toContain('Plan approval recorded'),
+        );
+        expect(pill.menu(input).textContent).toContain('attempt durable-id');
+        expect(pill.menu(input).textContent).toContain('/implement');
+        expect(loaded.commandCalls).toEqual([]);
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('ignores a late status response after plugin disposal', async () => {

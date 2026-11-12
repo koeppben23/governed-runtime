@@ -4,7 +4,8 @@
  *
  * One executed validation attempt must never satisfy both the positive and the
  * adversarial (counterexample) obligation of the same claim. The declaration
- * boundary rejects identical positive/counterexample check ids; this module is
+ * boundary rejects identical positive/counterexample checks or explicit oracles;
+ * renaming a runner cannot make the same assertion independent. This module is
  * the shared runtime authority for already-persisted contracts, so the
  * evaluator's verification state and the persisted diagnostic projection
  * cannot drift apart.
@@ -21,6 +22,7 @@ import type {
   ProofCounterexample,
   ProofProviderResult,
 } from '../../state/proofgraph.js';
+import type { AssertionIdentity } from '../../state/assertion-identity.js';
 
 /** Outcome of the evidence-role independence assessment for one claim. */
 export type EvidenceRoleIndependence =
@@ -29,19 +31,45 @@ export type EvidenceRoleIndependence =
   | { readonly kind: 'not_verifiable' };
 
 /**
- * Whether a declaration reuses one check for both evidence roles.
+ * Whether a declaration reuses one check or explicit oracle for both evidence roles.
  *
  * The check is deliberately criticality-agnostic: a declared counterexample
  * requirement is adversarial evidence for every claim, because
  * materialize-contract.ts requires a counterexample whenever the declaration
  * names one.
  */
+function assertionRolesCollide(
+  positive: AssertionIdentity | undefined,
+  requirement: CounterexampleRequirement | undefined,
+): boolean {
+  return (
+    requirement?.kind === 'assertion' &&
+    positive !== undefined &&
+    requirement.assertion.providerId === positive.providerId &&
+    requirement.assertion.localId === positive.localId
+  );
+}
+
 export function declaredEvidenceRolesCollide(input: {
   readonly positiveCheckId: string;
+  readonly positiveAssertion?: AssertionIdentity | undefined;
   readonly counterexampleRequirement?: CounterexampleRequirement | undefined;
 }): boolean {
   const requirement = input.counterexampleRequirement;
-  return requirement !== undefined && requirement.checkId === input.positiveCheckId;
+  if (requirement === undefined) return false;
+  if (requirement.checkId === input.positiveCheckId) return true;
+  return assertionRolesCollide(input.positiveAssertion, requirement);
+}
+
+function sharesExecutionOrCheck(
+  result: Extract<ProofProviderResult, { status: 'pass' }>,
+  attempts: ReadonlySet<string>,
+  checks: ReadonlySet<string>,
+): boolean {
+  return (
+    (result.executionRecordId !== undefined && attempts.has(result.executionRecordId)) ||
+    (result.providerKind === 'executed_test' && checks.has(result.source.stableId))
+  );
 }
 
 /**
@@ -60,6 +88,7 @@ export function declaredEvidenceRolesCollide(input: {
  * constrained here: they have their own identity contract.
  */
 export function assessEvidenceRoleIndependence(input: {
+  readonly positiveAssertion?: AssertionIdentity;
   readonly counterexampleRequirement?: CounterexampleRequirement | undefined;
   readonly adversarialCounterexampleRequired: boolean;
   readonly providerResults: readonly ProofProviderResult[];
@@ -68,25 +97,19 @@ export function assessEvidenceRoleIndependence(input: {
   const engaged =
     input.counterexampleRequirement !== undefined || input.adversarialCounterexampleRequired;
   if (!engaged) return { kind: 'independent' };
+  // Renaming a runner (build vs test) does not make the same oracle independent.
+  if (assertionRolesCollide(input.positiveAssertion, input.counterexampleRequirement))
+    return { kind: 'role_collision' };
 
   const counterexampleAttempts = new Set(input.counterexamples.map((c) => c.attemptId));
   const counterexampleChecks = new Set(input.counterexamples.map((c) => c.checkId));
   let missingExecutionIdentity = false;
   for (const result of input.providerResults) {
     if (result.status !== 'pass') continue;
-    if (
-      result.executionRecordId !== undefined &&
-      counterexampleAttempts.has(result.executionRecordId)
-    ) {
-      return { kind: 'role_collision' };
-    }
     // The executed-test binder records the check identity as `source.stableId`
     // (stable across executions), distinct from the single-execution
     // `executionRecordId`.
-    if (
-      result.providerKind === 'executed_test' &&
-      counterexampleChecks.has(result.source.stableId)
-    ) {
+    if (sharesExecutionOrCheck(result, counterexampleAttempts, counterexampleChecks)) {
       return { kind: 'role_collision' };
     }
     if (result.providerKind === 'executed_test' && result.executionRecordId === undefined) {

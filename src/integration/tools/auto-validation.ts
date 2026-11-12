@@ -471,7 +471,7 @@ async function finalizeAutomaticValidationAttempt(input: {
 async function runAutomaticValidationAttempt(
   context: WorkspaceToolContext,
   deps: SystemWorkRetryDeps,
-  progress?: AutoValidationProgress,
+  progress: AutoValidationProgress | undefined = context.autoValidationProgress,
 ): Promise<SystemWorkResumeOutcome> {
   const sessionKey = context.sessionID;
   if (activeValidationSessions.has(sessionKey)) return { kind: 'none' };
