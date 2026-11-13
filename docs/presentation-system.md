@@ -253,8 +253,8 @@ Evidence requirements are projected from two distinct canonical sources
 that MUST NOT be collapsed:
 
 - `requiredEvidence` (provider kinds) → `RequiredEvidenceProjection`
-- `counterexampleRequirement` (assertion / aggregate_check binding) →
-  `CounterexampleRequirementProjection`
+- `counterexampleRequirement` (assertion / aggregate_check binding plus the
+  approved source `variant`) → `CounterexampleRequirementProjection`
 
 Claim statements are rendered verbatim. No per-reference satisfied/missing
 evidence status is inferred. `candidateId`, provider identity, and claim

@@ -237,7 +237,7 @@ describe('bindCounterexamples', () => {
       { counterexampleRequirement: AGGREGATE_COUNTEREXAMPLE_REQ },
     );
 
-    expect(bindCounterexamples(state, NOW).counterexamples[0]!.outcome).toBe('supported');
+    expect(bindCounterexamples(state, NOW).counterexamples[0]!.outcome).toBe('not_verified');
   });
 
   it('records a distinct diagnostic for each aggregate binding precondition', () => {
@@ -427,9 +427,9 @@ describe('counterexample assertion outcome classification', () => {
     expect(bindCounterexamples(state, NOW).counterexamples[0]?.outcome).toBe('contradicted');
   });
 
-  it('classifies a passed assertion as supported', () => {
+  it('does not relabel a green repaired-subject run as an executed falsification', () => {
     const state = stateWith([assertionAttempt('passed')]);
-    expect(bindCounterexamples(state, NOW).counterexamples[0]?.outcome).toBe('supported');
+    expect(bindCounterexamples(state, NOW).counterexamples[0]?.outcome).toBe('not_verified');
   });
 
   it('classifies an errored assertion as blocked', () => {
@@ -468,7 +468,7 @@ describe('counterexample assertion outcome classification', () => {
       { counterexampleRequirement: AGGREGATE_COUNTEREXAMPLE_REQ },
     );
 
-    expect(bindCounterexamples(state, NOW).counterexamples[0]?.outcome).toBe('supported');
+    expect(bindCounterexamples(state, NOW).counterexamples[0]?.outcome).toBe('not_verified');
   });
 
   it('skips validation_attempt references without an attempt id', () => {
@@ -510,7 +510,7 @@ describe('counterexample assertion binding edge cases', () => {
       },
     );
 
-    expect(bindCounterexamples(state, NOW).counterexamples[0]?.outcome).toBe('supported');
+    expect(bindCounterexamples(state, NOW).counterexamples[0]?.outcome).toBe('not_verified');
   });
 
   it('keeps the first diagnostic when several references fail differently', () => {

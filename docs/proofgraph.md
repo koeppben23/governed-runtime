@@ -210,6 +210,13 @@ flowguard_declare_contract({
 })
 ```
 
+A manual declaration cannot authorize a source perturbation: only an approved
+plan may declare `counterexampleRequirement.variant`. The counterexample above
+therefore remains an unmet adversarial obligation (`NOT_VERIFIED`), and manual
+claims stay advisory at the final gate. A critical manual claim cannot reach
+`PROVEN`; declare critical behavior in the approved plan instead of expecting a
+green run to satisfy it.
+
 The tool persists the contract and the derived projection to session state and
 returns the evaluated projection.
 
@@ -304,16 +311,40 @@ contradict the claim. The outcome is derived from the executed validation result
 
 - the matching assertion failed → `contradicted` (the falsification succeeded → claim
   `CONTRADICTED`, which wins over any passing positive evidence);
-- the matching assertion passed → `supported`;
+- the matching assertion passed in an ordinary run → `not_verified` for the
+  adversarial obligation, even if another check also passed;
+- an approved isolated source variant is detected by the same declared assertion
+  after a passing isolated control → `supported`;
 - missing or assertion mismatch → `not_verified`.
 
 A **critical `fact` claim additionally requires** a `supported` counterexample from a
 check distinct from its positive check:
-without a passing executed assertion bound to the declared counterexample identity, the claim
+without a passing control and detected source variant bound to the declaration, the claim
 stays `NOT_VERIFIED`, never `PROVEN`. This is expressed per claim via
 `requiredEvidence` (`{ positive, adversarial }`) and enforced by the evaluator; a
 missing or `not_verified` counterexample is a missing required provider, not a
 pass-by-fallback.
+
+Declare `counterexampleRequirement.variant: { path, before, after }` in the
+approved plan. `before` must occur exactly once, and `after` is a literal
+replacement. The target must be a governed implementation source file, not a
+test, report, dependency manifest or verification configuration. Independent
+review must validate the semantic relevance of this perturbation. The runtime
+executes the existing candidate in two private copies of Git-enumerated current
+sources (tracked and non-ignored untracked files), leaving the original alone.
+Ignored dependencies and build outputs are not copied or installed. Commands
+requiring them may be unavailable; no guessed install or alternate command runs.
+These directories are source isolation, **not a process sandbox**: the approved
+command retains its normal OS privileges and external dependency/cache access.
+
+The immutable implementation validation attempt carries `falsifications`, with
+claim/declaration binding, distinct control/variant execution IDs, source digests,
+commands, exit codes, output/report digests and extracted assertions. Source
+drift, a surviving variant, an unrelated assertion failure, skipped assertions,
+timeouts and infrastructure errors never establish `supported`. Review evidence
+includes these records before it is frozen. Manual contract declarations do not
+authorize source perturbations; author required falsification in the plan before
+approval. Missing evidence never deletes or downgrades the claim.
 
 Counterexamples are themselves **revision-bound** (`boundDigest`): only a
 counterexample bound to the current implementation digest may contradict the
@@ -439,8 +470,10 @@ Evidence requirements are displayed directly from the canonical contract:
 - `requiredEvidence` exposes the positive provider kinds (e.g. `executed_test`,
   `fault_injection`) and adversarial evidence categories the evaluator requires.
 - `counterexampleRequirement` exposes the assertion/aggregate_check binding
-  (`checkId`, `providerId`, `candidateId`) that governs counterexample
-  evidence matching.
+  (`checkId`, `providerId`, `candidateId`) and the approved source `variant`
+  that governs counterexample evidence matching. A requirement without a
+  variant is displayed explicitly as unable to satisfy its adversarial
+  obligation.
 
 Claim Resolution displays the canonical evidence requirement contract and
 claim-level binding diagnostic. It does **not** reconstruct per-reference

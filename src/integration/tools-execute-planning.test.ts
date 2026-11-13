@@ -361,6 +361,7 @@ describe('plan', () => {
                   providerId: 'junit',
                   localId: 'TaskControllerTest#update_taskNotFound_returns404',
                 },
+                variant: { path: 'src/main/java/a.java', before: 'guard();', after: '' },
               },
             },
             {

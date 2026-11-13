@@ -24,6 +24,7 @@ import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { withSimulatedFalsification } from '../falsification-test-helpers.js';
 
 import { renderPlanClaimDeclarations } from '../presentation/index.js';
 import { readState } from '../adapters/persistence.js';
@@ -169,6 +170,7 @@ const STRUCTURED_CANDIDATES = [
   },
 ];
 
+const TEST_VARIANT = { path: 'src/guard.ts', before: 'guard();', after: '' };
 const CRITICAL_CLAIM = {
   claimId: CRITICAL_CLAIM_ID,
   statement: 'updateTask returns 404 for an unknown id instead of 500.',
@@ -181,6 +183,7 @@ const CRITICAL_CLAIM = {
     checkId: 'security',
     kind: 'assertion' as const,
     assertion: { providerId: 'junit', localId: 'com.example.CounterTest#counterexample' },
+    variant: TEST_VARIANT,
   },
 };
 
@@ -195,6 +198,7 @@ const CRITICAL_CLAIM_INPUT: PlanClaimDeclarationInput = {
     checkId: 'security',
     kind: 'assertion',
     assertion: { providerId: 'junit', localId: 'com.example.CounterTest#counterexample' },
+    variant: TEST_VARIANT,
   },
 };
 
@@ -205,7 +209,11 @@ const AGGREGATE_CLAIM: V2PlanClaimDeclaration = {
   claimScope: 'suite',
   authoritySectionId: 'implementation-step-1',
   expectedCheckId: 'build',
-  counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+  counterexampleRequirement: {
+    kind: 'aggregate_check',
+    checkId: 'security',
+    variant: TEST_VARIANT,
+  },
 };
 
 const AGGREGATE_CANDIDATES = [
@@ -361,7 +369,7 @@ function attempt(
 /** Positive check plus the executed falsification attempt the claim declares. */
 function fullEvidence(): SessionState['validationAttempts'] {
   const cx = attempt(COUNTEREXAMPLE_ATTEMPT_ID, 'security', true, 'test');
-  return [
+  const evidence: SessionState['validationAttempts'] = [
     {
       ...attempt(ATTEMPT_ID, 'build', true),
       result: {
@@ -401,11 +409,16 @@ function fullEvidence(): SessionState['validationAttempts'] {
       },
     },
   ];
+  return evidence.map((a) =>
+    a.result.checkId === 'security'
+      ? withSimulatedFalsification(a, CRITICAL_CLAIM_ID, CRITICAL_CLAIM.counterexampleRequirement)
+      : a,
+  );
 }
 
 function aggregateEvidence(): SessionState['validationAttempts'] {
   const cx = attempt(COUNTEREXAMPLE_ATTEMPT_ID, 'security', true, 'test');
-  return [
+  const evidence: SessionState['validationAttempts'] = [
     {
       ...attempt(ATTEMPT_ID, 'build', true),
       // Suite claims require complete-suite positive evidence, not merely a passing check.
@@ -446,6 +459,15 @@ function aggregateEvidence(): SessionState['validationAttempts'] {
       },
     },
   ];
+  return evidence.map((a) =>
+    a.result.checkId === 'security'
+      ? withSimulatedFalsification(
+          a,
+          AGGREGATE_CLAIM.claimId,
+          AGGREGATE_CLAIM.counterexampleRequirement!,
+        )
+      : a,
+  );
 }
 
 describe('ProofGraph claim lifecycle (runtime)', () => {

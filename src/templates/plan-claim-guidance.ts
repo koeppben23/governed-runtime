@@ -2,7 +2,7 @@
 export const PLAN_CLAIM_REPAIR_INSTRUCTION =
   'Read each rejected declaration field in claimSubmissionDiagnostics, correct the complete claim set and resubmit the complete plan in the current planning step. ' +
   'A rejected submission created no plan version or reviewer attempt; do not start a new session for this rejection. ' +
-  'Inspect the active verificationCandidates: build and test are different check identities even if their commands overlap; an assertion requirement must name the exact provider and assertion that observes the claim. ' +
+  'Inspect the active verificationCandidates: build and test are different check identities even if their commands overlap; an assertion requirement must name the exact provider and assertion that observes the claim, and every counterexample must declare the exact approved source variant (path, before, after) that the bound check detects. ' +
   'Admission is not proof: do not claim executed verification or a successful falsification from an accepted declaration. ' +
   'Do not automatically remove or downgrade critical claims, invent capabilities, or retry the unchanged invalid payload. ' +
   'If a genuinely required evidence route is unavailable, explain the precise missing capability and ask the user; claims: [] is only an explicit withdrawal when no required ProofGraph authority is lost.';
@@ -14,6 +14,7 @@ export const PLAN_CLAIM_GUIDANCE = `### Claim declarations
 - Positive and adversarial evidence require different check identities AND different validation attempts. \`counterexampleRequirement.checkId\` MUST differ from \`expectedCheckId\` whenever a counterexample is declared, at every criticality. Running the same check twice is not independence; never invent attempt identities.
 - Every critical claim requires \`counterexampleRequirement\`. For \`specific_behavior\` use \`kind: "assertion"\` with a provider-scoped \`assertion.providerId\` and \`assertion.localId\` that directly observe the claimed behavior. A noncritical specific claim still needs a claim-specific assertion, registered structural surface, or supported mutation binding.
 - A counterexample is a targeted falsification, not a second green run: it must exercise a concrete violating variant and show the bound check detects it. For a checkable invariant, the build/aggregate check is acceptable when the designed faulty variant is provably rejected; different check identities and separate attempts remain required, but different assertion identities are not.
+- Every counterexample requirement declares \`variant: { path, before, after }\`: an exact, unique source replacement in a governed implementation file, never in a test or verification configuration. FlowGuard runs the approved candidate in private control/variant source copies before freezing review material; it never removes and restores a guard in the original worktree. The bound assertion must pass in the control and fail in the variant. A surviving variant, unrelated failure, missing report or infrastructure error is NOT_VERIFIED, not successful falsification. Ignored dependencies/build outputs are not copied or installed automatically; report an unavailable execution route rather than invent evidence.
 - For \`suite\` use \`kind: "aggregate_check"\`: the positive candidate needs structured full-suite capability, and the adversarial candidate needs registered aggregate capability AND \`fullCheckScopeAttestation: "full_check"\`. Structured assertion reports alone are not aggregate coverage.
 - Select only active checks and current \`verificationCandidates\` capable of producing the required evidence. Do not invent providers, assertion identities, aggregate capabilities, or proving mutation providers. If no admissible evidence route exists, report the blocker instead of submitting an unprovable claim.
 - On declaration rejection: ${PLAN_CLAIM_REPAIR_INSTRUCTION}
@@ -33,7 +34,8 @@ Example declaration, ONLY if build/test are active and test has a matching JUnit
   "counterexampleRequirement": {
     "kind": "assertion",
     "checkId": "test",
-    "assertion": { "providerId": "junit", "localId": "com.example.SessionTest#rejectInvalidState" }
+    "assertion": { "providerId": "junit", "localId": "com.example.SessionTest#rejectInvalidState" },
+    "variant": { "path": "src/main/java/com/example/Session.java", "before": "if (invalid) throw new IllegalArgumentException();", "after": "" }
   },
   "coversRiskTriggers": ["state_integrity"]
 }

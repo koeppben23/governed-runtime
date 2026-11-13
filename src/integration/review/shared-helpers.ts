@@ -176,6 +176,7 @@ export function stateVerificationEvidence(
           attempt.executionObservation.executionObservedStateDigest !==
           attempt.executionObservation.preCommitStateDigest,
         ...(claimAssertionEvidence ? { claimAssertionEvidence } : {}),
+        ...(attempt.falsifications?.length ? { falsifications: attempt.falsifications } : {}),
       };
     });
 }

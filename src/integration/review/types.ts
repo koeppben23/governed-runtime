@@ -104,6 +104,7 @@ export interface ReviewClaimAssertionEvidenceSet {
 
 /** Shared verification-evidence DTO for state projection and prompt rendering. */
 export interface ReviewVerificationEvidenceItem {
+  readonly falsifications?: readonly import('../../state/evidence-validation.js').FalsificationExecution[];
   readonly attemptId: string;
   readonly kind: string;
   readonly command: string;

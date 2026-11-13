@@ -41,6 +41,7 @@ export interface DiscoveryHydration {
   readonly verificationCandidates?: VerificationCandidate[];
   readonly executionSubjectInputsByCandidateId?: Record<string, ExecutionSubjectInput[]>;
   readonly profileResolution?: ProfileResolution;
+  readonly profileSelectionSource?: 'argument' | 'configuration' | 'detection' | 'fallback';
 }
 
 export interface ResolveDiscoveryHydrationInput {

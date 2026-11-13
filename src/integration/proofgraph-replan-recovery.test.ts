@@ -51,10 +51,15 @@ const REPAIRED = 'exports.reject = value => value == null;\n';
 const REPORT_SCRIPT = `const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-assert.equal(require('../src/state/value.cjs').reject(null), true);
 const target = process.argv[2];
 fs.mkdirSync(path.dirname(target), { recursive: true });
-fs.writeFileSync(target, '<testsuite tests="1" failures="0"><testcase classname="com.example.SessionTest" name="rejectInvalidState"/></testsuite>');
+try {
+  assert.equal(require('../src/state/value.cjs').reject(null), true);
+  fs.writeFileSync(target, '<testsuite tests="1" failures="0"><testcase classname="com.example.SessionTest" name="rejectInvalidState"/></testsuite>');
+} catch (error) {
+  fs.writeFileSync(target, '<testsuite tests="1" failures="1"><testcase classname="com.example.SessionTest" name="rejectInvalidState"><failure message="null not rejected"/></testcase></testsuite>');
+  process.exitCode = 1;
+}
 `;
 
 const definitions = [
@@ -97,6 +102,11 @@ const CLAIM: PlanClaimDeclarationInput = {
     kind: 'assertion',
     checkId: 'test',
     assertion: { providerId: 'junit', localId: 'com.example.SessionTest#rejectInvalidState' },
+    variant: {
+      path: SUBJECT,
+      before: 'exports.reject = value => value == null;',
+      after: 'exports.reject = value => false;',
+    },
   },
 };
 const PLAN =

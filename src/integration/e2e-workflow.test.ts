@@ -1453,6 +1453,9 @@ describe('ProofGraph demo fixtures', () => {
       checkId: 'test',
       kind: 'assertion',
       assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
+      // Declared source variant, not a second green run. This demo fixture never
+      // enters the executable falsification path, so the claim stays unproven.
+      variant: { path: 'src/demo.ts', before: 'behavior();', after: '' },
     },
   } as const;
 

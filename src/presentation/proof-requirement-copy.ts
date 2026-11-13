@@ -47,7 +47,11 @@ export function humanCounterexampleKindLabel(kind: string): string {
 export function humanCounterexampleRequirementText(requirement: {
   readonly kind: string;
   readonly checkId: string;
+  readonly variant?: { readonly path: string; readonly before: string; readonly after: string };
 }): string {
   const kindLabel = humanCounterexampleKindLabel(requirement.kind);
-  return `Counterexample: ${kindLabel} from \`${requirement.checkId}\``;
+  const base = `Counterexample: ${kindLabel} from \`${requirement.checkId}\``;
+  return requirement.variant === undefined
+    ? `${base} (no approved source variant; adversarial obligation cannot be satisfied)`
+    : `${base}; approved source variant in \`${requirement.variant.path}\``;
 }

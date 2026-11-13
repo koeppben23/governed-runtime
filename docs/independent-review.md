@@ -261,6 +261,13 @@ attempt identities remain required; different assertion identities do not, so
 the same regression assertion may serve as the falsification witness when it
 fails on the targeted faulty variant.
 
+The runtime path is an approved `counterexampleRequirement.variant` exact source
+replacement. Before review freeze, FlowGuard executes private control and variant
+copies and includes the bound results in verification evidence. Review must
+inspect the variant's semantic relevance and confirm that tests/configuration
+were not the perturbation target. A hypothetical “would fail”, or two green
+ordinary checks, cannot supply the missing runtime record.
+
 Generation `p42-v5` additionally requires both evidence classes for a passing
 implementation challenge (execution evidence on the current digest and the
 current implementation ref as content evidence), scopes the finding-relation

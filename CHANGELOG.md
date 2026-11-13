@@ -953,6 +953,14 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Bind positive assertion declarations consistently at plan admission and proof
+  evaluation. Ordinary green checks no longer count as executed falsification:
+  approved exact source variants run in private control/variant copies, with
+  claim, declaration, execution, source and assertion bindings frozen for review.
+  Missing or surviving variants remain unverified; original source files are not
+  temporarily mutated. Native `/start` no longer forces baseline and labels the
+  actual profile selection source; its existing chat path explicitly requests
+  the complete status card rather than a model summary.
 - Synchronize native review retries with the exact durably re-armed attempt before
   offering another reviewer dispatch; retain provenance checks and attempt budgets.
   Project native OpenCode `patch` to the canonical `apply_patch` mutation path in

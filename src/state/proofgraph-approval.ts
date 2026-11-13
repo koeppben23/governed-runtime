@@ -146,28 +146,14 @@ export type PlanClaimDeclarationInput = z.infer<typeof PlanClaimDeclarationInput
  * deterministic claimId host-side.
  */
 /**
- * Project a counterexample requirement onto its declared fields. Inputs arrive
- * from the host model, so undeclared keys must not leak into persisted state;
- * the strict declaration schema downstream would refuse the whole write.
+ * Validate the complete canonical requirement, including its approved variant.
+ * Unsupported fields fail at this boundary instead of being silently stripped.
  */
 function projectCounterexampleRequirement(
   requirement: CounterexampleRequirement | undefined,
 ): CounterexampleRequirement | undefined {
   if (requirement === undefined) return undefined;
-  return requirement.kind === 'aggregate_check'
-    ? {
-        kind: 'aggregate_check',
-        checkId: requirement.checkId,
-        ...(requirement.candidateId !== undefined ? { candidateId: requirement.candidateId } : {}),
-      }
-    : {
-        kind: 'assertion',
-        checkId: requirement.checkId,
-        assertion: {
-          providerId: requirement.assertion.providerId,
-          localId: requirement.assertion.localId,
-        },
-      };
+  return CounterexampleRequirement.parse(requirement);
 }
 
 export function normalizeArchitectureClaims(

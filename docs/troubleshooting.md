@@ -193,10 +193,19 @@ be blocking when their contract is incomplete; only canonically non-blocking
 rejections permit partial acceptance.
 
 For `specific_behavior`, an `aggregate_check` counterexample is insufficient.
-An assertion counterexample needs the exact provider/local identity and a check
-identity different from `expectedCheckId`. Inspect the active candidates: `build`
-and `test` are distinct check identities even when their commands overlap. An
-accepted declaration is admission, not executed proof or successful falsification.
+An assertion counterexample needs the exact provider/local identity, a check
+identity different from `expectedCheckId`, and the approved exact source
+`variant` (`path`, `before`, `after`) that the bound assertion detects. Inspect
+the active candidates: `build` and `test` are distinct check identities even
+when their commands overlap. An accepted declaration is admission, not executed
+proof or successful falsification.
+
+A declared variant that cannot be executed (missing ignored dependencies or
+build outputs in the isolated source copies, non-unique `before` text, source
+drift, or no current approved certificate) records no adversarial support. The
+claim stays `NOT_VERIFIED`; the ordinary check is still recorded. Supply the
+required built artifacts in the repository or redesign the check; never install
+or switch to an unapproved command to manufacture evidence.
 
 For already persisted rejection diagnostics at `PLAN_REVIEW`, request changes
 (`changes_requested`) to return to `PLAN` before submitting the corrected plan.

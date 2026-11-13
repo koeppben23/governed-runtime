@@ -6,6 +6,7 @@ import { hashText } from '../../../shared/hashing.js';
 import { normalizePlanClaims } from '../../../state/proofgraph-approval.js';
 import type { PlanArgs } from './plan-types.js';
 import { formatBlocked } from '../../blocked-result.js';
+import { TEST_FALSIFICATION_VARIANT } from '../../../falsification-test-helpers.js';
 
 const claim = {
   statement: 'the API rejects invalid requests',
@@ -58,7 +59,12 @@ describe('plan claim admission boundary', () => {
             authoritySectionId: 'implementation-step-2',
             expectedCheckId: 'test',
             expectedAssertion: assertion,
-            counterexampleRequirement: { kind: 'assertion', checkId, assertion },
+            counterexampleRequirement: {
+              kind: 'assertion',
+              checkId,
+              assertion,
+              variant: TEST_FALSIFICATION_VARIANT,
+            },
           },
         ],
       };

@@ -6,6 +6,10 @@
  */
 import { describe, it, expect } from 'vitest';
 import { evaluateProofGraph } from './evaluate.js';
+import {
+  simulatedFalsificationBinding,
+  TEST_FALSIFICATION_VARIANT,
+} from '../../falsification-test-helpers.js';
 import type { ProofGraphEvaluationInput } from './evaluate.js';
 import { DeclaredClaim, ProofProviderResult, ProofCounterexample } from '../../state/proofgraph.js';
 import type {
@@ -105,8 +109,49 @@ function evaluate(
     currentImplementationDigest: CURR,
     ...overrides,
   };
-  return evaluateProofGraph(input, NOW);
+  // This suite supplies simulated provider observations; real subprocess coverage
+  // lives in run-falsifications.test.ts. Do not imply these fixtures executed.
+  const claims = input.claims.map((c) =>
+    c.counterexampleRequirement || c.requiredEvidence?.adversarial.includes('counterexample')
+      ? {
+          ...c,
+          counterexampleRequirement: {
+            variant: TEST_FALSIFICATION_VARIANT,
+            ...(c.counterexampleRequirement ?? {
+              kind: 'assertion' as const,
+              checkId: 'test',
+              assertion: { providerId: 'junit', localId: 'example.Test#guard' },
+            }),
+          },
+        }
+      : c,
+  );
+  const counterexamples = input.counterexamples.map((c) => {
+    const requirement = claims.find(
+      (claim) => claim.claimId === c.claimId,
+    )?.counterexampleRequirement;
+    return c.outcome === 'supported' && requirement
+      ? { ...c, falsification: simulatedFalsificationBinding(requirement) }
+      : c;
+  });
+  return evaluateProofGraph({ ...input, claims, counterexamples }, NOW);
 }
+
+it('never proves an adversarial obligation from a bare supported label', () => {
+  const c = claim(uuid(1), {
+    requiredEvidence: { positive: ['executed_test'], adversarial: ['counterexample'] },
+  });
+  const out = evaluateProofGraph(
+    {
+      claims: [c],
+      providerResults: [result(c.claimId, 'pass')],
+      counterexamples: [counterexample(c.claimId, 'supported')],
+      currentImplementationDigest: CURR,
+    },
+    NOW,
+  );
+  expect(out.claims[0]?.verificationState).toBe('NOT_VERIFIED');
+});
 
 describe('evaluateProofGraph', () => {
   describe('the six verification states', () => {
@@ -426,7 +471,15 @@ describe('evaluateProofGraph', () => {
     it('a stale counterexample alone leaves an otherwise proven claim STALE', () => {
       const out = evaluate({
         claims: [
-          claim(uuid(1), { requiredEvidence: { positive: ['executed_test'], adversarial: [] } }),
+          claim(uuid(1), {
+            requiredEvidence: { positive: ['executed_test'], adversarial: [] },
+            counterexampleRequirement: {
+              kind: 'assertion',
+              checkId: 'test',
+              assertion: { providerId: 'junit', localId: 'example.Test#guard' },
+              variant: TEST_FALSIFICATION_VARIANT,
+            },
+          }),
         ],
         providerResults: [result(uuid(1), 'pass', CURR)],
         counterexamples: [counterexample(uuid(1), 'supported', OLD)],

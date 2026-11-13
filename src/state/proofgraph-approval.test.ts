@@ -768,37 +768,37 @@ describe('claim input normalization', () => {
     expect(without![0]).not.toHaveProperty('expectedAssertion');
   });
 
-  it('projects plan claim inputs onto the declared fields', () => {
-    const normalized = normalizePlanClaims([
-      {
-        statement: 'documented behavior stays stable',
-        critical: true,
-        authoritySectionId: 'step-1',
-        claimScope: 'specific_behavior',
-        expectedCheckId: 'test',
-        counterexampleRequirement: {
-          kind: 'assertion',
-          checkId: 'test',
-          assertion: { providerId: 'junit', localId: 'A#b' },
-          undeclaredNested: 'leak',
-        },
-        structuralSurface: 'api',
-        mutationProfile: 'proofgraph-evaluator',
-        undeclaredTopLevel: 'leak',
-      } as unknown as PlanClaimDeclarationInput,
-    ]);
+  it('rejects undeclared declaration fields instead of silently projecting them', () => {
+    // Undeclared keys are a caller defect. Persisting a silently stripped
+    // declaration would hide it; the strict canonical boundary fails explicitly.
+    expect(() =>
+      normalizePlanClaims([
+        {
+          statement: 'documented behavior stays stable',
+          critical: true,
+          authoritySectionId: 'step-1',
+          claimScope: 'specific_behavior',
+          expectedCheckId: 'test',
+          counterexampleRequirement: {
+            kind: 'assertion',
+            checkId: 'test',
+            assertion: { providerId: 'junit', localId: 'A#b' },
+            undeclaredNested: 'leak',
+          },
+        } as unknown as PlanClaimDeclarationInput,
+      ]),
+    ).toThrow(/Unrecognized key/);
 
-    expect(normalized).toHaveLength(1);
-    const declaration = normalized![0]!;
-    // Host-supplied undeclared keys must not leak into persisted state; the
-    // strict declaration schema would otherwise refuse the whole write.
-    expect(declaration).not.toHaveProperty('undeclaredTopLevel');
-    expect(declaration.counterexampleRequirement).toEqual({
-      kind: 'assertion',
-      checkId: 'test',
-      assertion: { providerId: 'junit', localId: 'A#b' },
-    });
-    expect(PlanClaimDeclaration.safeParse(declaration).success).toBe(true);
+    const topLevel = {
+      statement: 'documented behavior stays stable',
+      critical: false,
+      authoritySectionId: 'step-2',
+      claimScope: 'suite' as const,
+      expectedCheckId: 'test',
+      undeclaredTopLevel: 'leak',
+    };
+    expect(PlanClaimDeclarationInput.safeParse(topLevel).success).toBe(false);
+    expect(PlanClaimDeclaration.safeParse(normalizePlanClaims([topLevel])?.[0]).success).toBe(true);
   });
 
   it('projects architecture claim inputs onto the declared fields', () => {

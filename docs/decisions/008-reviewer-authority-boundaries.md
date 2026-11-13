@@ -82,7 +82,10 @@ governance gates.
 A structured falsification descriptor (for example, a declared faulty variant
 with an expected failure) is **not** adopted by this ADR. It would be a separate
 decision requiring reference-suite evidence that the semantic reviewer cannot
-apply the rule reliably.
+apply the rule reliably. **Superseded in part by
+[ADR-012](./012-executed-falsification-variants.md)** for the executed-variant
+evidence contract; reviewer reliability under the new rule remains
+`NOT_VERIFIED` until the reference-suite evidence required here exists.
 
 **Historical V1 experiment:** the following 65K baseline and hook behavior are
 retained as the experiment record, not current V2 support. ADR-009 subsequently

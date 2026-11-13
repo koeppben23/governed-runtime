@@ -129,9 +129,16 @@ describe('native /start command', () => {
   });
 
   it('hydrates, binds the frozen policy and activates the root via host_command', async () => {
+    const hydrate = vi.spyOn(tools.hydrate, 'execute');
     await open();
     const sessionId = randomUUID();
     await host.command('start', sessionId);
+    expect(hydrate.mock.calls[0]?.[0]).not.toHaveProperty('profileId');
+    expect(host.context.session.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('Reproduce the complete status report above verbatim'),
+      }),
+    );
     const authority = await workflow(sessionId);
     if (authority.status !== 'resolved') throw new Error('Expected workflow state');
     const active = await resolveGovernanceActivation(host.activation.store, sessionId);

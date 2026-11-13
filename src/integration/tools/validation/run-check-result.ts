@@ -12,6 +12,7 @@
 import type { SessionState } from '../../../state/schema.js';
 import type {
   AssertionExtractionResult,
+  FalsificationExecution,
   ValidationAttempt,
   ValidationExecutionObservation,
   ValidationOutcome,
@@ -168,8 +169,17 @@ export function buildValidationAttempt(
   result: ValidationResult,
   attemptId: string,
   executionObservation: ValidationExecutionObservation,
+  falsifications: readonly FalsificationExecution[] = [],
 ): ValidationAttempt {
-  return { attemptId, ...subject, executionObservation, result };
+  return {
+    attemptId,
+    ...subject,
+    executionObservation,
+    result,
+    ...(subject.scope === 'implementation' && falsifications.length > 0
+      ? { falsifications: [...falsifications] }
+      : {}),
+  };
 }
 
 export function buildNextValidationState(

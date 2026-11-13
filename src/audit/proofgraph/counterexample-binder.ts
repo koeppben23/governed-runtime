@@ -21,6 +21,11 @@ import type { CounterexampleOutcome } from '../../state/proofgraph-primitives.js
 import type { ValidationResult } from '../../state/evidence-validation.js';
 import { bindAssertionEvidence } from './assertion-evidence-binding.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
+import {
+  matchingFalsification,
+  isTargetedFalsification,
+  falsificationProof,
+} from './falsification-binding.js';
 
 interface ClassifiedOutcome {
   readonly outcome: CounterexampleOutcome;
@@ -93,12 +98,59 @@ export interface CounterexampleBindingResult {
   readonly diagnostics: ReadonlyMap<string, AssertionBindingReasonCode>;
 }
 
+type BoundAttempt = Extract<
+  CounterexampleBindingState['validationAttempts'][number],
+  { scope: 'implementation' }
+>;
+type ClaimBinding = {
+  readonly claimId: string;
+  readonly counterexampleRefs: readonly { kind: string; attemptId?: string | undefined }[];
+  readonly counterexampleRequirement?: CounterexampleRequirement | undefined;
+};
+
+/** A green ordinary run is not falsification; only a detected source variant is. */
+function classifyWithFalsification(
+  claim: ClaimBinding,
+  attempt: BoundAttempt,
+): {
+  readonly outcome: CounterexampleOutcome;
+  readonly diagnosticCode?: AssertionBindingReasonCode;
+} {
+  const requirement = claim.counterexampleRequirement;
+  if (!requirement) return { outcome: 'not_verified' };
+  const classified = classifyClaimOutcome(attempt.result, requirement);
+  if (classified.outcome !== 'supported') return classified;
+  const falsification = matchingFalsification(
+    attempt.falsifications ?? [],
+    claim.claimId,
+    requirement,
+  );
+  const detected = isTargetedFalsification(
+    falsification,
+    (result) => classifyClaimOutcome(result, requirement).outcome,
+  );
+  return { outcome: detected ? 'supported' : 'not_verified' };
+}
+
+function unresolvedCounterexample(
+  claimId: string,
+  attemptId: string,
+  currentDigest: string,
+  evaluatedAt: string,
+): ProofCounterexample {
+  return {
+    claimId,
+    attemptId,
+    checkId: 'unresolved_validation_attempt',
+    scenario: `unresolved counterexample attempt ${attemptId}`,
+    outcome: 'not_verified',
+    boundDigest: currentDigest,
+    executedAt: evaluatedAt,
+  };
+}
+
 function bindClaimCounterexamples(
-  claim: {
-    claimId: string;
-    counterexampleRefs: readonly { kind: string; attemptId?: string | undefined }[];
-    counterexampleRequirement?: CounterexampleRequirement | undefined;
-  },
+  claim: ClaimBinding,
   state: CounterexampleBindingState,
   currentDigest: string,
   evaluatedAt: string,
@@ -109,34 +161,30 @@ function bindClaimCounterexamples(
     if (ref.kind !== 'validation_attempt' || !ref.attemptId) continue;
     const attempt = state.validationAttempts.find((a) => a.attemptId === ref.attemptId);
     if (attempt === undefined || attempt.scope !== 'implementation') {
-      results.push({
-        claimId: claim.claimId,
-        attemptId: ref.attemptId,
-        checkId: 'unresolved_validation_attempt',
-        scenario: `unresolved counterexample attempt ${ref.attemptId}`,
-        outcome: 'not_verified',
-        boundDigest: currentDigest,
-        executedAt: evaluatedAt,
-      });
+      results.push(
+        unresolvedCounterexample(claim.claimId, ref.attemptId, currentDigest, evaluatedAt),
+      );
       continue;
     }
-    const requirement = claim.counterexampleRequirement;
-    const classified = requirement
-      ? classifyClaimOutcome(attempt.result, requirement)
-      : { outcome: 'not_verified' as const };
-    if (classified.diagnosticCode) {
-      if (!diagnostics.has(claim.claimId)) {
-        diagnostics.set(claim.claimId, classified.diagnosticCode);
-      }
+    const classified = classifyWithFalsification(claim, attempt);
+    if (classified.diagnosticCode && !diagnostics.has(claim.claimId)) {
+      diagnostics.set(claim.claimId, classified.diagnosticCode);
     }
+    const requirement = claim.counterexampleRequirement;
+    const falsification = requirement
+      ? matchingFalsification(attempt.falsifications ?? [], claim.claimId, requirement)
+      : undefined;
     results.push({
       claimId: claim.claimId,
       attemptId: attempt.attemptId,
       checkId: attempt.result.checkId,
-      scenario: `falsification via check '${attempt.result.checkId}'`,
+      scenario: falsification
+        ? `isolated source variant via check '${attempt.result.checkId}'`
+        : `ordinary check '${attempt.result.checkId}'; no executed source variant`,
       outcome: classified.outcome,
       boundDigest: attempt.implementationDigest,
       executedAt: attempt.result.executedAt,
+      ...falsificationProof(classified.outcome === 'supported' ? falsification : undefined),
     });
   }
   return results;
