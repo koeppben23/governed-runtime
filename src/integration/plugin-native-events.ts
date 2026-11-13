@@ -26,7 +26,7 @@ export interface EventDispatchDeps {
 }
 
 /** ACTIVE-scope routing; presentation progress is advisory and never evidence. */
-export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDeps): Promise<void> {
+async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDeps): Promise<void> {
   const projected = projectOpenCodeEvent(event);
   if (!projected) return;
   const { governance, runtimes, sessionRoots, invoke, presentation } = deps;
