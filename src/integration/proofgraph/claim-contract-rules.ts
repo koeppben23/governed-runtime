@@ -2,12 +2,16 @@
  * @module integration/proofgraph/claim-contract-rules
  * @description Fail-closed claim-declaration rules for every write boundary (#762).
  *
- * A critical claim requires adversarial evidence to reach PROVEN. A plan
- * counterexample is therefore not satisfied by another green ordinary run: it
- * must declare the exact approved source variant that the bound assertion
- * detects. Rules also reject inactive check ids, unregistered surfaces or
- * mutation profiles, unreachable positive assertions, and evidence-role
- * collisions, because each produces evidence that can never resolve.
+ * A critical claim requires adversarial evidence to reach PROVEN
+ * (materialize-contract.ts sets `adversarial: ['counterexample']` for it, and
+ * audit/proofgraph/evaluate.ts returns NOT_VERIFIED when that is unmet). A
+ * critical declaration WITHOUT a counterexample check is therefore structurally
+ * unprovable: once the gate is unconditional it would block the final approval
+ * forever, with no recovery available to the author.
+ *
+ * The same holds for a check id that is not active, an unknown structural
+ * surface, or an unregistered mutation profile: each yields evidence that can
+ * never resolve.
  *
  * These rules reject those declarations at the moment they are authored, where
  * the error is actionable — never at the approval gate hours later. They are
@@ -23,13 +27,13 @@ import type { CounterexampleRequirement } from '../../state/proofgraph-approval.
 import { normalizeClaimStatement } from '../../state/proofgraph-approval.js';
 import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
+import {
+  ASSERTION_FORMATS_BY_PROVIDER,
+  ASSERTION_CODEC_BY_PROVIDER,
+  AGGREGATE_FORMATS_BY_PROVIDER,
+} from '../../providers/registry.js';
 import { hasProvingMutationProvider } from './mutation-provider.js';
 import { declaredEvidenceRolesCollide } from '../../audit/proofgraph/evidence-role-independence.js';
-import type { AssertionIdentity } from '../../state/assertion-identity.js';
-import {
-  assertionCapabilityFailure,
-  counterexampleCapabilityFailure,
-} from './claim-assertion-capability.js';
 
 /** Write boundary a declaration arrived through; selects the public field names. */
 export type ClaimContractSource = 'plan' | 'declare_contract';
@@ -48,7 +52,6 @@ export interface NormalizedClaimDeclaration {
   readonly critical: boolean;
   readonly claimScope: 'specific_behavior' | 'suite';
   readonly positiveCheckId: string;
-  readonly expectedAssertion?: AssertionIdentity;
   readonly counterexampleRequirement?: CounterexampleRequirement;
   readonly structuralSurface?: string;
   readonly mutationProfile?: string;
@@ -367,6 +370,51 @@ function checkCounterexampleScope(
   return null;
 }
 
+function checkAggregateCounterexampleCapability(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+  requirement: NonNullable<NormalizedClaimDeclaration['counterexampleRequirement']>,
+  candidate: VerificationCandidate,
+): ClaimContractResult | null {
+  if (requirement.kind !== 'aggregate_check') return null;
+  if (candidate.assertionCapability !== 'structured') {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.checkId',
+      `check '${requirement.checkId}' has assertionCapability='${candidate.assertionCapability}', cannot produce aggregate evidence`,
+      'unsatisfiable',
+    );
+  }
+  const report = candidate.assertionReport;
+  const formats =
+    report &&
+    (input.aggregateFormatsByProvider ?? AGGREGATE_FORMATS_BY_PROVIDER).get(report.providerId);
+  if (
+    report &&
+    formats?.has(report.format) &&
+    candidate.fullCheckScopeAttestation === 'full_check'
+  ) {
+    return null;
+  }
+  if (report && formats?.has(report.format)) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement',
+      `check '${requirement.checkId}' has aggregate parsing capability but no explicit full-check scope completeness attestation`,
+      'unsatisfiable',
+    );
+  }
+  return invalid(
+    input.source,
+    claim,
+    'counterexampleRequirement',
+    `check '${requirement.checkId}' has no registered aggregate counterexample capability for its assertion report provider and format`,
+    'unsatisfiable',
+  );
+}
+
 function resolveCounterexampleCandidate(
   candidates: readonly VerificationCandidate[],
   requirement: NonNullable<NormalizedClaimDeclaration['counterexampleRequirement']>,
@@ -386,18 +434,90 @@ function checkCounterexampleSatisfiability(
   claim: NormalizedClaimDeclaration,
 ): ClaimContractResult | null {
   if (!claim.critical) return null;
-  const requirement = claim.counterexampleRequirement;
-  if (!requirement) return null;
-  const failure = counterexampleCapabilityFailure({
-    requirement,
-    candidate: resolveCounterexampleCandidate(input.verificationCandidates, requirement),
-    ...(input.aggregateFormatsByProvider !== undefined
-      ? { aggregateFormatsByProvider: input.aggregateFormatsByProvider }
-      : {}),
-  });
-  return failure === null
-    ? null
-    : invalid(input.source, claim, failure.field, failure.detail, 'unsatisfiable');
+  const req = claim.counterexampleRequirement;
+  if (!req) return null;
+
+  const candidate = resolveCounterexampleCandidate(input.verificationCandidates, req);
+  if (!candidate) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.checkId',
+      `counterexample check '${req.checkId}' is not in active verification candidates`,
+      'unsatisfiable',
+    );
+  }
+
+  if (req.kind === 'aggregate_check') {
+    return checkAggregateCounterexampleCapability(input, claim, req, candidate);
+  }
+
+  const assertionRequirement = req;
+
+  if (candidate.assertionCapability !== 'structured') {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.checkId',
+      `check '${assertionRequirement.checkId}' has assertionCapability='${candidate.assertionCapability}', cannot produce assertion evidence for provider '${assertionRequirement.assertion.providerId}'`,
+      'unsatisfiable',
+    );
+  }
+
+  const report = candidate.assertionReport;
+  if (!report) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement',
+      `check '${req.checkId}' is structured but has no assertionReport`,
+      'unsatisfiable',
+    );
+  }
+
+  if (report.providerId !== assertionRequirement.assertion.providerId) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.assertion.providerId',
+      `check produces assertions from '${report.providerId}', claim requires '${assertionRequirement.assertion.providerId}'`,
+      'unsatisfiable',
+    );
+  }
+
+  const formats = ASSERTION_FORMATS_BY_PROVIDER.get(assertionRequirement.assertion.providerId);
+  if (!formats || !formats.has(report.format)) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.assertion.providerId',
+      `format '${report.format}' from provider '${assertionRequirement.assertion.providerId}' is not assertion-binding-capable`,
+      'unsatisfiable',
+    );
+  }
+
+  const codec = ASSERTION_CODEC_BY_PROVIDER.get(assertionRequirement.assertion.providerId);
+  if (!codec) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.assertion.providerId',
+      `provider '${assertionRequirement.assertion.providerId}' has no registered identity codec`,
+      'unsatisfiable',
+    );
+  }
+
+  if (!codec.validateLocalId(assertionRequirement.assertion.localId)) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.assertion.localId',
+      `'${assertionRequirement.assertion.localId}' is not a valid assertion identity for provider '${assertionRequirement.assertion.providerId}'`,
+      'unsatisfiable',
+    );
+  }
+
+  return null;
 }
 
 /** Rule 9: a suite claim requires a structurally reachable positive full-suite path. */
@@ -466,7 +586,6 @@ function checkSpecificityBinding(
 ): ClaimContractResult | null {
   if (claim.claimScope !== 'specific_behavior') return null;
   if (
-    claim.expectedAssertion !== undefined ||
     claim.counterexampleRequirement !== undefined ||
     claim.structuralSurface !== undefined ||
     claim.mutationProfile !== undefined
@@ -478,51 +597,8 @@ function checkSpecificityBinding(
     claim,
     'counterexampleRequirement',
     'a specific_behavior claim requires at least one claim-specific evidence binding: ' +
-      'an expectedAssertion, a counterexample requirement (assertion), a structuralSurface, or a mutationProfile; ' +
+      'a counterexample requirement (assertion), a structuralSurface, or a mutationProfile; ' +
       'a passing check alone does not prove the declared behavior',
-    'unsatisfiable',
-  );
-}
-
-function checkPositiveAssertion(
-  input: ClaimContractInput,
-  claim: NormalizedClaimDeclaration,
-): ClaimContractResult | null {
-  const expectedAssertion = claim.expectedAssertion;
-  if (!expectedAssertion) return null;
-  const candidates = input.verificationCandidates.filter((c) => c.kind === claim.positiveCheckId);
-  if (candidates.length === 0)
-    return invalid(
-      input.source,
-      claim,
-      'expectedAssertion',
-      `positive check '${claim.positiveCheckId}' has no active verification candidate`,
-      'unsatisfiable',
-    );
-  const failures = candidates.map((candidate) =>
-    assertionCapabilityFailure(candidate, expectedAssertion),
-  );
-  if (failures.some((failure) => failure === null)) return null;
-  return invalid(
-    input.source,
-    claim,
-    'expectedAssertion',
-    failures[0]?.detail ?? 'the declared positive assertion is unreachable',
-    'unsatisfiable',
-  );
-}
-
-function checkFalsificationVariant(
-  input: ClaimContractInput,
-  claim: NormalizedClaimDeclaration,
-): ClaimContractResult | null {
-  if (input.source !== 'plan') return null;
-  if (!claim.counterexampleRequirement || claim.counterexampleRequirement.variant) return null;
-  return invalid(
-    input.source,
-    claim,
-    'counterexampleRequirement.variant',
-    'a counterexample requires an approved exact source variant (path, before, after); a second green standard run is not falsification evidence',
     'unsatisfiable',
   );
 }
@@ -541,12 +617,10 @@ export function claimViolations(
     checkSuitePositiveSatisfiability(input, claim),
     checkCounterexampleScope(input, claim),
     checkCounterexampleSatisfiability(input, claim),
-    checkPositiveAssertion(input, claim),
     checkSpecificityBinding(input, claim),
     // Last: a more specific rule above (inactive check, unsupported capability,
     // scope mismatch) names the actionable defect when it already applies.
     checkEvidenceRoleCollision(input, claim),
-    checkFalsificationVariant(input, claim),
   ].filter(
     (violation): violation is Extract<ClaimContractResult, { kind: 'invalid' }> =>
       violation !== null,

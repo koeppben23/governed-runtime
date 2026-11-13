@@ -5,7 +5,7 @@
  * Implements handlers for:
  * - session.execution.failed: Logs unhandled session errors to the audit trail
  * - session.deleted: Cleans stale in-memory caches for terminated sessions
- * - session.idle / admitted session.execution.succeeded: resumes interrupted
+ * - session.idle: resumes interrupted
  *   canonical system work. `system_work` phases have no commands, so the
  *   runtime — not a later user command — owns the continuation.
  *
@@ -54,13 +54,12 @@ export interface EventHandlerDeps {
     detail: Record<string, unknown>,
   ): Promise<void>;
   /**
-   * Resume interrupted canonical system work for an admitted lifecycle wakeup.
-   * Native success carries its creation time for canonical backoff admission.
+   * Resume interrupted canonical system work for an idle/active session.
    * The runtime lifecycle owns this trigger; no user command is required.
    * Blocked outcomes are reported by the implementation; thrown failures
    * propagate to the scope fence.
    */
-  resumePendingSystemWork(sessionId: string, wakeupCreatedAtMs?: number): Promise<void>;
+  resumePendingSystemWork(sessionId: string): Promise<void>;
   observeMutationEvent(event: PluginEvent): Promise<void>;
 }
 
@@ -74,7 +73,6 @@ const HANDLED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'session.execution.failed',
   'session.deleted',
   'session.idle',
-  'session.execution.succeeded',
   'session.tool.failed',
 ] satisfies readonly OpenCodeEvent['type'][]);
 
@@ -182,11 +180,7 @@ function extractEventSessionId(
 async function handleSessionIdle(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {
   const sessionId = extractEventSessionId(event.data);
   if (!sessionId) return;
-  if (event.type === 'session.execution.succeeded') {
-    const created = event.data?.hostCreatedAt;
-    if (typeof created !== 'number' || !Number.isFinite(created)) return;
-    await deps.resumePendingSystemWork(sessionId, created);
-  } else await deps.resumePendingSystemWork(sessionId);
+  await deps.resumePendingSystemWork(sessionId);
 }
 
 /**

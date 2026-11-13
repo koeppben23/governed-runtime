@@ -61,7 +61,6 @@ import type { CeremonyProfileDecision } from '../../phase-tool-gate.js';
 import { deriveRepairGuidance } from '../../../verification/repair-guidance.js';
 import type {
   AssertionExtractionResult,
-  FalsificationExecution,
   ValidationExecutionObservation,
   ValidationOutcome,
   ValidationResult,
@@ -92,7 +91,6 @@ import { hashText } from '../../../shared/hashing.js';
 import { validateRunCheckRequest } from './run-check-request.js';
 import { resolveExecutionSubjectInputs } from '../execution-subject-input-resolution.js';
 import { formatRunCheckResponse } from './run-check-presentation.js';
-import { runDeclaredFalsifications } from './run-falsifications.js';
 import {
   buildNextValidationState,
   buildValidationAttempt,
@@ -281,10 +279,6 @@ export async function executeRunCheckPhased(
     extraction,
     guard.candidate.assertionCapability,
   );
-  const falsifications =
-    outcome === 'supported'
-      ? await runDeclaredFalsifications(state, guard.candidate, worktree)
-      : [];
 
   // ── Post-execution attestation + persist ──
   return persistAfterAttestation({
@@ -302,7 +296,6 @@ export async function executeRunCheckPhased(
     changedFiles:
       subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
     outcome,
-    falsifications,
     fullCheckScopeAttestation:
       guard.candidate.assertionCapability === 'structured'
         ? guard.candidate.fullCheckScopeAttestation
@@ -326,7 +319,6 @@ async function persistAfterAttestation(params: {
   implementationDigest: string;
   changedFiles: readonly string[];
   outcome: ValidationOutcome;
-  falsifications: readonly FalsificationExecution[];
   fullCheckScopeAttestation?: FullCheckScopeAttestation | undefined;
   sessDir: string;
   sessionId: string;
@@ -346,7 +338,6 @@ async function persistAfterAttestation(params: {
       evidence: params.evidence,
       derivedRepairGuidance: deriveRepairGuidance(params.evidence, 'blocked'),
       outcome: 'blocked',
-      falsifications: [],
       extraction: params.extraction,
       fullCheckScopeAttestation: params.fullCheckScopeAttestation,
       attemptId: params.attemptId,
@@ -366,7 +357,6 @@ async function persistAfterAttestation(params: {
     evidence: params.evidence,
     derivedRepairGuidance: deriveRepairGuidance(params.evidence, params.outcome),
     outcome: params.outcome,
-    falsifications: params.falsifications,
     extraction: params.extraction,
     fullCheckScopeAttestation: params.fullCheckScopeAttestation,
     attemptId: params.attemptId,
@@ -386,7 +376,6 @@ interface PersistCheckInput {
   evidence: Awaited<ReturnType<typeof executeCheck>>;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
   outcome: ValidationOutcome;
-  falsifications: readonly FalsificationExecution[];
   extraction?: AssertionExtractionResult | undefined;
   fullCheckScopeAttestation?: FullCheckScopeAttestation | undefined;
   attemptId: string;
@@ -458,7 +447,6 @@ async function revalidateCheckUnderLock(input: PersistCheckInput): Promise<Check
     validationResult,
     input.attemptId,
     executionObservation,
-    input.falsifications,
   );
   const nextState = buildNextValidationState(freshState, allResults, validationAttempt);
   // #819: the reduced-ceremony decision is made only here, after the merged

@@ -263,7 +263,7 @@ interface HydrateCardParams {
   policyMode: string;
   gateBehavior: string;
   profileName: string;
-  profileSelectionSource: DiscoveryHydration['profileSelectionSource'];
+  profileDetected: boolean;
   endpointCount: number | undefined;
   gateNotice: string | null;
 }
@@ -304,16 +304,11 @@ function buildHydrateStatusSection(params: HydrateCardParams): KeyValueSection {
       : '';
 
   const profileParts: string[] = [params.profileName];
-  const labels = {
-    argument: 'explicitly selected',
-    configuration: 'configured',
-    detection: 'auto-detected',
-    fallback: 'fallback',
-  };
-  if (params.profileSelectionSource !== undefined)
-    profileParts.push(labels[params.profileSelectionSource]);
-  if (params.endpointCount !== undefined && params.endpointCount > 0) {
-    profileParts.push(`${params.endpointCount} API endpoint signals discovered`);
+  if (params.profileDetected) {
+    profileParts.push('auto-detected');
+    if (params.endpointCount !== undefined && params.endpointCount > 0) {
+      profileParts.push(`${params.endpointCount} API endpoint signals discovered`);
+    }
   }
 
   return {
@@ -357,7 +352,7 @@ export async function formatNewSessionResponse(
     policyMode: policyResolution.effectiveMode,
     gateBehavior: policyResolution.effectiveGateBehavior,
     profileName: state.activeProfile?.name ?? 'Baseline Governance',
-    profileSelectionSource: discovery.profileSelectionSource,
+    profileDetected: !!discovery.repoSignals,
     endpointCount: discovery.discoverySummary?.apiEndpointCount ?? undefined,
     gateNotice: gateNoticeText,
   };
@@ -366,8 +361,7 @@ export async function formatNewSessionResponse(
     sessionId: state.id,
     profileId: state.activeProfile?.id ?? 'baseline',
     profileName: state.activeProfile?.name ?? 'Baseline Governance',
-    profileDetected: discovery.profileSelectionSource === 'detection',
-    profileSelectionSource: discovery.profileSelectionSource,
+    profileDetected: !!discovery.repoSignals,
     discoveryComplete: !!discovery.discoveryResult,
     discoverySummary: discovery.discoverySummary ?? null,
     claimedTaskClass: state.claimedTaskClass ?? null,

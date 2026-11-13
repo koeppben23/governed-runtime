@@ -40,7 +40,7 @@ afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 
-async function fixture(observation = false, deferInitialRequest = false) {
+async function fixture(observation = false) {
   const ws = await createTestWorkspace();
   cleanup.push(() => ws.cleanup());
   if (observation) {
@@ -100,21 +100,10 @@ async function fixture(observation = false, deferInitialRequest = false) {
   }
   const host = createV2Host(ws.tmpDir);
   await host.seedActive('root', state.policySnapshot.hash);
-  let childOutcome: 'succeeded' | 'failed' | undefined = deferInitialRequest
-    ? undefined
-    : 'succeeded';
   host.sessionGet.mockImplementation(async ({ sessionID }) => ({
     id: sessionID,
     location: { directory: ws.tmpDir },
-    ...(sessionID === 'child'
-      ? {
-          parentID: 'root',
-          agent: 'flowguard-reviewer',
-          ...(childOutcome === undefined
-            ? {}
-            : { outcome: childOutcome, time: { idle: Date.now() } }),
-        }
-      : {}),
+    ...(sessionID === 'child' ? { parentID: 'root', agent: 'flowguard-reviewer' } : {}),
   }));
   const workspace = createWorkspace({ auditWorktree: ws.tmpDir });
   registerPendingReviewForAttempt(
@@ -182,14 +171,12 @@ async function fixture(observation = false, deferInitialRequest = false) {
   } as never);
   host.sessionContext.mockResolvedValue([user]);
   await reviewer.context(child.scope, { tools: {} });
-  if (!deferInitialRequest) {
-    await reviewer.request(child.scope, {
-      sessionID: 'child',
-      agent: 'flowguard-reviewer',
-      kind: 'primary',
-      model,
-    } as never);
-  }
+  await reviewer.request(child.scope, {
+    sessionID: 'child',
+    agent: 'flowguard-reviewer',
+    kind: 'primary',
+    model,
+  } as never);
   let history: unknown[] = [user, assistant('msg_review'), idle];
   host.sessionContext.mockImplementation(async () => history);
   const findings = {
@@ -240,19 +227,7 @@ async function fixture(observation = false, deferInitialRequest = false) {
     ];
     return { id: input.id, type: 'user' };
   });
-  let initialRequestPending = deferInitialRequest;
-  const wait = vi.fn(async () => {
-    if (!initialRequestPending) return;
-    initialRequestPending = false;
-    host.sessionContext.mockResolvedValueOnce([user]);
-    await reviewer.request(child.scope, {
-      sessionID: 'child',
-      agent: 'flowguard-reviewer',
-      kind: 'primary',
-      model,
-    } as never);
-    childOutcome = 'succeeded';
-  });
+  const wait = vi.fn(async () => {});
   Object.assign(host.context.session, { wait });
   const event = {
     ...call,
@@ -283,72 +258,6 @@ async function fixture(observation = false, deferInitialRequest = false) {
 }
 
 describe('native capture composition with durable evidence', () => {
-  it('can actually dispatch the fresh attempt promised after an unobserved reviewer citation', async () => {
-    const h = await fixture(true);
-    h.controls.payload = JSON.stringify({
-      ...JSON.parse(h.controls.payload),
-      majorRisks: [
-        {
-          severity: 'minor',
-          category: 'quality',
-          message: 'Unobserved repository citation.',
-          relation: {
-            subjectAnchors: [
-              {
-                kind: 'artifact_section',
-                artifactKind: 'plan',
-                artifactDigest: 'test-subject-digest',
-                sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
-              },
-            ],
-            evidenceLocations: [{ path: 'context.txt', revision: 'head', line: 1 }],
-          },
-        },
-      ],
-    });
-    await h.reviewer.capture(h.root, h.event);
-    h.governance.quarantineReviewerDispatch(h.event);
-    const result = JSON.parse(h.event.result.content);
-    expect(result.reviewRetry).toMatchObject({
-      code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
-      retryable: true,
-    });
-    const pending = h.workspace.getEnforcementState('root').pendingReviews.get('flowguard_plan');
-    expect(pending).toMatchObject({
-      obligationId: h.seeded.obligationId,
-      attemptId: result.reviewRetry.attemptId,
-      retryDiagnostics: expect.arrayContaining([
-        expect.objectContaining({ code: 'REVIEW_EVIDENCE_NOT_OBSERVED' }),
-      ]),
-    });
-    const retry = v2ToolEvent({
-      sessionID: 'root',
-      tool: 'subagent',
-      id: 'retry',
-      input: { agent: 'flowguard-reviewer', description: 'retry', prompt: 'untrusted' },
-    }) as NativeBefore;
-    await h.governance.authorizeDispatch(h.root, retry);
-    const assurance = (await readState(h.seeded.sessDir))!.reviewAssurance!;
-    expect(assurance.dispatches).toHaveLength(2);
-    expect(assurance.dispatches[1]).toMatchObject({
-      attemptId: result.reviewRetry.attemptId,
-      dispatchStatus: 'authorized',
-    });
-    expect((retry.input as { prompt: string }).prompt).toContain('context.txt');
-    await expect(
-      h.governance.authorizeDispatch(
-        h.root,
-        v2ToolEvent({
-          tool: 'subagent',
-          sessionID: 'root',
-          id: 'duplicate',
-          input: retry.input,
-        }) as NativeBefore,
-      ),
-    ).rejects.toThrow();
-    expect((await readState(h.seeded.sessDir))!.reviewAssurance!.attempts).toHaveLength(2);
-  });
-
   it.each(['replay', 'persistence'] as const)(
     're-arms the same frozen obligation when observation %s fails',
     async (phase) => {
@@ -686,37 +595,6 @@ describe('native capture composition with durable evidence', () => {
     });
     expect(h.event.result.metadata).toHaveProperty('flowguardReviewExecution');
     expect(h.host.prompt).toHaveBeenCalledTimes(1);
-  });
-
-  it('waits for an early-returning reviewer child before invalidating the attempt', async () => {
-    // The host returns the subagent tool before the child's first model request.
-    // Capture must wait for that exact child, not seal the dispatch as unknown.
-    const h = await fixture(false, true);
-    await h.reviewer.capture(h.root, h.event);
-    const state = (await readState(h.seeded.sessDir))!;
-    expect(state.reviewAssurance!.obligations[0]!.status).toBe('fulfilled');
-    expect(state.reviewAssurance!.attempts[0]!.status).toBe('bound');
-    expect(JSON.parse(h.event.result.content)).toMatchObject({
-      reviewDispatch: { completed: true, verdict: 'accept' },
-      reviewExecution: { childSessionId: 'child' },
-    });
-    expect(h.wait).toHaveBeenCalled();
-  });
-
-  it('does not treat a stale idle timestamp as a finished child', async () => {
-    const h = await fixture(false, true);
-    const base = h.host.sessionGet.getMockImplementation();
-    if (base === undefined) throw new Error('missing session.get fixture');
-    h.host.sessionGet.mockImplementation(async (input) => {
-      const session = await base(input);
-      if (input.sessionID !== 'child') return session;
-      // The child was idle earlier but started a newer step (busy > idle).
-      return { ...session, time: { busy: 200, idle: 100 } };
-    });
-    await h.reviewer.capture(h.root, h.event);
-    const state = (await readState(h.seeded.sessDir))!;
-    expect(state.reviewAssurance!.obligations[0]!.status).toBe('fulfilled');
-    expect(h.wait).toHaveBeenCalled();
   });
 
   it('R1/R3 refuses an extra completed assistant before serialization or evidence', async () => {

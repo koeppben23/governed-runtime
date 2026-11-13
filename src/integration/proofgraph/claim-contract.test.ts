@@ -19,7 +19,6 @@ import {
 } from './claim-contract.js';
 import type { NormalizedClaimDeclaration } from './claim-contract-rules.js';
 import { isRiskAssessmentCurrent } from '../../audit/proofgraph/gate.js';
-import { TEST_FALSIFICATION_VARIANT } from '../../falsification-test-helpers.js';
 
 const CLAIM_A = '10000000-0000-4000-8000-00000000000a';
 const CLAIM_B = '10000000-0000-4000-8000-00000000000b';
@@ -82,15 +81,7 @@ function planClaim(overrides: ClaimOverrides = {}): NormalizedClaimDeclaration {
       Object.assign(claim, { [key]: value });
     }
   }
-  return claim.counterexampleRequirement
-    ? {
-        ...claim,
-        counterexampleRequirement: {
-          variant: TEST_FALSIFICATION_VARIANT,
-          ...claim.counterexampleRequirement,
-        },
-      }
-    : claim;
+  return claim;
 }
 
 const securityFullCheckCandidate = {

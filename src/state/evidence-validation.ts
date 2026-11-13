@@ -293,22 +293,6 @@ export const ValidationExecutionObservation = z
   .readonly();
 export type ValidationExecutionObservation = z.infer<typeof ValidationExecutionObservation>;
 
-/** Two real, isolated executions of the approved check against differing source snapshots. */
-export const FalsificationExecution = z
-  .object({
-    claimId: z.string().uuid(),
-    declarationDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    controlAttemptId: z.string().uuid(),
-    variantAttemptId: z.string().uuid(),
-    controlSourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    variantSourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    control: ValidationResult,
-    variant: ValidationResult,
-  })
-  .strict()
-  .readonly();
-export type FalsificationExecution = z.infer<typeof FalsificationExecution>;
-
 /**
  * Immutable record of one runtime-executed validation attempt.
  *
@@ -333,7 +317,6 @@ export const ValidationAttempt = z.discriminatedUnion('scope', [
       /** Execution identity of the implementation recording under test. */
       implementationId: z.string().uuid(),
       implementationDigest: z.string().min(1),
-      falsifications: z.array(FalsificationExecution).optional(),
       executionObservation: ValidationExecutionObservation,
       result: ValidationResult,
     })

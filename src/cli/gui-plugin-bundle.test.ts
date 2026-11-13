@@ -592,7 +592,7 @@ describe('installed Desktop GUI bundle', () => {
     expect(loaded.commandCalls).toHaveLength(0);
   });
 
-  it('does not use the main-process serverEndpoints domain in window setup', () => {
+  it('also accepts the documented serverEndpoints lookup', () => {
     const on = vi.fn(() => vi.fn());
     load(
       {
@@ -602,7 +602,7 @@ describe('installed Desktop GUI bundle', () => {
       },
       {},
     );
-    expect(on).not.toHaveBeenCalled();
+    expect(on).toHaveBeenCalledWith('session.execution.succeeded', expect.any(Function));
   });
 
   it('registers a native panel but no slot until the experimental command is invoked', () => {

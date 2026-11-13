@@ -264,7 +264,7 @@ async function runStart(
     `FlowGuard governance ${status} for this session: ${workflow.state.policySnapshot.mode} policy, phase ${workflow.state.phase}.`,
     ...workflow.report,
     ...(choice === null ? [] : [choice]),
-    "This is a FlowGuard host status report. Reproduce the complete status report above verbatim, including Status, policy, profile and workflow choices. Do not summarize it or replace it with a waiting sentence. Do not select a workflow automatically; wait for the user's explicit command.",
+    "This is a FlowGuard host status report. Do not select a workflow automatically; wait for the user's explicit command.",
   ].join('\n\n');
   await presentCommittedStart(
     () => ctx.session.prompt({ sessionID: input.sessionID, text }),
@@ -544,7 +544,7 @@ async function hydrateWorkflow(
   if (before.status === 'unavailable') throw buildEnforcementError(before.code, before.reason);
   const { worktreeRoot } = before;
   // Hydrate reads only the session and worktree identity; a command has no message.
-  const args = policyMode === undefined ? {} : { policyMode };
+  const args = { profileId: 'baseline', ...(policyMode === undefined ? {} : { policyMode }) };
   const output = await hydrate.execute(args, {
     sessionID: sessionId,
     messageID: '',

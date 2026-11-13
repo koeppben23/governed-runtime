@@ -62,14 +62,10 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
-import type { ReviewFindings, ReviewVerdict } from '../state/evidence.js';
+import type { ReviewFindings } from '../state/evidence.js';
 import { resolvePolicyFromState } from './tools/helpers.js';
 import { convertArgsToInputSchema } from '../mcp-server/schema-converter.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import {
-  clearComponentDecisions,
-  recordComponentDecision,
-} from './component-decision-test-helpers.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
 
 vi.mock('./git-control-plane', async (importOriginal) => {
@@ -273,7 +269,6 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   cleanupEnv();
-  clearComponentDecisions();
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -844,11 +839,13 @@ describe('implement', () => {
       expect(changed).toContain('src/main/Service.java');
     });
 
-    it('blocks attribution when dirty capture is unavailable even with a valid marker', async () => {
+    it('records the full worktree when dirty capture is unavailable but the marker is valid (null + marker)', async () => {
       await reachImplementation();
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
-      // A marker cannot substitute for the independently required dirt capture.
+      // Independent availability: a successfully captured control-plane marker
+      // must never be discarded because dirty-file capture failed. Recording
+      // proceeds conservatively over the full worktree with an explicit signal.
       if (!state) throw new TypeError('Expected persisted session state');
       await writeState(sessDir, {
         ...state,
@@ -865,9 +862,11 @@ describe('implement', () => {
       ]);
       const raw = await implement.execute({}, ctx);
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('IMPLEMENTATION_BASELINE_UNAVAILABLE');
-      expect((await readState(sessDir))!.implementation).toEqual(state.implementation);
+      expect(result.error).toBeUndefined();
+      expect(result.baselineScoping).toBe('unavailable');
+      const changed = (await readState(sessDir))!.implementation!.changedFiles;
+      expect(changed).toContain('src/main/Service.java');
+      expect(changed).toContain('stale/preexisting.txt');
     });
 
     it('blocks when the marker is unavailable even with a captured dirty baseline (list + null)', async () => {
@@ -973,8 +972,7 @@ describe('implement', () => {
       await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('IMPLEMENTATION_BASELINE_PREEXISTING');
-      expect(result.message).toContain('stale/a.txt');
+      expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_EMPTY');
     });
 
     it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED before evidence is recorded', async () => {
@@ -1854,101 +1852,4 @@ describe('implement', () => {
       expect(schema.safeParse({ reviewVerdict: 'accept' }).success).toBe(true);
     });
   });
-});
-
-describe('plan approval baseline', () => {
-  const blockedCases = [
-    { targets: ['docs/test.md'], capture: 'dirty', code: 'PLAN_TARGETS_PREEXISTING_DIRTY' },
-    { targets: ['././docs/test.md'], capture: 'dirty', code: 'PLAN_TARGETS_PREEXISTING_DIRTY' },
-    { targets: ['src/../docs/test.md'], capture: 'dirty', code: 'PLAN_TARGETS_PREEXISTING_DIRTY' },
-    { targets: ['/docs/test.md'], capture: 'dirty', code: 'PLAN_TARGET_PATH_INVALID' },
-    { targets: [], capture: 'dirty', code: 'PLAN_TARGETS_PREEXISTING_DIRTY' },
-    { targets: [], capture: 'unavailable', code: 'IMPLEMENTATION_BASELINE_UNAVAILABLE' },
-  ];
-  function recordUserDecision(verdict: ReviewVerdict): void {
-    recordComponentDecision({ sessionId: ctx.sessionID, expectedVerdict: verdict });
-  }
-
-  async function seedDirtyBaseline(path: string | null, hash: string): Promise<string> {
-    const sessDir = await currentSessionDir();
-    const state = await readState(sessDir);
-    await writeState(sessDir, {
-      ...state!,
-      implementationBaseline: {
-        ...state!.implementationBaseline,
-        dirtyFiles: path === null ? null : [{ path, hash }],
-        capturedAt: new Date().toISOString(),
-      },
-    });
-    return sessDir;
-  }
-
-  it.each(blockedCases)(
-    'blocks team plan approval: $code for $targets ($capture)',
-    async ({ targets, capture, code }) => {
-      await hydrateSession({ policyMode: 'team' });
-      await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-      const sessDir = await seedDirtyBaseline(
-        capture === 'unavailable' ? null : 'docs/test.md',
-        'baseline-doc-hash',
-      );
-      await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: targets }, ctx);
-      const reviewFindings = await fulfillReview('plan', 0, 'accept');
-      const reviewed = parseToolResult(
-        await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx),
-      );
-      expect(reviewed.phase).toBe('PLAN_REVIEW');
-
-      recordUserDecision('approve');
-      const result = parseToolResult(
-        await decision.execute({ verdict: 'approve', rationale: 'Approved' }, ctx),
-      );
-      expect(result.error).toBe(true);
-      expect(result.code).toBe(code);
-      const after = await readState(sessDir);
-      expect(after!.phase).toBe('PLAN_REVIEW');
-      expect(after!.plan?.approvalCertificate).toBeUndefined();
-    },
-  );
-
-  it('allows team plan approval when only unrelated files were dirty at session start', async () => {
-    await hydrateSession({ policyMode: 'team' });
-    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    const sessDir = await seedDirtyBaseline('unrelated.txt', 'baseline-unrelated-hash');
-    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const reviewFindings = await fulfillReview('plan', 0, 'accept');
-    const reviewed = parseToolResult(
-      await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx),
-    );
-    expect(reviewed.phase).toBe('PLAN_REVIEW');
-
-    recordUserDecision('approve');
-    const result = parseToolResult(
-      await decision.execute({ verdict: 'approve', rationale: 'Approved' }, ctx),
-    );
-    expect(result.error).toBeUndefined();
-    expect((await readState(sessDir))?.phase).toBe('IMPLEMENTATION');
-  });
-
-  it.each(blockedCases)(
-    'blocks automatic plan approval: $code for $targets ($capture)',
-    async ({ targets, capture, code }) => {
-      await hydrateSession({ policyMode: 'solo' });
-      await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-      const sessDir = await seedDirtyBaseline(
-        capture === 'unavailable' ? null : 'docs/test.md',
-        'baseline-doc-hash',
-      );
-      await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: targets }, ctx);
-      const reviewFindings = await fulfillReview('plan', 0, 'accept');
-      const result = parseToolResult(
-        await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx),
-      );
-      expect(result.error).toBe(true);
-      expect(result.code).toBe(code);
-      const after = await readState(sessDir);
-      expect(after!.phase).toBe('PLAN_REVIEW');
-      expect(after!.plan?.approvalCertificate).toBeUndefined();
-    },
-  );
 });

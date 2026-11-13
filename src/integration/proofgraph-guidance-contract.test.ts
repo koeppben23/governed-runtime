@@ -83,11 +83,7 @@ describe('installed ProofGraph planning contract', () => {
       expect(rejected.kind).toBe('blocked');
       if (rejected.kind === 'blocked') {
         expect(rejected.message).toContain('different check identities');
-        expect(JSON.parse(rejected.message)).toMatchObject({
-          code: 'PLAN_CLAIM_SUBMISSION_REJECTED',
-          phase: 'TICKET',
-        });
-        expect(rejected.message).toContain('current planning step');
+        expect(rejected.message).toContain('TICKET or PLAN');
       }
     },
   );

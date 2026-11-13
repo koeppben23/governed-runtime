@@ -51,7 +51,9 @@ describe('native /diagnostics', () => {
       }),
     );
     expect(host.prompt).toHaveBeenCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('Read-only diagnostic projection') }),
+      expect.objectContaining({
+        text: expect.stringContaining('Read-only diagnostic projection'),
+      }),
     );
   });
 
@@ -61,7 +63,9 @@ describe('native /diagnostics', () => {
 
     await host.command('diagnostics', sessionId, 'review');
     expect(host.prompt).toHaveBeenLastCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('No reviewable subject recorded') }),
+      expect.objectContaining({
+        text: expect.stringContaining('No reviewable subject recorded'),
+      }),
     );
 
     await host.command('diagnostics', sessionId, 'notifications');
@@ -81,7 +85,9 @@ describe('native /diagnostics', () => {
     await host.command('diagnostics', sessionId, 'logs');
 
     expect(host.prompt).toHaveBeenLastCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('FlowGuard Diagnostic Log View') }),
+      expect.objectContaining({
+        text: expect.stringContaining('FlowGuard Diagnostic Log View'),
+      }),
     );
     expect(host.prompt).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -96,12 +102,16 @@ describe('native /diagnostics', () => {
 
     await host.command('diagnostics', sessionId, 'unknown-mode');
     expect(host.prompt).toHaveBeenLastCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('Unknown diagnostics mode') }),
+      expect.objectContaining({
+        text: expect.stringContaining('Unknown diagnostics mode'),
+      }),
     );
 
     await host.command('diagnostics', sessionId, 'logs level=loud');
     expect(host.prompt).toHaveBeenLastCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('Unknown log level') }),
+      expect.objectContaining({
+        text: expect.stringContaining('Unknown log level'),
+      }),
     );
   });
 });

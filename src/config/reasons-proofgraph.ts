@@ -134,17 +134,6 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
       ...CERTIFIED_PLAN_RECOVERY,
     ],
   },
-  {
-    code: 'PLAN_CLAIM_SUBMISSION_REJECTED',
-    category: 'precondition',
-    messageTemplate: 'Plan claim submission rejected: {detail}',
-    recoverySteps: [
-      'Correct the exact rejected fields in claimSubmissionDiagnostics and resubmit the complete plan and declaration set in the current planning step',
-      'For specific_behavior use an assertion counterexample with an active check identity different from expectedCheckId and the exact providerId/localId',
-      'Do not remove or downgrade critical claims merely to advance; withdraw declarations only by an explicit decision when no required ProofGraph authority is lost',
-      'Do not restart the session or change verification configuration for a correctable pre-admission declaration error',
-    ],
-  },
 
   {
     code: 'PROOFGRAPH_CERTIFICATE_INVALID',

@@ -12,7 +12,6 @@
  */
 
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
-import { latestPlanTargetPaths } from '../../../verification/implementation-subject.js';
 import { randomUUID } from 'node:crypto';
 import {
   freezeContextAuthorityAtHead,
@@ -118,7 +117,6 @@ export async function createPlanReviewAttempt(
       iteration: 0,
       planVersion,
       classificationFiles,
-      targetPaths: scope.args.targetPaths ?? latestPlanTargetPaths(scope.state),
       provisionalScopeUnknown,
       freeze,
       planClaimDeclarations:

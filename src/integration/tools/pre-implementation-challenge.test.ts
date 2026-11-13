@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SessionState } from '../../state/schema.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
-import { makeState } from '../../fixtures.js';
-import { workspaceDir } from '../../adapters/workspace/index.js';
 
 const mocks = vi.hoisted(() => ({
   readDiscovery: vi.fn(async () => null as DiscoveryResult | null),
@@ -16,11 +14,9 @@ vi.mock('../../adapters/persistence-discovery.js', async (importOriginal) => {
 import { resolvePreImplementationChallengeClassification } from './challenge/pre-implementation-challenge.js';
 import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 
-const withChallenge = makeState('PLAN');
-withChallenge.policySnapshot = {
-  ...withChallenge.policySnapshot,
-  challengePolicy: CHALLENGE_POLICY_V1,
-};
+const withChallenge = {
+  policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1 },
+} as unknown as SessionState;
 const withoutChallenge = { policySnapshot: {} } as unknown as SessionState;
 const noSnapshot = {} as unknown as SessionState;
 
@@ -43,20 +39,20 @@ describe('resolvePreImplementationChallengeClassification', () => {
   });
 
   it('not_required when no challengePolicy is active (no discovery read)', async () => {
-    const r = await resolvePreImplementationChallengeClassification(withoutChallenge, ['a']);
+    const r = await resolvePreImplementationChallengeClassification(withoutChallenge, '/ws', ['a']);
     expect(r).toEqual({ kind: 'not_required' });
     expect(mocks.readDiscovery).not.toHaveBeenCalled();
   });
 
   it('not_required and never throws when policySnapshot is absent', async () => {
-    const r = await resolvePreImplementationChallengeClassification(noSnapshot);
+    const r = await resolvePreImplementationChallengeClassification(noSnapshot, '/ws');
     expect(r).toEqual({ kind: 'not_required' });
     expect(mocks.readDiscovery).not.toHaveBeenCalled();
   });
 
   it('available: unions caller targetPaths with discovery risk paths, deduped', async () => {
     mocks.readDiscovery.mockResolvedValueOnce(persistenceDiscovery(['src/db.ts']));
-    const r = await resolvePreImplementationChallengeClassification(withChallenge, [
+    const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws', [
       'src/db.ts',
       'src/api.ts',
     ]);
@@ -65,13 +61,11 @@ describe('resolvePreImplementationChallengeClassification', () => {
       changedFiles: ['src/db.ts', 'src/api.ts'],
       scopeUnknown: false,
     });
-    expect(mocks.readDiscovery).toHaveBeenCalledWith(
-      workspaceDir(withChallenge.binding.fingerprint),
-    );
+    expect(mocks.readDiscovery).toHaveBeenCalledWith('/ws');
   });
 
   it('marks an empty scope unknown (never unavailable, never silently trivial)', async () => {
-    const r = await resolvePreImplementationChallengeClassification(withChallenge);
+    const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws');
     // No target paths and no detected risk surfaces is UNKNOWN scope: the
     // provisional challenge floor is STANDARD, not TRIVIAL.
     expect(r).toEqual({ kind: 'available', changedFiles: [], scopeUnknown: true });
@@ -79,7 +73,7 @@ describe('resolvePreImplementationChallengeClassification', () => {
 
   it('discovery surfaces raise the class but never prove a planned scope', async () => {
     mocks.readDiscovery.mockResolvedValueOnce(persistenceDiscovery(['docs/api.md']));
-    const r = await resolvePreImplementationChallengeClassification(withChallenge);
+    const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws');
     // The repository happens to contain docs/api.md; that says nothing about
     // the planned change set, so the declared scope stays UNKNOWN.
     expect(r).toEqual({
@@ -91,7 +85,9 @@ describe('resolvePreImplementationChallengeClassification', () => {
 
   it('declared target paths keep the scope known regardless of discovery', async () => {
     mocks.readDiscovery.mockResolvedValueOnce(persistenceDiscovery(['docs/api.md']));
-    const r = await resolvePreImplementationChallengeClassification(withChallenge, ['src/app.ts']);
+    const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws', [
+      'src/app.ts',
+    ]);
     expect(r).toEqual({
       kind: 'available',
       changedFiles: ['src/app.ts', 'docs/api.md'],

@@ -18,16 +18,11 @@ export function renderPlanClaimDeclarations(
   return declarations.claims
     .map((claim) => {
       const counterexample = claim.counterexampleRequirement;
-      const variantText = !counterexample
-        ? ''
-        : counterexample.variant
-          ? `; variant path: ${counterexample.variant.path}; before: ${JSON.stringify(counterexample.variant.before)}; after: ${JSON.stringify(counterexample.variant.after)}`
-          : '; no approved source variant (adversarial obligation cannot be satisfied)';
       const counterexampleText = !counterexample
         ? 'none'
         : 'assertion' in counterexample
-          ? `${counterexample.checkId}; assertion providerId: ${counterexample.assertion.providerId}; localId: ${counterexample.assertion.localId}${variantText}`
-          : `${counterexample.checkId}; aggregate candidateId: ${counterexample.candidateId ?? 'any'}${variantText}`;
+          ? `${counterexample.checkId}; assertion providerId: ${counterexample.assertion.providerId}; localId: ${counterexample.assertion.localId}`
+          : `${counterexample.checkId}; aggregate candidateId: ${counterexample.candidateId ?? 'any'}`;
       return [
         `- **${claim.claimId}** (${claim.critical ? 'critical' : 'non-critical'})`,
         `  - Statement: ${claim.statement}`,

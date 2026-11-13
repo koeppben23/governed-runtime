@@ -13,8 +13,6 @@ import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { createSessionState } from './review/enforcement/enforcement.js';
-import { applicationTool } from './plugin-native-tools.js';
-import { isHostToolAllowedInPhase } from './phase-tool-gate.js';
 
 const h = vi.hoisted(() => ({
   before: vi.fn(async (..._args: unknown[]) => {}),
@@ -85,43 +83,6 @@ async function setup(sessions: readonly string[] = ['session']) {
 }
 
 describe('native V2 entrypoint', () => {
-  it('projects native patch to the existing mutation contract without widening phase permissions', async () => {
-    const host = await setup();
-    const input = {
-      patchText: '*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch',
-    };
-    await host.before(v2ToolEvent({ tool: 'patch', input }));
-    expect(h.before).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ tool: 'apply_patch' }),
-      { args: input },
-    );
-    const files = [{ file: 'README.md', patch: 'diff', additions: 1, deletions: 1 }];
-    await host.after(
-      v2ToolEvent({
-        tool: 'patch',
-        input,
-        status: 'completed',
-        result: { content: 'Patch applied', metadata: { files } },
-      }),
-    );
-    expect(h.after).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ tool: 'apply_patch', args: input }),
-      expect.objectContaining({ output: 'Patch applied', metadata: { files } }),
-    );
-    expect(isHostToolAllowedInPhase(applicationTool('patch'), 'IMPLEMENTATION')).toEqual({
-      allowed: true,
-    });
-    for (const phase of ['READY', 'PLAN', 'VALIDATION', 'IMPL_VALIDATION'] as const)
-      expect(isHostToolAllowedInPhase(applicationTool('patch'), phase)).toMatchObject({
-        allowed: false,
-        code: 'HOST_TOOL_PHASE_DENIED',
-      });
-    expect(
-      isHostToolAllowedInPhase(applicationTool('unknown_native_tool'), 'IMPLEMENTATION'),
-    ).toMatchObject({ allowed: false, code: 'HOST_TOOL_UNKNOWN_DENIED' });
-  });
   it('is a definition with setup, not a callable factory or dual V1 server entrypoint', () => {
     expect(FlowGuardAuditPlugin.id).toBe('flowguard');
     expect(typeof FlowGuardAuditPlugin).toBe('object');

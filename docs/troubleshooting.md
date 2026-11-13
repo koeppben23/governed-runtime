@@ -182,33 +182,11 @@ remain `CONFIG_INVALID`; no session-state or audit reset is authorized.
 
 ### Plan claim admission and review cost
 
-Blocking claim declarations return `PLAN_CLAIM_SUBMISSION_REJECTED` before a new
-plan version or independent review is created. Read `claimSubmissionDiagnostics`
-and the reported phase, correct the exact rejected fields, and resubmit the
-complete plan and claim set in the current `TICKET` or `PLAN` step. Do not restart
-the session for a correctable declaration error or automatically remove/downgrade
-critical claims. An explicit `claims: []` is withdrawal only when no required
-ProofGraph authority is lost, not the default repair. Noncritical declarations can also
+Blocking claim declarations are rejected before a new plan version or independent
+review is created. Correct and resubmit the call in `TICKET` or `PLAN`, or pass an
+explicit `claims: []` to withdraw declarations. Noncritical declarations can also
 be blocking when their contract is incomplete; only canonically non-blocking
 rejections permit partial acceptance.
-
-For `specific_behavior`, an `aggregate_check` counterexample is insufficient.
-An assertion counterexample needs the exact provider/local identity, a check
-identity different from `expectedCheckId`, and the approved exact source
-`variant` (`path`, `before`, `after`) that the bound assertion detects. Inspect
-the active candidates: `build` and `test` are distinct check identities even
-when their commands overlap. An accepted declaration is admission, not executed
-proof or successful falsification.
-
-A declared variant that cannot be executed (missing ignored dependencies or
-build outputs in the isolated source copies, non-unique `before` text, source
-drift, or no current approved certificate) records no adversarial support. The
-claim stays `NOT_VERIFIED`; the ordinary check is still recorded. A `before`
-snippet copied from the pre-change file is invalid once the plan's own edits
-replace those lines; derive it from the post-implementation source. `after` must
-make the declared assertion fail, not merely a different test. Supply the
-required built artifacts in the repository or redesign the check; never install
-or switch to an unapproved command to manufacture evidence.
 
 For already persisted rejection diagnostics at `PLAN_REVIEW`, request changes
 (`changes_requested`) to return to `PLAN` before submitting the corrected plan.
@@ -225,34 +203,6 @@ their authority and do not create a new plan version through claim admission.
 All BLOCKED responses carry a `code`, a `reason`, and a `recovery` array. The
 canonical registry is in `src/config/reasons.ts`. Every code listed below is a
 real, registered reason.
-
-### Pre-existing worktree changes at plan approval or implementation
-
-A plan target that was already dirty when the session started is baseline, not
-implementation evidence. The same is true if it is dirty at approval. Cleaning
-and re-applying the same bytes in the same session does not change the captured
-baseline hash, so a new session is required.
-
-Only declared targets determine this overlap check; Discovery risk paths classify
-the review but are not implicit implementation targets. In-worktree aliases are
-compared canonically. Absolute/escaping targets fail with `PLAN_TARGET_PATH_INVALID`.
-With no declared targets, any baseline/current dirt blocks approval because its
-unrelatedness cannot be established. A missing baseline capture blocks approval
-even without targets, implementation recording and later subject re-attestation;
-it never authorizes full-worktree attribution.
-
-- `PLAN_TARGETS_PREEXISTING_DIRTY` — the target path was captured in
-  `implementationBaseline.dirtyFiles` at session start.
-- `PLAN_TARGETS_DIRTY_AT_APPROVAL` — the target path is dirty now.
-- `IMPLEMENTATION_BASELINE_UNAVAILABLE` — the baseline dirty-file capture is
-  unavailable; implementation evidence cannot be attributed safely.
-- `IMPLEMENTATION_BASELINE_PREEXISTING` — all changed files are pre-existing dirty
-  files unchanged since session start.
-
-Recovery: preserve the worktree diff as a patch outside the worktree, restore a
-clean worktree before starting a new host session, complete plan approval there,
-and apply the patch only during the new `IMPLEMENTATION` phase. Do not commit or
-stash inside the active session: the control-plane marker includes `HEAD`.
 
 ### Session & State
 
@@ -541,8 +491,6 @@ IMPLEMENTATION_CHALLENGE_ALREADY_RESOLVED
 IMPLEMENTATION_CHALLENGE_NOT_FAILED
 IMPLEMENTATION_CHALLENGE_UNKNOWN
 IMPLEMENTATION_EVIDENCE_EMPTY
-IMPLEMENTATION_BASELINE_PREEXISTING
-IMPLEMENTATION_BASELINE_UNAVAILABLE
 IMPLEMENTATION_EVIDENCE_REQUIRED
 IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED
 IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH
@@ -602,7 +550,6 @@ ORCHESTRATION_PERMANENTLY_FAILED
 OUTBOX_ORDER_CONFLICT
 PARSE_FAILED
 PLAN_APPROVE_WITH_TEXT
-PLAN_CLAIM_SUBMISSION_REJECTED
 PLAN_REQUIRED
 PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION
 PLAN_REVIEW_EVIDENCE_REQUIRED
@@ -610,9 +557,6 @@ PLAN_REVIEW_IN_PROGRESS
 PLAN_REVIEW_LOOP_REQUIRED
 PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH
 PLAN_SUBMISSION_REQUIRED
-PLAN_TARGETS_DIRTY_AT_APPROVAL
-PLAN_TARGETS_PREEXISTING_DIRTY
-PLAN_TARGET_PATH_INVALID
 PLUGIN_ENFORCEMENT_UNAVAILABLE
 POLICY_SNAPSHOT_INTEGRITY_MISMATCH
 POLICY_SNAPSHOT_MISSING

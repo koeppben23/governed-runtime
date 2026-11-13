@@ -6,7 +6,6 @@ import { hashText } from '../../../shared/hashing.js';
 import { normalizePlanClaims } from '../../../state/proofgraph-approval.js';
 import type { PlanArgs } from './plan-types.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { TEST_FALSIFICATION_VARIANT } from '../../../falsification-test-helpers.js';
 
 const claim = {
   statement: 'the API rejects invalid requests',
@@ -41,52 +40,6 @@ const state = makeState('TICKET', {
 });
 
 describe('plan claim admission boundary', () => {
-  it.each(['build', 'test'] as const)(
-    'preserves the pre-GUI declaration contract for counterexample check %s',
-    (checkId) => {
-      const assertion = {
-        providerId: 'junit',
-        localId:
-          'com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404',
-      };
-      const input: PlanArgs = {
-        planText: '## Implementation\nFix the missing-task response.',
-        claims: [
-          {
-            statement: 'The missing-task regression returns HTTP 404 with the requested task id.',
-            critical: true,
-            claimScope: 'specific_behavior',
-            authoritySectionId: 'implementation-step-2',
-            expectedCheckId: 'test',
-            expectedAssertion: assertion,
-            counterexampleRequirement: {
-              kind: 'assertion',
-              checkId,
-              assertion,
-              variant: TEST_FALSIFICATION_VARIANT,
-            },
-          },
-        ],
-      };
-      const current = {
-        ...state,
-        activeChecks: ['test', 'build'],
-        verificationCandidates: [
-          ...state.verificationCandidates!,
-          {
-            ...state.verificationCandidates![0]!,
-            candidateId: 'vc_build_junit',
-            kind: 'build' as const,
-          },
-        ],
-      };
-      const before = canonicalJsonStringify(current);
-      const result = classifyPlanClaimSubmission(input, current, hashText);
-      expect(result.kind).toBe(checkId === 'build' ? 'ok' : 'blocked');
-      if (result.kind === 'ok') expect(result.args.claims).toEqual(input.claims);
-      expect(canonicalJsonStringify(current)).toBe(before);
-    },
-  );
   it('retains valid declarations and filters only nonblocking unsatisfiable declarations', () => {
     const args: PlanArgs = {
       planText: '## Plan',
@@ -138,12 +91,7 @@ describe('plan claim admission boundary', () => {
       if (result.kind !== 'blocked') return;
       const response = JSON.parse(result.message);
       expect(response.error).toBe(true);
-      expect(response.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
-      expect(response.phase).toBe(state.phase);
-      expect(response.admission).toEqual({ kind: 'rejected', admittedClaimCount: 0 });
-      expect(response.agentInstruction).toContain(
-        'Do not automatically remove or downgrade critical claims',
-      );
+      expect(response.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
       expect(response.claimSubmissionDiagnostics.rejectedClaims).toMatchObject([
         { critical, disposition: 'rejected_blocking' },
       ]);
@@ -189,7 +137,13 @@ describe('plan claim admission boundary', () => {
       for (const step of entry.recovery) expect(response.presentation.markdown).toContain(step);
     }
     const canonical = JSON.parse(
-      formatBlocked('PLAN_CLAIM_SUBMISSION_REJECTED', { detail: rejected[0].reason }),
+      formatBlocked('PROOFGRAPH_CLAIM_NOT_DECLARED', {
+        claimRef: rejected[0].claimRef,
+        field: 'declaration admission',
+        detail:
+          'blocking declarations must be corrected or explicitly withdrawn before admitting this revision',
+        consequence: 'No plan version or independent review was created by this rejected call.',
+      }),
     );
     expect(response.presentation.markdown.startsWith(canonical.presentation.markdown)).toBe(true);
     for (const key of [

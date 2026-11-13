@@ -173,13 +173,7 @@ and registered aggregate capability for adversarial evidence. The illustrative
 `build`/`test` example is valid only when those checks are active and the selected
 candidate can bind the named assertion. Never invent an assertion identity.
 
-Plan `targetPaths` are review-scoping forecasts, not the binding implementation
-risk assessment. They remain distinct from Discovery classification paths and
-are checked for canonical baseline/current dirt overlap at approval. Unknown
-scope with dirt or missing baseline capture blocks; see
-[baseline recovery](troubleshooting.md#pre-existing-worktree-changes-at-plan-approval-or-implementation).
-An explicitly supplied revision target set replaces the prior set; omission
-retains prior targets. Declare
+Plan `targetPaths` are advisory forecasts and can be partial or unknown. Declare
 explicit `coversRiskTriggers` for known applicable specific risks on critical
 claims whose behavior actually covers them. The actual implementation assessment
 can discover additional risks; it never silently widens approved coverage.
@@ -209,13 +203,6 @@ flowguard_declare_contract({
   ]
 })
 ```
-
-A manual declaration cannot authorize a source perturbation: only an approved
-plan may declare `counterexampleRequirement.variant`. The counterexample above
-therefore remains an unmet adversarial obligation (`NOT_VERIFIED`), and manual
-claims stay advisory at the final gate. A critical manual claim cannot reach
-`PROVEN`; declare critical behavior in the approved plan instead of expecting a
-green run to satisfy it.
 
 The tool persists the contract and the derived projection to session state and
 returns the evaluated projection.
@@ -247,9 +234,7 @@ change. No in-session post-approval replan is available:
    in that prepared worktree. Verify a distinct FlowGuard session identity and
    `READY`. Hydrate in the old terminal binding is a read-only reload, not a
    restart. A new session on unchanged pre-existing dirty files excludes those
-   bytes from its implementation scope and is not a recovery substitute. Plan
-   approval rejects target paths that were already dirty at session start; do not
-   clean and re-apply the same bytes inside the old session.
+   bytes from its implementation scope and is not a recovery substitute.
 4. Run `/ticket`, then `/plan` with the complete corrected declarations and
    applicable coverage. Complete independent review and obtain a new certificate
    under the active policy. This is an independent plan lineage starting at v1,
@@ -311,45 +296,16 @@ contradict the claim. The outcome is derived from the executed validation result
 
 - the matching assertion failed → `contradicted` (the falsification succeeded → claim
   `CONTRADICTED`, which wins over any passing positive evidence);
-- the matching assertion passed in an ordinary run → `not_verified` for the
-  adversarial obligation, even if another check also passed;
-- an approved isolated source variant is detected by the same declared assertion
-  after a passing isolated control → `supported`;
+- the matching assertion passed → `supported`;
 - missing or assertion mismatch → `not_verified`.
 
 A **critical `fact` claim additionally requires** a `supported` counterexample from a
 check distinct from its positive check:
-without a passing control and detected source variant bound to the declaration, the claim
+without a passing executed assertion bound to the declared counterexample identity, the claim
 stays `NOT_VERIFIED`, never `PROVEN`. This is expressed per claim via
 `requiredEvidence` (`{ positive, adversarial }`) and enforced by the evaluator; a
 missing or `not_verified` counterexample is a missing required provider, not a
 pass-by-fallback.
-
-Declare `counterexampleRequirement.variant: { path, before, after }` in the
-approved plan. `before` must occur exactly once in the **post-implementation**
-source, after every edit the plan itself describes; a snippet copied from the
-pre-change file is invalid once the implementation inserts, removes or rewrites
-those lines. `after` is a literal replacement and must make the **declared
-assertion** fail; breaking a different test or leaving the guarded behavior
-intact is not a counterexample. The target must be a governed implementation
-source file, not a test, report, dependency manifest or verification
-configuration. Independent review must validate the semantic relevance of this
-perturbation. The runtime
-executes the existing candidate in two private copies of Git-enumerated current
-sources (tracked and non-ignored untracked files), leaving the original alone.
-Ignored dependencies and build outputs are not copied or installed. Commands
-requiring them may be unavailable; no guessed install or alternate command runs.
-These directories are source isolation, **not a process sandbox**: the approved
-command retains its normal OS privileges and external dependency/cache access.
-
-The immutable implementation validation attempt carries `falsifications`, with
-claim/declaration binding, distinct control/variant execution IDs, source digests,
-commands, exit codes, output/report digests and extracted assertions. Source
-drift, a surviving variant, an unrelated assertion failure, skipped assertions,
-timeouts and infrastructure errors never establish `supported`. Review evidence
-includes these records before it is frozen. Manual contract declarations do not
-authorize source perturbations; author required falsification in the plan before
-approval. Missing evidence never deletes or downgrades the claim.
 
 Counterexamples are themselves **revision-bound** (`boundDigest`): only a
 counterexample bound to the current implementation digest may contradict the
@@ -409,14 +365,6 @@ revision.
 
 ## Inspecting the ProofGraph
 
-A certified `expectedAssertion` is binding positive-evidence authority, not
-display metadata. The executed-test binder requires its exact provider and local
-identity in the referenced check's structured report. A failed assertion yields
-`fail`, an errored assertion yields `error`, and a skipped/missing/mismatched
-assertion yields `unavailable`, even when the overall check is green. A passing
-assertion cannot override a failed overall check. These outcomes do not establish
-that an author-written test semantically falsifies the claim.
-
 ### What ProofGraph does not prevent
 
 - An agent authors the tests and their semantic content; a passing named assertion
@@ -475,10 +423,8 @@ Evidence requirements are displayed directly from the canonical contract:
 - `requiredEvidence` exposes the positive provider kinds (e.g. `executed_test`,
   `fault_injection`) and adversarial evidence categories the evaluator requires.
 - `counterexampleRequirement` exposes the assertion/aggregate_check binding
-  (`checkId`, `providerId`, `candidateId`) and the approved source `variant`
-  that governs counterexample evidence matching. A requirement without a
-  variant is displayed explicitly as unable to satisfy its adversarial
-  obligation.
+  (`checkId`, `providerId`, `candidateId`) that governs counterexample
+  evidence matching.
 
 Claim Resolution displays the canonical evidence requirement contract and
 claim-level binding diagnostic. It does **not** reconstruct per-reference

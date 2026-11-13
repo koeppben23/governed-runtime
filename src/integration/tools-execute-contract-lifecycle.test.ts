@@ -353,7 +353,7 @@ describe('declare_contract', () => {
     return sessDir;
   }
 
-  it('persists a declaration but does not prove adversarial support from a green ordinary check', async () => {
+  it('declares a claim, persists the contract + projection, and reports PROVEN', async () => {
     const sessDir = await seedImplValidation({ checkId: 'test', passed: true });
     const result = parseToolResult(
       await declare_contract.execute(
@@ -381,11 +381,11 @@ describe('declare_contract', () => {
     const claims = projection.claims as Array<Record<string, unknown>>;
     expect(claims).toHaveLength(1);
     expect(claims[0]!.signalClass).toBe('fact');
-    expect(claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    expect(claims[0]!.verificationState).toBe('PROVEN');
 
     const persisted = await readState(sessDir);
     expect(persisted!.proofContract?.claims).toHaveLength(1);
-    expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('NOT_VERIFIED');
+    expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
   });
 
   it('requires the declared assertion for a non-critical declared claim (Run-9 F4)', async () => {
@@ -420,9 +420,9 @@ describe('declare_contract', () => {
       adversarial: ['counterexample'],
     });
     // With the assertion extraction present, the carrying evidence is
-    // observed, but no source variant was executed for the adversarial role.
+    // satisfied and the claim is PROVEN.
     const projection = result.proofGraph as { claims: Array<{ verificationState: string }> };
-    expect(projection.claims.at(-1)!.verificationState).toBe('NOT_VERIFIED');
+    expect(projection.claims.at(-1)!.verificationState).toBe('PROVEN');
   });
 
   it('keeps a non-critical declared claim NOT_VERIFIED when its assertion evidence is missing (Run-9 F4)', async () => {
@@ -625,7 +625,7 @@ describe('declare_contract', () => {
       structuralSurface: 'command-registration' as const,
     };
 
-    it('does not substitute green ordinary and structural checks for a source variant', async () => {
+    it('is PROVEN with positive + negative + structural evidence bound to one claim', async () => {
       const sessDir = await seedImplValidation({ checkId: 'test', passed: true });
       const result = parseToolResult(await declare_contract.execute({ claims: [COMBINED] }, ctx));
       const claim = (result.proofGraph as Record<string, unknown>).claims as Array<
@@ -634,7 +634,7 @@ describe('declare_contract', () => {
       expect(claim).toHaveLength(1);
       expect(claim[0]!.critical).toBe(true);
       expect(claim[0]!.signalClass).toBe('fact');
-      expect(claim[0]!.verificationState).toBe('NOT_VERIFIED');
+      expect(claim[0]!.verificationState).toBe('PROVEN');
 
       // All three evidence kinds are actually bound to this one claim.
       const persisted = await readState(sessDir);

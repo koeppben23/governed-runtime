@@ -104,16 +104,9 @@ const COVERAGE_CANDIDATE = {
 };
 const RUN_COVERAGE = { kind: 'coverage' as const, candidateId: COVERAGE_CANDIDATE.candidateId };
 
-/**
- * Execute the independent adversarial check before the positive check run.
- * The declared variant runs in private control/variant copies: the control
- * passes, the variant fails at the same assertion. Only the source perturbation
- * distinguishes them; the original worktree is never edited.
- */
+/** Execute the independent adversarial check before the positive check run. */
 async function runAdversarialCoverageCheck(se: SE): Promise<void> {
   executorWritesReport();
-  executorWritesReport();
-  executorWritesFailingReport();
   const result = await run_check.execute(RUN_COVERAGE, se.tc);
   expect(String(result)).not.toContain('"error":true');
 }
@@ -222,14 +215,6 @@ async function boot(options: BootOptions = {}): Promise<SE> {
 
 /** Executor mock: write the run_specific report the command asks for, pass. */
 function executorWritesReport(): void {
-  executorWritesAssertionReport('passed');
-}
-
-function executorWritesFailingReport(): void {
-  executorWritesAssertionReport('failed');
-}
-
-function executorWritesAssertionReport(status: 'passed' | 'failed'): void {
   vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
     const reportPath = /--outputFile=(\S+)/.exec(input.command)?.[1];
     if (reportPath === undefined) throw new Error('expected an --outputFile argument');
@@ -238,18 +223,19 @@ function executorWritesAssertionReport(status: 'passed' | 'failed'): void {
     writeFileSync(
       absoluteReportPath,
       JSON.stringify({
-        testResults: [{ name: 'tests/a.test.ts', assertionResults: [{ title: 'passes', status }] }],
+        testResults: [
+          { name: 'tests/a.test.ts', assertionResults: [{ title: 'passes', status: 'passed' }] },
+        ],
       }),
     );
-    const passed = status === 'passed';
     return {
       kind: input.kind,
       command: input.command,
-      exitCode: passed ? 0 : 1,
-      passed,
+      exitCode: 0,
+      passed: true,
       executionMs: 100,
-      outputDigest: (passed ? 'a' : 'b').repeat(64),
-      stdout: passed ? 'OK' : 'FAIL',
+      outputDigest: 'a'.repeat(64),
+      stdout: 'OK',
       stderr: '',
       timedOut: false,
       startedAt: new Date(Date.now() - 500).toISOString(),
@@ -720,7 +706,6 @@ function f1ClaimDeclarations(): PlanClaimDeclarations {
           kind: 'assertion',
           checkId: 'coverage',
           assertion: { providerId: 'jest', localId: 'tests/a.test.ts::passes' },
-          variant: { path: DOC_PATH, before: 'notes', after: 'changed' },
         },
       },
     ],

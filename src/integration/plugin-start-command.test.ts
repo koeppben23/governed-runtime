@@ -125,20 +125,12 @@ describe('native /start command', () => {
     expect(view.stateDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(view.activationId).toMatch(/^[0-9a-f-]{36}$/);
     expect(view.activationGeneration).toBeGreaterThan(0);
-    expect(view).not.toHaveProperty('summary');
   });
 
   it('hydrates, binds the frozen policy and activates the root via host_command', async () => {
-    const hydrate = vi.spyOn(tools.hydrate, 'execute');
     await open();
     const sessionId = randomUUID();
     await host.command('start', sessionId);
-    expect(hydrate.mock.calls[0]?.[0]).not.toHaveProperty('profileId');
-    expect(host.context.session.prompt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        text: expect.stringContaining('Reproduce the complete status report above verbatim'),
-      }),
-    );
     const authority = await workflow(sessionId);
     if (authority.status !== 'resolved') throw new Error('Expected workflow state');
     const active = await resolveGovernanceActivation(host.activation.store, sessionId);
@@ -166,17 +158,23 @@ describe('native /start command', () => {
       tool: 'flowguard_hydrate',
       success: true,
     });
+    expect(host.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionID: sessionId,
+        text: expect.stringContaining('governance is ACTIVE'),
+      }),
+    );
+    expect(host.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringMatching(
+          /## Decision required[\s\S]*Choose one workflow to start\. Nothing runs until you send a command\.[\s\S]*- `\/task` — Capture the task and start the standard governed flow \(recommended\)[\s\S]*- `\/architecture` — Create or revise an ADR without starting a task flow[\s\S]*- `\/review` — Review a diff, branch, PR, or pasted text/,
+        ),
+      }),
+    );
     const startText =
       (host.prompt.mock.calls.at(-1)?.[0] as { text?: string } | undefined)?.text ?? '';
-    expect(host.prompt).toHaveBeenCalledWith(expect.objectContaining({ sessionID: sessionId }));
-    expect(startText).toContain('governance is ACTIVE');
-    expect(startText).toMatch(
-      /## Decision required[\s\S]*Choose one workflow to start\. Nothing runs until you send a command\.[\s\S]*- `\/task` — Capture the task and start the standard governed flow \(recommended\)[\s\S]*- `\/architecture` — Create or revise an ADR without starting a task flow[\s\S]*- `\/review` — Review a diff, branch, PR, or pasted text/,
-    );
     expect(startText).not.toContain('## Workflows');
     expect(startText).not.toContain('## Next');
-    expect((await host.presentation(sessionId)).events).toEqual([]);
-    expect(host.synthetic).not.toHaveBeenCalled();
     const events = await audit.readAuditTrail(authority.sessDir);
     const activated = events.filter((event) => event.event === 'governance:activated');
     expect(activated).toHaveLength(1);
@@ -273,44 +271,6 @@ describe('native /start command', () => {
     expect((await workflow(childId)).status).not.toBe('resolved');
     expect(revisions()).toEqual([]);
     expect(host.prompt).not.toHaveBeenCalled();
-  });
-
-  it('serves presentation only for the exact native location and never fences on read failure', async () => {
-    await open();
-    const sessionId = randomUUID();
-    await host.command('diagnostics', sessionId, 'review');
-    expect((await host.presentation(sessionId)).events).toEqual([]);
-
-    host.sessionGet.mockResolvedValueOnce({
-      id: sessionId,
-      location: { directory: '/foreign-location' },
-    });
-    await expect(host.presentation(sessionId)).resolves.toEqual({
-      sessionID: sessionId,
-      events: [],
-      cursor: null,
-    });
-
-    host.sessionGet.mockResolvedValueOnce({
-      id: 'another-session',
-      location: { directory: ws.tmpDir },
-    });
-    await expect(host.presentation(sessionId)).resolves.toEqual({
-      sessionID: sessionId,
-      events: [],
-      cursor: null,
-    });
-
-    host.sessionGet.mockRejectedValueOnce(new Error('host read unavailable'));
-    await expect(host.presentation(sessionId)).resolves.toEqual({
-      sessionID: sessionId,
-      events: [],
-      cursor: null,
-    });
-    expect(host.sessionGet).toHaveBeenCalledWith(
-      { sessionID: sessionId },
-      { signal: expect.any(AbortSignal) },
-    );
   });
 
   it('rejects unsupported arguments before any effect', async () => {

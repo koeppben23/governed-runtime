@@ -75,8 +75,8 @@ export const SessionStateDiscoveryShape = {
    * (e.g. a stale opencode.json) are subtracted so they are not attributed to
    * the implementation or used to raise the risk floor.
    *
-   * `dirtyFiles: null` means the capture was unavailable. Plan approval and
-   * implementation recording then block rather than attributing the full worktree.
+   * `dirtyFiles: null` means the capture was unavailable. Implement then
+   * records the full worktree and surfaces `baselineScoping: "unavailable"`.
    * The control-plane marker is captured independently.
    */
   implementationBaseline: z.object({

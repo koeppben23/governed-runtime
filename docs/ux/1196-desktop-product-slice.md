@@ -37,9 +37,9 @@ remain open.
    projection as manual Refresh. Each request has a generation fence; older
    responses cannot overwrite newer results. Missing event support, disconnects
    and missed events retain the explicit Refresh fallback. Installed Desktop
-   window setup exposes the server lookup as `ctx.servers` in the current SDK;
-   `ctx.serverEndpoints` belongs to main-process setup and is not a window
-   fallback. The former dual lookup has been removed. Acceptance on artifact
+   2.2.6 exposes the endpoint lookup as `ctx.servers`; newer plugin typings name
+   it `ctx.serverEndpoints`. The bundle prefers the documented name when
+   present and falls back to the running host surface. Acceptance on artifact
    `2651c0cb` observed a disposable session change from `FlowGuard · inspect`
    to `FlowGuard · NOT_VERIFIED · last read` after its execution succeeded,
    without a user click, while a completion in another session left the open
@@ -107,7 +107,8 @@ The installed GUI evidence applies only to bundle `bb8c8cd2…b06ff81e`.
 The Desktop view code now depends on two local semantic bridges rather than
 reaching into OpenCode compatibility details or spelling RPC method strings:
 
-- `gui-host-bridge-bundle.ts` owns the window's canonical `ctx.servers` API, the
+- `gui-host-bridge-bundle.ts` owns the installed 2.2.6 `ctx.servers`
+  compatibility fallback for the typed `ctx.serverEndpoints` API, the
   sidecar `session.execution.succeeded` filter and reactive cleanup.
   Other UI components request `subscribeFlowGuardSessionCompletion`.
 - `gui-rpc-client-bundle.ts` owns the RPC identifier, native
@@ -146,16 +147,9 @@ Both surfaces are installed-verified on Desktop 2.2.6 artifact `e054159a`
 - The palette action **FlowGuard: inspect status beside chat** (`flowguard-inline`)
   refreshes one session-bound status pill by calling the existing read-only
   `GetNextAction` and, for review gates, `GetWorkbenchReview` RPCs.
-- The pill exposes **Inspect/Refresh canonical status**. Nothing is fetched on
-  registration for canonical status. A mounted/session-switched pill reads its
-  current ephemeral validation snapshot. User action, validation progress
-  notices, completion events and 30-second visible reconciliation perform the
-  reads. Baseline validation after `/approve` and post-implementation checks
-  after `/implement` use model-free progress; Start and final decision/result
-  chat responses retain their original presentation. Progress invalidations are
-  read-only RPC events, not a one-second poller; the current check text is
-  displayed directly in the existing label. The changed validation bundle still
-  requires installed Desktop 2.2.7 acceptance.
+- The pill also exposes **Inspect/Refresh canonical status**. Nothing is
+  fetched on plugin registration. User action or an observed current-session
+  execution-completed event performs the RPC reads.
 - No synthetic message is inserted. An earlier prototype used
   `session.synthetic({ resume: false })`, but that could introduce
   otherwise non-authoritative UI notices into future model context.
@@ -167,8 +161,7 @@ Both surfaces are installed-verified on Desktop 2.2.6 artifact `e054159a`
   review snapshots, and never authorize decisions. Review digest/phase
   consistency is re-read; missing or stale data fails closed.
 - No automatic host-command execution, decision RPC, hydration or audit write
-  occurs from the pill or block. No new action button, report dialog or automatic
-  Start chooser is added. Existing `/status` portable fallback remains.
+  occurs from the pill or block. Existing `/status` portable fallback remains.
 - Unsupported GUI contributions must degrade without disabling other parts of
   FlowGuard. TUI/headless and existing command templates are unchanged.
 - Installed Desktop 2.2.6 acceptance on artifact `e054159a` covers actual pill

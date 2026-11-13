@@ -65,6 +65,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
 > {
   const classification = await resolvePreImplementationChallengeClassification(
     ctx.state,
+    ctx.worktree,
     ctx.targetPaths,
   );
   const resolvedTargetPaths =

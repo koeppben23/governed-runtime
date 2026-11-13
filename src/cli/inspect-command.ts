@@ -16,7 +16,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { readAuditTrail } from '../adapters/persistence-audit.js';
-import { auditPath, readState } from '../adapters/persistence.js';
+import { auditPath } from '../adapters/persistence.js';
 import { sessionDir, workspaceDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { GitError, resolveRoot } from '../adapters/git.js';
@@ -430,21 +430,7 @@ async function inspectSingleSessionMode(
   }
 
   const chain = verifyChain(events);
-  let state;
-  try {
-    state = await readState(sd);
-  } catch (err) {
-    return exitWithError(
-      `Cannot read validation evidence: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-  const summary = generateComplianceSummary(
-    events,
-    sessionId,
-    chain,
-    new Date().toISOString(),
-    state,
-  );
+  const summary = generateComplianceSummary(events, sessionId, chain, new Date().toISOString());
 
   if (json) {
     console.log(JSON.stringify(summary, null, 2));

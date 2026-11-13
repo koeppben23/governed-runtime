@@ -270,12 +270,7 @@ describe('handlePluginEvent', () => {
         runtime,
         {
           type: 'session.execution.failed',
-          data: {
-            sessionID: SESSION_ID,
-            hostEventId: 'failure-root',
-            hostCreatedAt: 100,
-            error: { type: 'unknown', message: 'host stalled' },
-          },
+          data: { sessionID: SESSION_ID, error: { type: 'unknown', message: 'host stalled' } },
         },
         SESSION_ID,
       );
@@ -298,12 +293,7 @@ describe('handlePluginEvent', () => {
         runtime,
         {
           type: 'session.execution.failed',
-          data: {
-            sessionID: SESSION_ID,
-            hostEventId: 'failure-root',
-            hostCreatedAt: 100,
-            error: { type: 'unknown', message: 'host stalled' },
-          },
+          data: { sessionID: SESSION_ID, error: { type: 'unknown', message: 'host stalled' } },
         },
         SESSION_ID,
       ),
@@ -327,12 +317,7 @@ describe('handlePluginEvent', () => {
         runtime,
         {
           type: 'session.execution.failed',
-          data: {
-            sessionID: 'child',
-            hostEventId: 'failure-child',
-            hostCreatedAt: 100,
-            error: { type: 'unknown', message: 'child stalled' },
-          },
+          data: { sessionID: 'child', error: { type: 'unknown', message: 'child stalled' } },
         },
         SESSION_ID,
       );

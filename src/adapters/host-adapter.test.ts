@@ -175,58 +175,29 @@ describe('native V2 notification projection', () => {
       } as unknown as OpenCodeEvent),
     ).toThrow(HostIdentityError);
   });
-  it.each([
-    {
-      id: 'deleted',
-      created: 100,
-      type: 'session.deleted',
-      durable: { aggregateID: 'child', seq: 1, version: 2 },
-      data: { sessionID: 'child' },
-    },
-    { id: 'idle', created: 100, type: 'session.idle', data: { sessionID: 'child' } },
-    {
-      id: 'succeeded',
-      created: 100,
-      type: 'session.execution.succeeded',
-      durable: { aggregateID: 'child', seq: 2, version: 1 },
-      data: { sessionID: 'child' },
-    },
-    {
-      id: 'failed',
-      created: 100,
-      type: 'session.execution.failed',
-      durable: { aggregateID: 'child', seq: 3, version: 1 },
-      data: { sessionID: 'child', error: { type: 'unknown', message: 'error' } },
-    },
-    {
-      id: 'tool-failed',
-      created: 100,
-      type: 'session.tool.failed',
-      durable: { aggregateID: 'child', seq: 4, version: 2 },
-      data: {
+  it.each(['session.deleted', 'session.idle', 'session.execution.failed', 'session.tool.failed'])(
+    'preserves %s identity and data without creating completion proof',
+    (type) => {
+      const data = {
         sessionID: 'child',
         assistantMessageID: 'message',
         id: 'call',
         executed: false,
-        error: { type: 'tool', message: 'error' },
-      },
-    },
-  ] satisfies OpenCodeEvent[])(
-    'preserves $type as a notification, without creating completion proof',
-    (event) => {
-      const projected = projectOpenCodeEvent(event);
-      expect(projected).toStrictEqual({
+        error: { code: 'failed', message: 'error' },
+      };
+      const projected = projectOpenCodeEvent({
+        id: 'event',
+        type,
+        data,
+      } as unknown as OpenCodeEvent);
+      expect(projected).toEqual({
         sessionId: 'child',
         event: {
-          type: event.type,
+          type,
           data: {
-            ...event.data,
-            hostEventId: event.id,
-            ...(event.type === 'session.execution.succeeded' ||
-            event.type === 'session.execution.failed'
-              ? { hostCreatedAt: event.created }
-              : {}),
-            ...(event.type === 'session.tool.failed'
+            ...data,
+            hostEventId: 'event',
+            ...(type === 'session.tool.failed'
               ? { hostCallId: encodeHostCallId('child', 'message', 'call') }
               : {}),
           },
@@ -236,16 +207,18 @@ describe('native V2 notification projection', () => {
     },
   );
 
-  it.each(['session.step.ended', 'message.updated', 'server.connected'])(
-    'ignores unhandled %s notifications rather than inventing an application event',
-    (type) => {
-      expect(
-        projectOpenCodeEvent({
-          type,
-          id: 'event',
-          data: { sessionID: 'child' },
-        } as unknown as OpenCodeEvent),
-      ).toBeNull();
-    },
-  );
+  it.each([
+    'session.execution.succeeded',
+    'session.step.ended',
+    'message.updated',
+    'server.connected',
+  ])('does not promote %s into review approval or another event shape', (type) => {
+    expect(
+      projectOpenCodeEvent({
+        type,
+        id: 'event',
+        data: { sessionID: 'child' },
+      } as unknown as OpenCodeEvent),
+    ).toBeNull();
+  });
 });

@@ -18,7 +18,6 @@ import * as beforehooks from './plugin-beforehooks.js';
 import * as afterhooks from './plugin-afterhooks.js';
 import * as auditReconcile from './plugin-audit-reconcile.js';
 import { makeState } from '../fixtures.js';
-import { createPresentationStore } from './plugin-presentation.js';
 import {
   createActivationStoreFixture,
   seedActiveGovernance,
@@ -30,15 +29,6 @@ let ws: TestWorkspace;
 let host: ReturnType<typeof createV2Host>;
 let cleanup: (() => void | Promise<void>) | undefined;
 let sessionID: string;
-const progressBinding = {
-  operation: {
-    kind: 'validation' as const,
-    requestedAt: '2026-11-12T00:00:00.000Z',
-    attempt: 0,
-    retryAfter: null,
-  },
-  runID: '11111111-2222-4111-8111-111111111111',
-};
 beforeEach(async () => {
   ws = await createTestWorkspace();
   host = createV2Host(ws.tmpDir);
@@ -133,42 +123,20 @@ describe('native decision commands', () => {
     ).rejects.toThrow();
     expect(decisions(await readAuditTrail(before.sessDir))).toHaveLength(1);
   });
-  it('shows baseline progress without extra chat turns and preserves the final decision chat report', async () => {
+  it('presents an in-flight validation progress turn before the decision report', async () => {
     await gate();
-    host.prompt.mockClear();
     const execute = vi.spyOn(decision, 'execute').mockImplementation(async (_args, context) => {
-      void context.autoValidationProgress?.({
-        ...progressBinding,
+      await context.autoValidationProgress?.({
+        operation: {
+          kind: 'validation',
+          requestedAt: '2026-11-12T00:00:00.000Z',
+          attempt: 0,
+          retryAfter: null,
+        },
+        runID: '11111111-2222-4111-8111-111111111111',
         phase: 'VALIDATION',
         checks: ['build', 'test'],
         stage: 'starting',
-      });
-      void context.autoValidationProgress?.({
-        ...progressBinding,
-        phase: 'VALIDATION',
-        checks: ['build', 'test'],
-        stage: 'check_started',
-        check: 'build',
-      });
-      void context.autoValidationProgress?.({
-        ...progressBinding,
-        phase: 'VALIDATION',
-        checks: ['build', 'test'],
-        stage: 'check_finished',
-        check: 'build',
-      });
-      // A malformed optional check detail must fall back to the phase summary.
-      void context.autoValidationProgress?.({
-        ...progressBinding,
-        phase: 'VALIDATION',
-        checks: ['build', 'test'],
-        stage: 'check_started',
-      });
-      void context.autoValidationProgress?.({
-        ...progressBinding,
-        phase: 'VALIDATION',
-        checks: ['build', 'test'],
-        stage: 'check_finished',
       });
       return JSON.stringify({
         phase: 'ARCH_COMPLETE',
@@ -181,20 +149,11 @@ describe('native decision commands', () => {
     } finally {
       execute.mockRestore();
     }
-    expect((await host.presentation(sessionID)).events).toEqual([]);
-    // This fixture never entered VALIDATION; it cannot expose live progress.
-    const events = host.emitRpcEvent.mock.calls.map(([, data]) => data);
-    expect(events).toEqual(Array.from({ length: 5 }, () => ({ sessionID })));
-    expect(host.prompt).toHaveBeenCalledOnce();
     expect(host.prompt).toHaveBeenCalledWith(
       expect.objectContaining({
-        sessionID,
-        text: expect.stringContaining(
-          '**Decision recorded:** approved; current phase `ARCH_COMPLETE`.',
-        ),
+        text: '**Validation started** — running `build`, `test`. Results will follow automatically.',
       }),
     );
-    expect(host.synthetic).not.toHaveBeenCalled();
   });
 
   it('submits a revision-bound native decision through the RPC projection', async () => {
@@ -217,7 +176,6 @@ describe('native decision commands', () => {
       {
         detail: {
           verdict: 'approve',
-          rationale: 'The displayed ADR revision was reviewed.',
           operation: { source: 'host_command', activationId: activation.record.activationId },
         },
       },
@@ -239,23 +197,6 @@ describe('native decision commands', () => {
     });
 
     expect(result).toMatchObject({ kind: 'blocked', code: 'DECISION_BINDING_STALE' });
-    expect((await workflow()).state.phase).toBe('ARCH_REVIEW');
-    expect(decisions(await readAuditTrail(before.sessDir))).toHaveLength(0);
-  });
-
-  it('rejects a non-decision invocation before recording any decision', async () => {
-    const before = await gate();
-    const activation = await resolveGovernanceActivation(host.ctx.storage, sessionID);
-    if (activation.kind !== 'active') throw new Error('Expected active governance');
-    const expected = projectDecisionBinding(before.state, activation.record);
-    if (expected === null) throw new Error('Expected a decision binding');
-    const result = await host.rpcMethods.get('SubmitDecision')!({
-      sessionID,
-      invocation: '/start',
-      rationale: 'This must not be treated as approval.',
-      expected,
-    });
-    expect(result).toMatchObject({ kind: 'blocked', code: 'DECISION_COMMAND_UNSUPPORTED' });
     expect((await workflow()).state.phase).toBe('ARCH_REVIEW');
     expect(decisions(await readAuditTrail(before.sessDir))).toHaveLength(0);
   });
@@ -352,13 +293,13 @@ describe('native decision commands', () => {
       ]);
     },
   );
-  it('keeps a committed decision when post-commit chat presentation fails', async () => {
+  it('keeps a committed decision when post-commit status presentation fails', async () => {
     const before = await gate();
     const prompt = vi
       .spyOn(host.ctx.session, 'prompt')
       .mockRejectedValueOnce(new Error('prompt unavailable'));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await host.command('approve', sessionID, 'Committed without a status turn.');
+    await host.command('approve', sessionID, 'Committed despite status failure.');
     expect((await workflow()).state.phase).toBe('ARCH_COMPLETE');
     expect(prompt).toHaveBeenCalledWith(expect.objectContaining({ sessionID }));
     expect(warn).toHaveBeenCalledWith(
@@ -416,7 +357,6 @@ describe('native decision commands', () => {
         ws: { resolveSessionAuthority },
         auditDeps: {},
       } as unknown as FlowGuardPluginRuntime;
-      const presentation = createPresentationStore();
       const prompt = vi.fn(async () => {});
       const assertScopeCurrent = vi.fn(async () => {});
       const assertActivationAuditConfirmed = vi.fn(async () => {});
@@ -429,19 +369,17 @@ describe('native decision commands', () => {
         guard: <T>(run: () => Promise<T>) => run(),
         invoke,
         signal: new AbortController().signal,
-        presentation,
       } as unknown as CommandDeps;
       vi.spyOn(beforehooks, 'toolBefore').mockResolvedValue(undefined);
       vi.spyOn(afterhooks, 'toolAfter').mockResolvedValue(undefined);
       vi.spyOn(auditReconcile, 'reconcilePendingAuditOperations').mockResolvedValue(undefined);
       return {
         ctx: { session: { prompt } } as unknown as CommandContext,
-        prompt,
         deps,
         invoke,
         runtime,
         scope,
-        presentation,
+        prompt,
         resolveSessionAuthority,
         assertScopeCurrent,
         assertActivationAuditConfirmed,
@@ -510,9 +448,8 @@ describe('native decision commands', () => {
       await expect(executeDecisionCommand(f.ctx, f.deps, request)).rejects.toThrow(
         'GOVERNANCE_AUTHORITY_BLOCKED',
       );
-      expect(f.presentation.read('root').events).toEqual([]);
     });
-    it('projects the canonical result card instead of the raw decision envelope', async () => {
+    it('presents the canonical result card instead of the raw decision envelope', async () => {
       const f = await unitCommandFixture();
       const output = JSON.stringify({
         phase: 'IMPLEMENTATION',
@@ -526,7 +463,7 @@ describe('native decision commands', () => {
       expect(text).toContain('## Validation\n\nAll active checks passed.');
       expect(text).not.toContain('"presentation"');
     });
-    it('projects an automatic validation result with its next command', async () => {
+    it('renders an automatic validation result with its next command', async () => {
       const f = await unitCommandFixture();
       const output = JSON.stringify({
         phase: 'IMPLEMENTATION',
@@ -545,59 +482,6 @@ describe('native decision commands', () => {
       expect(text).toContain("Check 'test' passed with 1 skipped assertion(s).");
       expect(text).toContain('## Next\n\n- `/implement`');
       expect(text).not.toContain('"directive"');
-    });
-    it('records validation progress without manufacturing a user turn', async () => {
-      const f = await unitCommandFixture();
-      vi.spyOn(decision, 'execute').mockImplementation(async (_args, context) => {
-        void context.autoValidationProgress?.({
-          ...progressBinding,
-          phase: 'VALIDATION',
-          checks: ['build'],
-          stage: 'starting',
-        });
-        void context.autoValidationProgress?.({
-          ...progressBinding,
-          phase: 'VALIDATION',
-          checks: ['build'],
-          stage: 'check_started',
-          check: 'build',
-        });
-        return JSON.stringify({ phase: 'IMPLEMENTATION' });
-      });
-      await executeDecisionCommand(f.ctx, f.deps, request);
-      const messages = f.presentation
-        .read('root')
-        .events.filter((event) => event.kind === 'validation')
-        .map((event) => event.message);
-      expect(messages).toEqual([
-        expect.stringContaining('**Validation started** — preparing `build`.'),
-        expect.stringContaining('**Validation in progress** — preparing `build` check.'),
-      ]);
-    });
-    it('keeps the committed decision when presentation recording fails', async () => {
-      const f = await unitCommandFixture();
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      vi.spyOn(f.presentation, 'record').mockImplementation(() => {
-        throw new Error('presentation down');
-      });
-      vi.spyOn(decision, 'execute').mockResolvedValue({
-        output: JSON.stringify({ phase: 'IMPLEMENTATION' }),
-      });
-      vi.mocked(decision.execute).mockImplementation(async (_args, context) => {
-        await context.autoValidationProgress?.({
-          ...progressBinding,
-          phase: 'VALIDATION',
-          checks: ['build'],
-          stage: 'starting',
-        });
-        return { output: JSON.stringify({ phase: 'IMPLEMENTATION' }) };
-      });
-      await expect(executeDecisionCommand(f.ctx, f.deps, request)).resolves.toBeUndefined();
-      expect(f.prompt).toHaveBeenCalledOnce();
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('Presentation delivery failed'),
-        expect.any(Error),
-      );
     });
   });
 });

@@ -357,15 +357,7 @@ export async function hydrateDiscoveryForNewSession(
   );
   requireDiscoveryContract(hydration.discoveryDigest, hydration.discoverySummary);
   requireDiscoveryArtifacts(workspace.workspaceDir, workspace.sessionDir);
-  const profileSelectionSource =
-    args.profileId !== undefined
-      ? 'argument'
-      : config.profile.defaultId
-        ? 'configuration'
-        : detectedProfile
-          ? 'detection'
-          : 'fallback';
-  return { repoSignals, discoveryResult, profileResolution, profileSelectionSource, ...hydration };
+  return { repoSignals, discoveryResult, profileResolution, ...hydration };
 }
 
 export function discoveryForExistingSession(): DiscoveryHydration {

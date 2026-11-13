@@ -32,7 +32,6 @@ describe('plan review obligation characterization', () => {
       iteration: 0,
       planVersion: 1,
       classificationFiles: ['src/example.ts'],
-      targetPaths: ['src/example.ts'],
       freeze: UNAVAILABLE_FREEZE,
       planClaimDeclarations: { flow: 'plan', version: 'v2', claims: [] },
     });
@@ -47,26 +46,10 @@ describe('plan review obligation characterization', () => {
       iteration: 1,
       planVersion: 2,
       classificationFiles: [],
-      targetPaths: [],
       freeze: UNAVAILABLE_FREEZE,
       planClaimDeclarations: { flow: 'plan', version: 'v2', claims: [] },
     });
     expect(canonicalJsonStringify(actual)).toMatchSnapshot();
-  });
-
-  it('keeps discovery classification paths separate from declared plan targets', () => {
-    const actual = buildPlanReviewObligationInput({
-      state: makeState('PLAN'),
-      now: '2026-01-01T00:00:00.000Z',
-      planEvidence: PLAN_EVIDENCE,
-      iteration: 0,
-      planVersion: 1,
-      classificationFiles: ['src/example.ts', 'src/unrelated-database.ts'],
-      targetPaths: ['src/example.ts'],
-      freeze: UNAVAILABLE_FREEZE,
-      planClaimDeclarations: { flow: 'plan', version: 'v2', claims: [] },
-    });
-    expect(actual.metadata).toMatchObject({ targetPaths: ['src/example.ts'] });
   });
 });
 

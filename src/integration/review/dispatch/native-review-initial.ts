@@ -89,16 +89,6 @@ export class NativeReviewInitialController {
     this.runs.set(child, { requestId, text, prefix: [], sealed: false });
   }
 
-  /**
-   * True while the exact admitted child's initial run is not sealed. A host may
-   * return the subagent tool before that run finishes; capture must wait for the
-   * child instead of invalidating the dispatch while it is still starting.
-   */
-  hasOpenInitialRun(child: string): boolean {
-    const run = this.runs.get(child);
-    return run !== undefined && !run.sealed && run.violation === undefined;
-  }
-
   private require(child: string): Run {
     const run = this.runs.get(child);
     if (!run) reject(undefined, 'Live initial-review hook receipts are unavailable.');
@@ -393,26 +383,5 @@ function sameValue(left: unknown, right: unknown): boolean {
     return canonicalJsonStringify(left) === canonicalJsonStringify(right);
   } catch {
     return false;
-  }
-}
-
-/** Wait only for a lineage-proven, currently non-terminal initial reviewer run. */
-export async function awaitInitialReviewerCompletion(input: {
-  readonly childSessionId: string | undefined;
-  readonly initial: NativeReviewInitialController;
-  readonly isTerminal: () => Promise<boolean>;
-  readonly wait: () => Promise<void>;
-}): Promise<void> {
-  const child = input.childSessionId;
-  if (child === undefined || !input.initial.hasOpenInitialRun(child)) return;
-  try {
-    if (await input.isTerminal()) return;
-  } catch {
-    return;
-  }
-  try {
-    await input.wait();
-  } catch {
-    // The existing capture path classifies timeout and failure.
   }
 }

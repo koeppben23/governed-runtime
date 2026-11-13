@@ -26,8 +26,6 @@ import {
 } from './query.js';
 import type { ChainVerification } from './integrity.js';
 import { isTerminalPhase } from '../machine/topology.js';
-import type { SessionState } from '../state/schema.js';
-import { validationExecutionCheck } from './validation-summary.js';
 
 // ─── Timeline Types ───────────────────────────────────────────────────────────
 
@@ -155,7 +153,6 @@ export function generateComplianceSummary(
   sessionId: string,
   chainVerification: ChainVerification | null,
   now: string,
-  validationState: SessionState | null = null,
 ): ComplianceSummary {
   const filtered = sessionEvents(events, sessionId);
   const transitions = filterEvents(filtered, byKind('transition'));
@@ -165,7 +162,7 @@ export function generateComplianceSummary(
     checkSessionTerminated(filtered),
     checkNoUnresolvedErrors(filtered),
     ...checkReviewGatesHonored(filtered, transitions),
-    validationExecutionCheck(filtered, validationState),
+    checkValidationExecuted(filtered),
   ];
 
   if (chainVerification) {
@@ -204,20 +201,19 @@ function checkSessionCreated(filtered: AuditEvent[]): ComplianceCheck {
 
 /** Check 2: Session reached terminal state. */
 function checkSessionTerminated(filtered: AuditEvent[]): ComplianceCheck {
-  const terminalLifecycle = filtered.find(
+  const hasCompletion = filtered.some(
     (e) => e.event === 'lifecycle:session_completed' || e.event === 'lifecycle:session_aborted',
   );
   const lastEvent = filtered[filtered.length - 1];
   const lastPhase = lastEvent === undefined ? 'unknown' : lastEvent.phase;
   return {
     name: 'session_terminated',
-    passed: terminalLifecycle !== undefined || isTerminalPhase(lastPhase),
-    detail:
-      terminalLifecycle !== undefined
-        ? `Session terminated (${terminalLifecycle.event})`
-        : isTerminalPhase(lastPhase)
-          ? `Session reached terminal phase ${lastPhase}`
-          : `Session is in phase ${lastPhase} (not terminated)`,
+    passed: hasCompletion || isTerminalPhase(lastPhase),
+    detail: hasCompletion
+      ? `Session terminated (${filtered.find((e) => e.event.startsWith('lifecycle:session_'))?.event ?? 'unknown'})`
+      : isTerminalPhase(lastPhase)
+        ? `Session reached terminal phase ${lastPhase}`
+        : `Session is in phase ${lastPhase} (not terminated)`,
   };
 }
 
@@ -236,7 +232,7 @@ function checkNoUnresolvedErrors(filtered: AuditEvent[]): ComplianceCheck {
         ? `Unresolved error: ${lastError.event} in phase ${lastError.phase}`
         : errors.length === 0
           ? 'No errors recorded'
-          : `${errors.length} error(s) recorded; session reached terminal phase ${lastPhase}`,
+          : `${errors.length} error(s) recorded, all resolved`,
   };
 }
 
@@ -273,6 +269,24 @@ function checkReviewGatesHonored(
           : 'Session did not reach COMPLETE (evidence review not applicable)',
     },
   ];
+}
+
+/** Check 5: Validation phase was executed with tool calls. */
+function checkValidationExecuted(filtered: AuditEvent[]): ComplianceCheck {
+  const reachedValidation = filtered.some((e) => e.phase === 'VALIDATION');
+  const validationEvents = filtered.filter(
+    (e) => e.phase === 'VALIDATION' && e.event.startsWith('tool_call:flowguard_run_check'),
+  );
+  return {
+    name: 'validation_executed',
+    passed: validationEvents.length > 0 || !reachedValidation,
+    detail:
+      validationEvents.length > 0
+        ? `${validationEvents.length} validation check(s) recorded`
+        : reachedValidation
+          ? 'WARNING: Reached VALIDATION but no validation tool calls recorded'
+          : 'Session did not reach VALIDATION (validation not applicable)',
+  };
 }
 
 /** Check 6: Chain integrity verification. */

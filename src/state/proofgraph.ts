@@ -24,9 +24,6 @@
  */
 
 import { z } from 'zod';
-import { FalsificationVariant } from './falsification-variant.js';
-import { canonicalJsonStringify } from '../shared/canonical-json.js';
-import { hashText } from '../shared/hashing.js';
 import { ClaimAuthorityRef, ClaimEvidenceRef } from './proofgraph-refs.js';
 import {
   SignalClass,
@@ -89,7 +86,6 @@ export const AssertionCounterexampleRequirement = z
     kind: z.literal('assertion'),
     checkId: z.string().min(1),
     assertion: AssertionIdentity,
-    variant: FalsificationVariant.optional(),
   })
   .strict()
   .readonly();
@@ -99,7 +95,6 @@ export const AggregateCounterexampleRequirement = z
     checkId: z.string().min(1),
     /** Exact candidate required for aggregate evidence when multiple candidates share a kind. */
     candidateId: z.string().min(1).optional(),
-    variant: FalsificationVariant.optional(),
   })
   .strict()
   .readonly();
@@ -108,10 +103,6 @@ export const CounterexampleRequirement = z.discriminatedUnion('kind', [
   AggregateCounterexampleRequirement,
 ]);
 export type CounterexampleRequirement = z.infer<typeof CounterexampleRequirement>;
-
-export function counterexampleRequirementDigest(requirement: CounterexampleRequirement): string {
-  return hashText(canonicalJsonStringify(requirement));
-}
 
 /**
  * Shared shape between a declared claim (evaluator input) and an evaluated
@@ -359,17 +350,6 @@ export const ProofCounterexample = z
     outcome: CounterexampleOutcome,
     boundDigest: z.string().min(1),
     executedAt: z.string().datetime(),
-    /** Present only after an attested control pass and a targeted variant failure. */
-    falsification: z
-      .object({
-        declarationDigest: Sha256Digest,
-        controlAttemptId: z.string().uuid(),
-        variantAttemptId: z.string().uuid(),
-        controlSourceDigest: Sha256Digest,
-        variantSourceDigest: Sha256Digest,
-      })
-      .strict()
-      .optional(),
   })
   .readonly();
 export type ProofCounterexample = z.infer<typeof ProofCounterexample>;

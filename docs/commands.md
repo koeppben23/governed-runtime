@@ -631,17 +631,6 @@ synchronous archive creation + verification. The `regulatedArchiveStatus` field 
 
 Read-only CLI command that surfaces existing audit and compliance data without mutation.
 
-Single-session inspection reads the validated session state and audit trail
-without rewriting either. It reports current-plan-bound baseline attempts and
-current-implementation-bound post-implementation attempts separately from
-successful explicit `flowguard_run_check` calls and valid machine transitions.
-An outcome such as `ALL_PASSED`, `CHECK_FAILED` or `CHECK_ERRORED` alone does not
-prove command execution or identify it as automatic. Blocked attempts do not
-count as command results; missing evidence for either reached validation phase
-is `NOT_VERIFIED`. Canonical no-command policy exceptions are named explicitly
-as progression permission, not execution proof. Audit-only library callers can
-report successful explicit calls, but cannot infer commands from outcomes.
-
 **Usage:**
 
 ```bash
@@ -850,13 +839,6 @@ projection. The Desktop palette and its optional ComposerPill are documented in
   Desktop availability `not_verified` without a trusted host snapshot. The
   portable Markdown chooser from `/start` and `/status` remains complete.
 
-### TUI companion
-
-The optional TUI plugin keeps its original explicit `/choose-workflow` command.
-No report command, presentation polling or new toast/dialog is added to the TUI.
-`/start` and the final approval/check-result report retain their original chat
-responses, including the `/implement` recommendation.
-
 ### Desktop GUI companion
 
 The optional Desktop bundle at `plugins/flowguard/gui-experimental.cjs` adds
@@ -874,16 +856,10 @@ unavailable. Missing optional APIs degrade only that surface; they never
 disable the portable Markdown fallback or the canonical command path.
 
 The Desktop composer status is a live read-only projection over
-`GetNextAction` and `GetWorkbenchReview`. During baseline validation only, the
-ephemeral `GetPresentation` page supplies progress without extra chat/model
-turns. Status/progress reads never start workflows, submit decisions, write
-audit events or claim verified human authorship. See
-[Desktop GUI Companion](./desktop.md) for refresh/reconciliation behavior,
-accessibility limits and installed evidence.
-
-After `/approve` and successful baseline checks, the original final chat response
-contains results and recommends `/implement`. There is no separate action button
-or replacement report dialog. `/start` still presents the Markdown workflow choice.
+`GetNextAction` and `GetWorkbenchReview`. It does not insert synthetic
+messages, start workflows, submit decisions, write audit events or claim
+verified human authorship. See [Desktop GUI Companion](./desktop.md) for
+refresh/reconciliation behavior, accessibility limits and installed evidence.
 
 ### Native review decisions
 

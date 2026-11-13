@@ -16,8 +16,10 @@ import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 import type { SessionState } from '../state/schema.js';
 import type { PlanClaimDeclarationInput } from '../state/proofgraph-approval.js';
 import { authorizedCriticalPlanClaimIds } from '../state/proofgraph-approval-context.js';
+import { hashText } from '../shared/hashing.js';
 import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
 import { applyEvidenceApprovalTransition } from '../rails/types.js';
+import { computeImplementationDigest } from '../verification/implementation-subject.js';
 import { assessMinimumTaskClass } from './phase-tool-gate.js';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import {
@@ -51,15 +53,10 @@ const REPAIRED = 'exports.reject = value => value == null;\n';
 const REPORT_SCRIPT = `const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+assert.equal(require('../src/state/value.cjs').reject(null), true);
 const target = process.argv[2];
 fs.mkdirSync(path.dirname(target), { recursive: true });
-try {
-  assert.equal(require('../src/state/value.cjs').reject(null), true);
-  fs.writeFileSync(target, '<testsuite tests="1" failures="0"><testcase classname="com.example.SessionTest" name="rejectInvalidState"/></testsuite>');
-} catch (error) {
-  fs.writeFileSync(target, '<testsuite tests="1" failures="1"><testcase classname="com.example.SessionTest" name="rejectInvalidState"><failure message="null not rejected"/></testcase></testsuite>');
-  process.exitCode = 1;
-}
+fs.writeFileSync(target, '<testsuite tests="1" failures="0"><testcase classname="com.example.SessionTest" name="rejectInvalidState"/></testsuite>');
 `;
 
 const definitions = [
@@ -102,11 +99,6 @@ const CLAIM: PlanClaimDeclarationInput = {
     kind: 'assertion',
     checkId: 'test',
     assertion: { providerId: 'junit', localId: 'com.example.SessionTest#rejectInvalidState' },
-    variant: {
-      path: SUBJECT,
-      before: 'exports.reject = value => value == null;',
-      after: 'exports.reject = value => false;',
-    },
   },
 };
 const PLAN =
@@ -309,9 +301,7 @@ describe('governed new-session authority recovery', () => {
     expect(JSON.stringify(rejected)).toContain(
       'different check identities AND different validation attempts',
     );
-    expect(rejected.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
-    expect(rejected.phase).toBe('TICKET');
-    expect(JSON.stringify(rejected)).toContain('current planning step');
+    expect(JSON.stringify(rejected)).toContain('TICKET or PLAN');
     expect(await stateOf(session)).toEqual(previous);
     expect(previous.phase).toBe('TICKET');
     expect(previous.plan).toBeNull();
@@ -499,33 +489,24 @@ describe('governed new-session authority recovery', () => {
     expect(await stateOf(b)).toEqual(final);
   });
 
-  it('blocks the naive dirty-worktree restart at plan approval without manufacturing implementation evidence', async () => {
+  it('rejects the naive dirty-worktree restart without manufacturing implementation evidence', async () => {
     const worktree = await repository();
     await writeFile(join(worktree, SUBJECT), REPAIRED);
     const b = await boot(worktree);
     expect(
       (await stateOf(b)).implementationBaseline.dirtyFiles?.map((file) => file.path),
     ).toContain(SUBJECT);
-    const triggers = assessMinimumTaskClass([SUBJECT]).riskTriggers.filter(
-      (t) => t !== 'ceremony_only',
-    );
-    await ok(ticket, b, { text: 'Preserve null rejection in session state.\nRisk: HIGH-RISK' });
-    await ok(plan, b, {
-      planText: PLAN,
-      targetPaths: [SUBJECT],
-      claims: [{ ...CLAIM, coversRiskTriggers: triggers }],
+    await approvePlan(b, true);
+    const previous = await stateOf(b);
+    const digest = await computeImplementationDigest({
+      worktree,
+      files: [SUBJECT],
+      digest: hashText,
     });
-    await fulfillStrictReviewObligation(b.dir, {
-      obligationType: 'plan',
-      iteration: 0,
-      planVersion: 1,
-      challengeScenarios: CHALLENGE_SCENARIOS,
-    });
-    const result = await call(plan, b, { reviewVerdict: 'accept' });
-    expect(result.code).toBe('PLAN_TARGETS_PREEXISTING_DIRTY');
-    const after = await stateOf(b);
-    expect(after.phase).toBe('PLAN_REVIEW');
-    expect(after.implementation).toBeNull();
+    expect(digest).toBeTruthy();
+    const result = await call(implement, b);
+    expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_EMPTY');
+    expect(await stateOf(b)).toEqual(previous);
   });
 
   it('refuses reapplication before the new plan is approved without a mutation dispatch or partial write', async () => {

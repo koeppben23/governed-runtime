@@ -18,50 +18,6 @@ import type { SessionState } from '../../state/schema.js';
 import type { ProofProviderResult } from '../../state/proofgraph.js';
 import { isExecutionError } from '../../state/evidence-validation.js';
 import { assessAssertionEvidenceIntegrity } from '../../state/assertion-evidence-integrity.js';
-import { bindAssertionEvidence } from './assertion-evidence-binding.js';
-
-type ContractClaim = NonNullable<SessionState['proofContract']>['claims'][number];
-type PositiveAssertionOutcome =
-  | { readonly status: 'pass' | 'fail' | 'error' }
-  | { readonly status: 'unavailable'; readonly detail: string };
-
-/** A declared positive assertion is evidence authority, not display-only metadata. */
-function positiveAssertionOutcome(
-  claim: ContractClaim,
-  result: SessionState['validationAttempts'][number]['result'],
-): PositiveAssertionOutcome {
-  const origin = claim.certifiedPlan;
-  if (!origin?.expectedAssertion) return { status: 'pass' };
-  const binding = bindAssertionEvidence({
-    requirement: {
-      kind: 'assertion',
-      checkId: origin.expectedCheckId,
-      assertion: origin.expectedAssertion,
-    },
-    checkId: result.checkId,
-    extraction: result.assertionExtraction,
-  });
-  if (binding.status === 'rejected')
-    return { status: 'unavailable', detail: `positive assertion unavailable: ${binding.detail}` };
-  switch (binding.assertion.status) {
-    case 'passed':
-      return { status: 'pass' };
-    case 'failed':
-      return { status: 'fail' };
-    case 'errored':
-      return { status: 'error' };
-    case 'skipped':
-      return { status: 'unavailable', detail: 'positive assertion was skipped' };
-  }
-}
-
-function executedVerdict(
-  result: SessionState['validationAttempts'][number]['result'],
-  positive: PositiveAssertionOutcome,
-): 'error' | 'fail' | 'pass' {
-  if (isExecutionError(result) || positive.status === 'error') return 'error';
-  return !result.passed || positive.status === 'fail' ? 'fail' : 'pass';
-}
 
 /** Stable provider identity, distinct from its version. */
 export const EXECUTED_TEST_PROVIDER_ID = 'executed-test';
@@ -140,10 +96,7 @@ export function bindExecutedTestEvidence(
       }
       const r = attempt.result;
       const unavailableDetail = unavailableAttemptDetail(claim, r, ref.attemptId);
-      const positive = positiveAssertionOutcome(claim, r);
-      const unavailable =
-        unavailableDetail ?? (positive.status === 'unavailable' ? positive.detail : undefined);
-      if (unavailable !== undefined) {
+      if (unavailableDetail !== undefined) {
         results.push({
           claimId: claim.claimId,
           providerKind: 'executed_test',
@@ -152,13 +105,15 @@ export function bindExecutedTestEvidence(
           input: {},
           status: 'unavailable',
           executedAt: evaluatedAt,
-          detail: unavailable,
+          detail: unavailableDetail,
           attestation: 'flowguard_executed',
         });
         continue;
       }
-      // ValidationResult requires a non-empty executed command at its schema boundary.
-      const input = { command: r.command };
+      // Executed evidence needs exactly one reproducible input; fall back to a
+      // deterministic check-id assertion when a command string is unavailable.
+      const input =
+        r.command.length > 0 ? { command: r.command } : { assertion: `check:${r.checkId}` };
       const base = {
         claimId: claim.claimId,
         providerKind: 'executed_test' as const,
@@ -181,8 +136,13 @@ export function bindExecutedTestEvidence(
         detail: r.command,
         attestation: 'flowguard_executed' as const,
       };
-      const status = executedVerdict(r, positive);
-      results.push({ ...base, status });
+      results.push(
+        r.passed
+          ? { ...base, status: 'pass' }
+          : isExecutionError(r)
+            ? { ...base, status: 'error' }
+            : { ...base, status: 'fail' },
+      );
     }
   }
   return results;

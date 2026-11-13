@@ -52,7 +52,7 @@ const CURRENT_OWNERS = [
   [
     'plan revision',
     'integration/tools-execute-planning.test.ts',
-    'Mode B changes_requested keeps selfReviewIteration aligned with next iteration metadata',
+    'Mode B: changes_requested with revised plan',
   ],
   [
     'plan history',

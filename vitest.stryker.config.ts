@@ -67,7 +67,6 @@ export default defineConfig({
       'src/integration/review/verification-evidence-projection.test.ts',
 
       'src/shared/hashing.test.ts',
-      'src/shared/repo-path.test.ts',
       'src/shared/strict-json-object.test.ts',
       'src/redaction/export-redaction.test.ts',
       'src/shared/canonical-json.test.ts',

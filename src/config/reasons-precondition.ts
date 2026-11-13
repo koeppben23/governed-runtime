@@ -402,60 +402,6 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     quickFixCommand: '/implement',
   },
   {
-    code: 'IMPLEMENTATION_BASELINE_PREEXISTING',
-    category: 'precondition',
-    messageTemplate:
-      'No implementation changes are attributable: {paths} were already dirty at session start ({capturedAt}) and are excluded from implementation evidence.',
-    recoverySteps: [
-      'Preserve the current worktree diff as a patch outside the worktree',
-      'Restore the worktree to a clean state before starting the next FlowGuard session',
-      'Start a new host session with a clean pre-change baseline and complete plan approval',
-      'Apply the preserved patch only during the new IMPLEMENTATION phase, then run /implement',
-    ],
-  },
-  {
-    code: 'IMPLEMENTATION_BASELINE_UNAVAILABLE',
-    category: 'precondition',
-    messageTemplate:
-      'The implementation baseline could not capture pre-existing dirty files; implementation evidence cannot be attributed safely.',
-    recoverySteps: [
-      'Restore a clean worktree and start a new FlowGuard session',
-      'Do not record the full worktree as implementation evidence when the baseline is unavailable',
-    ],
-  },
-  {
-    code: 'PLAN_TARGETS_PREEXISTING_DIRTY',
-    category: 'precondition',
-    messageTemplate:
-      'Plan targets {paths} were already dirty when the session started ({capturedAt}); they cannot become implementation evidence in this session.',
-    recoverySteps: [
-      'Preserve the worktree diff as a patch outside the worktree',
-      'Restore the worktree to a clean state and start a new host session',
-      'Submit and approve the plan with a clean baseline',
-      'Apply the preserved patch only during the new IMPLEMENTATION phase',
-    ],
-  },
-  {
-    code: 'PLAN_TARGET_PATH_INVALID',
-    category: 'precondition',
-    messageTemplate: 'Plan target {path} is not a valid repository-relative file path.',
-    recoverySteps: [
-      'Correct the plan target to a repository-relative path within the worktree',
-      'Do not use absolute paths or paths that escape the repository root',
-    ],
-  },
-  {
-    code: 'PLAN_TARGETS_DIRTY_AT_APPROVAL',
-    category: 'precondition',
-    messageTemplate:
-      'Plan targets {paths} are dirty at approval; implementation evidence would not be attributable to the new plan.',
-    recoverySteps: [
-      'Preserve the worktree diff as a patch outside the worktree',
-      'Restore the worktree to a clean state and start a new host session',
-      'Submit and approve the plan with a clean baseline',
-    ],
-  },
-  {
     code: 'IMPLEMENTATION_REWORK_REQUIRED',
     category: 'precondition',
     messageTemplate:

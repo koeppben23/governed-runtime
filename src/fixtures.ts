@@ -860,7 +860,7 @@ export function makeState(
     activeProfile: null,
     activeChecks: ['test', 'lint'],
     implementationBaseline: {
-      dirtyFiles: [],
+      dirtyFiles: null,
       capturedAt: FIXED_TIME,
       controlPlaneMarker: 'test-control-plane-marker',
     },

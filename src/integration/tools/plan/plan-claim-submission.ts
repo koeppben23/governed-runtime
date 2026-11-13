@@ -15,7 +15,6 @@ import {
 import { MUTATION_PROFILE_IDS } from '../../proofgraph/mutation-provider.js';
 import { STRUCTURAL_SURFACE_IDS } from '../../proofgraph/structural-provider.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { PLAN_CLAIM_REPAIR_INSTRUCTION } from '../../../templates/plan-claim-guidance.js';
 
 import type { PlanArgs, PlanClaimSubmissionDiagnostics } from './plan-types.js';
 
@@ -35,7 +34,7 @@ export function classifyPlanClaimSubmission(
 ): PlanClaimSubmissionClassification {
   if (args.claims === undefined) {
     const diagnostics = state.plan?.claimSubmissionDiagnostics;
-    const blocked = blockRejectedDeclarations(diagnostics, 'historical', state.phase);
+    const blocked = blockRejectedDeclarations(diagnostics, 'historical');
     return blocked ?? { kind: 'ok', args };
   }
   if (args.claims.length === 0) return { kind: 'ok', args };
@@ -58,9 +57,6 @@ export function classifyPlanClaimSubmission(
       critical: claim.critical,
       claimScope: claim.claimScope,
       positiveCheckId: claim.expectedCheckId,
-      ...(claim.expectedAssertion !== undefined
-        ? { expectedAssertion: claim.expectedAssertion }
-        : {}),
       ...(claim.counterexampleRequirement !== undefined
         ? { counterexampleRequirement: claim.counterexampleRequirement }
         : {}),
@@ -89,7 +85,7 @@ export function classifyPlanClaimSubmission(
   if (rejected.length === 0) return { kind: 'ok', args };
 
   const diagnostics = buildPartialAcceptanceDiagnostics(normalized, batch, digest);
-  const blocked = blockRejectedDeclarations(diagnostics, 'submitted', state.phase);
+  const blocked = blockRejectedDeclarations(diagnostics, 'submitted');
   if (blocked) return blocked;
 
   const acceptedIndexes = new Set(batch.accepted.map((entry) => entry.index));
@@ -104,7 +100,6 @@ export function classifyPlanClaimSubmission(
 function blockRejectedDeclarations(
   diagnostics: PlanClaimSubmissionDiagnostics | undefined,
   origin: 'historical' | 'submitted',
-  phase: SessionState['phase'],
 ): Extract<PlanClaimSubmissionClassification, { kind: 'blocked' }> | undefined {
   if (!diagnostics) return undefined;
   const first = diagnostics.rejectedClaims.find(
@@ -112,15 +107,15 @@ function blockRejectedDeclarations(
   );
   if (!first) return undefined;
   const canonicalResponse = formatBlocked(
-    'PLAN_CLAIM_SUBMISSION_REJECTED',
-    { detail: first.reason },
+    'PROOFGRAPH_CLAIM_NOT_DECLARED',
     {
-      phase,
-      admission: { kind: 'rejected', admittedClaimCount: 0 },
-      agentInstruction: PLAN_CLAIM_REPAIR_INSTRUCTION,
-      claimSubmissionDiagnostics: diagnostics,
-      claimSubmissionDiagnosticsOrigin: origin,
+      claimRef: first.claimRef,
+      field: 'declaration admission',
+      detail:
+        'blocking declarations must be corrected or explicitly withdrawn before admitting this revision',
+      consequence: 'No plan version or independent review was created by this rejected call.',
     },
+    { claimSubmissionDiagnostics: diagnostics, claimSubmissionDiagnosticsOrigin: origin },
   );
   return {
     kind: 'blocked',
@@ -147,7 +142,8 @@ function appendClaimPresentation(
       (claim) =>
         `### ${claim.statement}\n\n` +
         `- Claim: ${claim.claimRef}\n- Disposition: ${claim.disposition}\n\n` +
-        `${claim.reason}`,
+        `${claim.reason}\n\nRecovery:\n` +
+        claim.recovery.map((step) => `- ${step}`).join('\n'),
     )
     .join('\n\n');
   return JSON.stringify({
@@ -166,7 +162,6 @@ function buildPartialAcceptanceDiagnostics(
 ): PlanClaimSubmissionDiagnostics {
   const acceptedIndexes = new Set(batch.accepted.map((entry) => entry.index));
   const rejected = [...batch.rejectedNonBlocking, ...batch.rejectedBlocking];
-  const batchBlocked = batch.rejectedBlocking.length > 0;
   const submittedDeclarations = {
     flow: 'plan' as const,
     version: 'v2' as const,
@@ -195,9 +190,10 @@ function buildPartialAcceptanceDiagnostics(
         detail: result.detail,
         // The same catalog code covers partial acceptance and the blocking
         // withdrawal case; the consequence sentence must follow the severity.
-        consequence: batchBlocked
-          ? 'The complete submission was rejected; no plan version or independent review was created.'
-          : 'The plan and its accepted claims remain valid.',
+        consequence:
+          disposition === 'rejected_blocking'
+            ? 'Rejected blocking declarations prevent approval until admitted or explicitly withdrawn.'
+            : 'The plan and its accepted claims remain valid.',
       });
       return {
         claimRef: claimId,
@@ -206,13 +202,7 @@ function buildPartialAcceptanceDiagnostics(
         disposition,
         code,
         reason: formatted.reason,
-        recovery: [
-          ...(batchBlocked
-            ? defaultReasonRegistry.format('PLAN_CLAIM_SUBMISSION_REJECTED', {
-                detail: result.detail,
-              }).recovery
-            : formatted.recovery),
-        ],
+        recovery: [...formatted.recovery],
       };
     }),
   };

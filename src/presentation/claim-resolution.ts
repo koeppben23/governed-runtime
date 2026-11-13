@@ -37,24 +37,16 @@ export interface RequiredEvidenceProjection {
   readonly adversarial: readonly AdversarialEvidenceKind[];
 }
 
-export interface FalsificationVariantProjection {
-  readonly path: string;
-  readonly before: string;
-  readonly after: string;
-}
-
 export type CounterexampleRequirementProjection =
   | {
       readonly kind: 'assertion';
       readonly checkId: string;
       readonly assertion: AssertionIdentityProjection;
-      readonly variant?: FalsificationVariantProjection;
     }
   | {
       readonly kind: 'aggregate_check';
       readonly checkId: string;
       readonly candidateId?: string;
-      readonly variant?: FalsificationVariantProjection;
     };
 
 export interface FreshnessProjection {
@@ -125,16 +117,11 @@ function projectCounterexampleRequirement(
   const cr = claim.counterexampleRequirement;
   if (!cr) return undefined;
 
-  const variant = cr.variant
-    ? { path: cr.variant.path, before: cr.variant.before, after: cr.variant.after }
-    : undefined;
-
   if (cr.kind === 'aggregate_check') {
     return {
       kind: 'aggregate_check',
       checkId: cr.checkId,
       ...(cr.candidateId ? { candidateId: cr.candidateId } : {}),
-      ...(variant ? { variant } : {}),
     };
   }
 
@@ -143,7 +130,6 @@ function projectCounterexampleRequirement(
       kind: 'assertion',
       checkId: cr.checkId,
       assertion: projectAssertionIdentity(cr.assertion),
-      ...(variant ? { variant } : {}),
     };
   }
 

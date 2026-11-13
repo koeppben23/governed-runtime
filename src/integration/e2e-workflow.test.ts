@@ -161,7 +161,6 @@ let ws: TestWorkspace;
 let ctx: TestToolContext;
 
 beforeEach(async () => {
-  vi.mocked(gitMock.changedFiles).mockResolvedValue([...GIT_MOCK_DEFAULTS.changedFiles]);
   ws = await createTestWorkspace();
   // The canonical completion path materializes a raw, verifiable export via
   // flowguard_export, which requires the operator to authorize raw export.
@@ -1453,9 +1452,6 @@ describe('ProofGraph demo fixtures', () => {
       checkId: 'test',
       kind: 'assertion',
       assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
-      // Declared source variant, not a second green run. This demo fixture never
-      // enters the executable falsification path, so the claim stays unproven.
-      variant: { path: 'src/demo.ts', before: 'behavior();', after: '' },
     },
   } as const;
 
@@ -1463,7 +1459,6 @@ describe('ProofGraph demo fixtures', () => {
     mutationProfile?: 'proofgraph-evaluator',
     critical = false,
   ) {
-    vi.mocked(gitMock.changedFiles).mockResolvedValue([]);
     if (critical) {
       // Structured candidates required for satisfiability of critical claims.
       // hydrate discovers repo-native JUnit test via mvnw → ScriptSignature.
@@ -1511,7 +1506,6 @@ describe('ProofGraph demo fixtures', () => {
     await callOk(decision, { verdict: 'approve', rationale: 'Approve demo plan.' });
     await passValidation();
     expect(await getPhase()).toBe('IMPLEMENTATION');
-    vi.mocked(gitMock.changedFiles).mockResolvedValue([...GIT_MOCK_DEFAULTS.changedFiles]);
     await callOk(implement, {});
     expect((await readState(await getSessDir()))?.implementation).not.toBeNull();
     await passValidation();

@@ -55,14 +55,6 @@ the before-hook. This diagram describes the current V2 path; the previous
 `session.create()`/`session.prompt()` sequence is historical V1 behavior and is
 not a supported runtime path.
 
-Native completion does not assume the host's `subagent` tool returns only after
-the child's first model request. If the exact bound child has no terminal
-outcome yet, capture waits for that child (bounded by the reviewer execution
-timeout) before attempting serialization. An early tool return therefore cannot
-invalidate the authorized attempt or deny the child's model request; a timeout,
-a genuine child failure or a missing terminal boundary still fails closed as
-`REVIEWER_EXECUTION_OUTCOME_UNKNOWN`.
-
 **Key invariant:** ReviewObligation, ReviewInvocationEvidence, and ReviewFindings are the only review-governance authority. On OpenCode, the reviewer runs in a host-created child session that the plugin prompts with the canonical review prompt and, after normal completion, a same-child JSON serialization prompt. Model and variant are preserved, no `format` or forced tool is requested, and only the request-correlated, FlowGuard-validated JSON result can bind to a review obligation. Claude Code and Codex may transport reviewer instructions through native agents/subagents. None of those transport mechanisms completes review by itself. Only structured, parseable, obligation-bound ReviewFindings can satisfy review. In strict mode, unparseable responses and orchestration failures are BLOCKED. `flowguard_decision` is a human gate decision only and never replaces independent review evidence.
 
 ### Review Coverage Profile (`core`)
@@ -268,13 +260,6 @@ variant is provably rejected by it. Different check identities and separate
 attempt identities remain required; different assertion identities do not, so
 the same regression assertion may serve as the falsification witness when it
 fails on the targeted faulty variant.
-
-The runtime path is an approved `counterexampleRequirement.variant` exact source
-replacement. Before review freeze, FlowGuard executes private control and variant
-copies and includes the bound results in verification evidence. Review must
-inspect the variant's semantic relevance and confirm that tests/configuration
-were not the perturbation target. A hypothetical “would fail”, or two green
-ordinary checks, cannot supply the missing runtime record.
 
 Generation `p42-v5` additionally requires both evidence classes for a passing
 implementation challenge (execution evidence on the current digest and the

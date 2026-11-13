@@ -361,7 +361,6 @@ describe('plan', () => {
                   providerId: 'junit',
                   localId: 'TaskControllerTest#update_taskNotFound_returns404',
                 },
-                variant: { path: 'src/main/java/a.java', before: 'guard();', after: '' },
               },
             },
             {
@@ -385,7 +384,7 @@ describe('plan', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
+      expect(result.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
       expect(result.claimSubmissionDiagnostics).toMatchObject({
         rejectedClaims: [
           {
@@ -401,17 +400,20 @@ describe('plan', () => {
         ],
       });
 
-      // A pre-admission rejection stays in the current planning step, without
-      // prescribing claim withdrawal or a nonexistent gate transition.
+      // The blocking consequence must be named, the claim must not be
+      // mislabeled as non-critical, and the recovery must name the explicit
+      // withdrawal mechanism (empty claims array) for a claim-free revision.
       const rejected = (
         result.claimSubmissionDiagnostics as {
           rejectedClaims: { reason: string; recovery: string[] }[];
         }
       ).rejectedClaims[0]!;
-      expect(rejected.reason).toContain('The complete submission was rejected');
+      expect(rejected.reason).toContain('Rejected blocking declarations prevent approval');
       expect(rejected.reason).not.toContain('Non-critical');
-      expect(rejected.recovery).toContainEqual(expect.stringContaining('current planning step'));
-      expect(rejected.recovery.join(' ')).not.toContain('changes_requested');
+      expect(rejected.recovery).toContainEqual(expect.stringContaining('claims: []'));
+      // The recovery must name the state transition out of the blocked gate:
+      // /plan is not admissible at PLAN_REVIEW, so changes_requested comes first.
+      expect(rejected.recovery).toContainEqual(expect.stringContaining('changes_requested'));
       const markdown = (result.presentation as { markdown: string }).markdown;
       expect(markdown).toContain('the repository test suite passes');
       expect(markdown).toContain('request validation rejects invalid input');
@@ -572,30 +574,23 @@ describe('plan', () => {
       expect(state?.validation.every((entry) => entry.passed)).toBe(true);
     });
 
-    it.each([undefined, ['docs/replacement.md'], []])(
-      'Mode B: revised plan replaces targets with %j or retains omitted targets',
-      async (targets) => {
-        await hydrateAndTicket();
-        await plan.execute({ planText: '## Original Plan', targetPaths: ['docs/test.md'] }, ctx);
-        const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
-        const raw = await plan.execute(
-          {
-            reviewVerdict: 'changes_requested',
-            planText: '## Revised Plan\n1. Better approach',
-            claims: [],
-            reviewFindings,
-            ...(targets === undefined ? {} : { targetPaths: targets }),
-          },
-          ctx,
-        );
-        const result = parseToolResult(raw);
-        expect(result.error).toBeUndefined();
-        const state = await readState(await currentSessionDir());
-        expect(state?.reviewAssurance?.obligations.at(-1)?.metadata?.targetPaths).toEqual(
-          targets ?? ['docs/test.md'],
-        );
-      },
-    );
+    it('Mode B: changes_requested with revised plan', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Original Plan', targetPaths: ['docs/test.md'] }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
+      const raw = await plan.execute(
+        {
+          reviewVerdict: 'changes_requested',
+          planText: '## Revised Plan\n1. Better approach',
+          claims: [],
+          reviewFindings,
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+    });
 
     it('Mode B changes_requested keeps selfReviewIteration aligned with next iteration metadata', async () => {
       await hydrateSession({ policyMode: 'team' });
@@ -617,11 +612,6 @@ describe('plan', () => {
       expect(result.error).toBeUndefined();
       expect(typeof result.selfReviewIteration).toBe('number');
       expect(result.reviewDispatch).toEqual({ required: true });
-      expect(result.status).toContain('Plan revised (v2) after changes_requested');
-      expect(result.status).toContain('is pending; dispatch the reviewer');
-      expect(result.status).not.toContain('Verdict:');
-      expect(result.agentInstruction).toContain('Dispatch the flowguard-reviewer subagent');
-      expect((result.reviewInvocation as { status?: string }).status).toBe('pending_review');
       const revisionState = await readState(await currentSessionDir());
       expect(result.reviewAttemptId).toBe(
         revisionState?.reviewAssurance?.attempts.find(

@@ -16,7 +16,6 @@ function hasMethods(domain: unknown, methods: readonly string[]): boolean {
 }
 
 export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
-  private readonly successSequences = new Map<string, number>();
   constructor(
     readonly context: Plugin.Context,
     private readonly signal: AbortSignal,
@@ -43,7 +42,7 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
     console[level](`[FlowGuard] ${message}`, ...(data === undefined ? [] : [data]));
   }
 
-  private async readSession(sessionId: string) {
+  async getSession(sessionId: string): Promise<HostSession> {
     const session = await this.context.session.get(
       { sessionID: sessionId },
       { signal: this.signal },
@@ -53,54 +52,12 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
         'The host returned another session for an exact session lookup.',
       );
     }
-    return session;
-  }
-
-  async getSession(sessionId: string): Promise<HostSession> {
-    const session = await this.readSession(sessionId);
     return {
       sessionId: session.id,
       directory: session.location.directory,
       ...(session.parentID === undefined ? {} : { parentSessionId: session.parentID }),
       ...(session.agent === undefined ? {} : { agent: session.agent }),
     };
-  }
-
-  /** The public stream is server-wide; native hooks/storage are not subscriber
-   * ownership. Ignore other locations and child-only completion wakeups before
-   * invoking governance execution admission (a finished reviewer is no longer
-   * authorized to execute). This grants no workflow or reviewer authority. */
-  async ownsSessionEvent(sessionId: string, rootOnly: boolean): Promise<boolean> {
-    const session = await this.readSession(sessionId);
-    return (
-      session.location.directory === this.context.location.directory &&
-      (!rootOnly || session.parentID === undefined)
-    );
-  }
-
-  /** A notification is only a wakeup, never check evidence. Claim before the
-   * read/runner so concurrent delivery and replay after backoff cannot retry it.
-   * A fresh native read must still describe this exact successful terminal run;
-   * idle/outcome alone can belong to an earlier execution while another runs. */
-  async claimSuccessfulExecutionWakeup(
-    event: Extract<OpenCodeEvent, { type: 'session.execution.succeeded' }>,
-  ): Promise<boolean> {
-    const sessionId = event.data.sessionID;
-    if (event.durable.aggregateID !== sessionId) return false;
-    const previous = this.successSequences.get(sessionId) ?? -1;
-    if (event.durable.seq <= previous) return false;
-    this.successSequences.set(sessionId, event.durable.seq);
-    const session = await this.readSession(sessionId);
-    return (
-      session.outcome === 'succeeded' &&
-      session.time.idle === event.created &&
-      session.time.busy !== undefined &&
-      session.time.busy <= session.time.idle
-    );
-  }
-
-  forgetSession(sessionId: string): void {
-    this.successSequences.delete(sessionId);
   }
 
   async readHistory(sessionId: string): Promise<unknown> {
@@ -132,19 +89,14 @@ export function projectOpenCodeEvent(event: OpenCodeEvent): {
       },
     };
   }
-  if (event.type === 'session.deleted' || event.type === 'session.idle') {
+  if (
+    event.type === 'session.deleted' ||
+    event.type === 'session.idle' ||
+    event.type === 'session.execution.failed'
+  ) {
     return {
       sessionId: event.data.sessionID,
       event: { type: event.type, data: { ...event.data, hostEventId: event.id } },
-    };
-  }
-  if (event.type === 'session.execution.succeeded' || event.type === 'session.execution.failed') {
-    return {
-      sessionId: event.data.sessionID,
-      event: {
-        type: event.type,
-        data: { ...event.data, hostEventId: event.id, hostCreatedAt: event.created },
-      },
     };
   }
   return null;

@@ -39,25 +39,12 @@ session only. Until then OpenCode behaves natively. An optional single argument
 selects a policy mode, for example `/start team`.
 
 A fresh successful start enters the **READY** phase. Choose one of three flows.
-Native `/start` uses the canonical profile precedence: configured default,
-repository detection, then baseline fallback (an explicit `/hydrate` profile
-selection takes precedence when used). The existing
-status card labels the actual selection source; repository discovery alone is
-not evidence that a configured profile was auto-detected. The host is instructed
-to reproduce this card in full, not replace it with a waiting sentence; visual
-delivery still depends on the host/model and needs live verification.
 Repeating `/start` in an ACTIVE root reuses its bound workflow; it does not reset
 the phase or establish a new implementation baseline. `/hydrate` reloads an
 already authorized session and cannot activate governance or repair missing
 authority. Terminal workflows remain terminal: new work requires a distinct
 host session and explicit activation, with a trustworthy pre-change worktree
 when recovering implementation evidence.
-
-A successful `/export` does not commit the implementation changes. If you start
-another FlowGuard session on the same worktree, those uncommitted files are
-captured as the new session's baseline and cannot become implementation
-evidence, even if you clean and re-apply them. Commit or stash them outside the
-session before a new `/start`, or use a clean worktree.
 
 Upgrading an existing installation? Follow the
 [manual configuration recovery](./configuration.md#breaking-change-manual-configuration-recovery)

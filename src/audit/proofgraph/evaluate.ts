@@ -46,7 +46,6 @@ import type {
 import { PROOFGRAPH_SCHEMA_VERSION } from '../../state/proofgraph.js';
 import type { ClaimVerificationState, Freshness } from '../../state/proofgraph-primitives.js';
 import { assessEvidenceRoleIndependence } from './evidence-role-independence.js';
-import { hasBoundFalsification } from './falsification-binding.js';
 
 /** No explicit evidence requirement: any fresh pass proves, no adversarial needed. */
 const EMPTY_REQUIRED: RequiredEvidence = { positive: [], adversarial: [] };
@@ -156,7 +155,6 @@ interface AdversarialAnalysis {
 function analyzeCounterexamples(
   counterexamples: readonly ProofCounterexample[],
   currentImplementationDigest: string | null,
-  requirement: DeclaredClaim['counterexampleRequirement'],
 ): AdversarialAnalysis {
   let freshContradicted = false;
   let freshSupported = false;
@@ -165,7 +163,6 @@ function analyzeCounterexamples(
   let hasFreshAdversarial = false;
   for (const c of counterexamples) {
     if (c.outcome === 'not_verified') continue;
-    if (c.outcome === 'supported' && !hasBoundFalsification(c, requirement)) continue;
     if (c.outcome === 'blocked') {
       if (isFreshCounterexample(c, currentImplementationDigest)) {
         freshBlocked = true;
@@ -206,7 +203,6 @@ const SPECIFIC_CARRYING_KINDS: readonly ProofProviderResult['providerKind'][] = 
  * PROVEN from a check pass alone; the evaluator reports them NOT_VERIFIED.
  */
 function hasClaimCarryingBinding(claim: DeclaredClaim): boolean {
-  if (claim.certifiedPlan?.expectedAssertion !== undefined) return true;
   if (claim.counterexampleRequirement !== undefined) return true;
   return (claim.requiredEvidence?.positive ?? []).some((kind) =>
     SPECIFIC_CARRYING_KINDS.includes(kind),
@@ -305,11 +301,7 @@ function deriveVerificationState(
 ): ClaimVerificationState {
   // 1. Provenance is mandatory; an unsourced manifest assertion is an assumption.
   if (claim.provenance === null) return 'NOT_VERIFIED';
-  const cx = analyzeCounterexamples(
-    selectedCounterexamples,
-    input.currentImplementationDigest,
-    claim.counterexampleRequirement,
-  );
+  const cx = analyzeCounterexamples(selectedCounterexamples, input.currentImplementationDigest);
   // 2. Only a FRESH executed counterexample that falsified the claim contradicts it.
   if (cx.freshContradicted) return 'CONTRADICTED';
   // 2.5 A fresh blocked counterexample blocks the claim — evidence provider could not
