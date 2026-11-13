@@ -78,9 +78,83 @@ describe('plan claim admission boundary', () => {
       const result = classifyPlanClaimSubmission(input, current, hashText);
       expect(result.kind).toBe(checkId === 'build' ? 'ok' : 'blocked');
       if (result.kind === 'ok') expect(result.args.claims).toEqual(input.claims);
+      if (result.kind === 'blocked') {
+        expect(result.message).not.toContain('independent adversarial assertion');
+        expect(result.message).toContain('same assertion identity may serve');
+      }
       expect(canonicalJsonStringify(current)).toBe(before);
     },
   );
+  it('accepts the same assertion identity when positive and counterexample checks differ', () => {
+    const assertion = { providerId: 'junit', localId: 'com.example.Test#sameAssertion' };
+    const current = {
+      ...state,
+      activeChecks: ['test', 'build'],
+      verificationCandidates: [
+        ...state.verificationCandidates!,
+        {
+          ...state.verificationCandidates![0]!,
+          candidateId: 'vc_build_junit',
+          kind: 'build' as const,
+        },
+      ],
+    };
+    const result = classifyPlanClaimSubmission(
+      {
+        planText: '## Plan',
+        claims: [
+          {
+            statement: 'The same regression assertion observes the behavior.',
+            critical: true,
+            claimScope: 'specific_behavior',
+            authoritySectionId: 'step-1',
+            expectedCheckId: 'test',
+            expectedAssertion: assertion,
+            counterexampleRequirement: { kind: 'assertion', checkId: 'build', assertion },
+          },
+        ],
+      },
+      current,
+      hashText,
+    );
+    expect(result.kind).toBe('ok');
+  });
+
+  it('blocks an unreachable positive assertion before review', () => {
+    const activeWithoutBuildCandidate = {
+      ...state,
+      activeChecks: ['test', 'build'],
+    };
+    const result = classifyPlanClaimSubmission(
+      {
+        planText: '## Plan',
+        claims: [
+          {
+            statement: 'The build check observes the regression.',
+            critical: true,
+            claimScope: 'specific_behavior',
+            authoritySectionId: 'step-1',
+            expectedCheckId: 'build',
+            expectedAssertion: { providerId: 'junit', localId: 'com.example.Test#unreachable' },
+            counterexampleRequirement: {
+              kind: 'assertion',
+              checkId: 'test',
+              assertion: { providerId: 'junit', localId: 'com.example.Test#unreachable' },
+            },
+          },
+        ],
+      },
+      activeWithoutBuildCandidate,
+      hashText,
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind !== 'blocked') return;
+    const response = JSON.parse(result.message);
+    expect(response.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
+    expect(JSON.stringify(response)).toContain('expectedAssertion');
+    expect(JSON.stringify(response)).toContain('has no active verification candidate');
+  });
+
   it('retains valid declarations and filters only nonblocking unsatisfiable declarations', () => {
     const args: PlanArgs = {
       planText: '## Plan',

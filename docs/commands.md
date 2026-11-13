@@ -414,6 +414,11 @@ The override binds only the exact reviewed subject digest. A plain `/approve` at
 exhausted gate is blocked with `GOVERNANCE_OVERRIDE_REQUIRED`; a reviewer-accepted
 revision uses `/approve` instead.
 
+A revision submitted with the final verdict is not adopted and is never current.
+Use `/request-changes` to start a fresh review cycle and resubmit that revision
+for independent review. `/override-approve` requires a non-empty rationale and
+accepts only the independently reviewed digest shown in the card.
+
 ### /reconcile-mutation-episode
 
 For a regular failed OpenCode `edit`, first retry `/implement`: the runtime can

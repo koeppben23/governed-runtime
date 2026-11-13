@@ -953,6 +953,17 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Reject structurally unreachable positive plan assertions before independent
+  review. Preserve `expectedAssertion` through claim admission, and keep the
+  canonical rule that the same regression assertion may serve as the
+  falsification witness when the positive and counterexample checks and
+  executions differ.
+- Do not adopt a plan revision submitted with the final review verdict. Report
+  `adopted: false`, the current and discarded versions, and the exact
+  `/request-changes` / `/override-approve <Begründung>` next actions.
+- Require a revised plan to address every blocking finding from the previous
+  review; at an exhausted gate the author stops for the user's decision instead
+  of submitting another silent revision.
 - Wait for an early-returning native reviewer child before capture. A host may
   return the `subagent` tool before the child's first model request; FlowGuard
   now keeps the authorized dispatch and attempt intact and waits for the exact

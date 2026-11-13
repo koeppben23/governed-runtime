@@ -199,7 +199,8 @@ describe('buildPlanReviewCard', () => {
     });
     expect(card).toContain('The revision submitted with the final verdict was NOT adopted.');
     expect(card).toContain('Only the independently reviewed plan shown here is current');
-    expect(card).toContain('/override-approve');
+    expect(card).toContain('/request-changes');
+    expect(card).toContain('/override-approve <Begründung>');
   });
 
   it('warns explicitly when the displayed findings apply to a prior plan revision', () => {

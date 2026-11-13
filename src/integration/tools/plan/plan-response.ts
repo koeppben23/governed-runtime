@@ -25,6 +25,7 @@ import type {
   PlanSubmissionResponseInput,
   ConvergedPlanReviewInput,
 } from './plan-types.js';
+import { forcedConvergenceResponseFields } from './plan-review-exhaustion.js';
 import { formatBlocked } from '../../blocked-result.js';
 import {
   formatAutoAdvanceBlocked,
@@ -292,6 +293,7 @@ function convergedPlanResponse(input: ConvergedPlanReviewInput): Record<string, 
       : `Independent review converged at iteration ${iteration}. Workflow advanced to ${finalState.phase}.`,
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
+    ...forcedConvergenceResponseFields(revision, forcedConvergence),
     _audit: { transitions },
   };
 }
@@ -361,6 +363,7 @@ async function convergedPlanReviewCardResponse(
       : `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
+    ...forcedConvergenceResponseFields(revision, forcedConvergence),
     reviewCard,
     presentation: differencedCardPresentation(presentationMarkdown, reviewCard),
     _audit: { transitions },

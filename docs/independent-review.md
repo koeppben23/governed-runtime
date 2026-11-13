@@ -247,6 +247,16 @@ closure. The old V1 command-hook release path is not a V2 human-provenance
 mechanism. No idle event, timeout or owner cleanup releases an unknown-outcome
 fence by itself.
 
+When an independent review exhausts its iteration budget without an approving
+verdict, only the independently reviewed artifact remains current and
+approvable. A revision submitted with the final verdict is not adopted and is
+not presented as current. The user must choose `/request-changes` to start a
+fresh review cycle and resubmit the revision, `/override-approve <Begründung>`
+to accept the reviewed artifact despite the open findings, or `/reject`. A
+non-empty rationale is mandatory; a bare `/override-approve` is rejected. No
+command auto-adopts an unreviewed revision, and the reviewer remains the
+semantic gate for claim breadth and counterexample sufficiency.
+
 ### Reviewer authority boundaries and reference suite
 
 The deterministic ProofGraph core, the independent reviewer, and the

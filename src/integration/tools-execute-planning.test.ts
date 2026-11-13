@@ -1162,6 +1162,7 @@ describe('plan', () => {
 
       const result = await exhaustPlanReviews(3);
       expect(result.phase).toBe('PLAN_REVIEW');
+      expect(result.adopted).toBe(false);
 
       const state = await readState(await currentSessionDir());
       const reviewed = state!.reviewAssurance!.obligations.find(
