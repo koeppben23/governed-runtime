@@ -173,7 +173,13 @@ and registered aggregate capability for adversarial evidence. The illustrative
 `build`/`test` example is valid only when those checks are active and the selected
 candidate can bind the named assertion. Never invent an assertion identity.
 
-Plan `targetPaths` are advisory forecasts and can be partial or unknown. Declare
+Plan `targetPaths` are review-scoping forecasts, not the binding implementation
+risk assessment. They remain distinct from Discovery classification paths and
+are checked for canonical baseline/current dirt overlap at approval. Unknown
+scope with dirt or missing baseline capture blocks; see
+[baseline recovery](troubleshooting.md#pre-existing-worktree-changes-at-plan-approval-or-implementation).
+An explicitly supplied revision target set replaces the prior set; omission
+retains prior targets. Declare
 explicit `coversRiskTriggers` for known applicable specific risks on critical
 claims whose behavior actually covers them. The actual implementation assessment
 can discover additional risks; it never silently widens approved coverage.
@@ -234,7 +240,9 @@ change. No in-session post-approval replan is available:
    in that prepared worktree. Verify a distinct FlowGuard session identity and
    `READY`. Hydrate in the old terminal binding is a read-only reload, not a
    restart. A new session on unchanged pre-existing dirty files excludes those
-   bytes from its implementation scope and is not a recovery substitute.
+   bytes from its implementation scope and is not a recovery substitute. Plan
+   approval rejects target paths that were already dirty at session start; do not
+   clean and re-apply the same bytes inside the old session.
 4. Run `/ticket`, then `/plan` with the complete corrected declarations and
    applicable coverage. Complete independent review and obtain a new certificate
    under the active policy. This is an independent plan lineage starting at v1,
@@ -364,6 +372,14 @@ evidence binds to the implementation digest, so it goes `STALE` with the
 revision.
 
 ## Inspecting the ProofGraph
+
+A certified `expectedAssertion` is binding positive-evidence authority, not
+display metadata. The executed-test binder requires its exact provider and local
+identity in the referenced check's structured report. A failed assertion yields
+`fail`, an errored assertion yields `error`, and a skipped/missing/mismatched
+assertion yields `unavailable`, even when the overall check is green. A passing
+assertion cannot override a failed overall check. These outcomes do not establish
+that an author-written test semantically falsifies the claim.
 
 ### What ProofGraph does not prevent
 

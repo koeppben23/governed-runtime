@@ -1,9 +1,9 @@
 {
   "pluginWrapper": "6e50fa4f867c2cda7300cf13f065c4ee060b7a01e5d4c5322207014bffe8f466",
   "tuiPluginWrapper": "aed94297149517f4645f8947fafee5724fd982b020855d4e6977a7281bdc2cbf",
-  "guiPluginBundle": "d5e74a459a819ba4f0e5349eeea8fafafd0379087434c22c248cb5eea7165cef",
+  "guiPluginBundle": "be36e16f0c9893b9a7d0bf9377f3792354a56b37551f53be89146ae400d74170",
   "flowguardMandatesKernel": "e2ba50d1d8728a88896afdb7d67d622e7a2827dd009c54dbc67b4906255aa3f3",
   "reviewerAgent": "5d9871e14a5f93e9dbb5efe830c75eca5c29a5c7fdba8e3d8e1faf15dba2a16d",
   "packageJsonTemplate": "9a09254c6abceacb655020b9c03b4a25bf7f5fa60b7e336fb36aa31e093ffc09",
-  "commands": "5d647bf436352278ea5fe36921791514e83f4c7945bcdd11b5a5dc72c9eccfe6"
+  "commands": "650914c83b3c98419eba0489b0ebb6d20cd6189be910b5a525a0908d5fc25a62"
 }

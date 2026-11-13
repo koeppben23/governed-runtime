@@ -219,7 +219,7 @@ function buildImplRecordedResponse(input: {
   reviewFindings: ReviewFindings[];
   ceremony: CeremonyEligibilityProjection;
   policy: FlowGuardPolicy;
-  baselineScoping: 'applied' | 'unavailable';
+  baselineScoping: 'applied';
 }): Record<string, unknown> {
   const instruction = input.authority
     ? buildImplementationReviewInstruction(input.authority)
@@ -339,6 +339,18 @@ function buildImplementationRiskAssessment(
   };
 }
 
+function emptyImplementationScopeBlock(rawFiles: readonly string[], capturedAt: string): string {
+  if (rawFiles.length === 0) {
+    return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
+      reason: 'no changed files detected in worktree',
+    });
+  }
+  return formatBlocked('IMPLEMENTATION_BASELINE_PREEXISTING', {
+    paths: rawFiles.join(', '),
+    capturedAt,
+  });
+}
+
 export async function handleImplRecord(
   input: ImplementRuntime,
   changedFilesOverride?: string[],
@@ -363,13 +375,12 @@ export async function handleImplRecord(
     rawFiles,
     input.state.implementationBaseline,
   );
+  if (scoped.kind === 'unavailable') return formatBlocked('IMPLEMENTATION_BASELINE_UNAVAILABLE');
   if (scoped.kind === 'empty') {
-    return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
-      reason:
-        scoped.rawFiles.length > 0
-          ? 'no changed files attributable to this implementation after baseline scoping (all changed files were already dirty and unchanged since session start)'
-          : 'no changed files detected in worktree',
-    });
+    return emptyImplementationScopeBlock(
+      scoped.rawFiles,
+      input.state.implementationBaseline.capturedAt,
+    );
   }
   const { files, baselineScoping } = scoped.subject;
 
@@ -451,7 +462,7 @@ interface PersistImplRecordArgs {
   planVersion: number;
   reviewFindings: ReviewFindings[];
   ceremony: CeremonyEligibilityProjection;
-  baselineScoping: 'applied' | 'unavailable';
+  baselineScoping: 'applied';
 }
 
 export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): Promise<string> {

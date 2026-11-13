@@ -8,14 +8,23 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-11-07):
+(counts updated 2026-11-12):
 
-- `root-composition`: 37 files (plugin lifecycle entrypoints, presentation and barrels)
+- `root-composition`: 38 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 8 named files (`gui-rpc-client-contract.ts`,
   `host-mutation-observation.ts`, `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 60 root production files
+- total: 61 root production files
+
+The native event-lifecycle repair adds `plugin-session-error-audit.ts` as
+composition of the canonical audit lock, trail reader and idempotent writer.
+It binds native notification identity to the existing audit envelope; it does
+not define a second audit schema, persistence lock or reviewer authority.
+
+The baseline progress display adds `plugin-presentation.ts` (bounded,
+ephemeral baseline progress store). It is not durable, audited, model-visible or authoritative;
+canonical state and Next Action remain the source of truth.
 
 The #1196 Desktop-layer isolation adds `gui-rpc-client-contract.ts` as a
 host-runtime **type-only port** reusing the canonical Next Action, review,
@@ -46,11 +55,6 @@ files add no evidence, approval, capture or recovery authority. The named
 `review/dispatch/native-review-dispatch.ts` growth exception isolates native V2
 pre-release/current-child checks without invoking obsolete host DTOs; the zone's
 growth target and all file-size limits remain unchanged.
-
-Validation progress adds `plugin-presentation.ts` as a bounded, ephemeral
-presentation store. It is not workflow, audit, review or validation authority;
-it only exposes read-only progress for `VALIDATION` and `IMPL_VALIDATION`. The
-Desktop bridge remains a rendering consumer and adds no governance authority.
 
 ADR-009 added `plugin-reviewer-capture.ts` as hook composition and
 `reviewer-capture.ts` as the synchronous request-provenance/capture-fence authority.

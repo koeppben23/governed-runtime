@@ -27,6 +27,10 @@ import {
   planReviewSubjectAuthority,
 } from '../../../rails/plan-review-evidence.js';
 import { resolvePlanReviewEvidence } from '../../../rails/review-evidence-resolution.js';
+import {
+  latestPlanTargetPaths,
+  preexistingTargetCheck,
+} from '../../../verification/implementation-subject.js';
 import type { PlanExecutionScope } from './plan-types.js';
 
 export type AutomaticPlanApprovalPreparation =
@@ -86,6 +90,55 @@ export function prepareAutomaticPlanApproval(
     kind: 'ready',
     state: { ...state, plan: { ...plan, approvalCertificate: certificate } },
   };
+}
+
+/**
+ * Refuse automatic plan approval when any plan target was already dirty at
+ * session start or is dirty at approval. The captured baseline hash survives
+ * an in-session cleanup, so re-applying the same bytes cannot become evidence.
+ */
+export async function automaticPlanBaselineBlock(
+  reviewedState: SessionState,
+  scope: PlanExecutionScope,
+  preparation: AutomaticPlanApprovalPreparation,
+): Promise<string | null> {
+  if (preparation.kind !== 'ready') return null;
+  if (!preparation.state.plan?.approvalCertificate) return null;
+  const targetCheck = await preexistingTargetCheck({
+    worktree: scope.worktree,
+    baseline: reviewedState.implementationBaseline,
+    targetPaths: latestPlanTargetPaths(reviewedState),
+  });
+  if (targetCheck.kind === 'invalid')
+    return persistBlockedAutomaticPlanApproval({
+      state: reviewedState,
+      scope,
+      block: blocked('PLAN_TARGET_PATH_INVALID', { path: targetCheck.path }),
+    });
+  if (targetCheck.kind === 'unavailable')
+    return persistBlockedAutomaticPlanApproval({
+      state: reviewedState,
+      scope,
+      block: blocked('IMPLEMENTATION_BASELINE_UNAVAILABLE'),
+    });
+  if (targetCheck.kind === 'dirty' && targetCheck.baselinePaths.length > 0)
+    return persistBlockedAutomaticPlanApproval({
+      state: reviewedState,
+      scope,
+      block: blocked('PLAN_TARGETS_PREEXISTING_DIRTY', {
+        paths: targetCheck.baselinePaths.join(', '),
+        capturedAt: reviewedState.implementationBaseline.capturedAt,
+      }),
+    });
+  if (targetCheck.kind === 'dirty')
+    return persistBlockedAutomaticPlanApproval({
+      state: reviewedState,
+      scope,
+      block: blocked('PLAN_TARGETS_DIRTY_AT_APPROVAL', {
+        paths: targetCheck.currentPaths.join(', '),
+      }),
+    });
+  return null;
 }
 
 /**

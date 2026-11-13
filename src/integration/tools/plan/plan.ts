@@ -33,6 +33,7 @@
  */
 
 import { z } from 'zod';
+import { latestPlanTargetPaths } from '../../../verification/implementation-subject.js';
 
 import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
@@ -205,11 +206,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     originatingReviewObligationId: originatingPlanReviewObligationId(scope),
     revisionReason: scope.state.plan ? 'Revision after changes requested' : null,
   });
-  const classification = await resolvePreImplementationChallengeClassification(
-    scope.state,
-    scope.worktree,
-    scope.args.targetPaths,
-  );
+  const classification = await classifyPlanSubmission(scope);
   const attempt = await createPlanReviewAttempt(
     scope,
     planEvidence,
@@ -241,10 +238,14 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
-/**
- * The review obligation whose changes_requested verdict triggered this revision,
- * so the plan record digest proves which obligation caused it.
- */
+function classifyPlanSubmission(scope: PlanExecutionScope) {
+  return resolvePreImplementationChallengeClassification(
+    scope.state,
+    scope.args.targetPaths ?? latestPlanTargetPaths(scope.state),
+  );
+}
+
+/** The obligation whose changes_requested verdict caused this revision. */
 function originatingPlanReviewObligationId(scope: PlanExecutionScope): string | null {
   return (
     [...(scope.state.reviewAssurance?.obligations ?? [])]
@@ -388,8 +389,9 @@ export const plan: ToolDefinition = {
       .array(z.string())
       .optional()
       .describe(
-        'File paths targeted by this plan. Required when the policy mandates review challenges. ' +
-          'Provides the changed-file evidence that challenge obligations bind against.',
+        'Repository-relative file paths targeted by this plan, distinct from Discovery risk paths. ' +
+          'Used for review classification and baseline overlap checks at approval; unknown scope with dirt blocks. ' +
+          'A revision replaces supplied targets or retains prior targets when omitted.',
       ),
   },
   async execute(args, context) {

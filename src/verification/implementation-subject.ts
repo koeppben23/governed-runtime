@@ -11,29 +11,87 @@
  */
 
 import { isAbsolute, posix } from 'node:path';
-import { normalizeRepoRelativePath } from '../shared/repo-path.js';
+import { canonicalRepoRelativePath, normalizeRepoRelativePath } from '../shared/repo-path.js';
 
 import { changedFiles, hashWorktreeFiles } from '../adapters/git.js';
 import { isVerificationCandidateBound } from '../state/candidate-identity.js';
+import { ensureReviewAssurance } from '../state/review-dispatch.js';
+import { findLatestReviewObligation } from '../state/review-continuation.js';
 import type { SessionState } from '../state/schema.js';
 
 /** Scoped governed implementation files plus the scoping disposition. */
 export interface ScopedImplementationFiles {
   readonly files: readonly string[];
-  readonly baselineScoping: 'applied' | 'unavailable';
+  readonly baselineScoping: 'applied';
 }
 
 export type ScopedImplementationFilesResult =
   | { readonly kind: 'ok'; readonly subject: ScopedImplementationFiles }
+  | { readonly kind: 'unavailable' }
   | { readonly kind: 'empty'; readonly rawFiles: readonly string[] };
+
+/** Latest declared plan targets; canonical path validation happens at the guard. */
+export function latestPlanTargetPaths(
+  state: Pick<SessionState, 'reviewAssurance'>,
+): readonly string[] {
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const plan = findLatestReviewObligation(assurance.obligations, 'plan');
+  const paths = plan?.metadata?.targetPaths;
+  if (!Array.isArray(paths) || !paths.every((path): path is string => typeof path === 'string'))
+    return [];
+  return [...new Set(paths)];
+}
+
+export type PreexistingTargetCheck =
+  | { readonly kind: 'ok' }
+  | { readonly kind: 'unavailable' }
+  | { readonly kind: 'invalid'; readonly path: string }
+  | {
+      readonly kind: 'dirty';
+      readonly baselinePaths: readonly string[];
+      readonly currentPaths: readonly string[];
+    };
+
+/**
+ * A plan must not enter IMPLEMENTATION when any target path was already dirty
+ * at session start or is dirty now. The baseline hash survives an in-session
+ * cleanup, so re-applying the same bytes later would still be scoped out.
+ */
+export async function preexistingTargetCheck(input: {
+  readonly worktree: string;
+  readonly baseline: SessionState['implementationBaseline'];
+  readonly targetPaths: readonly string[];
+}): Promise<PreexistingTargetCheck> {
+  if (input.baseline.dirtyFiles === null) return { kind: 'unavailable' };
+  const targets = new Set<string>();
+  for (const path of input.targetPaths) {
+    const canonical = canonicalRepoRelativePath(path);
+    if (canonical === null) return { kind: 'invalid', path };
+    targets.add(canonical);
+  }
+  const baseline = new Set(
+    input.baseline.dirtyFiles.map((file) => canonicalRepoRelativePath(file.path)),
+  );
+  const current = new Set((await changedFiles(input.worktree)).map(canonicalRepoRelativePath));
+  if (baseline.has(null) || current.has(null)) return { kind: 'unavailable' };
+  // An undeclared scope cannot establish that any existing dirt is unrelated.
+  if (targets.size === 0) {
+    for (const path of [...baseline, ...current]) if (path !== null) targets.add(path);
+  }
+  const baselinePaths = [...targets].filter((path) => baseline.has(path));
+  const currentPaths = [...targets].filter((path) => current.has(path));
+  return baselinePaths.length > 0 || currentPaths.length > 0
+    ? { kind: 'dirty', baselinePaths, currentPaths }
+    : { kind: 'ok' };
+}
 
 /**
  * Apply pre-implementation baseline scoping: subtract files that were already
  * dirty at session start AND are still unchanged (same content hash), so
  * pre-existing worktree changes are not attributed to this implementation —
  * while a pre-dirty file the task actually modified (hash changed) is KEPT,
- * never hidden. When dirty-file capture is unavailable, record the full set
- * and mark scoping unavailable. Never hides a change: when a hash is missing
+ * never hidden. Unavailable dirty-file capture blocks attribution instead of
+ * recording the full worktree. Never hides a change: when a hash is missing
  * the file is kept.
  */
 export async function scopeImplementationFiles(
@@ -41,19 +99,22 @@ export async function scopeImplementationFiles(
   rawFiles: readonly string[],
   baseline: SessionState['implementationBaseline'],
 ): Promise<ScopedImplementationFilesResult> {
-  if (baseline.dirtyFiles === null) {
-    return rawFiles.length === 0
-      ? { kind: 'empty', rawFiles }
-      : { kind: 'ok', subject: { files: rawFiles, baselineScoping: 'unavailable' } };
-  }
+  if (baseline.dirtyFiles === null) return { kind: 'unavailable' };
 
-  const baselineByPath = new Map(baseline.dirtyFiles.map((d) => [d.path, d.hash]));
-  const candidatesToRehash = rawFiles.filter((f) => baselineByPath.has(f));
+  const baselineByPath = new Map(
+    baseline.dirtyFiles.map((d) => [canonicalRepoRelativePath(d.path), d.hash]),
+  );
+  if (baselineByPath.has(null) || rawFiles.some((f) => canonicalRepoRelativePath(f) === null))
+    return { kind: 'unavailable' };
+  const candidatesToRehash = rawFiles.filter((f) =>
+    baselineByPath.has(canonicalRepoRelativePath(f)),
+  );
   const currentHashes =
     candidatesToRehash.length > 0 ? await hashWorktreeFiles(worktree, candidatesToRehash) : {};
   const files = rawFiles.filter((f) => {
-    if (!baselineByPath.has(f)) return true; // not pre-dirty → task change
-    const before = baselineByPath.get(f) ?? null;
+    const path = canonicalRepoRelativePath(f);
+    if (!baselineByPath.has(path)) return true; // not pre-dirty → task change
+    const before = baselineByPath.get(path) ?? null;
     const now = currentHashes[f] ?? null;
     // Scope out ONLY when both hashes are present and equal (provably unchanged
     // since session start). If either hash is missing, we cannot prove the file
@@ -193,6 +254,13 @@ export async function reattestImplementationSubject(input: {
 }): Promise<ImplementationSubjectReattestation> {
   const rawFiles = await changedFiles(input.worktree);
   const scoped = await scopeImplementationFiles(input.worktree, rawFiles, input.baseline);
+  if (scoped.kind === 'unavailable') {
+    return {
+      kind: 'subject_changed',
+      expected: input.expectedDigest,
+      actual: 'baseline-unavailable',
+    };
+  }
   const ignored = new Set((input.ignoredArtifacts ?? []).map(normalizeRepoRelativePath));
   const currentFiles =
     scoped.kind === 'ok'

@@ -16,10 +16,8 @@ import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 import type { SessionState } from '../state/schema.js';
 import type { PlanClaimDeclarationInput } from '../state/proofgraph-approval.js';
 import { authorizedCriticalPlanClaimIds } from '../state/proofgraph-approval-context.js';
-import { hashText } from '../shared/hashing.js';
 import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
 import { applyEvidenceApprovalTransition } from '../rails/types.js';
-import { computeImplementationDigest } from '../verification/implementation-subject.js';
 import { assessMinimumTaskClass } from './phase-tool-gate.js';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import {
@@ -301,7 +299,9 @@ describe('governed new-session authority recovery', () => {
     expect(JSON.stringify(rejected)).toContain(
       'different check identities AND different validation attempts',
     );
-    expect(JSON.stringify(rejected)).toContain('TICKET or PLAN');
+    expect(rejected.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
+    expect(rejected.phase).toBe('TICKET');
+    expect(JSON.stringify(rejected)).toContain('current planning step');
     expect(await stateOf(session)).toEqual(previous);
     expect(previous.phase).toBe('TICKET');
     expect(previous.plan).toBeNull();
@@ -489,24 +489,33 @@ describe('governed new-session authority recovery', () => {
     expect(await stateOf(b)).toEqual(final);
   });
 
-  it('rejects the naive dirty-worktree restart without manufacturing implementation evidence', async () => {
+  it('blocks the naive dirty-worktree restart at plan approval without manufacturing implementation evidence', async () => {
     const worktree = await repository();
     await writeFile(join(worktree, SUBJECT), REPAIRED);
     const b = await boot(worktree);
     expect(
       (await stateOf(b)).implementationBaseline.dirtyFiles?.map((file) => file.path),
     ).toContain(SUBJECT);
-    await approvePlan(b, true);
-    const previous = await stateOf(b);
-    const digest = await computeImplementationDigest({
-      worktree,
-      files: [SUBJECT],
-      digest: hashText,
+    const triggers = assessMinimumTaskClass([SUBJECT]).riskTriggers.filter(
+      (t) => t !== 'ceremony_only',
+    );
+    await ok(ticket, b, { text: 'Preserve null rejection in session state.\nRisk: HIGH-RISK' });
+    await ok(plan, b, {
+      planText: PLAN,
+      targetPaths: [SUBJECT],
+      claims: [{ ...CLAIM, coversRiskTriggers: triggers }],
     });
-    expect(digest).toBeTruthy();
-    const result = await call(implement, b);
-    expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_EMPTY');
-    expect(await stateOf(b)).toEqual(previous);
+    await fulfillStrictReviewObligation(b.dir, {
+      obligationType: 'plan',
+      iteration: 0,
+      planVersion: 1,
+      challengeScenarios: CHALLENGE_SCENARIOS,
+    });
+    const result = await call(plan, b, { reviewVerdict: 'accept' });
+    expect(result.code).toBe('PLAN_TARGETS_PREEXISTING_DIRTY');
+    const after = await stateOf(b);
+    expect(after.phase).toBe('PLAN_REVIEW');
+    expect(after.implementation).toBeNull();
   });
 
   it('refuses reapplication before the new plan is approved without a mutation dispatch or partial write', async () => {

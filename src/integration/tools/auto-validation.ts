@@ -562,7 +562,7 @@ const inFlightSystemWorkResumes = new Set<string>();
 /**
  * Resume a pending system-work operation.
  *
- * Triggered by the host session lifecycle (session becomes idle/active), never
+ * Triggered by the host session lifecycle (idle or admitted execution success), never
  * by a user workflow command: `system_work` phases have no commands, so the
  * runtime owns the continuation.
  */
@@ -581,6 +581,7 @@ function classifyPendingOperation(session: SessionRead, nowMs: number): PendingO
 export async function resumePendingSystemWork(
   context: WorkspaceToolContext,
   deps: SystemWorkRetryDeps = DEFAULT_SYSTEM_WORK_RETRY_DEPS,
+  wakeupCreatedAtMs?: number,
 ): Promise<SystemWorkResumeOutcome> {
   const outcome = await readSession(context);
   if (outcome.kind === 'unreadable') {
@@ -592,7 +593,12 @@ export async function resumePendingSystemWork(
   }
   if (outcome.kind === 'none') return { kind: 'none' };
 
-  const decision = classifyPendingOperation(outcome.session, deps.nowMs());
+  // Delayed delivery cannot turn a notification emitted inside backoff into
+  // a later retry opportunity. The runner still rechecks the current clock.
+  const decision = classifyPendingOperation(
+    outcome.session,
+    Math.min(deps.nowMs(), wakeupCreatedAtMs ?? Infinity),
+  );
   if (decision.kind === 'none') return { kind: 'none' };
   if (decision.kind === 'stale') {
     await clearStalePendingSystemWork(context);

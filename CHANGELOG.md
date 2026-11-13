@@ -9,12 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Show the existing model-free validation progress in the Desktop chat card
-  during `VALIDATION` (after plan approval, before `/implement`) and
-  `IMPL_VALIDATION` (after `/implement`). The ephemeral presentation channel is
-  read-only, scoped to those two phases, and adds no model prompt, user message,
-  audit event or validation evidence. Installed Desktop rendering remains
-  `NOT_VERIFIED`.
+- Add candidate-host validation-progress transport probes: live native tool
+  events, real TUI rendering of read-only command snapshots, session/location
+  isolation and consumer-disconnect controls. Preserve the original lifecycle
+  counterexample and its product-path regression; the complete progress-feature
+  gate remains blocked.
+
+- Resume pending OpenCode validation on an admitted native successful execution,
+  not an unconditional idle alias: verify current root-session completion and
+  reject replayed/stale notifications. Preserve canonical retry authority and
+  reject delayed notifications created inside backoff. Prove real subprocess
+  interruption, persisted attempts and open-check-only resumption in both
+  validation phases; product progress UI remains unimplemented.
+
 - Complete FlowGuard command discoverability and help on `develop`: compose
   installed, native-only and optional TUI command metadata into a
   capability-aware catalog; make `/commands --all` meaningful without a session;
@@ -945,6 +952,73 @@ last read` without a click, while a completion in another session left the
   structured report.
 
 ### Fixed
+
+- Wait for an early-returning native reviewer child before capture. A host may
+  return the `subagent` tool before the child's first model request; FlowGuard
+  now keeps the authorized dispatch and attempt intact and waits for the exact
+  bound child instead of invalidating the attempt and denying the child's model
+  request. A stale `time.idle` timestamp is not treated as terminal when the
+  child has a newer busy step. Genuine child failures and missing terminal
+  boundaries remain `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`.
+- Synchronize native review retries with the exact durably re-armed attempt before
+  offering another reviewer dispatch; retain provenance checks and attempt budgets.
+  Project native OpenCode `patch` to the canonical `apply_patch` mutation path in
+  both hooks without widening tool permissions.
+- Bind baseline progress to its current operation and attempt, discard superseded
+  updates, and close the display when execution ends. Show the current check in
+  the existing Desktop status label. Replace the added one-second presentation
+  poller with read-only RPC invalidations; keep original chat responses and controls.
+  Installed Desktop rendering acceptance remains unverified.
+- Show the existing model-free check display during post-implementation
+  validation (`IMPL_VALIDATION`) after `/implement`, using the same current
+  operation binding, existing label, and no additional controls or model turns.
+- Block plan approval when a plan target path was already dirty at session start
+  or is dirty at approval; report the affected paths and require a clean
+  baseline/new session. `/implement` now distinguishes pre-existing worktree
+  changes from genuinely missing evidence.
+- Instruct a revised plan response to dispatch the fresh reviewer explicitly
+  before requesting review feedback, and cover interrupted reviewer children
+  with the canonical fresh-submission recovery path.
+- Fix `flowguard inspect` to distinguish bound validation attempts, successful
+  explicit calls, machine outcomes and canonical no-command policy exceptions.
+  Outcomes alone no longer prove execution or imply automatic commands; missing
+  phase-specific evidence remains `NOT_VERIFIED`. Read session state without
+  mutation and report the actual terminal lifecycle event.
+- Separate declared plan targets from Discovery classification paths, read
+  Discovery from the bound workspace, and replace rather than accumulate targets
+  on plan revision. Close baseline path-alias bypasses, reject escaping targets,
+  block unknown dirty scopes and fail closed on missing baseline capture instead
+  of attributing the full worktree.
+- Report pre-admission claim rejection as `PLAN_CLAIM_SUBMISSION_REJECTED` with
+  exact diagnostics and in-place repair guidance, without withdrawing critical
+  claims or spending plan/reviewer authority. Bind declared positive assertions
+  to their exact provider and identity: failed, errored, skipped or missing
+  assertions cannot be hidden by a green overall check.
+- Report a revised plan response as pending a fresh independent review instead of
+  presenting the prior `changes_requested` verdict as the current result. The
+  response continues to require the exact reviewer dispatch.
+
+- Limit model-free progress to canonical validation after `/approve` and after
+  `/implement`. Restore the original `/start` workflow-choice chat response,
+  final decision/check-result chat report with the next command, lifecycle and
+  diagnostic responses. Remove the added `/implement` button, automatic Start
+  dialog, report dialogs/command and summary API; preserve the original explicit
+  chooser and 30-second read-only status reconciliation. Validation progress uses
+  a bounded ephemeral channel without extra model turns or changes to plan,
+  evidence, tool permissions or canonical validation. Installed visual acceptance
+  and confirmed subprocess-start instrumentation remain unverified.
+
+- Align native host-adapter contract tests with timestamped execution-success
+  wakeups, using complete typed notification fixtures and exact projection
+  assertions. Remove the superseded expectation that success is unhandled;
+  notifications still supply no review approval or check-result evidence.
+
+- Route native OpenCode events only to their exact session-location owner and
+  exclude completed-child idle/success wakeups before execution admission, so
+  an independent `changes_requested` review no longer fences its parent.
+  Persist one audit record per native session-error identity under the canonical
+  audit lock; replay survives reload/phase changes while conflicting content
+  and persistence failures still fail closed. Reviewer admission is unchanged.
 
 - Use canonical host-neutral session reasons in tool helpers, verification-check
   errors and hook session resolution instead of direct Hydrate bootstrap advice.

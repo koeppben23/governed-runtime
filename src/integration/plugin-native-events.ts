@@ -10,6 +10,11 @@ import { resolveGovernanceActivation } from '../adapters/governance-activation.j
 import { handlePluginEvent } from './plugin-afterhooks.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { recordValidationProgress, type PresentationStore } from './plugin-presentation.js';
+import type { SessionState } from '../state/schema.js';
+import type { NativeReviewStateAuthority } from './review/dispatch/native-review-dispatch.js';
+import { reviewerAwaitTarget } from './review/dispatch/native-review-dispatch.js';
+import type { NativeReviewInitialController } from './review/dispatch/native-review-initial.js';
+import { awaitInitialReviewerCompletion } from './review/dispatch/native-review-initial.js';
 
 type EventRuntime = { readonly runtime: FlowGuardPluginRuntime };
 type ScopedEventRuntime = EventRuntime & { readonly scope: ActiveGovernanceScope };
@@ -25,12 +30,16 @@ export interface EventDispatchDeps {
   ) => Promise<T | undefined>;
 }
 
-/** ACTIVE-scope routing; presentation progress is advisory and never evidence. */
-async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDeps): Promise<void> {
+/** ACTIVE-scope routing and host-specific wakeup admission, not result evidence. */
+export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDeps): Promise<void> {
   const projected = projectOpenCodeEvent(event);
   if (!projected) return;
-  const { governance, runtimes, sessionRoots, invoke, presentation } = deps;
+  const { adapter, governance, runtimes, sessionRoots, invoke } = deps;
   if (event.type === 'session.deleted') {
+    // Deleted sessions cannot be looked up. Only a runtime that previously
+    // admitted this session owns its in-memory cleanup.
+    if (!sessionRoots.has(projected.sessionId)) return;
+    adapter.forgetSession(projected.sessionId);
     const authority = await resolveGovernanceActivation(governance.store, projected.sessionId);
     if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
     if (authority.kind !== 'active') return;
@@ -41,8 +50,20 @@ async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDeps): Pro
     sessionRoots.delete(projected.sessionId);
     return;
   }
-  await invoke(projected.sessionId, (entry) =>
-    handlePluginEvent(
+  if (
+    !(await adapter.ownsSessionEvent(
+      projected.sessionId,
+      event.type === 'session.execution.succeeded' || event.type === 'session.idle',
+    ))
+  )
+    return;
+  await invoke(projected.sessionId, async (entry) => {
+    if (event.type === 'session.execution.succeeded') {
+      if (projected.sessionId !== entry.scope.root.sessionId) return;
+      if (!(await adapter.claimSuccessfulExecutionWakeup(event))) return;
+    }
+    const presentation = deps.presentation;
+    await handlePluginEvent(
       entry.runtime,
       projected.event,
       entry.scope.root.sessionId,
@@ -50,8 +71,8 @@ async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDeps): Pro
         ? undefined
         : (progress) =>
             recordValidationProgress(presentation, entry.scope.root.sessionId, progress),
-    ),
-  );
+    );
+  });
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -138,4 +159,59 @@ async function consumeEvents(
   } catch (error) {
     if (!signal.aborted) failed(error);
   }
+}
+
+export interface ReviewerInitialAwaitInput {
+  readonly ctx: Plugin.Context;
+  readonly initial: NativeReviewInitialController;
+  readonly event: {
+    readonly sessionID: string;
+    readonly messageID: string;
+    readonly id: string;
+    readonly result?: { readonly metadata?: Record<string, unknown> };
+  };
+  readonly resolve: () => Promise<{
+    readonly state: SessionState;
+    readonly authority: NativeReviewStateAuthority;
+    readonly runtime: { readonly reviewerExecutionTimeoutMs: number };
+  } | null>;
+}
+
+/**
+ * A host may return the `subagent` tool before the bound reviewer child has
+ * finished its initial run. Keep the authorized attempt intact and wait for
+ * that exact child instead of capturing an unknown outcome prematurely.
+ */
+export async function awaitReviewerInitialRun(input: ReviewerInitialAwaitInput): Promise<void> {
+  const resolved = await input.resolve();
+  if (resolved === null) return;
+  const target = reviewerAwaitTarget({
+    event: input.event,
+    state: resolved.state,
+    authority: resolved.authority,
+  });
+  if (target === null) return;
+  const { childSessionId } = target;
+  await awaitInitialReviewerCompletion({
+    childSessionId,
+    initial: input.initial,
+    isTerminal: async () => {
+      try {
+        const session = await input.ctx.session.get({ sessionID: childSessionId });
+        if (session.outcome !== undefined) return true;
+        const busy = session.time?.busy;
+        const idle = session.time?.idle;
+        // An old idle timestamp is not terminal when the child started a newer
+        // step; wait for that step instead of capturing it prematurely.
+        return idle !== undefined && (busy === undefined || busy <= idle);
+      } catch {
+        return true;
+      }
+    },
+    wait: () =>
+      input.ctx.session.wait(
+        { sessionID: childSessionId },
+        { signal: AbortSignal.timeout(resolved.runtime.reviewerExecutionTimeoutMs) },
+      ),
+  });
 }

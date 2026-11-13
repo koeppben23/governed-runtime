@@ -1,9 +1,7 @@
-/** OpenCode Desktop host-capability compatibility boundary; no governance authority. */
+/** OpenCode Desktop event/reconciliation boundary; no governance authority. */
 export const GUI_HOST_BRIDGE_BUNDLE = `
 function subscribeFlowGuardSessionCompletion(ctx, callback) {
-  // Desktop 2.2.6 exposes servers; newer SDK types expose serverEndpoints.
-  const endpoints = ctx.serverEndpoints && typeof ctx.serverEndpoints.get === 'function'
-    ? ctx.serverEndpoints : ctx.servers;
+  const endpoints = ctx.servers;
   if (!endpoints || typeof endpoints.get !== 'function') return false;
   try {
     const { createKeyed } = require('@opencode/plugin/gui');
@@ -112,11 +110,7 @@ function createFlowGuardPresentationWatcher(ctx, getPresentation, notify) {
   };
 }
 
-/**
- * Bounded reconciliation for transitions that do not emit a host completion
- * event. A live event is an optimization, not an authoritative audit feed.
- * Nothing is fetched at registration or on the first pill render.
- */
+/** Original visible-sidecar status reconciliation, independent of progress. */
 function createFlowGuardStatusReconciler(ctx, callback) {
   const intervalMs = 30000;
   let timer = null;

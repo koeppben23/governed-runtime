@@ -1,44 +1,484 @@
-# Validation progress display
+# Validation Progress: Transport Probe
 
-## Scope
+## Scope and decision
 
-FlowGuard publishes the existing model-free check display only during the two
-validation phases:
+**Transport probes plus a targeted lifecycle repair. The full progress-feature
+gate is BLOCKED, not passed.**
 
-- `VALIDATION`: baseline checks after plan approval and before `/implement`.
-- `IMPL_VALIDATION`: post-implementation checks after `/implement`.
+The candidate-host probe establishes some transport mechanics. A follow-up
+product regression reproduces and repairs its lifecycle finding. The current
+presentation change is limited to baseline progress after `/approve` and
+post-implementation check progress after `/implement`; it does not show a
+fabricated implementation-phase percentage. Start/workflow-choice, final
+decision/check-result, lifecycle and diagnostic chat responses retain the
+pre-overhaul contract (`e2565223`). There is no new `/implement` button,
+automatic Start dialog, report dialog/command or `GetNextAction.summary`.
+Installed visual acceptance and executor-start instrumentation remain gated.
+State schemas, audit contracts, reviewer admission and retry/backoff persistence
+remain unchanged.
 
-No other phase, command or workflow is included. The display is not a validation
-result, review verdict or approval authority.
+The model-free status overhaul and compensating UI additions described in the
+historical sections below were rejected by the operator and removed. Their
+green checks are historical evidence, not acceptance of the narrowed change.
+Only `VALIDATION` and `IMPL_VALIDATION` progress is published on
+`GetPresentation`; other phases, decisions and reports are excluded. The original
+explicit workflow chooser and 30-second status reconciler remain. The TUI plugin
+is restored byte-for-byte; the added TUI polling watcher and report command are
+removed. No incident session is reset and the separate native `patch` admission
+error is not addressed here.
 
-## Transport
+### Scope-restoration verification (12 November 2026)
 
-`src/integration/plugin-presentation.ts` keeps a bounded, in-memory page per
-session. `autoValidationProgress` receives `starting`, `check_started`,
-`check_finished` and `finished` events bound to the current system-work
-operation and run; superseded operations and post-closure events are rejected.
-The callback is non-blocking: a failing or hanging presentation consumer never
-delays a check.
+The restored Start execution, decision-confirmation renderer and final decision
+chat delivery match `e2565223` byte-for-byte, as do nine non-progress production
+files including the TUI plugin, GUI chooser and implementation tool. Source
+checks passed: 8,641 functional unit tests; 4,614 functional integration tests
+plus all 13 integration PERF cases in a separate serial run; 554 architecture
+tests; 34 focused GUI/bridge tests; 11 isolated native Start/decision/resume
+cases; and 60 packed inactive/running-install cases. Packed checks preceded the
+final removal of the unrelated TUI watcher; they are not an installed Desktop
+visual acceptance or an exact committed-artifact certification.
 
-The Desktop side reads the page through the read-only `GetPresentation` RPC and
-invalidates it on `PresentationUpdated`. The chat card filters both phases to
-`VALIDATION` and `IMPL_VALIDATION`; the existing status reconciler remains
-separate.
+The initial concurrent run had a process-signal timeout and two PERF budget
+failures. Isolated/full functional reruns and the serial PERF run passed without
+changing budgets or those tests; the initial causes remain unproven. The native
+decision fixture now waits for the restored Start chat response before counting
+requests for the subsequent decision. It verifies one final response containing
+`/implement`, with no progress-induced provider request.
 
-## Invariants
+Focused diagnostic mutation on the restored next-action command scored 100%
+(six killed, zero survivors/uncovered, 46 compile-rejected, 28 ignored static
+mutants; unchanged 80% break threshold). An initial 50% result exposed missing
+unsupported-invocation/rationale assertions, now covered without production
+changes. Configs/report: session-owned `opencode/flowguard-last-run-repair/`.
+**NOT_VERIFIED:** full canonical mutation profile admission (`npm run mutation`),
+exact committed-artifact installed Desktop visual/screen-reader/Windows/real-provider
+acceptance and confirmed subprocess start. No local live update is claimed.
 
-- No `session.prompt` or `session.synthetic` is created for progress.
-- No model request or extra user turn is added.
-- Presentation events are ephemeral and never appear as audit or validation
-  evidence.
-- The existing canonical status, controls and decision surfaces are unchanged.
+Reference source: `develop` at `41b2932e32fc84b64af435486c0ecfa3ad837c15`.
+Local execution: 11 November 2026, macOS arm64, Node 22.22.2 / npm 10.9.7,
+exact native CLI candidate `@opencode/cli@2.2.5`. The repository API dependencies
+remain `@opencode/plugin` / `@opencode/client` 2.2.7. The independently declared
+CLI candidate remains owned by `.sdk-baselines/opencode/cli-candidate.json`.
 
-## Verification
+## Executable evidence
 
-- `src/integration/plugin-presentation.test.ts`
-- `src/integration/auto-validation.test.ts`
-- `src/cli/gui-plugin-bundle.test.ts`
-- `src/integration/plugin-v2.test.ts`
+`src/cli/opencode-validation-progress.smoke.test.ts` runs against a private
+native host, deterministic local model-wire provider and real POSIX TUI/PTY.
+The companion `opencode-validation-progress-test-helpers.ts` defines a local
+test plugin, a held Promise and a read-only snapshot RPC. Its phase labels are
+fixture labels, not evidence that FlowGuard entered either validation phase.
 
-Installed Desktop rendering and packed-product acceptance remain
-`NOT_VERIFIED`.
+The fixture does not load the FlowGuard product plugin or execute a build. Its
+`runID` is an ephemeral transport correlation ID, **not a ValidationAttempt**.
+It never emits `PASS`. Releasing the Promise proves fixture completion only.
+
+| Route                                       | Observation                                                                                                                                                                        | What remains unproved                                                                           |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Native tool                                 | `ToolContext.progress()` reaches the actual `session.tool.progress` stream while the native tool remains running; one user prompt and no extra model call during the held interval | Native tool progress rendering; actual `flowguard_*` validation wiring                          |
+| Native command, both phase labels           | A session-location-scoped snapshot is read and visibly rendered by the test TUI as a toast before command completion; zero user messages/model calls                               | Production `/approve`, automatic plan approval and `/implement` wiring; durable attempt binding |
+| Consumer disappears                         | The fixture command completes after the TUI process is closed and the barrier is released                                                                                          | Production bounded delivery, hung receiver handling and cleanup under all failure modes         |
+| Ordinary execution success / product resume | The separate product-host regression resumes persisted validation after an admitted `session.execution.succeeded`, executing only open checks in both validation phases            | Resume progress display and packed-product acceptance                                           |
+
+The transport suite has three positive fixture cases. The separate product-host
+case covers both validation phases. Four passing cases are still **not** full
+progress-feature acceptance.
+
+### Lifecycle counterexample and bounded repair
+
+The probe originally required a snapshot after ordinary foreground success
+through the existing `session.idle` route. That expectation failed. The captured
+native stream contained `session.execution.succeeded` instead, and the armed
+idle observer did not run.
+
+The original negative characterization at `8359a511` passed the captured event
+through the product projector and established that it returned `null`. It is
+now replaced by `src/cli/opencode-validation-resume.smoke.test.ts`: before the
+repair, this real product-path regression persisted a technical interruption
+but stayed in `VALIDATION` after ordinary native success.
+
+The new case loads the actual product plugin, runs native `/start` and `/approve`,
+and later records an implementation through the native tool. **Only the core
+plan-review gate and active check selection are explicit component fixtures**;
+this is not independent reviewer/operator provenance or packed-install acceptance.
+Discovery supplies the commands. Real subprocesses produce a controlled exit
+127, persisted subject-bound `ValidationAttempt`s and a re-armed
+`pendingSystemWork` marker. The fixture waits for the persisted backoff rather
+than rewriting it. In both `VALIDATION` and `IMPL_VALIDATION`, ordinary native
+completion then reruns only the open check, preserves the earlier bound PASS,
+clears the marker and advances through the canonical check-result path.
+
+Success is **not an alias for idle**. The projector preserves its event type and
+creation time. ACTIVE root-scope admission precedes a native adapter claim:
+
+- aggregate identity must match the event session;
+- a per-session sequence high-water mark rejects concurrent/replayed delivery;
+- a fresh exact-session read must report `outcome: succeeded`, `time.idle` equal
+  to the notification's `created`, and `time.busy <= time.idle`. Old idle/outcome
+  values while a later execution runs do not suffice;
+- the canonical runner checks both notification creation time and current time
+  against persisted backoff. Delayed delivery cannot make an inside-backoff
+  notification eligible. Existing generation fencing and in-flight guards remain.
+
+The pinned candidate supplies matching native completion/session timestamps in
+the live regression; the test observes no `session.idle` through those completions.
+Integration tests cover duplicate/out-of-order notifications, stale/running or
+non-successful session state, identity/read failures, unrelated and delegated
+scope exclusion, and delayed delivery within backoff. Delegated-scope testing
+uses an explicit scoped-port fixture, not native delegation provenance.
+Notifications never supply check-result or reviewer evidence. No timer-driven
+retry or process-quiescence guarantee is added.
+
+### Completed-review event ownership and audit replay
+
+A subsequent incident ran OpenCode **2.2.7**, with the earlier lifecycle repair
+installed. Its independent reviewer successfully returned `changes_requested`;
+that verdict was not a build failure. Four location instances shared plugin
+storage and the server-wide event stream. Completed-child success handling
+could re-enter execution-specific reviewer admission, which correctly rejects a
+finished dispatch, and then fence the parent. The original incident's first
+exception is absent from the inspected logs; the new native regression exposes
+the admission errors directly. Repeated delivery of one failure notification
+also produced separate audit UUIDs.
+
+`opencode-reviewer-event-lifecycle.smoke.test.ts` now drives native Start,
+ticket, plan and independent reviewer return across four locations, without
+seeded review evidence. It asserts the captured `changes_requested`, fulfilled
+obligation, successful parent continuation and unchanged PLAN phase. On
+12 November 2026 it passes with both candidate **2.2.5** and the exact incident
+**2.2.7** binary, using a deterministic local provider. This is not installed
+packed-product, Desktop UI or real-provider certification.
+
+The adapter compares the exact native session `location.directory` to its
+plugin location before governance execution admission. No filesystem alias or
+workspace inference substitutes for this identity. Idle/success notifications
+from children are excluded before reviewer admission; genuine owning-scope
+read/handler errors still fence. Deletion cleans only previously cached session
+metadata, without looking up an already deleted native session.
+
+Session-error audit IDs derive from the FlowGuard session and native event ID.
+The existing canonical audit lock serializes trail lookup and append. A replay
+uses the first committed phase and native creation time; the canonical writer
+still rejects changed immutable notification content. Missing identity/time or
+failed persistence cannot silently create fallback identities or mark success.
+No audit schema, reviewer guard, validation authority or retry policy changes.
+The event fence still reports its original exception through the host console;
+this repair does not add a durable host-log collector or repair incident data.
+
+The private native helper waits boundedly for required plugin registration:
+2.2.7 can initially expose an empty registry before registration. Explicitly
+failed/inactive plugins and transport errors are never hidden by that wait.
+
+### Historical, superseded model-free status overhaul (12 November 2026)
+
+A follow-up forensic report found `/approve` apparently shown again after a
+successful decision. The reported debug export showed two additional `user`
+messages and two independent model responses with no tool call. The
+repository's earlier native smoke log independently corroborates the mechanism:
+the validation and decision status texts appeared verbatim as `type: "user"`
+in the provider request and produced model turns.
+
+`ctx.session.prompt()` is an inbox admission, not a UI status API. The previous
+`presentValidationProgress()` and `presentDecision()` calls therefore created a
+new user turn merely to display text. The same pattern existed in the Start,
+End/RecoverCapacity, diagnostics and debug-export status paths.
+
+The repair introduces a separate, explicitly non-authoritative presentation
+channel:
+
+- `plugin-presentation.ts` keeps a bounded in-memory page per session. It has no
+  durable storage, is never appended to the audit trail and is never model
+  context. A bounded message/event count prevents unbounded host memory use.
+- `GetPresentation` is a read-only RPC. It verifies the requested session's
+  exact native location, returns an empty page for an unavailable or foreign
+  session, and never fences a scope. The UI falls back to canonical
+  `GetNextAction`/status. The server never awaits a UI reader.
+- The validation runner reports `starting`, `check_started` and
+  `check_finished` presentation events. The callback is invoked without awaiting
+  it; a throwing or never-settling presentation callback cannot delay checks,
+  hold a lock or change a result. `check_started` means the runner requested the
+  check, so the UI says **preparing**, not "running". A confirmed process start
+  requires executor instrumentation and remains `NOT_VERIFIED`.
+- Decision, Start, lifecycle, diagnostics and debug-export text is recorded as a
+  notice, validation event or report. `/check` and reviewer orchestration remain
+  intentional model prompts because they request agent work.
+- The TUI plugin polls the presentation page only for its current session,
+  deduplicates event IDs, announces the newest baseline event and adds a
+  `/flowguard-report` dialog for the latest report. The Desktop ComposerPill
+  polls only while mounted and visible, shows the latest validation/decision
+  notice and exposes the latest report in its popover. Every asynchronous read
+  re-checks the actually selected session before displaying anything; a switch
+  during the read discards the stale page. Negative tests cover the watcher,
+  Desktop bridge and TUI report paths.
+
+The native decision smoke test now asserts that `/approve` creates **zero**
+additional provider requests, that no validation/decision status text enters the
+session context, and that the read-only RPC contains the validation and decision
+events. Unit and integration tests cover store bounds, replay/cursor behavior,
+session switching, duplicate suppression, transport failure, a hanging
+progress callback, and the absence of `session.prompt`/`session.synthetic` on
+the status paths.
+
+**NOT_VERIFIED:** installed packed-product TUI/Desktop visual acceptance,
+Windows/real-provider behavior and screen-reader acceptance. The Desktop bundle
+is template-tested with host-shaped stubs; that is not installed GUI proof.
+Presentation is ephemeral by design, so a reload loses pending notices; the
+canonical Next Action projection remains the fallback. Diagnostic report text is
+local UI text, not audit evidence or an approval.
+
+### Historical, superseded last-run UI follow-up (12 November 2026)
+
+Read-only inspection of the last local demo's OpenCode database established
+that the workflow reached `COMPLETE`, but native Start/approval confirmations
+were absent from the transcript. Replacing status prompts with transient toasts
+had removed reconstructible operator feedback. Successful CI was not installed
+Desktop acceptance.
+
+- `GetNextAction.summary` reconstructs activation, recorded decisions, current
+  subject-bound validation attempts (including attempt IDs and outcomes), and
+  the canonical next action from persisted authorities. It stores nothing new,
+  grants no decision authority, and does not insert a model message. Foreign
+  native locations receive no summary.
+- The Desktop status pill inspects on first display/session change and
+  reconciles every five seconds while visible. Its report menu action opens the
+  reconstructible summary after plugin/server reload. Canonical phase labels
+  take precedence over old presentation events; notices from an earlier phase
+  cannot replace the current status. The small progress/status surface is kept.
+- `/flowguard-report` shows this canonical summary even when its ephemeral
+  report queue is empty. Late session-switch responses are discarded.
+- Native tool execution and lifecycle resumes now carry the same non-blocking
+  validation callback as native decisions, including `IMPL_VALIDATION`.
+  Preparation is still not a confirmed subprocess start. Completed check facts
+  come from persisted `ValidationAttempt`s, not from progress notifications.
+
+The `fd4c845e` follow-up also changed assertion-role admission and ACTIVE tool
+catalogue filtering. Those were outside the GUI request and are **reverted**:
+the production authorities are restored byte-for-byte to `f5fb1b8a`, not
+replaced with a compatibility mode or a special exception for the demo. Existing
+same-check/execution collision checks and host execution guards remain intact.
+The current GUI correction does not claim stronger oracle independence or
+faulty-variant execution.
+
+#### Installed live counterexample and GUI correction
+
+The subsequent installed Desktop 2.2.7 run used `fd4c845e`, root session
+`ses_e2f8dde83ffejOscS1zLde2i6g`. Start activated at 15:48:23 UTC and task
+capture succeeded at 15:53:47 UTC. Plan admission at 15:54:14 UTC failed because
+the added assertion-role rule rejected the same JUnit assertion under `test`
+and `build`. That is an observable out-of-scope regression, not a failed GUI
+test or a reason to withdraw the operator's claims. The live session was only
+read; no decisions, tool calls, resets or installation changes were made by
+this diagnosis.
+
+The GUI had also supplied both `ComposerPill.menu` and `show().rows`. The pinned
+SDK explicitly states that a custom `menu` makes `rows` unused, so the report
+popover hid all ordinary action rows. The correction removes that custom menu
+and exposes workflow/next-action selection, refresh, and a canonical report
+dialog through actual host menu rows. A fresh Start notice opens the chooser
+once if no dialog is already open; it never selects or executes a workflow.
+Session/state revalidation still owns every selected action. `/approve` does
+not open an automatic next-action dialog or start implementation.
+
+During a three-minute read-only watch the live phase stayed TICKET and the
+Desktop logged another 180 event-stream disconnects. The existing
+`ERR_INSUFFICIENT_RESOURCES` message is corroborated, but its cause is not
+established and no host fix is claimed.
+
+The correction's GUI tests exercise the actual menu rows, Start cancellation
+and a busy dialog, report reads after reload, stale sessions and plugin unload,
+and approval feedback with no automatic implementation. The real candidate
+2.2.5 decision/resume/Start suites passed 11/11. A byte comparison confirms the
+six restored production authorities plus `docs/proofgraph.md` exactly match
+`f5fb1b8a`. Focused mutation of the restored independence module scored 96.55%
+(28 killed, one survived, zero uncovered, 21 compile-rejected) against the
+unchanged 80% break threshold. The surviving optional-adversarial branch is a
+test gap, not a reason to change the restored production contract. Report:
+`opencode/flowguard-last-run-repair/scope-restoration-mutation.json`. This is
+not whole-profile mutation or installed GUI acceptance.
+
+The next live run (`ses_e2efa1645ffeii1lkghQupnuiQ`) exposed a remaining
+discoverability failure after `/approve`: the server entered IMPLEMENTATION,
+both baseline attempts passed, and read-only `GetNextAction` recommended
+`/implement`, but the GUI only offered a generic chooser row inside the status
+menu. A follow-up adds a separate `/implement` composer action using that exact
+canonical recommendation. It stays absent during validation, blocked/loading
+state, or when the action is not present; it never infers readiness from a toast.
+Clicks retain the existing chooser, state/session binding checks and explicit
+confirmation. The status/progress surface remains separate. This changes only
+GUI presentation, not plan rules or host-tool admission. The observed
+`HOST_TOOL_UNKNOWN_DENIED` for native `patch`, missing transcript Start output,
+and repeated Desktop event-stream disconnects remain separate unresolved issues.
+
+The same Desktop run logged 399 global event-stream disconnects and an
+`ERR_INSUFFICIENT_RESOURCES` diagnostic. A later restart failed to load a
+missing GUI bundle after the workflow had completed. Neither the disconnect
+cause nor the removal of the local config/demo directories was established.
+This repair does not restart the user's service, recreate those directories,
+alter incident sessions, or claim to fix those separate host failures.
+
+#### Historical verification of superseded `fd4c845e`
+
+Final functional unit tests passed **8,643** (57 skipped), integration passed
+**4,642** across 264 files, and architecture passed **554**. Build, TypeScript,
+strict lint, format, documentation drift and template-hash stability passed.
+The first performance run had one 50 ms state-I/O budget failure at 69.18 ms
+while other verification was running; an isolated full rerun passed **55/55**
+without changing the budget or tests. The precise timing cause is unverified.
+
+On macOS arm64 / Node 22.22.2, the final focused native run on candidate 2.2.5
+passed all **11 tests** across decision, resume and Start suites. It checks
+canonical feedback after SIGKILL/reload with an empty presentation queue,
+attempt-bound results, zero additional decision provider requests, and
+implementation/resume progress. The real Start/approval fixture now declares
+its active `typecheck` script: the new phase assertion exposed that omission
+instead of accepting a return to PLAN as implementation readiness.
+
+The first expanded native run had four failures: two from that missing fixture
+script, and two Start location-activation HTTP 503 responses. The Start failures
+did not reproduce in an isolated 2/2 rerun or the final serial 11/11 run; their
+cause remains unverified. No host-read retry policy was relaxed.
+
+Before the scope restoration, focused mutation of
+`src/audit/proofgraph/evidence-role-independence.ts` scored
+**100%**: 41 killed, zero survived, zero uncovered, 32 compile-rejected, with
+the existing 80% break threshold unchanged. The first run scored 95% with two
+survivors; new distinct-oracle and optional-adversarial tests cover both gaps.
+Configs and both reports are retained in the session-owned temporary directory
+`opencode/flowguard-last-run-repair/`. This is one-module diagnostic evidence,
+**not** full-profile or whole-repository mutation admission.
+
+The template-hash and unused-export wrapper commands encountered local `npx`
+resolution of an absent package tarball. Direct local Vitest hash generation
+and stability checks passed; local Knip plus the canonical baseline comparator
+reported zero new unused exports (four baseline entries removed). No dependency,
+baseline, threshold or wrapper behavior was changed to hide these failures.
+
+### Snapshot location is not an arbitrary UI location
+
+An initial RPC reader used the TUI plugin location. On macOS, `/var/...` and
+`/private/var/...` selected distinct host plugin instances, despite referring
+to the same files. The command's instance held the snapshot; the reader's
+instance returned `null`. Captured setup/read records exposed the mismatch.
+
+The probe reader now uses the selected host session's `location`, obtained
+from the existing TUI session cache. It rechecks the current session after the
+RPC resolves and performs no filesystem-based alias migration or fallback.
+The final assertions require actual terminal output, not merely a successful
+RPC response or the fixture's observation file.
+
+The TUI context's location can also be absent during setup. Diagnostic output
+uses the known fixture path; RPC routing never guesses from that path.
+
+## Forensic retry, native patch and validation-display correction
+
+The comparison baseline is `41b2932e`, before the first progress change. The
+installed `/plan` incident exposed a durable re-arm without a matching transient
+pending-review update. The correction registers the exact fresh attempt through
+`registerPendingReviewForAttempt()` only after the durable write succeeds. An
+absent/ambiguous originating binding never produces an executable retry promise.
+Budgets, old-child quarantine and durable dispatch guards remain unchanged.
+
+Native `patch` is projected to canonical `apply_patch` in both hooks, retaining
+the native `patchText`, host-call identity and result metadata. The real-host
+fixture selects a GPT-family test model because OpenCode does not expose `patch`
+for the generic probe model. This remains a deterministic local provider, not a
+real-provider acceptance claim.
+
+Baseline and implementation-validation events carry the existing
+`SystemWorkOperation` and an ephemeral run ID. The reader filters against the
+current durable operation/attempt and phase and serves nothing outside
+`VALIDATION`/`IMPL_VALIDATION`. The store rejects superseded runs and
+post-terminal updates. The initial `/implement` tool execution injects the same
+non-blocking progress callback as the baseline decision path. The Desktop channel
+uses `PresentationUpdated` invalidations rather than the added one-second poller,
+with coalesced snapshot reads and no model turn. The existing pill label exposes
+the current check text directly. The original 30-second status reconciler,
+command responses and controls remain unchanged. Window setup uses the SDK's
+`ctx.servers`; `ctx.serverEndpoints` is a main-process domain, not an alternative
+window contract.
+
+The repaired native modules are **not** in any committed mutation profile. A
+probe that added them to `review-capture` measured 69.97% aggregate (below the
+unchanged 80% break gate) and was reverted rather than weakening the gate or
+claiming admission. Their mutation coverage remains `NOT_VERIFIED`; the
+registered profile is unchanged and covers only its pre-existing candidates.
+
+**NOT_VERIFIED:** installed Desktop rendering, eventstream-disconnect causality,
+real-provider behavior and confirmed subprocess-start instrumentation. Check
+preparation/return notifications do not claim process start or a persisted PASS.
+No live installation or incident session is changed by these tests.
+
+## Reproduce
+
+Use the pinned repository Node toolchain and either install the exact declared
+candidate or set `OPENCODE_CLI` to its executable. An explicit mismatching
+binary fails in the existing host helper; there is no historical-host fallback.
+
+```bash
+OPENCODE_LIVE=1 npm run test:smoke -- --no-file-parallelism \
+  src/cli/opencode-validation-progress.smoke.test.ts
+OPENCODE_LIVE=1 npm run test:smoke -- \
+  src/cli/opencode-validation-resume.smoke.test.ts
+OPENCODE_LIVE=1 npm run test:smoke -- \
+  src/cli/opencode-reviewer-event-lifecycle.smoke.test.ts
+OPENCODE_LIVE=1 npm run test:smoke -- \
+  src/cli/opencode-decision-command-live.smoke.test.ts
+```
+
+The decision-command smoke test asserts that the real `/approve` path retains
+one final decision/check-result chat response with `/implement`, while validation
+progress adds no provider request or user message. The read-only presentation
+RPC contains only baseline or post-implementation validation progress. It uses
+explicit component review-gate fixtures; it is not independent reviewer
+provenance.
+
+For the incident-only regression, set `FLOWGUARD_OPENCODE_INCIDENT_CLI` to the
+exact 2.2.7 executable. Its version is checked; this does not alter the canonical
+candidate pin or replace the user's CLI. All probes use isolated native storage
+and never replay the original affected session.
+
+Optionally set `FLOWGUARD_PROGRESS_PROBE_REPORT_DIR` to an owned evidence
+directory. Before fixture cleanup, each case saves the exact host version,
+native observations, provider-request session IDs, UI observations and bounded
+terminal capture there. These are test traces, not persisted product progress
+state or audit evidence. The suite's JSON reporter can be retained separately.
+
+The existing CI smoke job enables `FLOWGUARD_OPENCODE_HOST_E2E=1`, installs and
+checks the exact candidate, and discovers this suite without a workflow change.
+The two PTY-dependent cases are explicitly skipped on Windows. A run without
+either live-host flag skips the suite and is **not transport evidence**.
+
+## Product implementation remains gated
+
+The supported native success route has product-path evidence. The former
+`presentValidationProgress()` prompt is replaced by the model-free validation
+channel for both baseline and post-implementation checks; the original final
+decision-confirmation chat response is preserved. Before claiming the complete
+feature, independently verify the required installed UI scope. The remaining
+product implementation must:
+
+- prove the validation presentation channel in the packed Desktop product,
+  including plan approval, post-implementation checks and supported resumption,
+  without changing `/start`, `/implement` or other command presentation;
+- observe a confirmed shell `spawn` before claiming process start, without
+  changing executor output/digest/error semantics;
+- use the existing `ValidationAttempt.attemptId` and baseline/implementation
+  subject identity; allocation alone is not persistence;
+- publish a final check result only after classification, attestation and
+  successful persistence through the existing run-check authority;
+- isolate and bound display delivery so a failed or hanging consumer cannot
+  alter validation or hold a session write lock;
+- reject stale attempt/subject updates and distinguish unknown display state
+  from actual running or completed work.
+
+**NOT_VERIFIED:** installed packed-product progress, installed TUI/Desktop
+presentation, Desktop rendering, Windows rendering, real-provider acceptance,
+native tool rendering and confirmed subprocess-start instrumentation. Historical
+summary/report tests do not verify the current chat restoration. Stale-phase
+reconciliation and nonblocking progress callbacks have component/native evidence, not installed
+GUI acceptance. Recovery requires the corresponding installed-host/UI and product
+negative tests; rerunning this fixture alone cannot establish those claims.
+
+No new state schema, second executor, PASS/FAIL authority, console streaming,
+or fix for process quiescence [#1173](https://github.com/koeppben23/governed-runtime/issues/1173)
+is introduced. This is not a new V2 migration or full host-certification claim.

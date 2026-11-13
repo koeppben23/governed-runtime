@@ -1,4 +1,12 @@
 /** Presentation-only planning guidance; executable parity is tested against claim admission. */
+export const PLAN_CLAIM_REPAIR_INSTRUCTION =
+  'Read each rejected declaration field in claimSubmissionDiagnostics, correct the complete claim set and resubmit the complete plan in the current planning step. ' +
+  'A rejected submission created no plan version or reviewer attempt; do not start a new session for this rejection. ' +
+  'Inspect the active verificationCandidates: build and test are different check identities even if their commands overlap; an assertion requirement must name the exact provider and assertion that observes the claim. ' +
+  'Admission is not proof: do not claim executed verification or a successful falsification from an accepted declaration. ' +
+  'Do not automatically remove or downgrade critical claims, invent capabilities, or retry the unchanged invalid payload. ' +
+  'If a genuinely required evidence route is unavailable, explain the precise missing capability and ask the user; claims: [] is only an explicit withdrawal when no required ProofGraph authority is lost.';
+
 export const PLAN_CLAIM_GUIDANCE = `### Claim declarations
 
 - Submit the complete \`claims\` with every plan submission or revision. Each claim names one falsifiable \`statement\`, its \`authoritySectionId\`, \`critical\`, \`claimScope\`, and \`expectedCheckId\`. Do NOT provide \`claimId\`: FlowGuard mints claim identity host-side.
@@ -8,8 +16,9 @@ export const PLAN_CLAIM_GUIDANCE = `### Claim declarations
 - A counterexample is a targeted falsification, not a second green run: it must exercise a concrete violating variant and show the bound check detects it. For a checkable invariant, the build/aggregate check is acceptable when the designed faulty variant is provably rejected; different check identities and separate attempts remain required, but different assertion identities are not.
 - For \`suite\` use \`kind: "aggregate_check"\`: the positive candidate needs structured full-suite capability, and the adversarial candidate needs registered aggregate capability AND \`fullCheckScopeAttestation: "full_check"\`. Structured assertion reports alone are not aggregate coverage.
 - Select only active checks and current \`verificationCandidates\` capable of producing the required evidence. Do not invent providers, assertion identities, aggregate capabilities, or proving mutation providers. If no admissible evidence route exists, report the blocker instead of submitting an unprovable claim.
+- On declaration rejection: ${PLAN_CLAIM_REPAIR_INSTRUCTION}
 - Declare \`coversRiskTriggers\` on critical claims for every known applicable specific risk: \`state_integrity\`, \`audit_authority\`, \`identity_boundary\`, \`approval_authority\`, \`policy_authority\`, \`migration\`, \`distribution_integrity\`, \`command_contract\`. Coverage must match the behavior actually asserted, never be inferred from prose or added indiscriminately. \`ceremony_only\` is not declarable coverage.
-- \`targetPaths\` are advisory and can be partial or unknown. The binding risk assessment comes from actual implementation changes; it can discover additional triggers that the approved plan did not cover.
+- \`targetPaths\` are review-scoping forecasts, not the binding implementation risk assessment. Declare repository-relative file paths separately from Discovery classification paths. Approval compares their canonical identities with baseline/current dirt; unknown scope with dirt or unavailable baseline capture blocks. A revision replaces explicitly supplied targets, or retains prior targets when omitted. Actual implementation changes can discover additional triggers that approved claims did not cover.
 - Claims are pre-evidence declarations, not proof. The certificate binds the exact declaration set. Never widen an approved declaration in place. At EVIDENCE_REVIEW, request changes returns to IMPLEMENTATION, not PLAN. For a required authority change follow the canonical new-session recovery in the returned reason; re-running checks cannot repair missing approved coverage.
 
 Example declaration, ONLY if build/test are active and test has a matching JUnit assertion-capable candidate. Replace the statement, section and assertion with real plan/repository evidence; do not copy this illustrative identity blindly:

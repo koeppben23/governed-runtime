@@ -649,7 +649,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     const recovery = JSON.parse(
       String(await plan.execute({ reviewRecovery: 'retry_transport' }, env.tc)),
     );
-    expect(recovery.code).not.toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
+    expect(recovery.code).not.toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
     const { fulfillStrictReviewObligation } = await import('./test-helpers.js');
     await fulfillStrictReviewObligation(env.sDir, {
       obligationType: 'plan',
@@ -666,7 +666,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     const blocked = JSON.parse(
       String(await plan.execute({ planText: `${PLAN_TEXT}\nRevision` }, env.tc)),
     );
-    expect(blocked.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
+    expect(blocked.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
     expect(await readState(env.sDir)).toEqual(before);
     const withdrawal = JSON.parse(
       String(await plan.execute({ planText: `${PLAN_TEXT}\nRevision`, claims: [] }, env.tc)),
@@ -702,7 +702,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
         ),
       ),
     );
-    expect(blocked.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
+    expect(blocked.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
     expect(await readState(env.sDir)).toEqual(before);
     const corrected = JSON.parse(
       String(

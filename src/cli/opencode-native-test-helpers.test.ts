@@ -4,7 +4,11 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { awaitLocationActivation, nativeNodeCommand } from './opencode-native-test-helpers.js';
+import {
+  awaitLocationActivation,
+  awaitNativePlugins,
+  nativeNodeCommand,
+} from './opencode-native-test-helpers.js';
 
 describe('nativeNodeCommand', () => {
   it('runs unchanged in the platform shell the host uses for shell tools', () => {
@@ -25,6 +29,37 @@ describe('nativeNodeCommand', () => {
 });
 
 const location = { directory: '/project' };
+describe('awaitNativePlugins', () => {
+  const active = { id: 'flowguard', state: { status: 'active' } };
+  const required = (plugins: Array<{ id?: string }>) =>
+    plugins.some((plugin) => plugin.id === 'flowguard');
+  it('waits through an initially empty registry for the required plugin', async () => {
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValue({ data: [active] });
+    await awaitNativePlugins({ plugin: { list } } as never, location, required, 1_000, 0);
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+  it('does not hide a failed plugin or retry a transport failure', async () => {
+    const list = vi.fn().mockResolvedValue({ data: [{ ...active, state: { status: 'failed' } }] });
+    await expect(
+      awaitNativePlugins({ plugin: { list } } as never, location, required),
+    ).rejects.toThrow('activation failed');
+    expect(list).toHaveBeenCalledOnce();
+    const failure = new Error('transport failed');
+    list.mockRejectedValue(failure);
+    await expect(
+      awaitNativePlugins({ plugin: { list } } as never, location, required),
+    ).rejects.toBe(failure);
+  });
+  it('bounds missing-plugin registration rather than accepting an empty registry', async () => {
+    const list = vi.fn().mockResolvedValue({ data: [] });
+    await expect(
+      awaitNativePlugins({ plugin: { list } } as never, location, required, 20, 5),
+    ).rejects.toThrow('registration timed out');
+  });
+});
 const activating = {
   _tag: 'ServiceUnavailableError',
   message: 'Location plugins did not finish activating',

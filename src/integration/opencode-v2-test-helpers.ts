@@ -95,6 +95,8 @@ export function createV2Host(directory: string) {
       location: { directory: string };
       parentID?: string;
       agent?: string;
+      outcome?: 'succeeded' | 'failed' | 'interrupted';
+      time?: { busy?: number; idle?: number };
     }> => ({
       id: sessionID,
       location: { directory },
@@ -106,6 +108,7 @@ export function createV2Host(directory: string) {
   const interrupt = vi.fn(async (_input: unknown) => ({ interrupted: true }));
   const synthetic = vi.fn(async (_input: unknown) => ({ id: 'synthetic', type: 'synthetic' }));
   const switchAgent = vi.fn(async (_input: unknown) => {});
+  const emitRpcEvent = vi.fn(async (_name: string, _data: unknown) => {});
   const context = {
     app: { name: 'opencode', version: '2.2.5', channel: 'stable' },
     location: { directory, project: { id: 'project', directory, canonical: directory } },
@@ -119,7 +122,7 @@ export function createV2Host(directory: string) {
         ) => {
           const registration = register();
           for (const [name, handler] of Object.entries(methods)) rpcMethods.set(name, handler);
-          return registration;
+          return { ...registration, events: { emit: emitRpcEvent } };
         },
       ),
     },
@@ -177,6 +180,7 @@ export function createV2Host(directory: string) {
     definitions,
     commands,
     rpcMethods,
+    emitRpcEvent,
     synthetic,
     switchAgent,
     sessionGet,
@@ -209,6 +213,24 @@ export function createV2Host(directory: string) {
     /** Native command callback; the host channel, never an operator-UI proof. */
     command: async (name: string, sessionID: string, text = '') => {
       await commands.get(name)!.execute({ sessionID, prompt: { text }, delivery: 'queue' });
+    },
+    /** Read-only ephemeral presentation page; not audit or workflow evidence. */
+    presentation: async (sessionID: string) => {
+      const method = rpcMethods.get('GetPresentation');
+      if (!method) throw new Error('GetPresentation is not registered');
+      return (await method({ sessionID })) as {
+        sessionID: string;
+        events: Array<{
+          id: string;
+          sessionID: string;
+          kind: 'notice' | 'validation' | 'decision' | 'report';
+          message: string;
+          phase?: string;
+          checks?: string[];
+          occurredAt: string;
+        }>;
+        cursor: string | null;
+      };
     },
   };
 }
