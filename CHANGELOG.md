@@ -972,6 +972,10 @@ last read` without a click, while a completion in another session left the
 - Instruct a revised plan response to dispatch the fresh reviewer explicitly
   before requesting review feedback, and cover interrupted reviewer children
   with the canonical fresh-submission recovery path.
+- Fix `flowguard inspect` to recognize automatic validation outcomes as
+  validation execution evidence and to report the actual terminal lifecycle
+  event; auto-validated complete sessions are no longer reported as failed or
+  labelled with `lifecycle:session_created` as their termination event.
 - Report a revised plan response as pending a fresh independent review instead of
   presenting the prior `changes_requested` verdict as the current result. The
   response continues to require the exact reviewer dispatch.

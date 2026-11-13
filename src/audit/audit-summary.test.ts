@@ -290,5 +290,229 @@ describe('audit summary', () => {
 });
 
 // =============================================================================
+// audit summary — validation and lifecycle evidence
+// =============================================================================
+
+describe('audit summary — validation and lifecycle evidence', () => {
+  const created = makeAuditEvent({
+    event: 'lifecycle:session_created',
+    phase: 'TICKET',
+    occurredAt: TS1,
+    actor: 'system',
+    detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'TICKET' },
+  });
+  const approvePlan = makeAuditEvent({
+    event: 'transition:APPROVE',
+    phase: 'VALIDATION',
+    occurredAt: TS1,
+    detail: {
+      kind: 'transition',
+      from: 'PLAN_REVIEW',
+      to: 'VALIDATION',
+      event: 'APPROVE',
+    },
+  });
+  const validationPassed = makeAuditEvent({
+    event: 'transition:ALL_PASSED',
+    phase: 'IMPLEMENTATION',
+    occurredAt: TS2,
+    detail: {
+      kind: 'transition',
+      from: 'VALIDATION',
+      to: 'IMPLEMENTATION',
+      event: 'ALL_PASSED',
+    },
+  });
+  const implComplete = makeAuditEvent({
+    event: 'transition:IMPL_COMPLETE',
+    phase: 'IMPL_VALIDATION',
+    occurredAt: TS2,
+    detail: {
+      kind: 'transition',
+      from: 'IMPLEMENTATION',
+      to: 'IMPL_VALIDATION',
+      event: 'IMPL_COMPLETE',
+    },
+  });
+  const implValidationPassed = makeAuditEvent({
+    event: 'transition:ALL_PASSED',
+    phase: 'IMPL_REVIEW',
+    occurredAt: TS2,
+    detail: {
+      kind: 'transition',
+      from: 'IMPL_VALIDATION',
+      to: 'IMPL_REVIEW',
+      event: 'ALL_PASSED',
+    },
+  });
+  const reviewMet = makeAuditEvent({
+    event: 'transition:REVIEW_MET',
+    phase: 'EVIDENCE_REVIEW',
+    occurredAt: TS3,
+    detail: {
+      kind: 'transition',
+      from: 'IMPL_REVIEW',
+      to: 'EVIDENCE_REVIEW',
+      event: 'REVIEW_MET',
+    },
+  });
+  const approveEvidence = makeAuditEvent({
+    event: 'transition:APPROVE',
+    phase: 'COMPLETE',
+    occurredAt: TS3,
+    detail: {
+      kind: 'transition',
+      from: 'EVIDENCE_REVIEW',
+      to: 'COMPLETE',
+      event: 'APPROVE',
+    },
+  });
+  const completed = makeAuditEvent({
+    event: 'lifecycle:session_completed',
+    phase: 'COMPLETE',
+    occurredAt: TS3,
+    actor: 'system',
+    detail: { kind: 'lifecycle', action: 'session_completed', finalPhase: 'COMPLETE' },
+  });
+
+  const completedTrail = (): AuditEvent[] => [
+    created,
+    approvePlan,
+    validationPassed,
+    implComplete,
+    implValidationPassed,
+    reviewMet,
+    approveEvidence,
+    completed,
+  ];
+
+  it('HAPPY: automatic validation outcomes satisfy validation_executed without a host run_check call', () => {
+    const summary = generateComplianceSummary(completedTrail(), SESSION_ID, null, TS3);
+    const check = summary.checks.find((c) => c.name === 'validation_executed');
+    expect(check?.passed).toBe(true);
+    expect(check?.detail).toContain('2 automatic validation outcome(s)');
+    expect(summary.compliant).toBe(true);
+  });
+
+  it('HAPPY: an explicit run_check in IMPL_VALIDATION counts as validation evidence', () => {
+    const trail = [
+      created,
+      approvePlan,
+      makeAuditEvent({
+        event: 'tool_call:flowguard_run_check',
+        phase: 'IMPL_VALIDATION',
+        occurredAt: TS2,
+        actor: 'machine',
+        detail: {
+          kind: 'tool_call',
+          tool: 'flowguard_run_check',
+          success: true,
+          transitionCount: 0,
+        },
+      }),
+      completed,
+    ];
+    const summary = generateComplianceSummary(trail, SESSION_ID, null, TS3);
+    const check = summary.checks.find((c) => c.name === 'validation_executed');
+    expect(check?.passed).toBe(true);
+    expect(check?.detail).toContain('1 explicit validation check(s)');
+  });
+
+  it('BAD: reaching a validation phase without execution evidence fails', () => {
+    const summary = generateComplianceSummary(
+      [created, approvePlan, completed],
+      SESSION_ID,
+      null,
+      TS3,
+    );
+    const check = summary.checks.find((c) => c.name === 'validation_executed');
+    expect(check?.passed).toBe(false);
+    expect(check?.detail).toContain('no validation execution evidence');
+  });
+
+  it('BAD: ALL_PASSED from a non-validation phase does not count', () => {
+    const falsePositive = makeAuditEvent({
+      event: 'transition:ALL_PASSED',
+      phase: 'IMPL_VALIDATION',
+      occurredAt: TS2,
+      detail: {
+        kind: 'transition',
+        from: 'IMPLEMENTATION',
+        to: 'IMPL_VALIDATION',
+        event: 'ALL_PASSED',
+      },
+    });
+    const summary = generateComplianceSummary(
+      [created, approvePlan, falsePositive, completed],
+      SESSION_ID,
+      null,
+      TS3,
+    );
+    const check = summary.checks.find((c) => c.name === 'validation_executed');
+    expect(check?.passed).toBe(false);
+  });
+
+  it('HAPPY: CHECK_FAILED from VALIDATION still proves validation execution', () => {
+    const checkFailed = makeAuditEvent({
+      event: 'transition:CHECK_FAILED',
+      phase: 'PLAN',
+      occurredAt: TS2,
+      detail: {
+        kind: 'transition',
+        from: 'VALIDATION',
+        to: 'PLAN',
+        event: 'CHECK_FAILED',
+      },
+    });
+    const summary = generateComplianceSummary(
+      [created, approvePlan, checkFailed, completed],
+      SESSION_ID,
+      null,
+      TS3,
+    );
+    const check = summary.checks.find((c) => c.name === 'validation_executed');
+    expect(check?.passed).toBe(true);
+    expect(check?.detail).toContain('1 automatic validation outcome(s)');
+  });
+
+  it('CORNER: session_terminated names the completion event, not the first lifecycle event', () => {
+    const summary = generateComplianceSummary([created, completed], SESSION_ID, null, TS3);
+    const check = summary.checks.find((c) => c.name === 'session_terminated');
+    expect(check?.passed).toBe(true);
+    expect(check?.detail).toContain('lifecycle:session_completed');
+    expect(check?.detail).not.toContain('lifecycle:session_created');
+  });
+
+  it('CORNER: session_terminated names the abort event', () => {
+    const aborted = makeAuditEvent({
+      event: 'lifecycle:session_aborted',
+      phase: 'ABORTED',
+      occurredAt: TS2,
+      actor: 'system',
+      detail: { kind: 'lifecycle', action: 'session_aborted', finalPhase: 'ABORTED' },
+    });
+    const summary = generateComplianceSummary([created, aborted], SESSION_ID, null, TS3);
+    const check = summary.checks.find((c) => c.name === 'session_terminated');
+    expect(check?.passed).toBe(true);
+    expect(check?.detail).toContain('lifecycle:session_aborted');
+  });
+
+  it('CORNER: error detail does not claim resolution without resolution evidence', () => {
+    const error = makeAuditEvent({
+      event: 'error:TOOL_TIMEOUT',
+      phase: 'PLAN',
+      occurredAt: TS2,
+      actor: 'machine',
+      detail: { kind: 'error', code: 'TOOL_TIMEOUT' },
+    });
+    const summary = generateComplianceSummary([created, error, completed], SESSION_ID, null, TS3);
+    const check = summary.checks.find((c) => c.name === 'no_unresolved_errors');
+    expect(check?.passed).toBe(true);
+    expect(check?.detail).toContain('session reached terminal phase COMPLETE');
+    expect(check?.detail).not.toContain('all resolved');
+  });
+});
+
+// =============================================================================
 // audit/completeness
 // =============================================================================

@@ -631,6 +631,12 @@ synchronous archive creation + verification. The `regulatedArchiveStatus` field 
 
 Read-only CLI command that surfaces existing audit and compliance data without mutation.
 
+Validation execution evidence is satisfied by an explicit
+`flowguard_run_check` audit event in `VALIDATION` or `IMPL_VALIDATION`, or by a
+canonical validation-outcome transition (`ALL_PASSED`, `CHECK_FAILED`,
+`CHECK_ERRORED`) from either phase. Automatic validation therefore counts
+without a synthetic host tool call.
+
 **Usage:**
 
 ```bash

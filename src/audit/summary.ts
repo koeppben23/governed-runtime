@@ -201,19 +201,20 @@ function checkSessionCreated(filtered: AuditEvent[]): ComplianceCheck {
 
 /** Check 2: Session reached terminal state. */
 function checkSessionTerminated(filtered: AuditEvent[]): ComplianceCheck {
-  const hasCompletion = filtered.some(
+  const terminalLifecycle = filtered.find(
     (e) => e.event === 'lifecycle:session_completed' || e.event === 'lifecycle:session_aborted',
   );
   const lastEvent = filtered[filtered.length - 1];
   const lastPhase = lastEvent === undefined ? 'unknown' : lastEvent.phase;
   return {
     name: 'session_terminated',
-    passed: hasCompletion || isTerminalPhase(lastPhase),
-    detail: hasCompletion
-      ? `Session terminated (${filtered.find((e) => e.event.startsWith('lifecycle:session_'))?.event ?? 'unknown'})`
-      : isTerminalPhase(lastPhase)
-        ? `Session reached terminal phase ${lastPhase}`
-        : `Session is in phase ${lastPhase} (not terminated)`,
+    passed: terminalLifecycle !== undefined || isTerminalPhase(lastPhase),
+    detail:
+      terminalLifecycle !== undefined
+        ? `Session terminated (${terminalLifecycle.event})`
+        : isTerminalPhase(lastPhase)
+          ? `Session reached terminal phase ${lastPhase}`
+          : `Session is in phase ${lastPhase} (not terminated)`,
   };
 }
 
@@ -232,7 +233,7 @@ function checkNoUnresolvedErrors(filtered: AuditEvent[]): ComplianceCheck {
         ? `Unresolved error: ${lastError.event} in phase ${lastError.phase}`
         : errors.length === 0
           ? 'No errors recorded'
-          : `${errors.length} error(s) recorded, all resolved`,
+          : `${errors.length} error(s) recorded; session reached terminal phase ${lastPhase}`,
   };
 }
 
@@ -271,20 +272,46 @@ function checkReviewGatesHonored(
   ];
 }
 
-/** Check 5: Validation phase was executed with tool calls. */
+const VALIDATION_PHASES: ReadonlySet<string> = new Set(['VALIDATION', 'IMPL_VALIDATION']);
+const VALIDATION_OUTCOME_EVENTS: ReadonlySet<string> = new Set([
+  'ALL_PASSED',
+  'CHECK_FAILED',
+  'CHECK_ERRORED',
+]);
+
+function isValidationPhase(value: unknown): value is string {
+  return typeof value === 'string' && VALIDATION_PHASES.has(value);
+}
+
+/**
+ * Automatic validation executes the canonical run-check path in-process. It
+ * cannot emit a host `tool_call:flowguard_run_check` event, but it does emit the
+ * machine's validation-outcome transition. Counting that transition is sound:
+ * the guards only fire after the phase's canonical validation evidence is
+ * satisfied (or after an executed check failed/errored).
+ */
+function isValidationOutcomeTransition(event: AuditEvent): boolean {
+  if (!event.event.startsWith('transition:')) return false;
+  if (!isValidationPhase(event.detail?.from)) return false;
+  return VALIDATION_OUTCOME_EVENTS.has(event.event.slice('transition:'.length));
+}
+
+/** Check 5: Validation phase has explicit or automatic execution evidence. */
 function checkValidationExecuted(filtered: AuditEvent[]): ComplianceCheck {
-  const reachedValidation = filtered.some((e) => e.phase === 'VALIDATION');
-  const validationEvents = filtered.filter(
-    (e) => e.phase === 'VALIDATION' && e.event.startsWith('tool_call:flowguard_run_check'),
+  const reachedValidation = filtered.some((e) => isValidationPhase(e.phase));
+  const explicitChecks = filtered.filter(
+    (e) => isValidationPhase(e.phase) && e.event.startsWith('tool_call:flowguard_run_check'),
   );
+  const automaticOutcomes = filtered.filter(isValidationOutcomeTransition);
+  const evidenceCount = explicitChecks.length + automaticOutcomes.length;
   return {
     name: 'validation_executed',
-    passed: validationEvents.length > 0 || !reachedValidation,
+    passed: evidenceCount > 0 || !reachedValidation,
     detail:
-      validationEvents.length > 0
-        ? `${validationEvents.length} validation check(s) recorded`
+      evidenceCount > 0
+        ? `${explicitChecks.length} explicit validation check(s) and ${automaticOutcomes.length} automatic validation outcome(s) recorded`
         : reachedValidation
-          ? 'WARNING: Reached VALIDATION but no validation tool calls recorded'
+          ? 'WARNING: Reached a validation phase but no validation execution evidence recorded'
           : 'Session did not reach VALIDATION (validation not applicable)',
   };
 }
