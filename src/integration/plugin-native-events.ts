@@ -198,7 +198,12 @@ export async function awaitReviewerInitialRun(input: ReviewerInitialAwaitInput):
     isTerminal: async () => {
       try {
         const session = await input.ctx.session.get({ sessionID: childSessionId });
-        return session.outcome !== undefined || session.time?.idle !== undefined;
+        if (session.outcome !== undefined) return true;
+        const busy = session.time?.busy;
+        const idle = session.time?.idle;
+        // An old idle timestamp is not terminal when the child started a newer
+        // step; wait for that step instead of capturing it prematurely.
+        return idle !== undefined && (busy === undefined || busy <= idle);
       } catch {
         return true;
       }

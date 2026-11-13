@@ -957,8 +957,13 @@ last read` without a click, while a completion in another session left the
   return the `subagent` tool before the child's first model request; FlowGuard
   now keeps the authorized dispatch and attempt intact and waits for the exact
   bound child instead of invalidating the attempt and denying the child's model
-  request. Genuine child failures and missing terminal boundaries remain
-  `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`.
+  request. A stale `time.idle` timestamp is not treated as terminal when the
+  child has a newer busy step. Genuine child failures and missing terminal
+  boundaries remain `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`.
+- Clarify plan variant authoring: `before` must match the post-implementation
+  source after the plan's own edits, and `after` must make the declared
+  assertion fail. A non-matching or non-falsifying variant remains
+  `NOT_VERIFIED`; breaking an unrelated test is not a counterexample.
 - Bind positive assertion declarations consistently at plan admission and proof
   evaluation. Ordinary green checks no longer count as executed falsification:
   approved exact source variants run in private control/variant copies, with

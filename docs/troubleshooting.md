@@ -203,7 +203,10 @@ proof or successful falsification.
 A declared variant that cannot be executed (missing ignored dependencies or
 build outputs in the isolated source copies, non-unique `before` text, source
 drift, or no current approved certificate) records no adversarial support. The
-claim stays `NOT_VERIFIED`; the ordinary check is still recorded. Supply the
+claim stays `NOT_VERIFIED`; the ordinary check is still recorded. A `before`
+snippet copied from the pre-change file is invalid once the plan's own edits
+replace those lines; derive it from the post-implementation source. `after` must
+make the declared assertion fail, not merely a different test. Supply the
 required built artifacts in the repository or redesign the check; never install
 or switch to an unapproved command to manufacture evidence.
 

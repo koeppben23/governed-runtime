@@ -703,6 +703,22 @@ describe('native capture composition with durable evidence', () => {
     expect(h.wait).toHaveBeenCalled();
   });
 
+  it('does not treat a stale idle timestamp as a finished child', async () => {
+    const h = await fixture(false, true);
+    const base = h.host.sessionGet.getMockImplementation();
+    if (base === undefined) throw new Error('missing session.get fixture');
+    h.host.sessionGet.mockImplementation(async (input) => {
+      const session = await base(input);
+      if (input.sessionID !== 'child') return session;
+      // The child was idle earlier but started a newer step (busy > idle).
+      return { ...session, time: { busy: 200, idle: 100 } };
+    });
+    await h.reviewer.capture(h.root, h.event);
+    const state = (await readState(h.seeded.sessDir))!;
+    expect(state.reviewAssurance!.obligations[0]!.status).toBe('fulfilled');
+    expect(h.wait).toHaveBeenCalled();
+  });
+
   it('R1/R3 refuses an extra completed assistant before serialization or evidence', async () => {
     const h = await fixture();
     const original = h.history();

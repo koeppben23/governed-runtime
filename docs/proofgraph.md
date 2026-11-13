@@ -326,10 +326,15 @@ missing or `not_verified` counterexample is a missing required provider, not a
 pass-by-fallback.
 
 Declare `counterexampleRequirement.variant: { path, before, after }` in the
-approved plan. `before` must occur exactly once, and `after` is a literal
-replacement. The target must be a governed implementation source file, not a
-test, report, dependency manifest or verification configuration. Independent
-review must validate the semantic relevance of this perturbation. The runtime
+approved plan. `before` must occur exactly once in the **post-implementation**
+source, after every edit the plan itself describes; a snippet copied from the
+pre-change file is invalid once the implementation inserts, removes or rewrites
+those lines. `after` is a literal replacement and must make the **declared
+assertion** fail; breaking a different test or leaving the guarded behavior
+intact is not a counterexample. The target must be a governed implementation
+source file, not a test, report, dependency manifest or verification
+configuration. Independent review must validate the semantic relevance of this
+perturbation. The runtime
 executes the existing candidate in two private copies of Git-enumerated current
 sources (tracked and non-ignored untracked files), leaving the original alone.
 Ignored dependencies and build outputs are not copied or installed. Commands
