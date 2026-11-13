@@ -47,6 +47,23 @@ type Step = {
   readonly model: ReviewerModelSelection;
   readonly tools: Map<string, ToolReceipt>;
 };
+
+function reviewerToolReceiptFailure(step: Step, tools: readonly unknown[]): string {
+  const unauthorized = [
+    ...new Set(
+      tools
+        .map((part) => row(part))
+        .filter((part) => typeof part.id !== 'string' || !step.tools.has(part.id))
+        .map((part) => (typeof part.name === 'string' ? part.name : 'unknown')),
+    ),
+  ];
+  if (unauthorized.length === 0)
+    return 'Reviewer continuation does not have exact authorized tool receipts.';
+  return `Reviewer continuation does not have exact authorized tool receipts. Unauthorized reviewer tool call(s): ${unauthorized.join(', ')}. Allowed reviewer tools: ${[
+    ...READ_ONLY_HOST_TOOLS,
+    TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
+  ].join(', ')}.`;
+}
 type Run = {
   readonly requestId: string;
   readonly text: string;
@@ -97,6 +114,11 @@ export class NativeReviewInitialController {
   hasOpenInitialRun(child: string): boolean {
     const run = this.runs.get(child);
     return run !== undefined && !run.sealed && run.violation === undefined;
+  }
+
+  /** Remove every tool outside the reviewer allowlist before the model request. */
+  restrictTools(tools: Record<string, unknown>): void {
+    for (const name of Object.keys(tools)) if (!isInitialReviewerTool(name)) delete tools[name];
   }
 
   private require(child: string): Run {
@@ -247,7 +269,7 @@ export class NativeReviewInitialController {
       (!terminal && tools.length === 0) ||
       tools.length !== step.tools.size
     )
-      reject(run, 'Reviewer continuation does not have exact authorized tool receipts.');
+      reject(run, reviewerToolReceiptFailure(step, tools));
     const ids = new Set<string>();
     for (const part of assistant.content) {
       const value = row(part);

@@ -457,6 +457,8 @@ function createReviewerObservationHooks(
       event: { readonly tools: Record<string, unknown> },
     ) {
       const lease = captureFence.activeLease(scope.sessionId);
+      if (lease !== undefined || initial.hasOpenInitialRun(scope.sessionId))
+        initial.restrictTools(event.tools);
       if (lease !== undefined) {
         captureFence.observeContext(scope.sessionId, lease, event.tools);
         return;

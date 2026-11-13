@@ -953,6 +953,11 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Filter the native reviewer child's per-request tool map to the canonical
+  read/observe allowlist. Parent session permissions can otherwise override the
+  reviewer agent file and offer browser tools, causing the reviewer attempt to
+  fail before serialization. Unauthorized tool parts remain fail-closed and now
+  name the offending tool.
 - Reject structurally unreachable positive plan assertions before independent
   review. Preserve `expectedAssertion` through claim admission, and keep the
   canonical rule that the same regression assertion may serve as the

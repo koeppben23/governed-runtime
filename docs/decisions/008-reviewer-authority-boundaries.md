@@ -107,6 +107,19 @@ and targeted full-loop R 3/3, but the combined 65K full-loop R evidence is 3/4
 because one run retained the R-B counterexample interpretation. The residual
 semantic risk is monitored, not declared closed.
 
+## Reviewer tool surface
+
+The reviewer agent file is defense-in-depth, not the enforcement boundary. A
+native subagent can inherit session-level `browser` and `skill` permissions from
+its parent; those session permissions override the agent file and can offer
+tools the reviewer must never use. The plugin therefore filters the reviewer
+child's per-request tool map in the `context` hook to the canonical allowlist
+(`read`, `glob`, `grep`, `webfetch`, `todowrite`,
+`flowguard_observe_repository`) before each model request. This is a tool-surface
+filter only; it grants no review authority and does not weaken capture. If an
+unexpected tool part still appears, capture fails closed and names the offending
+tool.
+
 ## Consequences
 
 - A reviewer that changes from `finish: "length"` to `finish: "stop"` is not

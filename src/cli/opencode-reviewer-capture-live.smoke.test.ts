@@ -352,4 +352,13 @@ describe.skipIf(!ENABLED)('actual FlowGuard native reviewer capture on pinned Op
     expect(verifyChain(finalAudit).valid).toBe(true);
     expect(probe.providerErrors).toEqual([]);
   }, 180_000);
+
+  it('does not offer browser tools to the actual reviewer child', async () => {
+    const { probe } = await runReview('positive');
+    const reviewerCalls = probe.calls.filter((call) => call.phase === 'review');
+    expect(reviewerCalls.length).toBeGreaterThan(0);
+    const tools = JSON.stringify(reviewerCalls.map((call) => call.body.tools));
+    expect(tools).toContain('flowguard_observe_repository');
+    expect(tools).not.toContain('browser_tabs_list');
+  }, 180_000);
 });

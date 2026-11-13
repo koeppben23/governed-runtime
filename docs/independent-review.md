@@ -607,12 +607,15 @@ The installer writes `.opencode/agents/flowguard-reviewer.md`:
 
 - `mode: subagent`, `hidden: true`, `steps: 10` (the live hard-gate profile may
   override this to 16 for the isolated acceptance run)
-- Read-only: `edit: deny`, `bash: deny`, `webfetch: deny`, `glob: deny`, `grep: deny`, `list: deny`
+- Read-only reviewer tool surface: `read`, `glob`, `grep`, `webfetch`,
+  `todowrite`, and `flowguard_observe_repository`. The plugin filters the
+  reviewer child's per-request tool map to this allowlist before each model
+  request. The agent-file permissions alone are not sufficient: a subagent can
+  inherit session-level `browser`/`skill` permissions from its parent.
 - FlowGuard-isolated: `flowguard_*: deny` and `mcp__flowguard__*: deny` are
   agent-specific OpenCode permission rules. They prevent reviewer children from
   hydrating, mutating, or auditing an independent FlowGuard workflow session.
-  `task: deny` prevents reviewer subagent cascades; `read`, `glob`, and `grep`
-  remain available for review research.
+  `task: deny` prevents reviewer subagent cascades.
 - Adversarial, falsification-first review prompt
 - Returns structured ReviewFindings JSON
 
@@ -836,6 +839,15 @@ capture provenance. Native reviewer dispatch requires canonical ledger/Child
 authority; capture/evidence generation 6 is connected, while safe recovery
 remains blocked until its complete assurance chain is verified. Installed files and canonical-domain fixtures are
 not installed-host acceptance.
+
+The reviewer tool surface is enforced twice. The installed agent file denies
+non-reviewer tools, but a child session can inherit session-level `browser` and
+`skill` permissions from the parent; those session permissions override the
+agent file. The authoritative per-request filter is the reviewer `context` hook:
+it deletes every tool outside `read`/`glob`/`grep`/`webfetch`/`todowrite`/
+`flowguard_observe_repository` before the model request is built. If an
+unexpected tool part still appears, capture remains fail-closed and names the
+offending tool instead of silently accepting an incomplete review.
 
 ---
 

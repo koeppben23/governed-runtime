@@ -380,4 +380,44 @@ describe('R4 tool-result integrity', () => {
       ),
     ).toContain('differs');
   });
+
+  it('restricts reviewer tools to the canonical allowlist', () => {
+    const control = new NativeReviewInitialController();
+    const tools: Record<string, unknown> = {
+      read: {},
+      grep: {},
+      glob: {},
+      webfetch: {},
+      todowrite: {},
+      flowguard_observe_repository: {},
+      browser_tabs_list: {},
+      edit: {},
+      bash: {},
+      subagent: {},
+    };
+    control.restrictTools(tools);
+    expect(Object.keys(tools).sort()).toEqual(
+      ['flowguard_observe_repository', 'glob', 'grep', 'read', 'todowrite', 'webfetch'].sort(),
+    );
+  });
+
+  it('names an unauthorized reviewer tool without weakening the receipt check', () => {
+    const control = started();
+    const history = [
+      user,
+      assistant({
+        id: 'msg_unauthorized',
+        finish: 'tool-calls',
+        content: [
+          {
+            type: 'tool',
+            id: 'tool-browser',
+            name: 'browser_tabs_list',
+            state: { status: 'error', input: {} },
+          },
+        ],
+      }),
+    ];
+    expect(() => control.context(child, history)).toThrow('browser_tabs_list');
+  });
 });
