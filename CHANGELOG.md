@@ -953,6 +953,12 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Wait for an early-returning native reviewer child before capture. A host may
+  return the `subagent` tool before the child's first model request; FlowGuard
+  now keeps the authorized dispatch and attempt intact and waits for the exact
+  bound child instead of invalidating the attempt and denying the child's model
+  request. Genuine child failures and missing terminal boundaries remain
+  `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`.
 - Bind positive assertion declarations consistently at plan admission and proof
   evaluation. Ordinary green checks no longer count as executed falsification:
   approved exact source variants run in private control/variant copies, with

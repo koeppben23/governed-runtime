@@ -18,6 +18,7 @@ import {
 import {
   NativeReviewCaptureFence,
   executeNativeReviewCapture,
+  type NativeCaptureHost,
 } from './review/dispatch/native-review-capture.js';
 import {
   blockedCaptureOutput,
@@ -31,6 +32,7 @@ import {
   toolResultMismatch,
   isInitialReviewerTool,
 } from './review/dispatch/native-review-initial.js';
+import { awaitReviewerInitialRun } from './plugin-native-events.js';
 import { replayAndPersistObservations } from './review/observations/observation-replay-persist.js';
 import type { ActiveGovernanceScope, NativeBefore } from './opencode-governance.js';
 import {
@@ -285,6 +287,15 @@ async function resolveObservedCaptureTarget(
   return resolveNativeCaptureTarget(runtimeFor, scope, event);
 }
 
+function captureHost(ctx: Plugin.Context): NativeCaptureHost {
+  return {
+    context: (sessionID) => ctx.session.context({ sessionID }),
+    mintRequestMessageId: () => `msg_${randomUUID().replaceAll('-', '')}`,
+    prompt: (prompt) => ctx.session.prompt(prompt),
+    wait: (sessionID) => ctx.session.wait({ sessionID }),
+  };
+}
+
 async function runNativeReviewerCapture(input: {
   readonly ctx: Plugin.Context;
   readonly runtimeFor: RuntimeFor;
@@ -299,6 +310,12 @@ async function runNativeReviewerCapture(input: {
     setCaptureContent(event, preBind, metadataFor(event));
     return;
   }
+  await awaitReviewerInitialRun({
+    ctx,
+    initial: input.initial,
+    event,
+    resolve: () => stateFor(runtimeFor, scope).catch(() => null),
+  });
   const { resolved, metadata, childSessionId, nativeCallId, lineage } = await resolveCaptureTarget({
     ctx,
     runtimeFor,
@@ -309,12 +326,7 @@ async function runNativeReviewerCapture(input: {
     setCaptureContent(event, blockedCaptureOutput(code, reason), metadata);
   const outcome = await executeNativeReviewCapture({
     initial: input.initial,
-    host: {
-      context: (sessionID) => ctx.session.context({ sessionID }),
-      mintRequestMessageId: () => `msg_${randomUUID().replaceAll('-', '')}`,
-      prompt: (prompt) => ctx.session.prompt(prompt),
-      wait: (sessionID) => ctx.session.wait({ sessionID }),
-    },
+    host: captureHost(ctx),
     fence,
     runtime: resolved.runtime,
     sessDir: resolved.sessDir,
@@ -366,14 +378,9 @@ async function runNativeReviewerCapture(input: {
 }
 
 type Registration = { dispose(): Promise<void> };
-
 /**
- * Per-child tail hooks for R4. They are registered when the reviewer is admitted,
- * so they run after every setup-time hook, including later-ordered plugins: a
- * tool result replaced after FlowGuard observed it, or a model-input tool result
- * that differs from the stored host history, invalidates the run before the
- * replaced bytes can bind evidence. Hooks registered later still are a
- * documented residual.
+ * Per-child tail hooks registered at admission; they run after every
+ * setup-time hook so replaced or rewritten tool results invalidate the run.
  */
 function createResultIntegrityTails(
   ctx: Plugin.Context,
@@ -499,12 +506,9 @@ type NativeToolBefore = {
   readonly sessionID: string;
   readonly input: unknown;
 };
-
 /**
- * Typed transport recovery of a review family whose reviewer outcome is
- * unknown. Runs before the capacity gate: only a proven later user turn, a
- * proven settled stale child and the exact durable lineage reopen the
- * obligation. Every other case leaves the lock to the existing capacity gate.
+ * Reopen an unknown-outcome review only from proven later-user-turn,
+ * settled-child and durable-lineage evidence.
  */
 async function settleUnknownReviewerOutcome(
   ctx: Plugin.Context,

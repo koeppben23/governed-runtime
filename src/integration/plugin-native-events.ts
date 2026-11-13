@@ -10,6 +10,11 @@ import { resolveGovernanceActivation } from '../adapters/governance-activation.j
 import { handlePluginEvent } from './plugin-afterhooks.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { recordValidationProgress, type PresentationStore } from './plugin-presentation.js';
+import type { SessionState } from '../state/schema.js';
+import type { NativeReviewStateAuthority } from './review/dispatch/native-review-dispatch.js';
+import { reviewerAwaitTarget } from './review/dispatch/native-review-dispatch.js';
+import type { NativeReviewInitialController } from './review/dispatch/native-review-initial.js';
+import { awaitInitialReviewerCompletion } from './review/dispatch/native-review-initial.js';
 
 type EventRuntime = { readonly runtime: FlowGuardPluginRuntime };
 type ScopedEventRuntime = EventRuntime & { readonly scope: ActiveGovernanceScope };
@@ -154,4 +159,54 @@ async function consumeEvents(
   } catch (error) {
     if (!signal.aborted) failed(error);
   }
+}
+
+export interface ReviewerInitialAwaitInput {
+  readonly ctx: Plugin.Context;
+  readonly initial: NativeReviewInitialController;
+  readonly event: {
+    readonly sessionID: string;
+    readonly messageID: string;
+    readonly id: string;
+    readonly result?: { readonly metadata?: Record<string, unknown> };
+  };
+  readonly resolve: () => Promise<{
+    readonly state: SessionState;
+    readonly authority: NativeReviewStateAuthority;
+    readonly runtime: { readonly reviewerExecutionTimeoutMs: number };
+  } | null>;
+}
+
+/**
+ * A host may return the `subagent` tool before the bound reviewer child has
+ * finished its initial run. Keep the authorized attempt intact and wait for
+ * that exact child instead of capturing an unknown outcome prematurely.
+ */
+export async function awaitReviewerInitialRun(input: ReviewerInitialAwaitInput): Promise<void> {
+  const resolved = await input.resolve();
+  if (resolved === null) return;
+  const target = reviewerAwaitTarget({
+    event: input.event,
+    state: resolved.state,
+    authority: resolved.authority,
+  });
+  if (target === null) return;
+  const { childSessionId } = target;
+  await awaitInitialReviewerCompletion({
+    childSessionId,
+    initial: input.initial,
+    isTerminal: async () => {
+      try {
+        const session = await input.ctx.session.get({ sessionID: childSessionId });
+        return session.outcome !== undefined || session.time?.idle !== undefined;
+      } catch {
+        return true;
+      }
+    },
+    wait: () =>
+      input.ctx.session.wait(
+        { sessionID: childSessionId },
+        { signal: AbortSignal.timeout(resolved.runtime.reviewerExecutionTimeoutMs) },
+      ),
+  });
 }

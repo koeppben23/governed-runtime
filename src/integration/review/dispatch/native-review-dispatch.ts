@@ -1,6 +1,7 @@
 /** Native V2 release authority only. Capture, evidence and recovery are not authorized here. */
 import { buildEnforcementError } from '../../blocked-result.js';
 import { hashText } from '../../../shared/hashing.js';
+import { encodeHostCallId } from '../../../state/host-identity.js';
 import { findBindableAttempt } from '../../../state/review-continuation.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import type { SessionState } from '../../../state/schema.js';
@@ -170,6 +171,37 @@ export function nativeReviewDispatchLineage(
   )
     return denied('No exact current authorized dispatch/attempt/obligation/child lineage exists.');
   return { dispatch, attempt, obligation };
+}
+
+/**
+ * Resolve the exact child/native call identity for a pre-capture wait. Returns
+ * null when the event is not the authorized bound child; the existing capture
+ * path then emits its own typed blocker.
+ */
+export function reviewerAwaitTarget(input: {
+  readonly event: {
+    readonly sessionID: string;
+    readonly messageID: string;
+    readonly id: string;
+    readonly result?: { readonly metadata?: Record<string, unknown> };
+  };
+  readonly state: SessionState;
+  readonly authority: NativeReviewStateAuthority;
+}): { readonly childSessionId: string; readonly nativeCallId: string } | null {
+  const metadata = input.event.result?.metadata;
+  const childSessionId =
+    typeof metadata?.sessionID === 'string' && metadata.sessionID.length > 0
+      ? metadata.sessionID
+      : undefined;
+  if (childSessionId === undefined) return null;
+  let nativeCallId: string;
+  try {
+    nativeCallId = encodeHostCallId(input.event.sessionID, input.event.messageID, input.event.id);
+    nativeReviewDispatchLineage(input.state, input.authority, nativeCallId, childSessionId);
+  } catch {
+    return null;
+  }
+  return { childSessionId, nativeCallId };
 }
 
 export async function bindNativeReviewChild(input: {
