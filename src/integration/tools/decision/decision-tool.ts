@@ -206,6 +206,8 @@ async function planBaselineApprovalBlock(input: {
   });
   if (targetCheck.kind === 'unavailable')
     return planBaselineDecisionBlock('IMPLEMENTATION_BASELINE_UNAVAILABLE', {});
+  if (targetCheck.kind === 'invalid')
+    return planBaselineDecisionBlock('PLAN_TARGET_PATH_INVALID', { path: targetCheck.path });
   if (targetCheck.kind === 'dirty' && targetCheck.baselinePaths.length > 0)
     return planBaselineDecisionBlock('PLAN_TARGETS_PREEXISTING_DIRTY', {
       paths: targetCheck.baselinePaths.join(', '),

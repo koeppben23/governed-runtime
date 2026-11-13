@@ -132,7 +132,12 @@ describe('plan claim admission boundary', () => {
       if (result.kind !== 'blocked') return;
       const response = JSON.parse(result.message);
       expect(response.error).toBe(true);
-      expect(response.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
+      expect(response.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
+      expect(response.phase).toBe(state.phase);
+      expect(response.admission).toEqual({ kind: 'rejected', admittedClaimCount: 0 });
+      expect(response.agentInstruction).toContain(
+        'Do not automatically remove or downgrade critical claims',
+      );
       expect(response.claimSubmissionDiagnostics.rejectedClaims).toMatchObject([
         { critical, disposition: 'rejected_blocking' },
       ]);
@@ -178,13 +183,7 @@ describe('plan claim admission boundary', () => {
       for (const step of entry.recovery) expect(response.presentation.markdown).toContain(step);
     }
     const canonical = JSON.parse(
-      formatBlocked('PROOFGRAPH_CLAIM_NOT_DECLARED', {
-        claimRef: rejected[0].claimRef,
-        field: 'declaration admission',
-        detail:
-          'blocking declarations must be corrected or explicitly withdrawn before admitting this revision',
-        consequence: 'No plan version or independent review was created by this rejected call.',
-      }),
+      formatBlocked('PLAN_CLAIM_SUBMISSION_REJECTED', { detail: rejected[0].reason }),
     );
     expect(response.presentation.markdown.startsWith(canonical.presentation.markdown)).toBe(true);
     for (const key of [

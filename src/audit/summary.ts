@@ -26,6 +26,8 @@ import {
 } from './query.js';
 import type { ChainVerification } from './integrity.js';
 import { isTerminalPhase } from '../machine/topology.js';
+import type { SessionState } from '../state/schema.js';
+import { validationExecutionCheck } from './validation-summary.js';
 
 // ─── Timeline Types ───────────────────────────────────────────────────────────
 
@@ -153,6 +155,7 @@ export function generateComplianceSummary(
   sessionId: string,
   chainVerification: ChainVerification | null,
   now: string,
+  validationState: SessionState | null = null,
 ): ComplianceSummary {
   const filtered = sessionEvents(events, sessionId);
   const transitions = filterEvents(filtered, byKind('transition'));
@@ -162,7 +165,7 @@ export function generateComplianceSummary(
     checkSessionTerminated(filtered),
     checkNoUnresolvedErrors(filtered),
     ...checkReviewGatesHonored(filtered, transitions),
-    checkValidationExecuted(filtered),
+    validationExecutionCheck(filtered, validationState),
   ];
 
   if (chainVerification) {
@@ -270,50 +273,6 @@ function checkReviewGatesHonored(
           : 'Session did not reach COMPLETE (evidence review not applicable)',
     },
   ];
-}
-
-const VALIDATION_PHASES: ReadonlySet<string> = new Set(['VALIDATION', 'IMPL_VALIDATION']);
-const VALIDATION_OUTCOME_EVENTS: ReadonlySet<string> = new Set([
-  'ALL_PASSED',
-  'CHECK_FAILED',
-  'CHECK_ERRORED',
-]);
-
-function isValidationPhase(value: unknown): value is string {
-  return typeof value === 'string' && VALIDATION_PHASES.has(value);
-}
-
-/**
- * Automatic validation executes the canonical run-check path in-process. It
- * cannot emit a host `tool_call:flowguard_run_check` event, but it does emit the
- * machine's validation-outcome transition. Counting that transition is sound:
- * the guards only fire after the phase's canonical validation evidence is
- * satisfied (or after an executed check failed/errored).
- */
-function isValidationOutcomeTransition(event: AuditEvent): boolean {
-  if (!event.event.startsWith('transition:')) return false;
-  if (!isValidationPhase(event.detail?.from)) return false;
-  return VALIDATION_OUTCOME_EVENTS.has(event.event.slice('transition:'.length));
-}
-
-/** Check 5: Validation phase has explicit or automatic execution evidence. */
-function checkValidationExecuted(filtered: AuditEvent[]): ComplianceCheck {
-  const reachedValidation = filtered.some((e) => isValidationPhase(e.phase));
-  const explicitChecks = filtered.filter(
-    (e) => isValidationPhase(e.phase) && e.event.startsWith('tool_call:flowguard_run_check'),
-  );
-  const automaticOutcomes = filtered.filter(isValidationOutcomeTransition);
-  const evidenceCount = explicitChecks.length + automaticOutcomes.length;
-  return {
-    name: 'validation_executed',
-    passed: evidenceCount > 0 || !reachedValidation,
-    detail:
-      evidenceCount > 0
-        ? `${explicitChecks.length} explicit validation check(s) and ${automaticOutcomes.length} automatic validation outcome(s) recorded`
-        : reachedValidation
-          ? 'WARNING: Reached a validation phase but no validation execution evidence recorded'
-          : 'Session did not reach VALIDATION (validation not applicable)',
-  };
 }
 
 /** Check 6: Chain integrity verification. */

@@ -23,6 +23,7 @@ import {
   computeImplementationDigest,
   flowguardReportArtifacts,
   preexistingTargetCheck,
+  scopeImplementationFiles,
   reattestImplementationSubject,
 } from './implementation-subject.js';
 
@@ -312,6 +313,131 @@ describe('preexistingTargetCheck', () => {
       targetPaths: ['target.txt'],
     });
     expect(result).toMatchObject({ kind: 'dirty', baselinePaths: ['target.txt'] });
+  });
+
+  it.each(['././target.txt', 'src/../target.txt', '.\\.\\target.txt', 'target.txt/'])(
+    'does not let alias %s bypass baseline dirt',
+    async (path) => {
+      expect(
+        await preexistingTargetCheck({
+          worktree: makeRepo(),
+          baseline: baseline([{ path: 'target.txt', hash: 'old' }]),
+          targetPaths: [path],
+        }),
+      ).toMatchObject({ kind: 'dirty', baselinePaths: ['target.txt'] });
+    },
+  );
+
+  it.each([
+    '/target.txt',
+    '../target.txt',
+    'src/../../target.txt',
+    'C:\\target.txt',
+    '',
+    '.',
+    'a\0b',
+  ])('rejects invalid target %s', async (path) => {
+    expect(
+      await preexistingTargetCheck({
+        worktree: makeRepo(),
+        baseline: baseline([]),
+        targetPaths: [path],
+      }),
+    ).toEqual({ kind: 'invalid', path });
+  });
+
+  it('does not bypass a missing capture by omitting targets', async () => {
+    expect(
+      await preexistingTargetCheck({
+        worktree: makeRepo(),
+        baseline: baseline(null),
+        targetPaths: [],
+      }),
+    ).toEqual({ kind: 'unavailable' });
+  });
+
+  it('blocks unknown scope with baseline or current dirt but permits a clean scope', async () => {
+    const worktree = makeRepo();
+    expect(
+      await preexistingTargetCheck({ worktree, baseline: baseline([]), targetPaths: [] }),
+    ).toEqual({ kind: 'ok' });
+    expect(
+      await preexistingTargetCheck({
+        worktree,
+        baseline: baseline([{ path: 'old', hash: 'old' }]),
+        targetPaths: [],
+      }),
+    ).toMatchObject({ kind: 'dirty', baselinePaths: ['old'] });
+    write(worktree, 'new', 'dirt');
+    expect(
+      await preexistingTargetCheck({ worktree, baseline: baseline([]), targetPaths: [] }),
+    ).toMatchObject({ kind: 'dirty', currentPaths: ['new'] });
+  });
+
+  it('does not block unrelated dirt when targets are explicitly bounded', async () => {
+    const worktree = makeRepo();
+    write(worktree, 'unrelated.txt', 'unrelated');
+    expect(
+      await preexistingTargetCheck({
+        worktree,
+        baseline: baseline([{ path: 'unrelated.txt', hash: 'old' }]),
+        targetPaths: ['target.txt'],
+      }),
+    ).toEqual({ kind: 'ok' });
+  });
+
+  it('never attributes the whole worktree when the capture is unavailable, even if empty', async () => {
+    const worktree = makeRepo();
+    for (const files of [[], ['target.txt']]) {
+      expect(await scopeImplementationFiles(worktree, files, baseline(null))).toEqual({
+        kind: 'unavailable',
+      });
+    }
+    expect(
+      await reattestImplementationSubject({
+        worktree,
+        frozenFiles: [],
+        expectedDigest: 'frozen',
+        baseline: baseline(null),
+        digest: digestFn,
+      }),
+    ).toEqual({ kind: 'subject_changed', expected: 'frozen', actual: 'baseline-unavailable' });
+  });
+
+  it('fails closed on a schema-readable but invalid captured baseline path', async () => {
+    const worktree = makeRepo();
+    const invalid = baseline([{ path: '../outside', hash: 'old' }]);
+    expect(
+      await preexistingTargetCheck({ worktree, baseline: invalid, targetPaths: ['target.txt'] }),
+    ).toEqual({ kind: 'unavailable' });
+    expect(await scopeImplementationFiles(worktree, ['target.txt'], invalid)).toEqual({
+      kind: 'unavailable',
+    });
+  });
+
+  it('fails closed when any raw implementation path is invalid, even in a mixed set', async () => {
+    expect(
+      await scopeImplementationFiles(makeRepo(), ['target.txt', '../outside'], baseline([])),
+    ).toEqual({ kind: 'unavailable' });
+  });
+
+  it('keeps baseline files when either the before or current hash is unavailable', async () => {
+    const worktree = makeRepo();
+    write(worktree, 'target.txt', 'current bytes');
+    expect(
+      await scopeImplementationFiles(
+        worktree,
+        ['target.txt'],
+        baseline([{ path: 'target.txt', hash: null }]),
+      ),
+    ).toMatchObject({ kind: 'ok', subject: { files: ['target.txt'] } });
+    expect(
+      await scopeImplementationFiles(
+        worktree,
+        ['deleted.txt'],
+        baseline([{ path: 'deleted.txt', hash: 'old' }]),
+      ),
+    ).toMatchObject({ kind: 'ok', subject: { files: ['deleted.txt'] } });
   });
 });
 

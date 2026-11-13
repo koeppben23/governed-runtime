@@ -74,18 +74,7 @@ import { projectPlanProofStatus } from '../../proofgraph/proof-summary-projector
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
 import { IntegrationInvariantError } from '../../errors.js';
-
-function findPriorPlanTargetPaths(
-  assurance: import('../../../state/schema.js').SessionState['reviewAssurance'],
-): string[] | undefined {
-  if (!assurance) return undefined;
-  const obligations = [...assurance.obligations].reverse();
-  const lastPlan = obligations.find((o) => o.obligationType === 'plan');
-  const paths = lastPlan?.metadata?.targetPaths;
-  return Array.isArray(paths) && paths.every((p: unknown) => typeof p === 'string')
-    ? paths
-    : undefined;
-}
+import { latestPlanTargetPaths } from '../../../verification/implementation-subject.js';
 
 /** Extract the first non-empty line of text, truncated to 120 characters. */
 function firstLine(text: string | undefined): string | undefined {
@@ -112,6 +101,7 @@ export function buildPlanReviewObligationInput(input: {
   iteration: number;
   planVersion: number;
   classificationFiles: readonly string[] | undefined;
+  targetPaths: readonly string[];
   provisionalScopeUnknown?: boolean | undefined;
   freeze: RepositoryAuthorityFreezeResult;
   planClaimDeclarations: PlanClaimDeclarations;
@@ -128,9 +118,7 @@ export function buildPlanReviewObligationInput(input: {
     planClaimDeclarations,
   } = input;
   const metadata: Record<string, unknown> = {};
-  if (classificationFiles && classificationFiles.length > 0) {
-    metadata.targetPaths = [...classificationFiles];
-  }
+  metadata.targetPaths = [...input.targetPaths];
   const artifactReviewMaterial = buildFrozenArtifactReviewMaterial({
     obligationType: 'plan',
     state,
@@ -400,13 +388,9 @@ async function persistNonConvergedPlanReview(
   iteration: number,
 ): Promise<string> {
   const nextPlanVersion = revision.history.length + 1;
-  const priorTargetPaths = findPriorPlanTargetPaths(finalState.reviewAssurance);
-  const targetPaths = [
-    ...new Set([...(priorTargetPaths ?? []), ...(scope.args.targetPaths ?? [])]),
-  ];
+  const targetPaths = scope.args.targetPaths ?? latestPlanTargetPaths(finalState);
   const classification = await resolvePreImplementationChallengeClassification(
     finalState,
-    scope.worktree,
     targetPaths,
   );
   const resolvedTargetPaths =
@@ -419,6 +403,7 @@ async function persistNonConvergedPlanReview(
     revision,
     iteration,
     nextPlanVersion,
+    targetPaths,
     resolvedTargetPaths,
     provisionalScopeUnknown:
       classification.kind === 'available' ? classification.scopeUnknown : false,
@@ -460,6 +445,7 @@ async function mintPlanRevisionAttempt(input: {
   revision: PlanRevisionResult;
   iteration: number;
   nextPlanVersion: number;
+  targetPaths: readonly string[];
   resolvedTargetPaths: readonly string[];
   provisionalScopeUnknown: boolean;
 }): Promise<
@@ -501,6 +487,7 @@ async function mintPlanRevisionAttempt(input: {
       iteration,
       planVersion: nextPlanVersion,
       classificationFiles: resolvedTargetPaths,
+      targetPaths: input.targetPaths,
       provisionalScopeUnknown,
       freeze,
       planClaimDeclarations: finalState.plan?.claimDeclarations ?? emptyClaimDeclarations('plan'),

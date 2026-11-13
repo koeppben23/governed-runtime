@@ -304,7 +304,6 @@ async function mintRestartObligation(
   if (!subagentEnabled) return null;
   const classification = await resolvePreImplementationChallengeClassification(
     session.state,
-    session.worktree,
     args.targetPaths,
   );
   const resolvedTargetPaths =

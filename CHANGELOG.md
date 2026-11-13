@@ -972,10 +972,21 @@ last read` without a click, while a completion in another session left the
 - Instruct a revised plan response to dispatch the fresh reviewer explicitly
   before requesting review feedback, and cover interrupted reviewer children
   with the canonical fresh-submission recovery path.
-- Fix `flowguard inspect` to recognize automatic validation outcomes as
-  validation execution evidence and to report the actual terminal lifecycle
-  event; auto-validated complete sessions are no longer reported as failed or
-  labelled with `lifecycle:session_created` as their termination event.
+- Fix `flowguard inspect` to distinguish bound validation attempts, successful
+  explicit calls, machine outcomes and canonical no-command policy exceptions.
+  Outcomes alone no longer prove execution or imply automatic commands; missing
+  phase-specific evidence remains `NOT_VERIFIED`. Read session state without
+  mutation and report the actual terminal lifecycle event.
+- Separate declared plan targets from Discovery classification paths, read
+  Discovery from the bound workspace, and replace rather than accumulate targets
+  on plan revision. Close baseline path-alias bypasses, reject escaping targets,
+  block unknown dirty scopes and fail closed on missing baseline capture instead
+  of attributing the full worktree.
+- Report pre-admission claim rejection as `PLAN_CLAIM_SUBMISSION_REJECTED` with
+  exact diagnostics and in-place repair guidance, without withdrawing critical
+  claims or spending plan/reviewer authority. Bind declared positive assertions
+  to their exact provider and identity: failed, errored, skipped or missing
+  assertions cannot be hidden by a green overall check.
 - Report a revised plan response as pending a fresh independent review instead of
   presenting the prior `changes_requested` verdict as the current result. The
   response continues to require the exact reviewer dispatch.

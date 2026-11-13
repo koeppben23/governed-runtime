@@ -219,7 +219,7 @@ function buildImplRecordedResponse(input: {
   reviewFindings: ReviewFindings[];
   ceremony: CeremonyEligibilityProjection;
   policy: FlowGuardPolicy;
-  baselineScoping: 'applied' | 'unavailable';
+  baselineScoping: 'applied';
 }): Record<string, unknown> {
   const instruction = input.authority
     ? buildImplementationReviewInstruction(input.authority)
@@ -375,6 +375,7 @@ export async function handleImplRecord(
     rawFiles,
     input.state.implementationBaseline,
   );
+  if (scoped.kind === 'unavailable') return formatBlocked('IMPLEMENTATION_BASELINE_UNAVAILABLE');
   if (scoped.kind === 'empty') {
     return emptyImplementationScopeBlock(
       scoped.rawFiles,
@@ -461,7 +462,7 @@ interface PersistImplRecordArgs {
   planVersion: number;
   reviewFindings: ReviewFindings[];
   ceremony: CeremonyEligibilityProjection;
-  baselineScoping: 'applied' | 'unavailable';
+  baselineScoping: 'applied';
 }
 
 export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): Promise<string> {

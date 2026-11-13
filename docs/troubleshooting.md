@@ -182,11 +182,21 @@ remain `CONFIG_INVALID`; no session-state or audit reset is authorized.
 
 ### Plan claim admission and review cost
 
-Blocking claim declarations are rejected before a new plan version or independent
-review is created. Correct and resubmit the call in `TICKET` or `PLAN`, or pass an
-explicit `claims: []` to withdraw declarations. Noncritical declarations can also
+Blocking claim declarations return `PLAN_CLAIM_SUBMISSION_REJECTED` before a new
+plan version or independent review is created. Read `claimSubmissionDiagnostics`
+and the reported phase, correct the exact rejected fields, and resubmit the
+complete plan and claim set in the current `TICKET` or `PLAN` step. Do not restart
+the session for a correctable declaration error or automatically remove/downgrade
+critical claims. An explicit `claims: []` is withdrawal only when no required
+ProofGraph authority is lost, not the default repair. Noncritical declarations can also
 be blocking when their contract is incomplete; only canonically non-blocking
 rejections permit partial acceptance.
+
+For `specific_behavior`, an `aggregate_check` counterexample is insufficient.
+An assertion counterexample needs the exact provider/local identity and a check
+identity different from `expectedCheckId`. Inspect the active candidates: `build`
+and `test` are distinct check identities even when their commands overlap. An
+accepted declaration is admission, not executed proof or successful falsification.
 
 For already persisted rejection diagnostics at `PLAN_REVIEW`, request changes
 (`changes_requested`) to return to `PLAN` before submitting the corrected plan.
@@ -210,6 +220,14 @@ A plan target that was already dirty when the session started is baseline, not
 implementation evidence. The same is true if it is dirty at approval. Cleaning
 and re-applying the same bytes in the same session does not change the captured
 baseline hash, so a new session is required.
+
+Only declared targets determine this overlap check; Discovery risk paths classify
+the review but are not implicit implementation targets. In-worktree aliases are
+compared canonically. Absolute/escaping targets fail with `PLAN_TARGET_PATH_INVALID`.
+With no declared targets, any baseline/current dirt blocks approval because its
+unrelatedness cannot be established. A missing baseline capture blocks approval
+even without targets, implementation recording and later subject re-attestation;
+it never authorizes full-worktree attribution.
 
 - `PLAN_TARGETS_PREEXISTING_DIRTY` — the target path was captured in
   `implementationBaseline.dirtyFiles` at session start.
@@ -572,6 +590,7 @@ ORCHESTRATION_PERMANENTLY_FAILED
 OUTBOX_ORDER_CONFLICT
 PARSE_FAILED
 PLAN_APPROVE_WITH_TEXT
+PLAN_CLAIM_SUBMISSION_REJECTED
 PLAN_REQUIRED
 PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION
 PLAN_REVIEW_EVIDENCE_REQUIRED
@@ -581,6 +600,7 @@ PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH
 PLAN_SUBMISSION_REQUIRED
 PLAN_TARGETS_DIRTY_AT_APPROVAL
 PLAN_TARGETS_PREEXISTING_DIRTY
+PLAN_TARGET_PATH_INVALID
 PLUGIN_ENFORCEMENT_UNAVAILABLE
 POLICY_SNAPSHOT_INTEGRITY_MISMATCH
 POLICY_SNAPSHOT_MISSING

@@ -436,6 +436,15 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'PLAN_TARGET_PATH_INVALID',
+    category: 'precondition',
+    messageTemplate: 'Plan target {path} is not a valid repository-relative file path.',
+    recoverySteps: [
+      'Correct the plan target to a repository-relative path within the worktree',
+      'Do not use absolute paths or paths that escape the repository root',
+    ],
+  },
+  {
     code: 'PLAN_TARGETS_DIRTY_AT_APPROVAL',
     category: 'precondition',
     messageTemplate:

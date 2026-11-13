@@ -631,11 +631,16 @@ synchronous archive creation + verification. The `regulatedArchiveStatus` field 
 
 Read-only CLI command that surfaces existing audit and compliance data without mutation.
 
-Validation execution evidence is satisfied by an explicit
-`flowguard_run_check` audit event in `VALIDATION` or `IMPL_VALIDATION`, or by a
-canonical validation-outcome transition (`ALL_PASSED`, `CHECK_FAILED`,
-`CHECK_ERRORED`) from either phase. Automatic validation therefore counts
-without a synthetic host tool call.
+Single-session inspection reads the validated session state and audit trail
+without rewriting either. It reports current-plan-bound baseline attempts and
+current-implementation-bound post-implementation attempts separately from
+successful explicit `flowguard_run_check` calls and valid machine transitions.
+An outcome such as `ALL_PASSED`, `CHECK_FAILED` or `CHECK_ERRORED` alone does not
+prove command execution or identify it as automatic. Blocked attempts do not
+count as command results; missing evidence for either reached validation phase
+is `NOT_VERIFIED`. Canonical no-command policy exceptions are named explicitly
+as progression permission, not execution proof. Audit-only library callers can
+report successful explicit calls, but cannot infer commands from outcomes.
 
 **Usage:**
 

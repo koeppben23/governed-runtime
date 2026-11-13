@@ -299,7 +299,9 @@ describe('governed new-session authority recovery', () => {
     expect(JSON.stringify(rejected)).toContain(
       'different check identities AND different validation attempts',
     );
-    expect(JSON.stringify(rejected)).toContain('TICKET or PLAN');
+    expect(rejected.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
+    expect(rejected.phase).toBe('TICKET');
+    expect(JSON.stringify(rejected)).toContain('current planning step');
     expect(await stateOf(session)).toEqual(previous);
     expect(previous.phase).toBe('TICKET');
     expect(previous.plan).toBeNull();

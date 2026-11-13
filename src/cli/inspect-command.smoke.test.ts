@@ -5,14 +5,29 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+  realpathSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { parseInspectArgs, getInspectUsage } from './inspect-command.js';
+import { makeState, PLAN_RECORD, VALIDATION_PASSED } from '../fixtures.js';
+import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+import { withTestEnv } from '../integration/test-helpers.js';
+import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
+import { sessionDir } from '../adapters/workspace/index.js';
+import { createTransitionEvent, GENESIS_HASH } from '../audit/types.js';
+import { stampChainSequence } from '../audit/audit-test-helpers.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CLI_ENTRY = path.join(REPO_ROOT, 'dist', 'cli', 'install.js');
@@ -107,6 +122,76 @@ describeSmoke('flowguard inspect CLI', () => {
   function safeRun(args: string[], cwd?: string): { code: number; stdout: string; stderr: string } {
     return runCli(args, cwd);
   }
+
+  it('reads bound attempts from isolated state without rewriting state or audit, and rejects corrupt state', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'fg-inspect-evidence-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: path.join(root, 'config') });
+    try {
+      execFileSync('git', ['init', '--quiet', root]);
+      const { fingerprint } = await computeFingerprint(realpathSync(root));
+      const state = makeState('IMPLEMENTATION', { plan: PLAN_RECORD });
+      const sid = `ses_${randomUUID().replace(/-/g, '')}`;
+      state.binding = { ...state.binding, fingerprint, hostSessionId: sid };
+      state.validationAttempts = [
+        {
+          attemptId: randomUUID(),
+          scope: 'baseline',
+          planDigest: PLAN_RECORD.current.digest,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: VALIDATION_PASSED[0]!,
+        },
+      ];
+      const dir = sessionDir(fingerprint, sid);
+      mkdirSync(dir, { recursive: true });
+      const stateFile = path.join(dir, 'session-state.json');
+      const auditFile = path.join(dir, 'audit.jsonl');
+      writeFileSync(stateFile, JSON.stringify(state));
+      const event = stampChainSequence(
+        createTransitionEvent({
+          flowguardSessionId: state.id,
+          hostSessionId: sid,
+          phase: 'IMPLEMENTATION',
+          detail: {
+            from: 'VALIDATION',
+            to: 'IMPLEMENTATION',
+            event: 'ALL_PASSED',
+            autoAdvanced: true,
+            chainIndex: 0,
+          },
+          occurredAt: '2026-01-01T00:00:00.000Z',
+          prevHash: GENESIS_HASH,
+        }),
+        1,
+      );
+      writeFileSync(auditFile, JSON.stringify(event) + '\n');
+      const beforeState = readFileSync(stateFile);
+      const beforeAudit = readFileSync(auditFile);
+      const result = safeRun(['inspect', '--session', sid, '--json'], root);
+      expect(result.stderr).not.toContain('[error]');
+      const summary = JSON.parse(result.stdout);
+      expect(summary.checks).toContainEqual(
+        expect.objectContaining({
+          name: 'validation_executed',
+          passed: true,
+          detail: expect.stringContaining('1 bound validation attempt(s)'),
+        }),
+      );
+      expect(summary.checks).toContainEqual(
+        expect.objectContaining({ name: 'chain_integrity', passed: true }),
+      );
+      expect(readFileSync(stateFile)).toEqual(beforeState);
+      expect(readFileSync(auditFile)).toEqual(beforeAudit);
+      // Deliberately malformed test-fixture state, never a live session repair.
+      writeFileSync(stateFile, '{ invalid');
+      const invalid = safeRun(['inspect', '--session', sid, '--json'], root);
+      expect(invalid.code).toBe(1);
+      expect(invalid.stderr).toContain('Cannot read validation evidence');
+      expect(readFileSync(auditFile)).toEqual(beforeAudit);
+    } finally {
+      restore();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
   it('HAPPY: no sessions prints clean message', () => {
     const tmpDir = mkdtempSync(path.join(tmpdir(), 'fg-inspect-smoke-'));

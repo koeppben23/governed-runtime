@@ -331,7 +331,6 @@ async function persistAndFormatNonConvergedReview(
   const targetPaths = [...new Set([...(priorTargetPaths ?? []), ...(args.targetPaths ?? [])])];
   const classification = await resolvePreImplementationChallengeClassification(
     advanced.state,
-    session.worktree,
     targetPaths,
   );
   const resolvedTargetPaths =

@@ -1,6 +1,17 @@
+import { posix } from 'node:path';
+
 /** Logical repository paths, independent of the host filesystem separator. */
 export function normalizeRepoRelativePath(value: string): string {
   return value.replace(/\\/g, '/').replace(/^\.\//, '');
+}
+
+/** Canonical relative identity for path comparisons; never permits an escaping root. */
+export function canonicalRepoRelativePath(value: string): string | null {
+  const logical = normalizeRepoRelativePath(value);
+  if (!logical || logical.includes('\0') || logical.startsWith('/') || /^[a-z]:/i.test(logical))
+    return null;
+  const path = posix.normalize(logical).replace(/\/$/, '');
+  return path === '.' || path === '..' || path.startsWith('../') ? null : path;
 }
 
 /** Linear-space wildcard matching; no user-controlled regular expression. */

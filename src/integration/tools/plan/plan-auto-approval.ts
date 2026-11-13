@@ -109,6 +109,12 @@ export async function automaticPlanBaselineBlock(
     baseline: reviewedState.implementationBaseline,
     targetPaths: latestPlanTargetPaths(reviewedState),
   });
+  if (targetCheck.kind === 'invalid')
+    return persistBlockedAutomaticPlanApproval({
+      state: reviewedState,
+      scope,
+      block: blocked('PLAN_TARGET_PATH_INVALID', { path: targetCheck.path }),
+    });
   if (targetCheck.kind === 'unavailable')
     return persistBlockedAutomaticPlanApproval({
       state: reviewedState,

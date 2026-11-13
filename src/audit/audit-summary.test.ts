@@ -26,10 +26,13 @@ describe('audit summary', () => {
       expect(timeline.phaseProgression).toEqual([
         'TICKET',
         'PLAN',
+        'PLAN_REVIEW',
         'VALIDATION',
         'IMPLEMENTATION',
+        'IMPL_VALIDATION',
         'IMPL_REVIEW',
         'EVIDENCE_REVIEW',
+        'EXPORT_READY',
         'COMPLETE',
       ]);
     });
@@ -358,12 +361,12 @@ describe('audit summary — validation and lifecycle evidence', () => {
   });
   const approveEvidence = makeAuditEvent({
     event: 'transition:APPROVE',
-    phase: 'COMPLETE',
+    phase: 'EXPORT_READY',
     occurredAt: TS3,
     detail: {
       kind: 'transition',
       from: 'EVIDENCE_REVIEW',
-      to: 'COMPLETE',
+      to: 'EXPORT_READY',
       event: 'APPROVE',
     },
   });
@@ -383,21 +386,32 @@ describe('audit summary — validation and lifecycle evidence', () => {
     implValidationPassed,
     reviewMet,
     approveEvidence,
+    makeAuditEvent({
+      event: 'transition:EXPORT_MATERIALIZED',
+      phase: 'COMPLETE',
+      occurredAt: TS3,
+      detail: {
+        kind: 'transition',
+        from: 'EXPORT_READY',
+        to: 'COMPLETE',
+        event: 'EXPORT_MATERIALIZED',
+      },
+    }),
     completed,
   ];
 
-  it('HAPPY: automatic validation outcomes satisfy validation_executed without a host run_check call', () => {
+  it('BAD: machine outcomes alone cannot prove execution without bound state', () => {
     const summary = generateComplianceSummary(completedTrail(), SESSION_ID, null, TS3);
     const check = summary.checks.find((c) => c.name === 'validation_executed');
-    expect(check?.passed).toBe(true);
-    expect(check?.detail).toContain('2 automatic validation outcome(s)');
-    expect(summary.compliant).toBe(true);
+    expect(check?.passed).toBe(false);
+    expect(check?.detail).toContain('2 machine outcome(s)');
+    expect(check?.detail).toContain('NOT_VERIFIED');
+    expect(summary.compliant).toBe(false);
   });
 
   it('HAPPY: an explicit run_check in IMPL_VALIDATION counts as validation evidence', () => {
     const trail = [
       created,
-      approvePlan,
       makeAuditEvent({
         event: 'tool_call:flowguard_run_check',
         phase: 'IMPL_VALIDATION',
@@ -415,7 +429,7 @@ describe('audit summary — validation and lifecycle evidence', () => {
     const summary = generateComplianceSummary(trail, SESSION_ID, null, TS3);
     const check = summary.checks.find((c) => c.name === 'validation_executed');
     expect(check?.passed).toBe(true);
-    expect(check?.detail).toContain('1 explicit validation check(s)');
+    expect(check?.detail).toContain('1 successful explicit call(s)');
   });
 
   it('BAD: reaching a validation phase without execution evidence fails', () => {
@@ -427,7 +441,7 @@ describe('audit summary — validation and lifecycle evidence', () => {
     );
     const check = summary.checks.find((c) => c.name === 'validation_executed');
     expect(check?.passed).toBe(false);
-    expect(check?.detail).toContain('no validation execution evidence');
+    expect(check?.detail).toContain('execution evidence NOT_VERIFIED');
   });
 
   it('BAD: ALL_PASSED from a non-validation phase does not count', () => {
@@ -452,7 +466,7 @@ describe('audit summary — validation and lifecycle evidence', () => {
     expect(check?.passed).toBe(false);
   });
 
-  it('HAPPY: CHECK_FAILED from VALIDATION still proves validation execution', () => {
+  it('BAD: CHECK_FAILED without a bound attempt is a machine outcome, not execution proof', () => {
     const checkFailed = makeAuditEvent({
       event: 'transition:CHECK_FAILED',
       phase: 'PLAN',
@@ -471,8 +485,8 @@ describe('audit summary — validation and lifecycle evidence', () => {
       TS3,
     );
     const check = summary.checks.find((c) => c.name === 'validation_executed');
-    expect(check?.passed).toBe(true);
-    expect(check?.detail).toContain('1 automatic validation outcome(s)');
+    expect(check?.passed).toBe(false);
+    expect(check?.detail).toContain('1 machine outcome(s)');
   });
 
   it('CORNER: session_terminated names the completion event, not the first lifecycle event', () => {
