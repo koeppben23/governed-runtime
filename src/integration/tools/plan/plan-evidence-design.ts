@@ -18,7 +18,7 @@ import {
 import { resolveCounterexampleCandidate } from '../../proofgraph/claim-contract-rules.js';
 import { extractFencedBlock } from './plan-fenced-block.js';
 
-export const EVIDENCE_DESIGN_LANGUAGE = 'flowguard-evidence-design';
+const EVIDENCE_DESIGN_LANGUAGE = 'flowguard-evidence-design';
 
 const DesignClaim = z
   .object({

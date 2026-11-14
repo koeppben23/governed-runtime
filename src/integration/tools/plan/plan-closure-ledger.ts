@@ -19,8 +19,8 @@ import type { ReviewFindings } from '../../../state/evidence.js';
 import { extractFencedBlock } from './plan-fenced-block.js';
 import type { PlanPreflightDiagnostic } from './plan-evidence-design.js';
 
-export const FINDING_RESOLUTIONS_LANGUAGE = 'flowguard-finding-resolutions';
-export const CLAIM_CHANGES_LANGUAGE = 'flowguard-claim-changes';
+const FINDING_RESOLUTIONS_LANGUAGE = 'flowguard-finding-resolutions';
+const CLAIM_CHANGES_LANGUAGE = 'flowguard-claim-changes';
 
 const FindingResolution = z
   .object({
