@@ -953,6 +953,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Clarify shared plan-author guidance across OpenCode, Claude Code and Codex:
+  design claim-specific falsification before submission, distinguish incidental
+  suite coverage without dropping required critical claims, and bind warning-free
+  promises to diagnostic evidence. Reviewer criteria and runtime gates are unchanged.
 - Filter the native reviewer child's per-request tool map to the canonical
   read/observe allowlist. Parent session permissions can otherwise override the
   reviewer agent file and offer browser tools, causing the reviewer attempt to

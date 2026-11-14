@@ -257,6 +257,28 @@ non-empty rationale is mandatory; a bare `/override-approve` is rejected. No
 command auto-adopts an unreviewed revision, and the reviewer remains the
 semantic gate for claim breadth and counterexample sufficiency.
 
+### Planning evidence before submission
+
+The shared plan-author guidance used by OpenCode, Claude Code and Codex asks for
+each critical claim's positive observable, concrete violating variant, bound
+check's expected failure, and separate execution route in the plan's Verification
+section. The faulty variant need not already exist in the frozen suite: the
+author plans an admissible way to exercise it, without executing it during
+planning or claiming that the planned result has already been observed.
+
+Incidental regression-suite coverage is not claim-specific proof. If required
+critical behavior lacks an admissible evidence route, the author reports the
+precise missing capability and recovery rather than withdrawing or downgrading
+the required claim to obtain acceptance. Incidental coverage limits may be
+reported as `NOT_VERIFIED` with recovery; that label never replaces mandatory
+evidence.
+
+Avoid unbound promises such as “no new warnings.” State the diagnostic source,
+comparison baseline and observable pass/fail condition, or report the
+verification limit and recovery. A green build alone does not establish warning
+absence. These are authoring instructions, not a new deterministic admission
+rule, an executed-falsification feature, or a change to reviewer criteria.
+
 ### Reviewer authority boundaries and reference suite
 
 The deterministic ProofGraph core, the independent reviewer, and the

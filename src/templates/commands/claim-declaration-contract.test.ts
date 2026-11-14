@@ -11,9 +11,48 @@
 import { describe, expect, it } from 'vitest';
 import { COMMANDS } from './index.js';
 import { CLAUDE_CODE_PLUGIN_SKILLS } from '../claude-code-plugin.js';
+import { CODEX_PLUGIN_SKILLS } from '../codex-plugin.js';
 
 const PLAN_TEMPLATE = COMMANDS['plan.md'];
 const ARCHITECTURE_TEMPLATE = COMMANDS['architecture.md'];
+
+describe.each([
+  ['OpenCode', PLAN_TEMPLATE],
+  ['Claude Code', CLAUDE_CODE_PLUGIN_SKILLS['skills/plan/SKILL.md']],
+  ['Codex', CODEX_PLUGIN_SKILLS['skills/plan/SKILL.md']],
+])('%s plan author evidence guidance', (_host, template) => {
+  it('requires a concrete falsification design without inventing executed proof', () => {
+    expect(template).toContain(
+      "positive observable, concrete violating variant, bound check's expected failure, and separate execution route",
+    );
+    expect(template).toContain('A faulty variant need not already exist in the frozen suite');
+    expect(template).toContain(
+      'Do not execute it during planning or describe a planned execution as completed',
+    );
+    expect(template).toContain('different assertion identities are not');
+  });
+
+  it('distinguishes incidental suite coverage without withdrawing required claims', () => {
+    expect(template).toContain(
+      'Distinguish incidental regression-suite coverage from claim-specific proof',
+    );
+    expect(template).toContain('report the precise missing capability and recovery');
+    expect(template).toContain(
+      'do not remove or downgrade the required claim to obtain acceptance',
+    );
+    expect(template).toContain(
+      'Mark incidental coverage limits as `NOT_VERIFIED` with recovery, never as a substitute for mandatory evidence',
+    );
+  });
+
+  it('does not equate a green build with an unbound warning-free promise', () => {
+    expect(template).toContain('Avoid unbound promises such as "no new warnings"');
+    expect(template).toContain(
+      'diagnostic source, comparison baseline, and observable pass/fail condition',
+    );
+    expect(template).toContain('A successful build alone does not prove warning absence');
+  });
+});
 
 /** Call forms that omit claims and would leave the contract empty. */
 const CLAIMLESS_PLAN_FORMS = [
