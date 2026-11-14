@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
 // State & Machine
 import { SessionState, type PendingAuditOperation, type Phase } from '../../state/schema.js';
+import type { SystemWorkOperation } from '../../state/system-work.js';
 import { hashText } from '../../shared/hashing.js';
 // Adapters
 import {
@@ -35,9 +36,20 @@ const lockedSessionDir = new AsyncLocalStorage<string>();
  * signal/progress and resolve canonical worktree authority in plugin.ts;
  * this application contract is not a native SDK ToolContext.
  */
+export type AutoValidationProgressStage =
+  'starting' | 'check_started' | 'check_finished' | 'finished';
+
+export function isValidationProgressPhase(phase: Phase): phase is 'VALIDATION' | 'IMPL_VALIDATION' {
+  return phase === 'VALIDATION' || phase === 'IMPL_VALIDATION';
+}
 export interface AutoValidationProgressEvent {
+  readonly operation: SystemWorkOperation;
+  readonly runID: string;
   readonly phase: Phase;
   readonly checks: readonly string[];
+  /** Presentation lifecycle only; never a check-result or PASS authority. */
+  readonly stage: AutoValidationProgressStage;
+  readonly check?: string;
 }
 
 export type AutoValidationProgress = (event: AutoValidationProgressEvent) => void | Promise<void>;
@@ -66,7 +78,10 @@ export interface ToolContext {
  * need. Host hooks (which have no message/agent context) can resume canonical
  * system work with this narrower context.
  */
-export type WorkspaceToolContext = Pick<ToolContext, 'sessionID' | 'worktree' | 'directory'>;
+export type WorkspaceToolContext = Pick<
+  ToolContext,
+  'sessionID' | 'worktree' | 'directory' | 'autoValidationProgress'
+>;
 
 /**
  * Result type for FlowGuard tools.

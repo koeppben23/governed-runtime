@@ -21,6 +21,10 @@ function flowguardGuiRpcClient(session) {
     getNextAction: () => invoke('GetNextAction', { sessionID: session.id }),
     getWorkbenchReview: () => invoke('GetWorkbenchReview', { sessionID: session.id }),
     getWorkbenchDiagnostics: () => invoke('GetWorkbenchDiagnostics', { sessionID: session.id }),
+    getPresentation: (after) => invoke('GetPresentation', {
+      sessionID: session.id,
+      ...(after ? { after: after } : {}),
+    }),
     submitDecision: (decision) => invoke('SubmitDecision', {
       ...decision,
       sessionID: session.id,

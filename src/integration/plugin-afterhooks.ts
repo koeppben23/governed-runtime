@@ -22,7 +22,7 @@ import { getToolOutput, getAutoAdvanceOverflow, getSessionLockSignal } from './p
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
-import { appendReviewAuditEventForState } from './review/evidence/audit-events.js';
+import { appendSessionErrorAuditOnce } from './plugin-session-error-audit.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import {
   isReviewableFlowGuardTool,
@@ -51,6 +51,7 @@ import {
 } from './tool-names.js';
 import { statusProjectionKind } from './status/status-detail-projections.js';
 import { resumePendingSystemWork as runSystemWorkResume } from './tools/auto-validation.js';
+import type { AutoValidationProgress } from './tools/helpers.js';
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
@@ -358,19 +359,26 @@ async function runFlowGuardAuditAfter(args: {
 /**
  * Resume interrupted canonical system work at the session lifecycle boundary.
  * `system_work` phases carry no commands, so the runtime — not a later user
- * command — owns the continuation. Fail-safe: the event handler catches.
+ * command — owns the continuation. Thrown handler failures reach the scope fence.
  */
 async function resumeSystemWorkForSession(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
+  wakeupCreatedAtMs?: number,
+  autoValidationProgress?: AutoValidationProgress,
 ): Promise<void> {
   const worktreeRoot = runtime.riskDeps.getWorktreeRoot?.();
   if (!worktreeRoot) return;
-  const outcome = await runSystemWorkResume({
-    sessionID: sessionId,
-    worktree: worktreeRoot,
-    directory: worktreeRoot,
-  });
+  const outcome = await runSystemWorkResume(
+    {
+      sessionID: sessionId,
+      worktree: worktreeRoot,
+      directory: worktreeRoot,
+      ...(autoValidationProgress === undefined ? {} : { autoValidationProgress }),
+    },
+    undefined,
+    wakeupCreatedAtMs,
+  );
   if (outcome.kind === 'blocked') {
     runtime.log.error('system-work', 'system work resume blocked', {
       sessionId,
@@ -390,15 +398,21 @@ export async function handlePluginEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
   governedSessionId: string,
+  autoValidationProgress?: AutoValidationProgress,
 ): Promise<void> {
   return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
     const eventDeps: EventHandlerDeps = {
       log: runtime.log,
       cleanupSession: (sessionId: string) => cleanupSessionRuntime(runtime, sessionId),
-      // Delegated-session idleness is not a root lifecycle wakeup.
-      resumePendingSystemWork: async (sessionId: string) => {
+      // Delegated-session completion is not a root lifecycle wakeup.
+      resumePendingSystemWork: async (sessionId: string, wakeupCreatedAtMs?: number) => {
         if (sessionId === governedSessionId)
-          await resumeSystemWorkForSession(runtime, governedSessionId);
+          await resumeSystemWorkForSession(
+            runtime,
+            governedSessionId,
+            wakeupCreatedAtMs,
+            autoValidationProgress,
+          );
       },
       observeMutationEvent: (hostEvent) =>
         reconcileMutationEvent(runtime, hostEvent, governedSessionId),
@@ -411,18 +425,14 @@ export async function handlePluginEvent(
             resolution.status === 'unavailable' ? resolution.code : 'SESSION_DIR_NOT_FOUND',
             'The ACTIVE session error cannot be persisted to its governed audit trail.',
           );
-        await appendReviewAuditEventForState(
-          resolution.sessDir,
+        await appendSessionErrorAuditOnce({
+          sessDir: resolution.sessDir,
           governedSessionId,
-          resolution.state,
-          'error:SESSION_ERROR',
-          {
-            code: 'SESSION_ERROR',
-            message: errorMessage,
-            ...detail,
-            ...(sessionId === governedSessionId ? {} : { nativeSessionId: sessionId }),
-          },
-        );
+          state: resolution.state,
+          nativeSessionId: sessionId,
+          errorMessage,
+          detail,
+        });
       },
     };
     await handleEvent(eventDeps, event as Parameters<typeof handleEvent>[1]);

@@ -32,8 +32,10 @@
  * @version v3
  */
 
+import { randomUUID } from 'node:crypto';
 import type { Phase, SessionState } from '../../state/schema.js';
 import type { SystemWorkOperation } from '../../state/system-work.js';
+import { isValidationProgressPhase } from './helpers.js';
 import type { AutoValidationProgress, ToolResult, WorkspaceToolContext } from './helpers.js';
 import { formatBlocked } from '../blocked-result.js';
 import {
@@ -332,40 +334,77 @@ type CheckSequenceResult =
   | { readonly kind: 'finished'; readonly lastResponse: string }
   | { readonly kind: 'empty' };
 
+/**
+ * A presentation callback is not a validation authority. Never await it: a
+ * broken or hanging UI must not delay checks, hold a lock or change results.
+ */
+function emitValidationProgress(
+  progress: AutoValidationProgress | undefined,
+  event: Parameters<AutoValidationProgress>[0],
+): void {
+  if (progress === undefined || !isValidationProgressPhase(event.phase)) return;
+  try {
+    void Promise.resolve(progress(event)).catch((error: unknown) => {
+      console.warn('[FlowGuard] Validation progress delivery failed; validation continues.', error);
+    });
+  } catch (error) {
+    console.warn('[FlowGuard] Validation progress delivery failed; validation continues.', error);
+  }
+}
+
 async function runActiveCheckSequence(
   context: WorkspaceToolContext,
   phase: ValidationPhase,
   activeChecks: readonly string[],
+  operation: SystemWorkOperation | null,
   progress?: AutoValidationProgress,
 ): Promise<CheckSequenceResult> {
-  await progress?.({ phase, checks: activeChecks });
-  let lastResponse: string | null = null;
-  for (const kind of activeChecks) {
-    const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
-    lastResponse = text;
+  const runID = randomUUID();
+  const emit = (stage: Parameters<AutoValidationProgress>[0]['stage'], check?: string): void => {
+    if (operation !== null)
+      emitValidationProgress(progress, {
+        phase,
+        checks: activeChecks,
+        operation,
+        runID,
+        stage,
+        ...(check === undefined ? {} : { check }),
+      });
+  };
+  emit('starting');
+  try {
+    let lastResponse: string | null = null;
+    for (const kind of activeChecks) {
+      emit('check_started', kind);
+      const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
+      emit('check_finished', kind);
+      lastResponse = text;
 
-    if (responseReportsError(text)) break;
+      if (responseReportsError(text)) break;
 
-    const fresh = await readSession(context);
-    if (fresh.kind === 'unreadable') {
-      return {
-        kind: 'blocked',
-        code: 'SYSTEM_WORK_STATE_UNREADABLE',
-        response: unreadableResponse(fresh),
-      };
+      const fresh = await readSession(context);
+      if (fresh.kind === 'unreadable') {
+        return {
+          kind: 'blocked',
+          code: 'SYSTEM_WORK_STATE_UNREADABLE',
+          response: unreadableResponse(fresh),
+        };
+      }
+      if (fresh.kind === 'none') {
+        return unavailableAfterAttemptResponse(
+          'session disappeared while automatic validation was running',
+        );
+      }
+      if (fresh.session.phase !== phase) {
+        return { kind: 'completed', phase: fresh.session.phase, response: text };
+      }
     }
-    if (fresh.kind === 'none') {
-      return unavailableAfterAttemptResponse(
-        'session disappeared while automatic validation was running',
-      );
-    }
-    if (fresh.session.phase !== phase) {
-      return { kind: 'completed', phase: fresh.session.phase, response: text };
-    }
+
+    if (lastResponse === null) return { kind: 'empty' };
+    return { kind: 'finished', lastResponse };
+  } finally {
+    emit('finished');
   }
-
-  if (lastResponse === null) return { kind: 'empty' };
-  return { kind: 'finished', lastResponse };
 }
 
 async function rearmAfterTechnicalOutcome(input: {
@@ -443,7 +482,7 @@ async function finalizeAutomaticValidationAttempt(input: {
 async function runAutomaticValidationAttempt(
   context: WorkspaceToolContext,
   deps: SystemWorkRetryDeps,
-  progress?: AutoValidationProgress,
+  progress: AutoValidationProgress | undefined = context.autoValidationProgress,
 ): Promise<SystemWorkResumeOutcome> {
   const sessionKey = context.sessionID;
   if (activeValidationSessions.has(sessionKey)) return { kind: 'none' };
@@ -475,7 +514,13 @@ async function runAutomaticValidationAttempt(
       ...getLogTraceFields(),
     });
 
-    const sequence = await runActiveCheckSequence(context, phase, checks, progress);
+    const sequence = await runActiveCheckSequence(
+      context,
+      phase,
+      checks,
+      pendingSystemWork,
+      progress,
+    );
     if (sequence.kind === 'completed' || sequence.kind === 'blocked') return sequence;
     if (sequence.kind === 'empty') return { kind: 'none' };
 
@@ -517,7 +562,7 @@ const inFlightSystemWorkResumes = new Set<string>();
 /**
  * Resume a pending system-work operation.
  *
- * Triggered by the host session lifecycle (session becomes idle/active), never
+ * Triggered by the host session lifecycle (idle or admitted execution success), never
  * by a user workflow command: `system_work` phases have no commands, so the
  * runtime owns the continuation.
  */
@@ -536,6 +581,7 @@ function classifyPendingOperation(session: SessionRead, nowMs: number): PendingO
 export async function resumePendingSystemWork(
   context: WorkspaceToolContext,
   deps: SystemWorkRetryDeps = DEFAULT_SYSTEM_WORK_RETRY_DEPS,
+  wakeupCreatedAtMs?: number,
 ): Promise<SystemWorkResumeOutcome> {
   const outcome = await readSession(context);
   if (outcome.kind === 'unreadable') {
@@ -547,7 +593,12 @@ export async function resumePendingSystemWork(
   }
   if (outcome.kind === 'none') return { kind: 'none' };
 
-  const decision = classifyPendingOperation(outcome.session, deps.nowMs());
+  // Delayed delivery cannot turn a notification emitted inside backoff into
+  // a later retry opportunity. The runner still rechecks the current clock.
+  const decision = classifyPendingOperation(
+    outcome.session,
+    Math.min(deps.nowMs(), wakeupCreatedAtMs ?? Infinity),
+  );
   if (decision.kind === 'none') return { kind: 'none' };
   if (decision.kind === 'stale') {
     await clearStalePendingSystemWork(context);

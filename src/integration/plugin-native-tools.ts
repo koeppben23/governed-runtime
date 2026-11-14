@@ -25,6 +25,7 @@ import type { HelpCapabilities } from './help/command-catalog.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { encodeHostCallId } from '../state/host-identity.js';
+import { recordValidationProgress, type PresentationStore } from './plugin-presentation.js';
 import { toolAfter } from './plugin-afterhooks.js';
 import { reconcileHostMutationEpisodes } from './plugin-mutation-reconciliation.js';
 
@@ -170,10 +171,11 @@ export async function executeCanonicalNativeTool(
   entry: {
     readonly runtime: FlowGuardPluginRuntime;
     readonly scope: ActiveGovernanceScope;
+    readonly presentation: PresentationStore;
     readonly assertScopeCurrent: () => Promise<void>;
   },
 ) {
-  const { runtime, scope } = entry;
+  const { runtime, scope, presentation } = entry;
   if (isDelegatedWorkflowDecision(scope, { tool: name, agent: context.agent }))
     throw buildEnforcementError(
       'GOVERNANCE_AUTHORITY_BLOCKED',
@@ -196,6 +198,8 @@ export async function executeCanonicalNativeTool(
       directory: authority.worktreeRoot,
       worktree: authority.worktreeRoot,
       abort: context.signal,
+      autoValidationProgress: (event) =>
+        recordValidationProgress(presentation, scope.root.sessionId, event),
       metadata: (update) => {
         metadata = {
           ...metadata,
@@ -273,9 +277,10 @@ export async function handleNativeCompletion(
   };
 }
 
-/** Current native shell identity projected into the application classifier. */
+/** Native tool identities projected into the canonical application classifiers. */
 export function applicationTool(tool: string): string {
-  return tool === 'shell' ? 'bash' : tool;
+  if (tool === 'shell') return 'bash';
+  return tool === 'patch' ? 'apply_patch' : tool;
 }
 /** A semantic text view, never concatenation or replacement of native evidence. */
 function nativeCompletionText(content: Completion['result']['content']): string {

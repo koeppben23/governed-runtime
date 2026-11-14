@@ -26,6 +26,8 @@ function load(
   const rpcCalls: Array<Record<string, unknown>> = [];
   const commandCalls: Array<Record<string, unknown>> = [];
   const views: unknown[] = [];
+  const presentations: unknown[] = [];
+  const eventHandlers = new Map<string, (event: unknown) => void>();
   const add = (registry: string, value: unknown) => additions.push({ registry, value });
   const host = {
     ...ctx,
@@ -33,11 +35,25 @@ function load(
     add,
     layout: { open: vi.fn() },
     dialogs: {
-      select: vi.fn(async () => '/task'),
+      select: vi.fn(async (): Promise<string | undefined> => '/task'),
       prompt: vi.fn(async () => 'Task description.'),
       confirm: vi.fn(async () => true),
+      alert: vi.fn(async (_options: { title: string; description?: string }) => {}),
+      active: vi.fn(() => false),
     },
     sessions: { current: () => session },
+    servers: ctx.servers ?? {
+      get: () => ({
+        data: {
+          on: (type: string, callback: (event: unknown) => void) => {
+            eventHandlers.set(type, callback);
+            return () => {
+              eventHandlers.delete(type);
+            };
+          },
+        },
+      }),
+    },
     toast: { show: vi.fn() },
     ui: { Button: vi.fn(() => 'button') },
   };
@@ -89,7 +105,12 @@ function load(
         rpc: {
           call: vi.fn(async (input: Record<string, unknown>) => {
             rpcCalls.push(input);
-            return { output: views.shift() ?? null };
+            return {
+              output:
+                input.method === 'GetPresentation'
+                  ? (presentations.shift() ?? { sessionID: session.id, events: [], cursor: null })
+                  : (views.shift() ?? null),
+            };
           }),
         },
         session: {
@@ -106,7 +127,23 @@ function load(
   const inlineCommand = additions.find(
     (entry) => entry.registry === 'command' && (entry.value as FakeCommand).id === 'show-chat-card',
   )?.value as FakeCommand | undefined;
-  return { command, probeCommand, inlineCommand, additions, rpcCalls, commandCalls, views, host };
+  const progressChanged = () =>
+    eventHandlers.get('rpc.flowguard-governance.PresentationUpdated')?.({
+      location: session.location,
+      data: { sessionID: session.id },
+    });
+  return {
+    command,
+    probeCommand,
+    inlineCommand,
+    additions,
+    rpcCalls,
+    commandCalls,
+    views,
+    presentations,
+    progressChanged,
+    host,
+  };
 }
 
 /** Minimal DOM test double: the installed host still owns actual visual acceptance. */
@@ -279,11 +316,11 @@ describe('installed Desktop GUI bundle', () => {
     const initial = pill.show({ session: loaded.host.sessions.current() });
     expect(initial.label).toContain('FlowGuard');
     expect(initial.rows).toHaveLength(1);
-    expect(loaded.rpcCalls).toHaveLength(0);
+    expect(loaded.rpcCalls.map((call) => call.method)).toEqual(['GetPresentation']);
     expect(loaded.commandCalls).toHaveLength(0);
-    initial.rows[0]?.run?.();
+    initial.rows.find((row) => row.id === 'refresh')?.run?.();
     await vi.waitFor(() => expect(loaded.rpcCalls.length).toBeGreaterThan(0));
-    expect(loaded.rpcCalls[0]?.method).toBe('GetNextAction');
+    expect(loaded.rpcCalls.some((call) => call.method === 'GetNextAction')).toBe(true);
     expect(loaded.commandCalls).toHaveLength(0);
     const action = loaded.additions.find(
       (item) => item.registry === 'command' && (item.value as FakeCommand).id === 'show-chat-card',
@@ -294,6 +331,64 @@ describe('installed Desktop GUI bundle', () => {
     expect(loaded.commandCalls).toHaveLength(0);
   });
 
+  it('shows model-free presentation progress without creating a chat message', async () => {
+    vi.useFakeTimers();
+    try {
+      const loaded = load({}, {});
+      loaded.presentations.push({
+        sessionID: 'ses_root',
+        events: [
+          {
+            id: 'event-1',
+            sessionID: 'ses_root',
+            kind: 'validation',
+            message: '**Validation started** — preparing `build`.',
+            phase: 'VALIDATION',
+            occurredAt: '2026-11-12T00:00:00.000Z',
+          },
+        ],
+        cursor: 'event-1',
+      });
+      loaded.views.push({
+        kind: 'system_work',
+        sessionID: 'ses_root',
+        stateDigest: 'current',
+        phase: 'VALIDATION',
+        title: 'Validation in progress',
+        actions: [],
+      });
+      const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+        show: (input: { session: Record<string, unknown> }) => {
+          label: string;
+          rows: Array<{ id: string; label: string }>;
+        };
+      };
+      const initial = pill.show({ session: loaded.host.sessions.current() });
+      expect(initial.rows.map((row) => row.id)).toContain('refresh');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(loaded.rpcCalls.some((call) => call.method === 'GetPresentation')).toBe(true);
+      expect(loaded.host.toast.show).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: expect.stringContaining('Validation started'),
+        }),
+      );
+      const updated = pill.show({ session: loaded.host.sessions.current() });
+      expect(updated.label).toContain('Validation started — preparing build.');
+      expect(updated.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'presentation',
+            label: expect.stringContaining('Validation started'),
+          }),
+        ]),
+      );
+      expect(loaded.commandCalls).toHaveLength(0);
+    } finally {
+      for (const cleanup of pluginCleanups.splice(0).reverse()) cleanup();
+      vi.useRealTimers();
+    }
+  });
+
   it('coalesces overlapping status reads into one in-flight and one catch-up read', async () => {
     const loaded = load({}, {});
     const pending: Array<(result: unknown) => void> = [];
@@ -301,7 +396,11 @@ describe('installed Desktop GUI bundle', () => {
       id: string;
       server: { client: { rpc: { call: (input: unknown) => Promise<unknown> } } };
     };
-    session.server.client.rpc.call = vi.fn(() => new Promise((resolve) => pending.push(resolve)));
+    session.server.client.rpc.call = vi.fn((input) =>
+      (input as { method: string }).method === 'GetPresentation'
+        ? Promise.resolve({ output: { events: [], sessionID: session.id } })
+        : new Promise((resolve) => pending.push(resolve)),
+    );
     const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
       show: (input: { session: typeof session }) => {
         rows: Array<{ id: string; run?: () => void }>;
@@ -331,6 +430,68 @@ describe('installed Desktop GUI bundle', () => {
     expect(loaded.commandCalls).toHaveLength(0);
   });
 
+  it.each(['VALIDATION', 'IMPL_VALIDATION', 'IMPLEMENTATION'])(
+    'reconciles progress against fresh %s state, not a cached phase',
+    async (phase) => {
+      vi.useFakeTimers();
+      try {
+        const loaded = load({}, {});
+        const view = (value: string) => ({
+          kind: 'system_work',
+          sessionID: 'ses_root',
+          stateDigest: value,
+          phase: value,
+          title: value,
+          actions: [],
+        });
+        loaded.presentations.push({ sessionID: 'ses_root', events: [], cursor: null });
+        loaded.views.push(view('TICKET'));
+        const progressPhase = phase === 'IMPL_VALIDATION' ? 'IMPL_VALIDATION' : 'VALIDATION';
+        const progressPage = {
+          sessionID: 'ses_root',
+          events: [
+            {
+              id: 'new-phase',
+              sessionID: 'ses_root',
+              kind: 'validation',
+              phase: progressPhase,
+              message:
+                phase === 'IMPL_VALIDATION'
+                  ? '**Implementation validation in progress** — preparing `build` check.'
+                  : 'Preparing build check',
+              occurredAt: '2026-11-12T00:00:00Z',
+            },
+          ],
+          cursor: 'new-phase',
+        };
+        const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
+          show(input: { session: unknown }): { label: string; rows: Array<{ id: string }> };
+        };
+        const input = { session: loaded.host.sessions.current() };
+        pill.show(input);
+        loaded.inlineCommand?.run();
+        await vi.advanceTimersByTimeAsync(0);
+        loaded.presentations.push(progressPage);
+        loaded.views.push(view(phase));
+        loaded.progressChanged();
+        await vi.advanceTimersByTimeAsync(0);
+        const surface = pill.show(input);
+        const showsProgress = phase === 'VALIDATION' || phase === 'IMPL_VALIDATION';
+        expect(surface.rows.some((row) => row.id === 'presentation')).toBe(showsProgress);
+        expect(loaded.host.toast.show.mock.calls.length).toBe(showsProgress ? 1 : 0);
+        if (phase === 'VALIDATION') expect(surface.label).toContain('Preparing build check');
+        if (phase === 'IMPL_VALIDATION')
+          expect(surface.label).toContain('Implementation validation in progress');
+        if (phase === 'IMPLEMENTATION')
+          expect(surface.label).not.toContain('Preparing build check');
+        expect(loaded.commandCalls).toEqual([]);
+      } finally {
+        for (const cleanup of pluginCleanups.splice(0).reverse()) cleanup();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it('ignores a late status response after plugin disposal', async () => {
     const loaded = load({}, {});
     const pending: Array<(result: unknown) => void> = [];
@@ -338,7 +499,11 @@ describe('installed Desktop GUI bundle', () => {
       id: string;
       server: { client: { rpc: { call: (input: unknown) => Promise<unknown> } } };
     };
-    session.server.client.rpc.call = vi.fn(() => new Promise((resolve) => pending.push(resolve)));
+    session.server.client.rpc.call = vi.fn((input) =>
+      (input as { method: string }).method === 'GetPresentation'
+        ? Promise.resolve({ output: { events: [], sessionID: session.id } })
+        : new Promise((resolve) => pending.push(resolve)),
+    );
     const pill = loaded.additions.find((item) => item.registry === 'composer-pill')?.value as {
       show: (input: { session: typeof session }) => {
         rows: Array<{ id: string; label: string; run?: () => void }>;
@@ -362,6 +527,38 @@ describe('installed Desktop GUI bundle', () => {
     expect(pill.show({ session }).rows.some((row) => row.label.includes('PLAN'))).toBe(false);
     expect(loaded.commandCalls).toHaveLength(0);
   });
+
+  it.each(['READY', 'IMPLEMENTATION'])(
+    'keeps %s chat controls unchanged without new actions or dialogs',
+    async (phase) => {
+      const loaded = load({}, {});
+      const pills = loaded.additions.filter((item) => item.registry === 'composer-pill');
+      expect(pills).toHaveLength(1);
+      const pill = pills[0]!.value as {
+        show(input: { session: unknown }): { rows: Array<{ id: string; run?: () => void }> };
+      };
+      loaded.views.push({
+        sessionID: 'ses_root',
+        stateDigest: 'current',
+        phase,
+        kind: phase === 'READY' ? 'choose_flow' : 'next_action',
+        title: phase,
+        actions: [{ invocation: phase === 'READY' ? '/task' : '/implement' }],
+      });
+      const input = { session: loaded.host.sessions.current() };
+      pill
+        .show(input)
+        .rows.find((row) => row.id === 'refresh')
+        ?.run?.();
+      await vi.waitFor(() =>
+        expect(pill.show(input).rows.map((row) => row.id)).toEqual(['status', 'refresh']),
+      );
+      expect(loaded.host.dialogs.select).not.toHaveBeenCalled();
+      expect(loaded.host.dialogs.prompt).not.toHaveBeenCalled();
+      expect(loaded.host.dialogs.alert).not.toHaveBeenCalled();
+      expect(loaded.commandCalls).toEqual([]);
+    },
+  );
 
   it('subscribes to the sidecar completion event and refreshes only the current session', async () => {
     const callbacks = new Map<string, (event: unknown) => void>();
@@ -395,7 +592,7 @@ describe('installed Desktop GUI bundle', () => {
     expect(loaded.commandCalls).toHaveLength(0);
   });
 
-  it('also accepts the documented serverEndpoints lookup', () => {
+  it('does not use the main-process serverEndpoints domain in window setup', () => {
     const on = vi.fn(() => vi.fn());
     load(
       {
@@ -405,7 +602,7 @@ describe('installed Desktop GUI bundle', () => {
       },
       {},
     );
-    expect(on).toHaveBeenCalledWith('session.execution.succeeded', expect.any(Function));
+    expect(on).not.toHaveBeenCalled();
   });
 
   it('registers a native panel but no slot until the experimental command is invoked', () => {

@@ -20,11 +20,18 @@ import { withMutableSessionTransaction } from '../helpers.js';
 import { persistAndFormat } from '../helpers-rail-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
 import { ReviewVerdict, type ActorInfo } from '../../../state/evidence.js';
+import { isApprovalVerdict } from '../../../state/evidence-primitives.js';
 import type { SessionState } from '../../../state/schema.js';
+import type { FlowGuardPolicy } from '../../../config/policy.js';
+import {
+  latestPlanTargetPaths,
+  preexistingTargetCheck,
+} from '../../../verification/implementation-subject.js';
 import type { RailResult } from '../../../rails/types.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import { TOOL_FLOWGUARD_DECISION } from '../../tool-names.js';
 import { requiresGovernanceOverride } from '../../../machine/workflow-directive.js';
+import { blocked } from '../../../config/reasons.js';
 
 // Rails
 import { executeReviewDecision } from '../../../rails/review-decision.js';
@@ -173,6 +180,74 @@ function missingCommandDecision(state: SessionState): PersistedDecision {
   };
 }
 
+function planBaselineDecisionBlock(code: string, vars: Record<string, string>): PersistedDecision {
+  const block = blocked(code, vars);
+  return {
+    output: formatBlocked(code, vars),
+    finalResult: {
+      kind: 'blocked',
+      code: block.code,
+      reason: block.reason,
+      recovery: block.recovery,
+    },
+  };
+}
+
+async function planBaselineApprovalBlock(input: {
+  readonly state: SessionState;
+  readonly verdict: ReviewVerdict;
+  readonly worktree: string;
+}): Promise<PersistedDecision | null> {
+  if (input.state.phase !== 'PLAN_REVIEW' || !isApprovalVerdict(input.verdict)) return null;
+  const targetCheck = await preexistingTargetCheck({
+    worktree: input.worktree,
+    baseline: input.state.implementationBaseline,
+    targetPaths: latestPlanTargetPaths(input.state),
+  });
+  if (targetCheck.kind === 'unavailable')
+    return planBaselineDecisionBlock('IMPLEMENTATION_BASELINE_UNAVAILABLE', {});
+  if (targetCheck.kind === 'invalid')
+    return planBaselineDecisionBlock('PLAN_TARGET_PATH_INVALID', { path: targetCheck.path });
+  if (targetCheck.kind === 'dirty' && targetCheck.baselinePaths.length > 0)
+    return planBaselineDecisionBlock('PLAN_TARGETS_PREEXISTING_DIRTY', {
+      paths: targetCheck.baselinePaths.join(', '),
+      capturedAt: input.state.implementationBaseline.capturedAt,
+    });
+  if (targetCheck.kind === 'dirty')
+    return planBaselineDecisionBlock('PLAN_TARGETS_DIRTY_AT_APPROVAL', {
+      paths: targetCheck.currentPaths.join(', '),
+    });
+  return null;
+}
+
+async function decisionActorAuthority(
+  worktree: string,
+  policy: FlowGuardPolicy,
+): Promise<{
+  readonly actorInfo: ActorInfo;
+  readonly actor: string;
+  readonly decisionIdentity: {
+    actorId: string;
+    actorEmail: string | null;
+    actorDisplayName: string | null | undefined;
+    actorSource: ActorInfo['source'];
+    actorAssurance: ActorInfo['assurance'];
+  };
+}> {
+  const actorInfo = await resolveActorForPolicy(worktree, policy);
+  return {
+    actorInfo,
+    actor: policy.actorClassification[TOOL_FLOWGUARD_DECISION] ?? 'system',
+    decisionIdentity: {
+      actorId: actorInfo.id,
+      actorEmail: actorInfo.email,
+      actorDisplayName: actorInfo.displayName,
+      actorSource: actorInfo.source,
+      actorAssurance: actorInfo.assurance,
+    },
+  };
+}
+
 async function persistHumanDecision(
   context: WorkspaceToolContext,
   args: { readonly verdict: ReviewVerdict; readonly rationale: string },
@@ -185,7 +260,10 @@ async function persistHumanDecision(
       if (policy.requireHumanGates && invocation?.operation.source !== 'host_command')
         return missingCommandDecision(state);
       if (invocation !== undefined) await verifyDecisionInvocation(invocation, probe);
-      const actorInfo = await resolveActorForPolicy(context.worktree, policy);
+      const { actorInfo, actor, decisionIdentity } = await decisionActorAuthority(
+        context.worktree,
+        policy,
+      );
       const worktreeBlock = await approvedFullReviewWorktreeBlock({
         state,
         verdict: args.verdict,
@@ -193,17 +271,12 @@ async function persistHumanDecision(
         digest: ctx.digest,
       });
       if (worktreeBlock) return worktreeBlock;
-
-      // P30/P34: Build structured decision identity directly from resolved actor info
-      // actorAssurance comes from the canonical ActorInfo — not re-derived from source
-      const decisionIdentity = {
-        actorId: actorInfo.id,
-        actorEmail: actorInfo.email,
-        actorDisplayName: actorInfo.displayName,
-        actorSource: actorInfo.source,
-        actorAssurance: actorInfo.assurance,
-      };
-      const actor = policy.actorClassification[TOOL_FLOWGUARD_DECISION] ?? 'system';
+      const planBaselineBlock = await planBaselineApprovalBlock({
+        state,
+        verdict: args.verdict,
+        worktree: context.worktree,
+      });
+      if (planBaselineBlock) return planBaselineBlock;
 
       // Reduced-ceremony approval binding: the integration boundary re-attests
       // the frozen worktree bytes; the rail checks the outcome. Non-reduced

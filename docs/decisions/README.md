@@ -17,3 +17,4 @@ consequences.
 | [ADR-009](./009-model-neutral-review-transport.md)    | Accepted | Model-neutral correlated reviewer JSON                                     |
 | [ADR-010](./010-host-neutral-opt-in-governance.md)    | Accepted | Opt-in host-neutral governance and mandatory documentation synchronization |
 | [ADR-011](./011-post-cutover-diagnostics-contract.md) | Accepted | Post-cutover diagnostics, privacy and revision-bound decision UX           |
+| [ADR-013](./013-review-evidence-pre-admission.md)     | Accepted | Review evidence pre-admission and exhausted-gate handling                  |

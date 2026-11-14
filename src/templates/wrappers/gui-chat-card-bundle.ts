@@ -4,6 +4,10 @@ function probeSessionKey(session) {
   return session && session.server ? session.server.id + ':' + session.id : null;
 }
 
+function isFlowGuardProgressPhase(phase) {
+  return phase === 'VALIDATION' || phase === 'IMPL_VALIDATION';
+}
+
 /** Inline FlowGuard cards are live diagnostics, never historic approvals. */
 function renderFlowGuardChatCard(ctx, props) {
   const { createEffect, createSignal, onCleanup } = require('solid-js');
@@ -143,6 +147,29 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
   if (!ComposerPill) return;
   const { createSignal, onCleanup } = require('solid-js');
   const [snapshot, setSnapshot] = createSignal(null);
+  const [presentation, setPresentation] = createSignal(null);
+  let announcedPresentation = null;
+  function announceCurrentPresentation(session, next) {
+    const event = presentation();
+    if (!event || event.sessionID !== session.id || event.kind !== 'validation' ||
+        !isFlowGuardProgressPhase(event.phase) || !isFlowGuardProgressPhase(next.phase) ||
+        event.phase !== next.phase || event.id === announcedPresentation) return;
+    announcedPresentation = event.id;
+    toast(ctx, event.message, 'default');
+  }
+  const presentationWatcher = createFlowGuardPresentationWatcher(ctx,
+    (session, after) => flowguardGuiRpcClient(session).getPresentation(after),
+    (event) => {
+      const current = ctx.sessions.current();
+      if (event === null) { setPresentation(null); return; }
+      if (!current || event.sessionID !== current.id || event.kind !== 'validation' ||
+          !isFlowGuardProgressPhase(event.phase)) return;
+      setPresentation(event);
+      void inspect(current);
+      // A cached phase can lag a legitimate new event. Announce only after
+      // reconciliation, rather than rejecting new progress against that cache.
+    });
+  onCleanup(() => presentationWatcher.stop());
   let readGeneration = 0;
   let reading = false;
   let queuedSession = null;
@@ -185,7 +212,9 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
           note: 'Canonical state unavailable. Use /status.' });
         return;
       }
-      const base = { key: key, status: next.kind, label: 'FlowGuard · ' + (next.phase || 'NOT_VERIFIED') };
+      announceCurrentPresentation(session, next);
+      const base = { key: key, phase: next.phase,
+        status: next.kind, label: 'FlowGuard · ' + (next.phase || 'NOT_VERIFIED') };
       if (next.kind === 'blocked') {
         const blocker = next.blocker;
         setSnapshot({ ...base, status: 'blocked', note: blocker && blocker.code ?
@@ -244,25 +273,38 @@ function registerFlowGuardChatContributions(ctx, Command, CodeBlock, ComposerPil
         const key = probeSessionKey(input.session);
         if (!key || !isCurrentSession(ctx, input.session)) return undefined;
         reconciler.begin();
+        // Start only when the pill is actually mounted; a hidden/unmounted
+        // surface must not poll the server.
+        presentationWatcher.start();
         const state = snapshot();
         const matched = state && state.key === key;
-        const label = matched ? state.label + ' · last read' : 'FlowGuard · inspect';
+        const latest = presentation();
+        const latestForSession = latest && latest.sessionID === input.session.id &&
+          matched && state.status !== 'loading' && isFlowGuardProgressPhase(state.phase) &&
+          latest.phase === state.phase ? latest : null;
+        const label = latestForSession ? 'FlowGuard · ' + latestForSession.message.replace(/[*\x60]/g, '') :
+          matched ? state.label + ' · last read' : 'FlowGuard · inspect';
         const rows = [{
           id: 'refresh',
           label: matched ? 'Refresh canonical status' : 'Inspect canonical status',
           detail: 'Read-only; no agent prompt or governance mutation',
           run: () => void inspect(input.session),
         }];
+        if (latestForSession) {
+          rows.unshift({ id: 'presentation', label: latestForSession.message,
+            detail: latestForSession.kind + ' · ' + latestForSession.occurredAt });
+        }
         if (matched && state.note) {
           rows.unshift({ id: 'status', label: state.note,
             detail: state.actionHint || 'Last read only; refresh for current state' });
         }
+        const presentationTone = latestForSession ? 'warning' : undefined;
         return {
           label: label,
           title: 'FlowGuard · chat status (read-only)',
           icon: 'shield',
-          tone: matched && (state.status === 'blocked' || state.status === 'not_verified' ||
-            state.status === 'stale') ? 'warning' : undefined,
+          tone: presentationTone ?? (matched && (state.status === 'blocked' || state.status === 'not_verified' ||
+            state.status === 'stale') ? 'warning' : undefined),
           rows: rows,
         };
       },

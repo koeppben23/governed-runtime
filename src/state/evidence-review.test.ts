@@ -1717,7 +1717,8 @@ describe('review exhaustion draft disposition', () => {
   it('carries the canonical non-adoption note and recovery', () => {
     expect(DISCARDED_REVIEW_DRAFT.reason).toBe('review_exhausted');
     expect(DISCARDED_REVIEW_DRAFT.note).toContain('NOT adopted');
-    expect(DISCARDED_REVIEW_DRAFT.recovery.join(' ')).toContain('/override-approve');
+    expect(DISCARDED_REVIEW_DRAFT.recovery.join(' ')).toContain('/override-approve <Begründung>');
+    expect(DISCARDED_REVIEW_DRAFT.recovery.join(' ')).toContain('/request-changes');
     expect(Object.isFrozen(DISCARDED_REVIEW_DRAFT)).toBe(true);
   });
 });

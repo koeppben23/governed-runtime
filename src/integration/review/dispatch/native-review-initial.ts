@@ -47,6 +47,23 @@ type Step = {
   readonly model: ReviewerModelSelection;
   readonly tools: Map<string, ToolReceipt>;
 };
+
+function reviewerToolReceiptFailure(step: Step, tools: readonly unknown[]): string {
+  const unauthorized = [
+    ...new Set(
+      tools
+        .map((part) => row(part))
+        .filter((part) => typeof part.id !== 'string' || !step.tools.has(part.id))
+        .map((part) => (typeof part.name === 'string' ? part.name : 'unknown')),
+    ),
+  ];
+  if (unauthorized.length === 0)
+    return 'Reviewer continuation does not have exact authorized tool receipts.';
+  return `Reviewer continuation does not have exact authorized tool receipts. Unauthorized reviewer tool call(s): ${unauthorized.join(', ')}. Allowed reviewer tools: ${[
+    ...READ_ONLY_HOST_TOOLS,
+    TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
+  ].join(', ')}.`;
+}
 type Run = {
   readonly requestId: string;
   readonly text: string;
@@ -87,6 +104,21 @@ export class NativeReviewInitialController {
     if (!requestId.startsWith('msg') || !text.startsWith(PREFIX))
       reject(undefined, 'The initial reviewer request has no exact native identity/prefix.');
     this.runs.set(child, { requestId, text, prefix: [], sealed: false });
+  }
+
+  /**
+   * True while the exact admitted child's initial run is not sealed. A host may
+   * return the subagent tool before that run finishes; capture must wait for the
+   * child instead of invalidating the dispatch while it is still starting.
+   */
+  hasOpenInitialRun(child: string): boolean {
+    const run = this.runs.get(child);
+    return run !== undefined && !run.sealed && run.violation === undefined;
+  }
+
+  /** Remove every tool outside the reviewer allowlist before the model request. */
+  restrictTools(tools: Record<string, unknown>): void {
+    for (const name of Object.keys(tools)) if (!isInitialReviewerTool(name)) delete tools[name];
   }
 
   private require(child: string): Run {
@@ -237,7 +269,7 @@ export class NativeReviewInitialController {
       (!terminal && tools.length === 0) ||
       tools.length !== step.tools.size
     )
-      reject(run, 'Reviewer continuation does not have exact authorized tool receipts.');
+      reject(run, reviewerToolReceiptFailure(step, tools));
     const ids = new Set<string>();
     for (const part of assistant.content) {
       const value = row(part);
@@ -383,5 +415,26 @@ function sameValue(left: unknown, right: unknown): boolean {
     return canonicalJsonStringify(left) === canonicalJsonStringify(right);
   } catch {
     return false;
+  }
+}
+
+/** Wait only for a lineage-proven, currently non-terminal initial reviewer run. */
+export async function awaitInitialReviewerCompletion(input: {
+  readonly childSessionId: string | undefined;
+  readonly initial: NativeReviewInitialController;
+  readonly isTerminal: () => Promise<boolean>;
+  readonly wait: () => Promise<void>;
+}): Promise<void> {
+  const child = input.childSessionId;
+  if (child === undefined || !input.initial.hasOpenInitialRun(child)) return;
+  try {
+    if (await input.isTerminal()) return;
+  } catch {
+    return;
+  }
+  try {
+    await input.wait();
+  } catch {
+    // The existing capture path classifies timeout and failure.
   }
 }

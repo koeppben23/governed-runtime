@@ -164,8 +164,9 @@ function buildPlanWarningNotices(input: PlanReviewCardInput): PresentationSectio
       message: 'The revision submitted with the final verdict was NOT adopted.',
       additionalMessages: [
         'Only the independently reviewed plan shown here is current and approvable.',
-        'Use /override-approve to accept it despite the open findings, /request-changes to ' +
-          'start a new revision, or /reject to decline it.',
+        'Use `/request-changes` to start a new review cycle and resubmit the revision, or ' +
+          '`/override-approve <Begründung>` to accept the reviewed plan despite the open findings; ' +
+          '`/reject` to decline it.',
       ],
       details: [],
     });
@@ -184,8 +185,8 @@ function buildPlanWarningNotices(input: PlanReviewCardInput): PresentationSectio
         `Current digest:  \`${input.currentPlanDigest}\``,
         'The current revision was submitted after the final independent review ' +
           'and has not itself been independently reviewed.',
-        'Re-run `/request-changes` to revise the current plan and start a fresh review of the ' +
-          'current revision; `/override-approve` binds only the reviewed digest.',
+        'Re-run `/request-changes` to start a fresh review cycle for the current revision and ' +
+          'resubmit it; `/override-approve <Begründung>` binds only the reviewed digest.',
       ],
       details: [],
     });

@@ -16,6 +16,7 @@
 
 import type { SessionState } from '../../../state/schema.js';
 import { readDiscovery } from '../../../adapters/persistence-discovery.js';
+import { workspaceDir } from '../../../adapters/workspace/index.js';
 import { discoveryRiskPaths } from '../../discovery/discovery-risk-paths.js';
 
 /**
@@ -46,14 +47,13 @@ import { discoveryRiskPaths } from '../../discovery/discovery-risk-paths.js';
  */
 export async function resolvePreImplementationChallengeClassification(
   state: SessionState,
-  wsDir: string,
   targetPaths?: readonly string[],
 ): Promise<
   | { kind: 'not_required' }
   | { kind: 'available'; changedFiles: readonly string[]; scopeUnknown: boolean }
 > {
   if (!state.policySnapshot?.challengePolicy) return { kind: 'not_required' };
-  const discovery = await readDiscovery(wsDir);
+  const discovery = await readDiscovery(workspaceDir(state.binding.fingerprint));
   const declaredTargets = targetPaths ?? [];
   const riskPaths = discoveryRiskPaths(discovery);
   const changedFiles = [...new Set([...declaredTargets, ...riskPaths])];

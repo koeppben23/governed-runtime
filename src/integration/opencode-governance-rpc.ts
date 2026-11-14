@@ -1,6 +1,7 @@
 /** Public native RPC contract. Transport input never supplies actor or provenance. */
 import { Rpc } from '@opencode/plugin/rpc';
 import { z } from 'zod';
+import { SystemWorkOperation } from '../state/system-work.js';
 import { POLICY_DIGEST_PATTERN } from '../state/evidence-identifiers.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
 import { DecisionBinding } from './status/decision-binding.js';
@@ -50,6 +51,39 @@ export const NextActionDecisionResult = z.union([
 ]);
 export type NextActionDecisionResult = z.infer<typeof NextActionDecisionResult>;
 
+export const PresentationEventSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    operation: SystemWorkOperation,
+    runID: z.string().uuid(),
+    stage: z.enum(['starting', 'check_started', 'check_finished', 'finished']),
+    sessionID: z.string().min(1),
+    kind: z.literal('validation'),
+    message: z.string().max(32768),
+    phase: z.enum(['VALIDATION', 'IMPL_VALIDATION']).optional(),
+    checks: z.array(z.string().max(128)).max(32).optional(),
+    occurredAt: z.string().min(1).max(64),
+  })
+  .strict();
+export type PresentationEvent = z.infer<typeof PresentationEventSchema>;
+
+export const PresentationRequest = z
+  .object({
+    sessionID: z.string().min(1),
+    after: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+export type PresentationRequest = z.infer<typeof PresentationRequest>;
+
+export const PresentationResult = z
+  .object({
+    sessionID: z.string().min(1),
+    events: z.array(PresentationEventSchema).max(64),
+    cursor: z.string().max(128).nullable(),
+  })
+  .strict();
+export type PresentationResult = z.infer<typeof PresentationResult>;
+
 export const FlowGuardGovernance = Rpc.define({
   id: 'flowguard-governance',
   methods: {
@@ -73,11 +107,19 @@ export const FlowGuardGovernance = Rpc.define({
       output: WorkbenchDiagnosticsResult,
       errors: {},
     },
+    /** Read-only, ephemeral host presentation; never workflow or audit evidence. */
+    GetPresentation: {
+      input: PresentationRequest,
+      output: PresentationResult,
+      errors: {},
+    },
     SubmitDecision: {
       input: NextActionDecisionRequest,
       output: NextActionDecisionResult,
       errors: {},
     },
   },
-  events: {},
+  events: {
+    PresentationUpdated: { schema: z.object({ sessionID: z.string().min(1) }).strict() },
+  },
 });

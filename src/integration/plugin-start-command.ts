@@ -48,6 +48,7 @@ import {
 import { addCheckCommand } from './plugin-check-command.js';
 import { addDebugExportCommand } from './plugin-debug-export-command.js';
 import { addDiagnosticsCommand } from './plugin-diagnostics-command.js';
+import { getPresentation, type PresentationStore } from './plugin-presentation.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import {
   appendAuditEventAlreadyLocked,
@@ -98,6 +99,8 @@ export interface StartCommandDeps {
     options?: { readonly allowPendingActivationAudit?: boolean },
   ) => Promise<T | undefined>;
   readonly signal: AbortSignal;
+  /** Ephemeral host presentation; never workflow, audit or model authority. */
+  readonly presentation: PresentationStore;
 }
 
 export async function registerStartCommands(
@@ -128,11 +131,11 @@ function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Prom
 }
 
 /** Dedicated native operation, never installed as a model tool or prompt trigger. */
-function registerAutonomousStart(
+async function registerAutonomousStart(
   ctx: Plugin.Context,
   deps: StartCommandDeps,
 ): Promise<Registration> {
-  return ctx.rpc.register(FlowGuardGovernance, {
+  const registration = await ctx.rpc.register(FlowGuardGovernance, {
     StartGovernance: (request) =>
       deps.guard(async () => {
         try {
@@ -171,8 +174,20 @@ function registerAutonomousStart(
         root: ctx.location.directory,
         sessionID: request.sessionID,
       }),
+    GetPresentation: (request) => getPresentation(ctx, deps.presentation, request),
     SubmitDecision: (request) => deps.guard(() => submitDecision(ctx, deps, request)),
   });
+  const unsubscribe = deps.presentation.subscribe((sessionID) => {
+    void registration.events.emit('PresentationUpdated', { sessionID }).catch((error: unknown) => {
+      console.warn('[FlowGuard] Progress notification failed; validation is unchanged.', error);
+    });
+  });
+  return {
+    dispose: async () => {
+      unsubscribe();
+      await registration.dispose();
+    },
+  };
 }
 
 async function runStart(

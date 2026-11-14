@@ -73,8 +73,8 @@ export const DISCARDED_REVIEW_DRAFT: DiscardedReviewDraft = Object.freeze({
     'The revision submitted with this verdict was NOT adopted. Only the last independently ' +
     'reviewed artifact is current and approvable.',
   recovery: Object.freeze([
-    'Approve the reviewed artifact despite its open findings: /override-approve',
-    'Start a new revision: /request-changes',
+    'Start a new review cycle and resubmit the revision: /request-changes',
+    'Accept the reviewed artifact despite its open findings: /override-approve <Begründung>',
     'Decline the reviewed artifact: /reject',
   ]),
 });

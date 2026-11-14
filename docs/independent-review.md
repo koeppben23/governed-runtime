@@ -55,6 +55,14 @@ the before-hook. This diagram describes the current V2 path; the previous
 `session.create()`/`session.prompt()` sequence is historical V1 behavior and is
 not a supported runtime path.
 
+Native completion does not assume the host's `subagent` tool returns only after
+the child's first model request. If the exact bound child has no terminal
+outcome yet, capture waits for that child (bounded by the reviewer execution
+timeout) before attempting serialization. An early tool return therefore cannot
+invalidate the authorized attempt or deny the child's model request; a timeout,
+a genuine child failure or a missing terminal boundary still fails closed as
+`REVIEWER_EXECUTION_OUTCOME_UNKNOWN`.
+
 **Key invariant:** ReviewObligation, ReviewInvocationEvidence, and ReviewFindings are the only review-governance authority. On OpenCode, the reviewer runs in a host-created child session that the plugin prompts with the canonical review prompt and, after normal completion, a same-child JSON serialization prompt. Model and variant are preserved, no `format` or forced tool is requested, and only the request-correlated, FlowGuard-validated JSON result can bind to a review obligation. Claude Code and Codex may transport reviewer instructions through native agents/subagents. None of those transport mechanisms completes review by itself. Only structured, parseable, obligation-bound ReviewFindings can satisfy review. In strict mode, unparseable responses and orchestration failures are BLOCKED. `flowguard_decision` is a human gate decision only and never replaces independent review evidence.
 
 ### Review Coverage Profile (`core`)
@@ -238,6 +246,16 @@ terminal capacity locks; `/end-governance` closes activation after safe workflow
 closure. The old V1 command-hook release path is not a V2 human-provenance
 mechanism. No idle event, timeout or owner cleanup releases an unknown-outcome
 fence by itself.
+
+When an independent review exhausts its iteration budget without an approving
+verdict, only the independently reviewed artifact remains current and
+approvable. A revision submitted with the final verdict is not adopted and is
+not presented as current. The user must choose `/request-changes` to start a
+fresh review cycle and resubmit the revision, `/override-approve <Begründung>`
+to accept the reviewed artifact despite the open findings, or `/reject`. A
+non-empty rationale is mandatory; a bare `/override-approve` is rejected. No
+command auto-adopts an unreviewed revision, and the reviewer remains the
+semantic gate for claim breadth and counterexample sufficiency.
 
 ### Reviewer authority boundaries and reference suite
 
@@ -589,12 +607,15 @@ The installer writes `.opencode/agents/flowguard-reviewer.md`:
 
 - `mode: subagent`, `hidden: true`, `steps: 10` (the live hard-gate profile may
   override this to 16 for the isolated acceptance run)
-- Read-only: `edit: deny`, `bash: deny`, `webfetch: deny`, `glob: deny`, `grep: deny`, `list: deny`
+- Read-only reviewer tool surface: `read`, `glob`, `grep`, `webfetch`,
+  `todowrite`, and `flowguard_observe_repository`. The plugin filters the
+  reviewer child's per-request tool map to this allowlist before each model
+  request. The agent-file permissions alone are not sufficient: a subagent can
+  inherit session-level `browser`/`skill` permissions from its parent.
 - FlowGuard-isolated: `flowguard_*: deny` and `mcp__flowguard__*: deny` are
   agent-specific OpenCode permission rules. They prevent reviewer children from
   hydrating, mutating, or auditing an independent FlowGuard workflow session.
-  `task: deny` prevents reviewer subagent cascades; `read`, `glob`, and `grep`
-  remain available for review research.
+  `task: deny` prevents reviewer subagent cascades.
 - Adversarial, falsification-first review prompt
 - Returns structured ReviewFindings JSON
 
@@ -818,6 +839,15 @@ capture provenance. Native reviewer dispatch requires canonical ledger/Child
 authority; capture/evidence generation 6 is connected, while safe recovery
 remains blocked until its complete assurance chain is verified. Installed files and canonical-domain fixtures are
 not installed-host acceptance.
+
+The reviewer tool surface is enforced twice. The installed agent file denies
+non-reviewer tools, but a child session can inherit session-level `browser` and
+`skill` permissions from the parent; those session permissions override the
+agent file. The authoritative per-request filter is the reviewer `context` hook:
+it deletes every tool outside `read`/`glob`/`grep`/`webfetch`/`todowrite`/
+`flowguard_observe_repository` before the model request is built. If an
+unexpected tool part still appears, capture remains fail-closed and names the
+offending tool instead of silently accepting an incomplete review.
 
 ---
 

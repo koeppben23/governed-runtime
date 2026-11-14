@@ -238,6 +238,38 @@ describe.each<Family>(['plan', 'architecture'])(
       expect(result.unchanged).toBe(true);
     });
 
+    it('closes an interrupted authorized dispatch with a bound child and requires a fresh submission', async () => {
+      const attempt: ReviewAttempt = {
+        ...attemptFor(obligation, 1),
+        childSessionId: 'ses_interrupted_child',
+      };
+      const dispatch = {
+        dispatchId: '11111111-1111-4111-8111-111111111111',
+        attemptId: attempt.attemptId,
+        obligationId: obligation.obligationId,
+        hostCallId: 'ses_interrupted_child',
+        canonicalPromptDigest: hashText('review prompt'),
+        dispatchAuthorizedAt: FIXED_TIME,
+        dispatchStatus: 'authorized' as const,
+      };
+      const result = await route(obligation, [attempt], {
+        invocations: [],
+        dispatches: [dispatch],
+      });
+      expect(result.response).toMatchObject({
+        error: true,
+        code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+      });
+      expect(result.response.recovery).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('Re-run the originating FlowGuard command'),
+        ]),
+      );
+      expect(result.obligation.status).toBe('blocked');
+      expect(result.assurance.attempts).toEqual([attempt]);
+      expect(result.assurance.dispatches).toEqual([dispatch]);
+    });
+
     async function rejectsWithoutRepair(reason?: ReviewAttempt['rejectionReason']) {
       const rejected = attemptFor(obligation, 1, true, reason);
       const result = await route(obligation, [rejected]);

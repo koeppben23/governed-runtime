@@ -6,7 +6,6 @@ import type { ActiveGovernanceScope, OpenCodeGovernance } from './opencode-gover
 import { INSTALLED_COMMANDS } from './installed-commands.js';
 import { TOOL_FLOWGUARD_DECISION } from './tool-names.js';
 import { decision } from './tools/index.js';
-import type { AutoValidationProgressEvent } from './tools/helpers.js';
 import { ReviewVerdict } from '../state/evidence.js';
 import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { checkDecisionBinding, type DecisionBinding } from './status/decision-binding.js';
@@ -20,6 +19,7 @@ import { buildEnforcementError, parseToolResult } from './blocked-result.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { toolBefore } from './plugin-beforehooks.js';
 import { toolAfter } from './plugin-afterhooks.js';
+import { recordValidationProgress, type PresentationStore } from './plugin-presentation.js';
 
 export interface DecisionCommandDeps {
   readonly governance: Pick<
@@ -36,6 +36,8 @@ export interface DecisionCommandDeps {
     required?: boolean,
   ) => Promise<T | undefined>;
   readonly signal: AbortSignal;
+  /** Ephemeral host presentation; never workflow, audit or model authority. */
+  readonly presentation: PresentationStore;
 }
 type CommandEditor = Parameters<Parameters<Plugin.Context['command']['transform']>[0]>[0];
 export function addDecisionCommands(
@@ -127,7 +129,8 @@ export async function executeDecisionCommand(
             worktree: authority.worktreeRoot,
             abort: deps.signal,
             metadata: () => {},
-            autoValidationProgress: (event) => presentValidationProgress(ctx, sessionID, event),
+            autoValidationProgress: (event) =>
+              recordValidationProgress(deps.presentation, sessionID, event),
           }),
       );
       const audited = {
@@ -176,22 +179,6 @@ function decisionConfirmation(result: Record<string, unknown>, verdict: ReviewVe
     commands.length === 0 ? '' : `\n\n## Next\n\n${commands.map((c) => `- \`${c}\``).join('\n')}`;
   const status = typeof result.status === 'string' ? result.status : 'The decision is durable.';
   return `${summary}\n\n${status}${next}\n\n${instruction}`;
-}
-
-async function presentValidationProgress(
-  ctx: Plugin.Context,
-  sessionID: string,
-  event: AutoValidationProgressEvent,
-): Promise<void> {
-  const checks = event.checks.map((check) => `\`${check}\``).join(', ');
-  try {
-    await ctx.session.prompt({
-      sessionID,
-      text: `**Validation started** — running ${checks}. Results will follow automatically.`,
-    });
-  } catch (error) {
-    console.warn('[FlowGuard] Validation is running; the progress presentation failed.', error);
-  }
 }
 
 async function presentDecision(

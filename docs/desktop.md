@@ -53,13 +53,31 @@ The optional ComposerPill appears above the OpenCode Desktop chat composer, not
 in the conversation transcript. It is a live, read-only diagnostic view.
 
 - It renders a session-bound status label and an explicit Inspect/Refresh row.
-- It reads only canonical `GetNextAction` and, at review gates,
-  `GetWorkbenchReview`. It never starts a workflow, hydrates a session, submits
-  a decision, writes audit events or asks the model to continue.
-- Nothing is fetched at plugin registration or first render. A user refresh or
-  an observed current-session `session.execution.succeeded` event triggers a
-  read. A best-effort 30-second reconciler refreshes only the visible current
-  session while the GUI is connected.
+- It reads canonical `GetNextAction` and, at review gates,
+  `GetWorkbenchReview`. It also reads the ephemeral, non-authoritative
+  `GetPresentation` page while mounted for baseline progress after `/approve`
+  and post-implementation check progress after `/implement`. This in-flight
+  display creates no user message or model turn. Reading status/progress never
+  starts a workflow, hydrates a session, submits a decision, writes audit
+  events or asks the model to continue.
+- `/start` keeps its original chat report and Markdown workflow choice. The
+  final approval/check-result chat response still recommends `/implement`.
+  No extra action button, automatic Start dialog or replacement report dialog
+  is added; the existing chooser opens only on explicit `/choose-workflow`.
+- `GetPresentation` is a bounded in-memory convenience channel. It is not audit
+  or workflow evidence; a reload loses it and canonical reads remain the source
+  of truth. Only events matching the current durable validation operation and
+  retry attempt are served. Late runs and updates after closure are discarded.
+  Failed reads clear progress, not governance state; failures are diagnosed.
+- The canonical pill read is not fetched at plugin registration or first render.
+  User refresh, validation progress notices and an observed
+  current-session `session.execution.succeeded` event trigger it. A best-effort
+  30-second reconciler refreshes only the visible current
+  session while the GUI is connected. Progress uses `PresentationUpdated` RPC
+  invalidations and one coalesced current-generation read, not a separate poller.
+  A mounted/session-switched or reconnected pill also reads the current snapshot.
+  The check text is visible in the pill label without opening its menu. Check
+  preparation is not proof of subprocess start; canonical results remain authoritative.
 - A completion event is an optimization, not a durable audit feed. Missed
   events leave the last read visible until refresh; failed or unavailable reads
   are marked `NOT_VERIFIED`, and a mid-read state change is marked `STALE`.
@@ -67,6 +85,8 @@ in the conversation transcript. It is a live, read-only diagnostic view.
 - The pill never inserts a synthetic message into model context. The earlier
   synthetic-message prototype was removed.
 - The pill relies on the host's native button/menu semantics and exposed label.
+  It does not supply a custom `ComposerPill.menu`, which would suppress the
+  host's normal action rows in the pinned SDK.
   The chat card and Workbench expose named regions with polite, atomic status
   announcements. Static accessibility hardening is installed-verified; an
   independent VoiceOver/screenreader acceptance remains open.
@@ -103,6 +123,7 @@ The following gates remain open and are not implied by this document:
 - zero-restart host upgrade;
 - live-profile uninstall;
 - automatic refresh across every governance transition.
+- installed acceptance of the changed validation-progress bundle on Desktop 2.2.7.
 
 See [Desktop UX product slice](./ux/1196-desktop-product-slice.md) and the
 [installed acceptance records](./host-probes/opencode-v2/desktop-2.2.6-workbench-acceptance.md)

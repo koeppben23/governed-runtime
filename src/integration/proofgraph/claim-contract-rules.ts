@@ -27,12 +27,14 @@ import type { CounterexampleRequirement } from '../../state/proofgraph-approval.
 import { normalizeClaimStatement } from '../../state/proofgraph-approval.js';
 import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
+import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import {
   ASSERTION_FORMATS_BY_PROVIDER,
   ASSERTION_CODEC_BY_PROVIDER,
   AGGREGATE_FORMATS_BY_PROVIDER,
 } from '../../providers/registry.js';
 import { hasProvingMutationProvider } from './mutation-provider.js';
+import { positiveAssertionFailure } from './claim-positive-assertion.js';
 import { declaredEvidenceRolesCollide } from '../../audit/proofgraph/evidence-role-independence.js';
 
 /** Write boundary a declaration arrived through; selects the public field names. */
@@ -52,6 +54,7 @@ export interface NormalizedClaimDeclaration {
   readonly critical: boolean;
   readonly claimScope: 'specific_behavior' | 'suite';
   readonly positiveCheckId: string;
+  readonly expectedAssertion?: AssertionIdentity;
   readonly counterexampleRequirement?: CounterexampleRequirement;
   readonly structuralSurface?: string;
   readonly mutationProfile?: string;
@@ -279,7 +282,7 @@ function checkEvidenceRoleCollision(
     input.source,
     claim,
     'counterexampleRequirement',
-    `the positive check and the counterexample check require different check identities AND different validation attempts; '${claim.positiveCheckId}' cannot serve both evidence roles, even when executed twice`,
+    `the positive check and the counterexample check must be different checks and must resolve to different executions; '${claim.positiveCheckId}' cannot serve both evidence roles. The same assertion identity may serve as the falsification witness when it fails on the targeted faulty variant`,
   );
 }
 
@@ -569,10 +572,26 @@ function checkSuitePositiveSatisfiability(
   return null;
 }
 
+/** Rule 10: a declared positive assertion must be reachable from its positive check. */
+function checkPositiveAssertion(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  const expectedAssertion = claim.expectedAssertion;
+  if (!expectedAssertion) return null;
+  const failure = positiveAssertionFailure({
+    positiveCheckId: claim.positiveCheckId,
+    expectedAssertion,
+    verificationCandidates: input.verificationCandidates,
+  });
+  return failure === null
+    ? null
+    : invalid(input.source, claim, failure.field, failure.detail, 'unsatisfiable');
+}
 /**
- * Rule 10: a `specific_behavior` claim must name at least one claim-specific
- * evidence binding — an assertion counterexample requirement, a structural
- * surface, or a mutation profile.
+ * Rule 11: a `specific_behavior` claim must name at least one claim-specific
+ * evidence binding — a positive assertion, an assertion counterexample
+ * requirement, a structural surface, or a mutation profile.
  *
  * Without one, only execution evidence (a passing check) can ever attach, and
  * the claim could be reported PROVEN by a check that never observed the
@@ -586,6 +605,7 @@ function checkSpecificityBinding(
 ): ClaimContractResult | null {
   if (claim.claimScope !== 'specific_behavior') return null;
   if (
+    claim.expectedAssertion !== undefined ||
     claim.counterexampleRequirement !== undefined ||
     claim.structuralSurface !== undefined ||
     claim.mutationProfile !== undefined
@@ -597,7 +617,7 @@ function checkSpecificityBinding(
     claim,
     'counterexampleRequirement',
     'a specific_behavior claim requires at least one claim-specific evidence binding: ' +
-      'a counterexample requirement (assertion), a structuralSurface, or a mutationProfile; ' +
+      'an expectedAssertion, a counterexample requirement (assertion), a structuralSurface, or a mutationProfile; ' +
       'a passing check alone does not prove the declared behavior',
     'unsatisfiable',
   );
@@ -617,6 +637,7 @@ export function claimViolations(
     checkSuitePositiveSatisfiability(input, claim),
     checkCounterexampleScope(input, claim),
     checkCounterexampleSatisfiability(input, claim),
+    checkPositiveAssertion(input, claim),
     checkSpecificityBinding(input, claim),
     // Last: a more specific rule above (inactive check, unsupported capability,
     // scope mismatch) names the actionable defect when it already applies.
