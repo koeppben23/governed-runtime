@@ -296,6 +296,11 @@ and prior critical claim identities are exposed through the read-only
 `flowguard_status({ reviewFeedback: true })` projection; admission validates
 against canonical persisted evidence, never against copied feedback.
 
+A code downgrade does not migrate host finding identities or these plan-text
+contracts. An active review captured by the current version requires a fresh
+review cycle or the documented recovery path; rollback is not a transparent
+downgrade-compatibility guarantee.
+
 ### Reviewer authority boundaries and reference suite
 
 The deterministic ProofGraph core, the independent reviewer, and the

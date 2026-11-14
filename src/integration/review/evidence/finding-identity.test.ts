@@ -22,7 +22,17 @@ function findings(): ReviewFindings {
         },
       },
     ],
-    majorRisks: [],
+    majorRisks: [
+      {
+        severity: 'major',
+        category: 'risk',
+        message: 'risk',
+        relation: {
+          subjectAnchors: [{ kind: 'repository_location', location }],
+          evidenceLocations: [],
+        },
+      },
+    ],
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
@@ -37,6 +47,8 @@ describe('host finding identity', () => {
     const minted = mintHostFindingIds(findings());
     expect(minted.blockingIssues[0]!.findingId).toMatch(/^[a-f0-9-]{36}$/);
     expect(minted.blockingIssues[0]!.findingId).not.toBe('reviewer-supplied');
+    expect(minted.majorRisks[0]!.findingId).toMatch(/^[a-f0-9-]{36}$/);
+    expect(minted.majorRisks[0]!.message).toBe('risk');
   });
 
   it('preserves reviewer-owned semantics and the canonical findings hash', () => {

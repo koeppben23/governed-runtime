@@ -70,5 +70,9 @@ findings without host identities fail closed with an explicit recovery.
 - Semantic closure, requirement preservation, and falsification remain
   `NOT_VERIFIED` until the independent reviewer and executed evidence establish
   them.
+- A code downgrade does not migrate host finding identities or the new plan-text
+  contracts. Sessions whose active review was captured by this version require a
+  fresh review cycle or the documented recovery path; rollback is not a
+  transparent downgrade-compatibility promise.
 - Fewer iterations and improved reviewer recall are not claimed without the
   separate defect-corpus measurement.

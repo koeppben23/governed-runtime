@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod';
+import { indexMarkdownSections } from '../../../shared/markdown-sections.js';
 import { parseStrictJsonObject } from '../../../shared/strict-json-object.js';
 import {
   mintProofGraphClaimId,
@@ -22,11 +23,16 @@ import type { PlanPreflightDiagnostic } from './plan-evidence-design.js';
 const FINDING_RESOLUTIONS_LANGUAGE = 'flowguard-finding-resolutions';
 const CLAIM_CHANGES_LANGUAGE = 'flowguard-claim-changes';
 
+const NonBlank = z
+  .string()
+  .min(1)
+  .refine((value) => value.trim().length > 0, { message: 'must contain non-whitespace' });
+
 const FindingResolution = z
   .object({
     findingId: z.string().uuid(),
-    planSection: z.string().min(1),
-    response: z.string().min(1),
+    planSection: NonBlank,
+    response: NonBlank,
   })
   .strict()
   .readonly();
@@ -44,8 +50,8 @@ const FindingResolutions = z
 
 const ReplacementClaim = z
   .object({
-    authoritySectionId: z.string().min(1),
-    statement: z.string().min(1),
+    authoritySectionId: NonBlank,
+    statement: NonBlank,
   })
   .strict()
   .readonly();
@@ -60,7 +66,7 @@ const ClaimChange = z.discriminatedUnion('disposition', [
       priorClaimId: z.string().uuid(),
       disposition: z.literal('replaced'),
       replacementClaims: z.array(ReplacementClaim).min(1),
-      rationale: z.string().min(1),
+      rationale: NonBlank,
     })
     .strict()
     .readonly(),
@@ -68,7 +74,7 @@ const ClaimChange = z.discriminatedUnion('disposition', [
     .object({
       priorClaimId: z.string().uuid(),
       disposition: z.literal('withdrawn'),
-      rationale: z.string().min(1),
+      rationale: NonBlank,
     })
     .strict()
     .readonly(),
@@ -219,6 +225,30 @@ function findingCoverageDiagnostics(
   return diagnostics;
 }
 
+function normalizedPlanHeading(value: string): string {
+  return value
+    .trim()
+    .replace(/^#{1,6}\s*/, '')
+    .trim();
+}
+
+function planSectionDiagnostics(
+  ledger: FindingLedger,
+  planText: string,
+): readonly PlanPreflightDiagnostic[] {
+  const headings = new Set(indexMarkdownSections(planText).map((section) => section.headingText));
+  return ledger.resolutions.flatMap((resolution) =>
+    headings.has(normalizedPlanHeading(resolution.planSection))
+      ? []
+      : [
+          {
+            field: `resolutions[${resolution.findingId}].planSection`,
+            detail: `'${resolution.planSection}' is not a heading in the revised plan`,
+          },
+        ],
+  );
+}
+
 /** Validate that every bound blocking finding received an author response. */
 export function validateFindingResolutions(input: {
   readonly planText: string;
@@ -258,6 +288,7 @@ export function validateFindingResolutions(input: {
   const diagnostics = [
     ...findingBindingDiagnostics(parsed.value, input.obligation),
     ...findingCoverageDiagnostics(parsed.value, input.findings),
+    ...planSectionDiagnostics(parsed.value, input.planText),
   ];
   return diagnostics.length === 0
     ? { kind: 'ok' }

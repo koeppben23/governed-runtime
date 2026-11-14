@@ -20,14 +20,19 @@ import { extractFencedBlock } from './plan-fenced-block.js';
 
 const EVIDENCE_DESIGN_LANGUAGE = 'flowguard-evidence-design';
 
+const NonBlank = z
+  .string()
+  .min(1)
+  .refine((value) => value.trim().length > 0, { message: 'must contain non-whitespace' });
+
 const DesignClaim = z
   .object({
-    authoritySectionId: z.string().min(1),
-    statement: z.string().min(1),
-    positiveObservable: z.string().min(1),
-    faultyVariant: z.string().min(1),
-    expectedFailure: z.string().min(1),
-    executionRoute: z.string().min(1),
+    authoritySectionId: NonBlank,
+    statement: NonBlank,
+    positiveObservable: NonBlank,
+    faultyVariant: NonBlank,
+    expectedFailure: NonBlank,
+    executionRoute: NonBlank,
   })
   .strict()
   .readonly();
@@ -62,7 +67,8 @@ export type EvidenceDesignValidation =
 const PLACEHOLDERS = new Set(['tbd', 'todo', 'n/a', 'na', 'none', '...', 'same as above']);
 
 function placeholder(value: string): boolean {
-  return PLACEHOLDERS.has(value.trim().toLowerCase());
+  const normalized = value.trim().toLowerCase();
+  return normalized.length === 0 || PLACEHOLDERS.has(normalized);
 }
 
 function key(authoritySectionId: string, statement: string): string {
@@ -175,7 +181,7 @@ function candidateDiagnostics(
       },
     ];
   }
-  return design.executionRoute.includes(candidate.candidateId)
+  return design.executionRoute.trim() === candidate.candidateId
     ? []
     : [
         {
