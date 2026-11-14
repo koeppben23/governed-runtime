@@ -26,7 +26,7 @@ import { unsupersededStaleAttempts } from '../../review/dispatch/native-review-s
 import { ensureReviewAssurance, isOpenReviewObligation } from '../../../state/review-dispatch.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
-import { normalizeHostFindings, type ImplementRuntime } from './implement-shared.js';
+import type { ImplementRuntime } from './implement-shared.js';
 import {
   projectImplementationChallengeResolutionRequirements,
   projectOpenImplementationChallengeIds,
@@ -223,7 +223,9 @@ export function appendImplReviewState(input: {
     evidenceInvocationId,
   );
   const existingFindings = runtime.state.implReviewFindings;
-  const newReviewFindings = [...existingFindings, normalizeHostFindings(effectiveFindings)];
+  // Finding identity is minted once at the authoritative native capture. This
+  // consume boundary must preserve it; re-minting would create two authorities.
+  const newReviewFindings = [...existingFindings, effectiveFindings];
   const reviewedState: SessionState = {
     ...runtime.state,
     implReview: {

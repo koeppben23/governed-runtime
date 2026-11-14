@@ -10,7 +10,7 @@ import { formatBlocked } from '../../blocked-result.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { RailContext } from '../../../rails/types.js';
 import type { FlowGuardPolicy } from '../../../config/policy.js';
-import type { LoopVerdict, ReviewFindings } from '../../../state/evidence.js';
+import type { LoopVerdict } from '../../../state/evidence.js';
 import type { CeremonyEligibilityProjection } from '../../phase-tool-gate.js';
 import { classifyToolCallMode } from '../review-validation-mode.js';
 import { latestUnknownOutcomeResolvedAt } from '../../../state/evidence-mutation-episode.js';
@@ -80,30 +80,6 @@ export function validateImplementSequence(args: ImplementArgs, state: SessionSta
     }
   }
   return null;
-}
-
-// ─── Host Identity Normalization ──────────────────────────────────────────────
-
-/**
- * Normalize reviewer-supplied findings into host-authoritative identity.
- *
- * Reviewer-supplied `findingId` values are not trusted — the host mints
- * fresh UUIDs for every finding. Reviewer findings may omit the ID; the host
- * still mints the authoritative one. Never trusts, preserves, or forwards a
- * reviewer-supplied UUID as finding identity.
- */
-export function normalizeHostFindings(findings: ReviewFindings): ReviewFindings {
-  return {
-    ...findings,
-    blockingIssues: findings.blockingIssues.map((f) => ({
-      ...f,
-      findingId: crypto.randomUUID(),
-    })),
-    majorRisks: findings.majorRisks.map((f) => ({
-      ...f,
-      findingId: crypto.randomUUID(),
-    })),
-  };
 }
 
 /**

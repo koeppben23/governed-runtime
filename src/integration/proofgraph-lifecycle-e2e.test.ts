@@ -31,7 +31,7 @@ import { sessionDir, workspaceDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeDiscovery } from '../adapters/persistence-discovery.js';
 import { writeStateWithArtifacts, type ToolContext } from './tools/helpers.js';
-import { canonicalBinding } from './test-helpers.js';
+import { canonicalBinding, fulfillStrictReviewObligation } from './test-helpers.js';
 import { runRequiredDiscovery } from './tools/hydrate/hydrate-discovery.js';
 import { plan } from './tools/plan/plan.js';
 import { review } from './tools/review-tool/index.js';
@@ -244,7 +244,26 @@ const PLAN_TEXT = [
   '',
   '## Verification',
   '1. `./mvnw verify` — Source: repo:mvnw',
+  '',
+  '```flowguard-evidence-design',
+  JSON.stringify({
+    version: 1,
+    claims: [
+      {
+        authoritySectionId: 'implementation-step-1',
+        statement: 'updateTask returns 404 for an unknown id instead of 500.',
+        positiveObservable: 'the build observes the unknown-id path returning 404',
+        faultyVariant: 'make updateTask throw for an unknown id',
+        expectedFailure: 'the bound counterexample assertion fails',
+        executionRoute: 'vc_security_mvn',
+      },
+    ],
+  }),
+  '```',
 ].join('\n');
+
+/** Same plan without the evidence-design block, for explicit claim withdrawals. */
+const PLAN_TEXT_NO_DESIGN = PLAN_TEXT.split('\n```flowguard-evidence-design')[0]!;
 
 /** Canonical coherent plan revision for the PLAN_TEXT fixture. */
 const PLAN_CURRENT = makePlanRevision({ body: PLAN_TEXT, createdAt: FIXED_TIME });
@@ -517,6 +536,35 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     expect(context).toContain('Plan approval certificate: none recorded');
   });
 
+  it('blocks a critical claim without an evidence design before creating a plan', async () => {
+    env = await boot('evidence-design-missing');
+    await writeStateWithArtifacts(
+      env.sDir,
+      await canonicalState(env, 'TICKET', {
+        ticket: TICKET,
+        activeChecks: ACTIVE_CHECKS,
+        verificationCandidates: STRUCTURED_CANDIDATES,
+      }),
+    );
+    const raw = await plan.execute(
+      { planText: PLAN_TEXT_NO_DESIGN, claims: [CRITICAL_CLAIM_INPUT] },
+      env.tc,
+    );
+    const parsed = JSON.parse(String(raw));
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('PLAN_EVIDENCE_DESIGN_REQUIRED');
+    expect(parsed.planPreflightDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          detail: expect.stringContaining('missing evidence-design entry'),
+        }),
+      ]),
+    );
+    const state = await readState(env.sDir);
+    expect(state?.plan).toBeNull();
+    expect(state?.reviewAssurance?.obligations ?? []).toHaveLength(0);
+  });
+
   it('blocks a critical claim without a counterexample before creating a plan', async () => {
     env = await boot('plan-reject');
     await writeStateWithArtifacts(
@@ -615,7 +663,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
       env.sDir,
       await canonicalState(env, 'TICKET', { ticket: TICKET }),
     );
-    await plan.execute({ planText: PLAN_TEXT, claims: [] }, env.tc);
+    await plan.execute({ planText: PLAN_TEXT_NO_DESIGN, claims: [] }, env.tc);
     const pending = await readState(env.sDir);
     expect(pending?.plan).toBeTruthy();
     const diagnostics = {
@@ -639,7 +687,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     });
     const invalid = [{ ...CRITICAL_CLAIM_INPUT, counterexampleRequirement: undefined }];
     const same = JSON.parse(
-      String(await plan.execute({ planText: PLAN_TEXT, claims: invalid }, env.tc)),
+      String(await plan.execute({ planText: PLAN_TEXT_NO_DESIGN, claims: invalid }, env.tc)),
     );
     expect(same.error).not.toBe(true);
     const changed = JSON.parse(
@@ -669,7 +717,9 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     expect(blocked.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
     expect(await readState(env.sDir)).toEqual(before);
     const withdrawal = JSON.parse(
-      String(await plan.execute({ planText: `${PLAN_TEXT}\nRevision`, claims: [] }, env.tc)),
+      String(
+        await plan.execute({ planText: `${PLAN_TEXT_NO_DESIGN}\nRevision`, claims: [] }, env.tc),
+      ),
     );
     expect(withdrawal.error).not.toBe(true);
     expect((await readState(env.sDir))?.plan?.claimSubmissionDiagnostics).toBeUndefined();
@@ -681,7 +731,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
       env.sDir,
       await canonicalState(env, 'TICKET', { ticket: TICKET }),
     );
-    await plan.execute({ planText: PLAN_TEXT, claims: [] }, env.tc);
+    await plan.execute({ planText: PLAN_TEXT_NO_DESIGN, claims: [] }, env.tc);
     const { fulfillStrictReviewObligation } = await import('./test-helpers.js');
     await fulfillStrictReviewObligation(env.sDir, {
       obligationType: 'plan',
@@ -707,7 +757,11 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     const corrected = JSON.parse(
       String(
         await plan.execute(
-          { reviewVerdict: 'changes_requested', planText: `${PLAN_TEXT}\nRevision`, claims: [] },
+          {
+            reviewVerdict: 'changes_requested',
+            planText: `${PLAN_TEXT_NO_DESIGN}\nRevision`,
+            claims: [],
+          },
           env.tc,
         ),
       ),
@@ -728,7 +782,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     );
 
     const raw = await plan.execute(
-      { planText: PLAN_TEXT, targetPaths: ['src/state/schema.ts'] },
+      { planText: PLAN_TEXT_NO_DESIGN, targetPaths: ['src/state/schema.ts'] },
       env.tc,
     );
     const parsed = JSON.parse(String(raw));

@@ -39,6 +39,7 @@ import { isOpenReviewObligation } from '../state/review-dispatch.js';
 import { writeStateWithAuditOperations } from './audit-outbox.js';
 import { buildReviewChallengeContract } from './review/obligations/challenge-contract.js';
 import { buildInvocationFixture as buildInvocationEvidence } from '../review-invocation-test-helpers.js';
+import { mintHostFindingIds } from './review/evidence/finding-identity.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
 
@@ -562,6 +563,7 @@ export async function fulfillStrictReviewObligation(
     challenges,
     ...(input.resolutionVerdicts ? { challengeResolutionVerdicts: input.resolutionVerdicts } : {}),
   };
+  const findingsWithIdentity = mintHostFindingIds(findings);
 
   const boundAttempt = bindHostTaskAttempt(
     assurance.attempts,
@@ -575,15 +577,15 @@ export async function fulfillStrictReviewObligation(
     mandateDigest: obligation.mandateDigest,
     criteriaVersion: obligation.criteriaVersion,
     parentSessionId: state.binding.hostSessionId,
-    childSessionId: findings.reviewedBy.sessionId,
+    childSessionId: findingsWithIdentity.reviewedBy.sessionId,
     promptHash: hashText(`${input.obligationType}:${input.iteration}:${input.planVersion}`),
-    findingsHash: hashFindings(findings),
+    findingsHash: hashFindings(findingsWithIdentity),
     invokedAt: new Date().toISOString(),
     fulfilledAt: new Date().toISOString(),
     attemptId: boundAttempt.attemptId,
     // Host-observed contract: the structured capture is the only findings
     // authority; the captured verdict is derived from it by the builder.
-    capturedRawFindings: findings,
+    capturedRawFindings: findingsWithIdentity,
   });
   const obligationAcceptedByReviewer = true;
 
@@ -615,7 +617,7 @@ export async function fulfillStrictReviewObligation(
     },
   });
 
-  return findings;
+  return findingsWithIdentity;
 }
 
 /**

@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Require a structural `flowguard-evidence-design` declaration for every
+  critical plan claim: positive observable, concrete faulty variant, expected
+  failure, and the active counterexample candidate. The preflight rejects
+  incomplete declarations before a plan version or review obligation exists; it
+  does not judge semantic sufficiency.
+- Mint host-authoritative finding identities once at native capture, preserve
+  them through review consumption, and expose them read-only for revision work.
+  Capture comparison ignores only host IDs, so reviewer-owned message, severity,
+  category, and anchor changes still fail closed.
+- Require a `flowguard-finding-resolutions` response for every bound blocking
+  finding on a revision, bound to the exact review obligation, iteration, plan
+  version, and finding identity. A reasoned clarification is valid; no cosmetic
+  edit is forced.
+- Require a `flowguard-claim-changes` declaration when a prior critical claim is
+  removed or replaced, forbid same-identity critical downgrades, and support
+  one-to-many critical replacement. Semantic requirement preservation remains a
+  reviewer judgment.
+- Expose the current plan's critical claim identities through the read-only
+  `reviewFeedback` status projection (`planClaimAuthority`).
+- Add ADR-014 documenting the boundary between structural preflight, independent
+  semantic review, and executed evidence.
+
 - Add candidate-host validation-progress transport probes: live native tool
   events, real TUI rendering of read-only command snapshots, session/location
   isolation and consumer-disconnect controls. Preserve the original lifecycle

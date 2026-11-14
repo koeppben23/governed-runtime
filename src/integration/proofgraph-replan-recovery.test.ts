@@ -99,8 +99,29 @@ const CLAIM: PlanClaimDeclarationInput = {
     assertion: { providerId: 'junit', localId: 'com.example.SessionTest#rejectInvalidState' },
   },
 };
-const PLAN =
-  '# Implementation Plan\n\n## Implementation\n### 1. Preserve null rejection\nKeep null state rejected in src/state/value.cjs.\n';
+const PLAN = [
+  '# Implementation Plan',
+  '',
+  '## Implementation',
+  '### 1. Preserve null rejection',
+  'Keep null state rejected in src/state/value.cjs.',
+  '',
+  '```flowguard-evidence-design',
+  JSON.stringify({
+    version: 1,
+    claims: [
+      {
+        authoritySectionId: 'implementation-step-1',
+        statement: 'Null session state is rejected.',
+        positiveObservable: 'the build observes the null-rejection branch',
+        faultyVariant: 'restore the null-accepting comparison',
+        expectedFailure: 'the bound null-rejection assertion fails',
+        executionRoute: candidates[1]!.candidateId,
+      },
+    ],
+  }),
+  '```',
+].join('\n');
 const CHALLENGE_SCENARIOS = [
   'Try a null session state at the persistence boundary.',
   'Try restoring a prior session certificate under the new host binding.',

@@ -299,6 +299,17 @@ export interface ReviewFeedbackProjection {
   readonly unknowns: readonly string[];
 }
 
+/** Read-only reference to the current plan's critical claim identities. */
+export interface PlanClaimAuthorityProjection {
+  readonly planVersion: number;
+  readonly subjectDigest: string;
+  readonly criticalClaims: readonly {
+    readonly claimId: string;
+    readonly statement: string;
+    readonly authoritySectionId: string;
+  }[];
+}
+
 /**
  * Overall Finish Card status.
  *

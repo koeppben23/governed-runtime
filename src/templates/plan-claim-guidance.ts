@@ -17,6 +17,9 @@ export const PLAN_CLAIM_GUIDANCE = `### Claim declarations
 - Before submission, describe each critical claim's positive observable, concrete violating variant, bound check's expected failure, and separate execution route in the plan's Verification section. A faulty variant need not already exist in the frozen suite; plan how to exercise it through an admissible evidence route. Do not execute it during planning or describe a planned execution as completed.
 - Distinguish incidental regression-suite coverage from claim-specific proof. If required critical behavior has no admissible evidence route, report the precise missing capability and recovery; do not remove or downgrade the required claim to obtain acceptance. Mark incidental coverage limits as \`NOT_VERIFIED\` with recovery, never as a substitute for mandatory evidence.
 - Avoid unbound promises such as "no new warnings": name the diagnostic source, comparison baseline, and observable pass/fail condition, or state the verification limit and recovery. A successful build alone does not prove warning absence.
+- Every critical claim needs a \`flowguard-evidence-design\` block entry. Use the exact \`authoritySectionId\` and statement. \`executionRoute\` must name the active counterexample \`candidateId\`. This is a structural declaration, not proof: the reviewer judges semantic sufficiency, and only executed evidence can prove behavior.
+- When a review returns \`changes_requested\`, answer every bound blocking finding in a \`flowguard-finding-resolutions\` block. Use the exact \`reviewObligationId\`, \`reviewIteration\`, \`planVersion\` and host-minted \`findingId\` values from \`flowguard_status({ reviewFeedback: true })\`. A reasoned clarification is valid; no cosmetic edit is required, and the ledger never proves resolution.
+- When a prior critical claim is removed or replaced, add a \`flowguard-claim-changes\` block using the prior \`claimId\` from \`planClaimAuthority\`. \`replaced\` requires one or more accepted critical \`replacementClaims\` (authoritySectionId + statement). \`withdrawn\` requires a rationale. Keeping the same claim identity with \`critical: false\` is forbidden.
 - When a review returns \`changes_requested\`, address every blocking finding from that review. Map each finding to the changed plan section or claim and state what changed; do not submit a revision that fixes only the first finding.
 - When the review response reports that the iteration budget is exhausted (or the gate requires a governance override), stop. Do not submit another silent revision. Tell the user to run \`/request-changes\` for a fresh review cycle, or \`/override-approve <Begründung>\` to accept the reviewed plan despite the open findings.
 - For \`suite\` use \`kind: "aggregate_check"\`: the positive candidate needs structured full-suite capability, and the adversarial candidate needs registered aggregate capability AND \`fullCheckScopeAttestation: "full_check"\`. Structured assertion reports alone are not aggregate coverage.
@@ -41,6 +44,24 @@ Example declaration, ONLY if build/test are active and test has a matching JUnit
     "assertion": { "providerId": "junit", "localId": "com.example.SessionTest#rejectInvalidState" }
   },
   "coversRiskTriggers": ["state_integrity"]
+}
+\`\`\`
+
+Example evidence-design block for that critical claim. Replace every value with real plan/repository evidence and use the active counterexample \`candidateId\` from \`verificationCandidates\`:
+
+\`\`\`flowguard-evidence-design
+{
+  "version": 1,
+  "claims": [
+    {
+      "authoritySectionId": "implementation-step-1",
+      "statement": "Invalid session state is rejected before persistence.",
+      "positiveObservable": "the positive assertion rejects the invalid state before the write",
+      "faultyVariant": "remove the validation branch so the invalid state reaches persistence",
+      "expectedFailure": "the bound counterexample assertion fails on the faulty variant",
+      "executionRoute": "<active counterexample candidateId>"
+    }
+  ]
 }
 \`\`\`
 `;

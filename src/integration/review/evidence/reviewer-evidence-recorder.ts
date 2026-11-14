@@ -7,7 +7,7 @@
  * Task before/after boundary.
  */
 
-import type { ReviewObligationType } from '../../../state/evidence.js';
+import type { ReviewFindings, ReviewObligationType } from '../../../state/evidence.js';
 import type { ReviewInvocationEvidence } from '../../../state/evidence-review-invocation.js';
 import { NativeSubagentCaptureProvenance } from '../../../state/evidence-review-invocation.js';
 import {
@@ -34,6 +34,7 @@ import {
   validatePreBindFindings,
   type PreBindFindingsResult,
 } from '../observations/pre-bind-findings.js';
+import { mintHostFindingIds } from './finding-identity.js';
 
 type AuditableEvidenceRecordResult = Extract<EvidenceRecordResult, 'fulfilled' | 'reused'>;
 
@@ -83,6 +84,7 @@ export type SdkEvidenceRecordResult =
 function buildReviewInvocation(
   params: SdkEvidenceParams,
   obligation: { mandateDigest: string; criteriaVersion: string },
+  findings: ReviewFindings,
 ): ReviewInvocationEvidence {
   return buildInvocationEvidence({
     obligationId: params.obligationId,
@@ -96,7 +98,7 @@ function buildReviewInvocation(
     invokedAt: params.invokedAt,
     fulfilledAt: params.fulfilledAt,
     attemptId: params.attemptId,
-    capturedRawFindings: params.reviewerResult.findings,
+    capturedRawFindings: findings,
     capture: params.reviewerResult.capture,
     nativeProvenance: params.nativeProvenance,
   });
@@ -254,7 +256,10 @@ function applyEvidenceMutation(
     return state;
   }
 
-  const invocation = buildReviewInvocation(params, obligation);
+  // Identity is minted once at the authoritative binding boundary. Replays
+  // read the persisted invocation; they never mint replacement identities.
+  const findingsWithIdentity = mintHostFindingIds(params.reviewerResult.findings as ReviewFindings);
+  const invocation = buildReviewInvocation(params, obligation, findingsWithIdentity);
   const boundAssurance = updateAttemptStatus(
     assurance,
     lineage.attemptId,

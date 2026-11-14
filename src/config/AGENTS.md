@@ -22,7 +22,7 @@ not runtime state.
   - six aggregate arrays imported directly by `reasons.ts`:
     `reasons-precondition.ts`, `reasons-architecture.ts`,
     `reasons-validation.ts`, `reasons-infra.ts`, `reasons-proofgraph.ts`,
-    `reasons-mutation.ts`;
+    `reasons-mutation.ts`, `reasons-plan-preflight.ts`;
   - eight nested category modules included through those aggregates:
     `reasons-envelope.ts` and `reasons-precondition-challenges.ts` (via
     precondition), `reasons-validation-review.ts` and

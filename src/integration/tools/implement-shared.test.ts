@@ -10,7 +10,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   buildImplementRuntime,
   validateImplementSequence,
-  normalizeHostFindings,
   type ImplementArgs,
   type ImplementRuntime,
 } from './implementation/implement-shared.js';
@@ -82,40 +81,6 @@ function flowGuardPolicy(overrides: Record<string, unknown> = {}) {
     allowSelfApproval: false,
     ...overrides,
   } as unknown as ImplementRuntime['policy'];
-}
-
-function makeReviewFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
-  return {
-    iteration: 1,
-    planVersion: 1,
-    reviewMode: 'subagent',
-    overallVerdict: 'changes_requested',
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    challenges: [],
-    reviewedBy: { sessionId: 'reviewer' },
-    reviewedAt: '2026-01-01T00:00:00.000Z',
-    ...overrides,
-  };
-}
-
-function finding(
-  overrides: Partial<ReviewFindings['blockingIssues'][number]> = {},
-): ReviewFindings['blockingIssues'][number] {
-  const location = { path: 'src/foo.ts', revision: 'head' as const, line: 1 };
-  return {
-    severity: 'critical',
-    category: 'correctness',
-    message: 'Issue',
-    relation: {
-      subjectAnchors: [{ kind: 'repository_location', location }],
-      evidenceLocations: [location],
-    },
-    ...overrides,
-  };
 }
 
 // ─── nextImplementationReviewIteration ────────────────────────────────────────
@@ -229,61 +194,6 @@ describe('validateImplementSequence', () => {
       implementation: {} as unknown as SessionState['implementation'],
     });
     expect(validateImplementSequence(implementArgs({ reviewVerdict: 'accept' }), s)).toBeNull();
-  });
-});
-
-// ─── Host Finding Identity Normalization ─────────────────────────────────────
-
-describe('normalizeHostFindings', () => {
-  it('mints host-assigned findingId on blockingIssues', () => {
-    const findings = makeReviewFindings({
-      blockingIssues: [finding({ message: 'Missing null check' })],
-    });
-    const result = normalizeHostFindings(findings);
-    expect(result.blockingIssues[0]!.findingId).toBeTruthy();
-    expect(result.blockingIssues[0]!.findingId).toMatch(/^[a-f0-9-]{36}$/);
-  });
-
-  it('mints host-assigned findingId on majorRisks', () => {
-    const findings = makeReviewFindings({
-      majorRisks: [finding({ severity: 'major', category: 'risk', message: 'Retry untested' })],
-    });
-    const result = normalizeHostFindings(findings);
-    expect(result.majorRisks[0]!.findingId).toBeTruthy();
-  });
-
-  it('overwrites reviewer-supplied findingId', () => {
-    const findings = makeReviewFindings({
-      blockingIssues: [finding({ findingId: 'reviewer-supplied-bad-uuid' })],
-    });
-    const result = normalizeHostFindings(findings);
-    expect(result.blockingIssues[0]!.findingId).not.toBe('reviewer-supplied-bad-uuid');
-    expect(result.blockingIssues[0]!.findingId).toMatch(/^[a-f0-9-]{36}$/);
-  });
-
-  it('assigns unique findingId per finding', () => {
-    const findings = makeReviewFindings({
-      blockingIssues: [
-        finding({ message: 'Issue A' }),
-        finding({ severity: 'major', category: 'completeness', message: 'Issue B' }),
-      ],
-    });
-    const result = normalizeHostFindings(findings);
-    expect(result.blockingIssues[0]!.findingId).not.toBe(result.blockingIssues[1]!.findingId);
-  });
-
-  it('preserves all non-identity finding fields', () => {
-    const findings = makeReviewFindings({
-      blockingIssues: [finding()],
-    });
-    const result = normalizeHostFindings(findings);
-    expect(result.blockingIssues[0]!.severity).toBe('critical');
-    expect(result.blockingIssues[0]!.category).toBe('correctness');
-    expect(result.blockingIssues[0]!.message).toBe('Issue');
-    expect(result.blockingIssues[0]!.relation.subjectAnchors[0]).toMatchObject({
-      kind: 'repository_location',
-      location: { path: 'src/foo.ts' },
-    });
   });
 });
 

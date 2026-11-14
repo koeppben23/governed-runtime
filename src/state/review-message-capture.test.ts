@@ -33,6 +33,51 @@ describe('current reviewer message proof boundary', () => {
     ).toBe(true);
   });
 
+  it('ignores host-minted finding identities but still rejects changed semantics', () => {
+    const lineage = {
+      childSessionId: 'child',
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      attemptId: '22222222-2222-4222-8222-222222222222',
+    };
+    const blocking = {
+      findingId: '11111111-1111-4111-8111-111111111111',
+      severity: 'critical',
+      category: 'correctness',
+      message: 'Issue',
+      relation: {
+        subjectAnchors: [
+          {
+            kind: 'repository_location',
+            location: { path: 'src/foo.ts', revision: 'head' },
+          },
+        ],
+        evidenceLocations: [],
+      },
+    };
+    const capture = messageCaptureFixture({
+      ...lineage,
+      findings: { overallVerdict: 'changes_requested', blockingIssues: [blocking] },
+    });
+    const findings = JSON.parse(capture.payloadText) as Record<string, unknown>;
+    const withIdentity = {
+      ...findings,
+      blockingIssues: [blocking].map((finding) => ({
+        ...finding,
+        findingId: '33333333-3333-4333-8333-333333333333',
+      })),
+    };
+    expect(captureMatchesFindings(capture, withIdentity)).toBe(true);
+    expect(
+      captureMatchesFindings(capture, {
+        ...withIdentity,
+        blockingIssues: withIdentity.blockingIssues.map((finding) => ({
+          ...finding,
+          message: 'changed',
+        })),
+      }),
+    ).toBe(false);
+  });
+
   it.each(['childSessionId', 'attemptId', 'obligationId'] as const)(
     'rejects a different %s at consumption',
     (field) => {

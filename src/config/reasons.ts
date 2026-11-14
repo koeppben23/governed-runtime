@@ -35,6 +35,7 @@ import { VALIDATION_REASONS } from './reasons-validation.js';
 import { INFRA_REASONS } from './reasons-infra.js';
 import { PROOFGRAPH_REASONS } from './reasons-proofgraph.js';
 import { MUTATION_REASONS } from './reasons-mutation.js';
+import { PLAN_PREFLIGHT_REASONS } from './reasons-plan-preflight.js';
 import type { BlockedReason, FormattedBlock, ReasonWarningSink } from './reasons-types.js';
 
 export type {
@@ -155,6 +156,7 @@ defaultReasonRegistry.registerAll(VALIDATION_REASONS);
 defaultReasonRegistry.registerAll(INFRA_REASONS);
 defaultReasonRegistry.registerAll(PROOFGRAPH_REASONS);
 defaultReasonRegistry.registerAll(MUTATION_REASONS);
+defaultReasonRegistry.registerAll(PLAN_PREFLIGHT_REASONS);
 defaultReasonRegistry.freeze();
 
 export function blocked(

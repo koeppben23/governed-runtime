@@ -12,6 +12,7 @@ import {
 import { buildInvocationFixture as buildInvocationEvidence } from '../../review-invocation-test-helpers.js';
 import { hashFindings } from '../review/findings-hash.js';
 import {
+  buildPlanClaimAuthorityProjection,
   buildReviewFeedbackProjection,
   statusProjectionKind,
 } from './status-detail-projections.js';
@@ -235,6 +236,49 @@ describe('buildReviewFeedbackProjection', () => {
     expect(buildReviewFeedbackProjection(architectureReview)).toBeNull();
     expect(buildReviewFeedbackProjection(staleGeneration)).toBeNull();
     expect(buildReviewFeedbackProjection(planObligation)).toBeNull();
+  });
+});
+
+describe('buildPlanClaimAuthorityProjection', () => {
+  it('projects only the current plan critical claim identities', () => {
+    const state = makeState('PLAN', {
+      plan: {
+        current: { planVersion: 2, digest: 'plan-digest' },
+        claimDeclarations: {
+          flow: 'plan',
+          version: 'v2',
+          claims: [
+            {
+              claimId: '11111111-1111-4111-8111-111111111111',
+              statement: 'critical',
+              critical: true,
+              authoritySectionId: 'implementation-step-1',
+            },
+            {
+              claimId: '22222222-2222-4222-8222-222222222222',
+              statement: 'noncritical',
+              critical: false,
+              authoritySectionId: 'implementation-step-1',
+            },
+          ],
+        },
+      },
+    } as never);
+    expect(buildPlanClaimAuthorityProjection(state)).toEqual({
+      planVersion: 2,
+      subjectDigest: 'plan-digest',
+      criticalClaims: [
+        {
+          claimId: '11111111-1111-4111-8111-111111111111',
+          statement: 'critical',
+          authoritySectionId: 'implementation-step-1',
+        },
+      ],
+    });
+  });
+
+  it('omits the projection when no plan exists', () => {
+    expect(buildPlanClaimAuthorityProjection(makeState('TICKET'))).toBeNull();
   });
 });
 
