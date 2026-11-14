@@ -52,6 +52,16 @@ describe.each([
     );
     expect(template).toContain('A successful build alone does not prove warning absence');
   });
+
+  it('names the structural evidence, finding-response and claim-lineage blocks', () => {
+    expect(template).toContain('flowguard-evidence-design');
+    expect(template).toContain('flowguard-finding-resolutions');
+    expect(template).toContain('flowguard-claim-changes');
+    expect(template).toContain('planClaimAuthority');
+    expect(template).toContain('reviewObligationId');
+    expect(template).toContain('replacementClaims');
+    expect(template).toContain('critical: false');
+  });
 });
 
 /** Call forms that omit claims and would leave the contract empty. */

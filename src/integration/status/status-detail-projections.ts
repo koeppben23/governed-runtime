@@ -38,6 +38,7 @@ import type {
   BlockedProjection,
   ContextProjection,
   EvidenceDetailProjection,
+  PlanClaimAuthorityProjection,
   ReadinessProjection,
   ReviewFeedbackFindingProjection,
   ReviewFeedbackProjection,
@@ -429,6 +430,30 @@ function hasBoundReviewFeedbackLineage(
     attempt.childSessionId === invocation.childSessionId &&
     dispatch !== undefined
   );
+}
+
+/**
+ * Read-only critical-claim identities for the current plan. This supplies the
+ * author with the stable prior-claim references needed to document a revision;
+ * it is a projection, never admission authority.
+ */
+export function buildPlanClaimAuthorityProjection(
+  state: SessionState,
+): PlanClaimAuthorityProjection | null {
+  const plan = state.plan;
+  if (!plan) return null;
+  const claims = plan.claimDeclarations?.claims ?? [];
+  return {
+    planVersion: plan.current.planVersion,
+    subjectDigest: plan.current.digest,
+    criticalClaims: claims
+      .filter((claim) => claim.critical)
+      .map((claim) => ({
+        claimId: claim.claimId,
+        statement: claim.statement,
+        authoritySectionId: claim.authoritySectionId,
+      })),
+  };
 }
 
 /**

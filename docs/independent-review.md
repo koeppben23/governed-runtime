@@ -276,8 +276,25 @@ evidence.
 Avoid unbound promises such as “no new warnings.” State the diagnostic source,
 comparison baseline and observable pass/fail condition, or report the
 verification limit and recovery. A green build alone does not establish warning
-absence. These are authoring instructions, not a new deterministic admission
-rule, an executed-falsification feature, or a change to reviewer criteria.
+absence.
+
+The author-to-plan contract is structural. A critical claim needs a
+`flowguard-evidence-design` entry whose `executionRoute` names the active
+counterexample candidate. A revision on an open review needs a
+`flowguard-finding-resolutions` response for every bound blocking finding, bound
+to the exact obligation, iteration, plan version and host-minted `findingId`.
+Removing or replacing a prior critical claim needs a
+`flowguard-claim-changes` declaration; the same claim identity cannot be retained
+with `critical: false`. A reasoned clarification is a valid response and no
+cosmetic edit is forced.
+
+These declarations are not proof. The preflight proves only completeness and
+identity. The independent reviewer judges semantic sufficiency; executed evidence
+alone proves behavior. A fillable field never establishes that a finding is
+resolved, a requirement is preserved, or a falsification succeeded. Finding IDs
+and prior critical claim identities are exposed through the read-only
+`flowguard_status({ reviewFeedback: true })` projection; admission validates
+against canonical persisted evidence, never against copied feedback.
 
 ### Reviewer authority boundaries and reference suite
 

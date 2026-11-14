@@ -51,6 +51,7 @@ import {
 } from '../helpers.js';
 import { formatAutoAdvanceFailure } from '../../../rails/auto-advance-overflow.js';
 import type { SessionState } from '../../../state/schema.js';
+import type { ReviewFindings } from '../../../state/evidence.js';
 import { evaluate } from '../../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../../machine/commands.js';
 import { autoAdvance } from '../../../rails/types.js';
@@ -66,6 +67,7 @@ import {
   buildPlanEvidence,
   buildPlanSubmissionState,
   createPlanReviewAttempt,
+  submittedPlanClaimDeclarations,
 } from './plan-submission-state.js';
 import {
   applyPlanRevision,
@@ -95,6 +97,7 @@ import {
 } from './plan-route.js';
 import { attemptIncoherentCaptureRetry } from '../incoherent-capture-recovery.js';
 import { classifyPlanClaimSubmission } from './plan-claim-submission.js';
+import { runPlanPreflight, type PlanPreflightResult } from './plan-preflight.js';
 import {
   buildPlanSubmissionResponse as buildSubmissionResponse,
   persistPlanReview as persistReview,
@@ -189,39 +192,85 @@ function classificationScopeUnknown(classification: ChallengeClassification): bo
   return classification.kind === 'available' ? classification.scopeUnknown : false;
 }
 
-async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> {
-  const planBody = normalizeReviewArtifactText(scope.args.planText ?? '');
-  if (!planBody) return formatBlocked('EMPTY_PLAN');
+function formatPlanPreflight(result: PlanPreflightResult): string | null {
+  if (result.kind === 'ok') return null;
+  return formatBlocked(
+    result.code,
+    { detail: result.reason },
+    { planPreflightDiagnostics: result.diagnostics },
+  );
+}
 
-  const admission = admitPlanRevision(scope);
-  if (typeof admission === 'string') return admission;
-  scope = admission;
+function submissionPreflight(scope: PlanExecutionScope, planBody: string): string | null {
+  return formatPlanPreflight(
+    runPlanPreflight({
+      planText: planBody,
+      currentClaims: submittedPlanClaimDeclarations(scope)?.claims ?? [],
+      priorClaims: scope.state.plan?.claimDeclarations?.claims ?? [],
+      verificationCandidates: scope.state.verificationCandidates ?? [],
+    }),
+  );
+}
 
+type PreflightObligation = {
+  readonly obligationId: string;
+  readonly iteration: number;
+  readonly planVersion: number;
+};
+
+function revisionPreflight(
+  scope: PlanExecutionScope,
+  findings: ReviewFindings,
+  obligation: PreflightObligation | null | undefined,
+): string | null {
+  if (findings.blockingIssues.length > 0 && !obligation) {
+    return formatBlocked(
+      'PLAN_REVIEW_FEEDBACK_UNAVAILABLE',
+      { detail: 'the bound review obligation is unavailable for this revision' },
+      {
+        planPreflightDiagnostics: [
+          {
+            field: 'reviewFeedback.obligation',
+            detail: 'the open review obligation could not be identified',
+          },
+        ],
+      },
+    );
+  }
+  return formatPlanPreflight(
+    runPlanPreflight({
+      planText: normalizeReviewArtifactText(scope.args.planText ?? ''),
+      currentClaims: submittedPlanClaimDeclarations(scope)?.claims ?? [],
+      priorClaims: scope.state.plan?.claimDeclarations?.claims ?? [],
+      verificationCandidates: scope.state.verificationCandidates ?? [],
+      priorBlockingFindings: findings.blockingIssues,
+      ...(obligation ? { reviewObligation: obligation } : {}),
+    }),
+  );
+}
+
+function submissionEvidence(
+  scope: PlanExecutionScope,
+  planBody: string,
+): { readonly planVersion: number; readonly planEvidence: ReturnType<typeof buildPlanEvidence> } {
   const predecessorVersion = scope.state.plan?.current.planVersion;
   const planVersion = predecessorVersion ? predecessorVersion + 1 : 1;
-
   const planEvidence = buildPlanEvidence(planBody, scope, {
     planVersion,
     supersedesRecordDigest: scope.state.plan?.current.recordDigest ?? null,
     originatingReviewObligationId: originatingPlanReviewObligationId(scope),
     revisionReason: scope.state.plan ? 'Revision after changes requested' : null,
   });
-  const classification = await classifyPlanSubmission(scope);
-  const attempt = await createPlanReviewAttempt(
-    scope,
-    planEvidence,
-    planVersion,
-    classificationFiles(classification),
-    classificationScopeUnknown(classification),
-  );
-  if (attempt.kind === 'blocked') return attempt.message;
-  const nextState = buildPlanSubmissionState(scope, planEvidence, planVersion, attempt);
-  const evalFn = (s: SessionState) => evaluate(s, scope.policy);
-  const advanced = autoAdvance(nextState, evalFn, scope.ctx);
-  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
-  if (advanced.kind !== 'advanced') return formatAutoAdvanceFailure(advanced);
-  const { state: finalState, transitions } = advanced;
+  return { planVersion, planEvidence };
+}
 
+async function persistPlanSubmission(
+  scope: PlanExecutionScope,
+  finalState: SessionState,
+  planEvidence: ReturnType<typeof buildPlanEvidence>,
+  planVersion: number,
+  transitions: unknown,
+): Promise<string> {
   await writeStateWithArtifacts(scope.sessDir, finalState);
   const authority = resolvePlanDispatchAuthority(finalState, planVersion);
   if (authority.kind === 'blocked') {
@@ -236,6 +285,40 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     authority: authority.authority,
   });
   return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
+}
+
+async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> {
+  const planBody = normalizeReviewArtifactText(scope.args.planText ?? '');
+  if (!planBody) return formatBlocked('EMPTY_PLAN');
+
+  const admission = admitPlanRevision(scope);
+  if (typeof admission === 'string') return admission;
+  scope = admission;
+
+  const preflight = submissionPreflight(scope, planBody);
+  if (preflight !== null) return preflight;
+
+  const { planVersion, planEvidence } = submissionEvidence(scope, planBody);
+  const classification = await classifyPlanSubmission(scope);
+  const attempt = await createPlanReviewAttempt(
+    scope,
+    planEvidence,
+    planVersion,
+    classificationFiles(classification),
+    classificationScopeUnknown(classification),
+  );
+  if (attempt.kind === 'blocked') return attempt.message;
+  const nextState = buildPlanSubmissionState(scope, planEvidence, planVersion, attempt);
+  const advanced = autoAdvance(nextState, (s) => evaluate(s, scope.policy), scope.ctx);
+  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
+  if (advanced.kind !== 'advanced') return formatAutoAdvanceFailure(advanced);
+  return persistPlanSubmission(
+    scope,
+    advanced.state,
+    planEvidence,
+    planVersion,
+    advanced.transitions,
+  );
 }
 
 function classifyPlanSubmission(scope: PlanExecutionScope) {
@@ -256,28 +339,40 @@ function originatingPlanReviewObligationId(scope: PlanExecutionScope): string | 
   );
 }
 
+async function blockedPlanReviewResponse(
+  scope: PlanExecutionScope,
+  failure: Parameters<typeof formatReviewValidationFailure>[1],
+  obligationId: string | undefined,
+): Promise<string> {
+  const retry = await attemptIncoherentCaptureRetry({
+    failure,
+    state: scope.state,
+    sessDir: scope.sessDir,
+    obligationId,
+    now: scope.ctx.now(),
+    buildResponse: (state, authority) =>
+      planInstructionResponse(
+        { ...scope, state },
+        authority,
+        'Incoherent reviewer capture detected; a fresh review attempt was re-armed on the same frozen plan subject.',
+      ),
+  });
+  return retry.kind !== 'not_applicable'
+    ? retry.response
+    : formatReviewValidationFailure(getAdapterLogger(), failure);
+}
+
 async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
   if (!scope.state.selfReview) return formatBlocked('NO_SELF_REVIEW');
   if (!scope.state.plan) return formatBlocked('NO_PLAN');
 
   const lookup = resolveEffectivePlanFindings(scope);
-  if (lookup.resolved.kind === 'blocked') {
-    const retry = await attemptIncoherentCaptureRetry({
-      failure: lookup.resolved.failure,
-      state: scope.state,
-      sessDir: scope.sessDir,
-      obligationId: lookup.pendingObligation?.obligationId,
-      now: scope.ctx.now(),
-      buildResponse: (state, authority) =>
-        planInstructionResponse(
-          { ...scope, state },
-          authority,
-          'Incoherent reviewer capture detected; a fresh review attempt was re-armed on the same frozen plan subject.',
-        ),
-    });
-    if (retry.kind !== 'not_applicable') return retry.response;
-    return formatReviewValidationFailure(getAdapterLogger(), lookup.resolved.failure);
-  }
+  if (lookup.resolved.kind === 'blocked')
+    return blockedPlanReviewResponse(
+      scope,
+      lookup.resolved.failure,
+      lookup.pendingObligation?.obligationId,
+    );
   logStructuredResolutionDiagnostics(getAdapterLogger(), lookup.resolved.diagnostics);
   const effectiveFindings = lookup.resolved.effectiveFindings;
   const blocked = blockedInvalidPlanFindings(
@@ -294,6 +389,8 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
     const admission = admitPlanRevision(scope);
     if (typeof admission === 'string') return admission;
     scope = admission;
+    const preflight = revisionPreflight(scope, effectiveFindings, lookup.pendingObligation);
+    if (preflight !== null) return preflight;
   }
 
   const revision = applyPlanRevision(scope, lookup.pendingObligation?.obligationId);

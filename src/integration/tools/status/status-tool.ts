@@ -62,6 +62,7 @@ import {
   buildContextProjection,
   buildReadinessProjection,
   buildReviewFeedbackProjection,
+  buildPlanClaimAuthorityProjection,
   statusProjectionKind,
 } from '../../status/status-detail-projections.js';
 import { buildFinishCard } from '../../status/status-finish.js';
@@ -229,6 +230,7 @@ function buildReviewFeedbackProjectionResponse(
         phase: state.phase,
         sessionId: state.id,
         reviewFeedback: buildReviewFeedbackProjection(state),
+        planClaimAuthority: buildPlanClaimAuthorityProjection(state),
         ...checkFields,
       },
       state,

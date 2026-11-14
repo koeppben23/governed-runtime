@@ -68,6 +68,16 @@ export function hasCaptureLineage(invocation: {
   );
 }
 
+/** Remove host-minted finding identities before comparing reviewer-owned semantics. */
+function withoutHostFindingIds(items: unknown): unknown {
+  if (!Array.isArray(items)) return items;
+  return items.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+    const { findingId: _findingId, ...rest } = item as Record<string, unknown>;
+    return rest;
+  });
+}
+
 /** Compare reviewer-owned semantics; host-stamped identities are never model authority. */
 export function captureMatchesFindings(
   capture: ReviewMessageCapture,
@@ -84,7 +94,12 @@ export function captureMatchesFindings(
   // attempt, child and mandate identity are enforced by the surrounding gates.
   const candidate: Record<string, unknown> = {};
   for (const key of Object.keys(ReviewerFindingsInput.unwrap().shape)) {
-    if (key !== 'attestation') candidate[key] = findings[key];
+    if (key === 'attestation') continue;
+    if (key === 'blockingIssues' || key === 'majorRisks') {
+      candidate[key] = withoutHostFindingIds(findings[key]);
+      continue;
+    }
+    candidate[key] = findings[key];
   }
   candidate.attestation = original.data.attestation;
   if (Array.isArray(findings.challenges)) {
@@ -98,9 +113,14 @@ export function captureMatchesFindings(
   const projected = ReviewerFindingsInput.safeParse(candidate);
   const withoutAttestation = ({ attestation: _attestation, ...rest }: Record<string, unknown>) =>
     rest;
+  const withoutFindingIdentity = (value: Record<string, unknown>) => ({
+    ...withoutAttestation(value),
+    blockingIssues: withoutHostFindingIds(value.blockingIssues),
+    majorRisks: withoutHostFindingIds(value.majorRisks),
+  });
   return (
     projected.success &&
-    canonicalJsonStringify(withoutAttestation(original.data)) ===
-      canonicalJsonStringify(withoutAttestation(projected.data))
+    canonicalJsonStringify(withoutFindingIdentity(original.data)) ===
+      canonicalJsonStringify(withoutFindingIdentity(projected.data))
   );
 }

@@ -418,7 +418,7 @@ function checkAggregateCounterexampleCapability(
   );
 }
 
-function resolveCounterexampleCandidate(
+export function resolveCounterexampleCandidate(
   candidates: readonly VerificationCandidate[],
   requirement: NonNullable<NormalizedClaimDeclaration['counterexampleRequirement']>,
 ): VerificationCandidate | undefined {
