@@ -975,6 +975,11 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Reuse the fingerprint already verified during a V2 runtime load for its
+  diagnostic/logging bootstrap instead of running a redundant Git probe.
+  Every subsequent session security boundary still resolves canonical authority
+  independently; no authorization cache or performance speedup is claimed.
+
 - Retire native delegation dispatch, child and linking caches immediately
   after observed enrollment settles; durable activation records continue to
   reject replay. Bound unsettled dispatch reservations to 256 per governed
