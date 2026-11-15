@@ -292,8 +292,14 @@ export function computeStateDigest(state: SessionState): string {
   return hashText(`state-digest.v2:${canonicalJsonStringify(authorityState(state))}`);
 }
 
-function authorityState(state: SessionState): Omit<SessionState, 'pendingAuditOperations'> {
-  const { pendingAuditOperations: _operations, ...authority } = state;
+function authorityState(
+  state: SessionState,
+): Omit<SessionState, 'pendingAuditOperations' | 'auditOutboxCheckpoint'> {
+  const {
+    pendingAuditOperations: _operations,
+    auditOutboxCheckpoint: _checkpoint,
+    ...authority
+  } = state;
   return authority;
 }
 

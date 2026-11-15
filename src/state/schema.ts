@@ -343,6 +343,20 @@ export const PendingAuditOperation = z
   .readonly();
 export type PendingAuditOperation = z.infer<typeof PendingAuditOperation>;
 
+/** Position-bound receipt for canonical evidence retired from the state outbox. */
+export const AuditOutboxCheckpoint = z
+  .object({
+    version: z.literal(1),
+    reconciledCount: z.number().int().nonnegative(),
+    lastOperationId: z.string().uuid(),
+    auditSequence: z.number().int().positive(),
+    chainHash: z.string().regex(/^[a-f0-9]{64}$/),
+    auditEventDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict()
+  .readonly();
+export type AuditOutboxCheckpoint = z.infer<typeof AuditOutboxCheckpoint>;
+
 // ─── Session State ────────────────────────────────────────────────────────────
 
 /**
@@ -411,10 +425,12 @@ export const SessionState = z
     /** Last transition (from → to via event). Null before first transition. */
     transition: Transition.nullable(),
     /**
-     * State-owned audit outbox. Operations remain after reconciliation as
-     * durable correlation evidence; their status is monotonic.
+     * State-owned audit outbox. Unresolved operations are never discarded.
+     * Verified historical reconciled events live in canonical audit.jsonl.
      */
     pendingAuditOperations: z.array(PendingAuditOperation),
+    /** Canonical chain anchor for the last retired reconciled operation. */
+    auditOutboxCheckpoint: AuditOutboxCheckpoint.optional(),
     /** Error state. Non-null triggers ERROR event in guard evaluation. */
     error: ErrorInfo.nullable(),
     /** Session creation timestamp (set once by init()). */
