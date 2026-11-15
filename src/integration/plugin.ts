@@ -364,6 +364,13 @@ async function disposeResources(
     throw new PluginCleanupError(errors, 'OpenCode V2 plugin cleanup was incomplete.');
 }
 
+function createDiagnosticWorkspace(root: string, fingerprint: string) {
+  return createWorkspace({
+    auditWorktree: root,
+    diagnosticBootstrapFingerprint: fingerprint,
+  });
+}
+
 async function createSessionRuntime(
   adapter: OpenCodeHostAdapter,
   root: string,
@@ -374,10 +381,7 @@ async function createSessionRuntime(
       'PLUGIN_ENFORCEMENT_UNAVAILABLE',
       'The host session has no usable worktree.',
     );
-  const ws = createWorkspace({
-    auditWorktree: root,
-    diagnosticBootstrapFingerprint: verifiedFingerprint,
-  });
+  const ws = createDiagnosticWorkspace(root, verifiedFingerprint);
   const { log, config, configReadError, disposeLogging } = await createPluginLogger(
     undefined,
     ws.cachedWsDir,
