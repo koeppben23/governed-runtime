@@ -279,7 +279,44 @@ describe('status compact canonical projection', () => {
     expect(compact.verificationCandidates).toEqual(full.verificationCandidates);
     expect(compact.detectedStack).toEqual(full.detectedStack);
     expect(compact.compact).toBe(true);
+    const drift = compact.discoveryDrift as Record<string, unknown>;
+    expect(drift.status).toBe('not_checked');
+    expect(drift.notVerified).toEqual(
+      expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
+    );
+    const runtimeReadiness = compact.runtimeReadiness as Record<string, unknown>;
+    expect(runtimeReadiness.status).toBe('not_checked');
+    expect(runtimeReadiness.notVerified).toContain('NOT_VERIFIED');
+    expect('runtimeReadiness' in full).toBe(false);
   });
+
+  it.runIf(process.env.FLOWGUARD_STATUS_BENCHMARK === '1')(
+    'BENCHMARK: compact fast path is at least 3x faster than full status',
+    async () => {
+      await hydrateSession({ policyMode: 'team' });
+      const samples = async (compact: boolean): Promise<number[]> => {
+        const values: number[] = [];
+        for (let i = 0; i < 7; i++) {
+          const start = performance.now();
+          await status.execute(compact ? { compact: true } : {}, ctx);
+          values.push(performance.now() - start);
+        }
+        return values;
+      };
+      const median = (numbers: number[]): number => {
+        const sorted = [...numbers].sort((a, b) => a - b);
+        return sorted[Math.floor(sorted.length / 2)]!;
+      };
+      const fullMs = median(await samples(false));
+      const compactMs = median(await samples(true));
+      const speedup = fullMs / compactMs;
+      console.info(
+        `FlowGuard status real workspace median: full=${fullMs.toFixed(2)}ms ` +
+          `compact=${compactMs.toFixed(2)}ms speedup=${speedup.toFixed(2)}x`,
+      );
+      expect(speedup).toBeGreaterThanOrEqual(3);
+    },
+  );
 
   it('keeps the full projection as the default and unchanged', async () => {
     await hydrateSession({ policyMode: 'team' });

@@ -979,6 +979,11 @@ last read` without a click, while a completion in another session left the
   FlowGuard session identity. Reject foreign-session events and previously
   mixed-session histories with CHAIN_BREAK before changing audit bytes.
 
+- Make flowguard_status compact a genuine low-latency projection: preserve
+  canonical persisted state and Discovery health while skipping full repository
+  drift rediscovery and toolchain probes. Explicitly mark both skipped checks
+  NOT_VERIFIED; keep full status as the default.
+
 - Verify the complete persisted audit chain before acknowledging an already
   recorded operation or trusting read-only transition evidence. Malformed
   chain hashes and reordered records now fail closed during reconciliation.
