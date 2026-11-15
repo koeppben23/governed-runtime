@@ -581,6 +581,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     file: 'integration/tools/execution-subject-input-resolution.ts',
     owner: 'tools-infrastructure',
   },
+  { file: 'integration/tools/audit-outbox-order.ts', owner: 'tools-infrastructure' },
   { file: 'integration/tools/helpers-rail-presentation.ts', owner: 'tools-infrastructure' },
   { file: 'integration/tools/helpers.ts', owner: 'tools-infrastructure' },
   {
