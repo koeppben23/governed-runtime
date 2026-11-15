@@ -36,9 +36,7 @@ async function duration(task, rounds = 7) {
 async function legacyLookup(dir, wanted) {
   for (const id of wanted) {
     const audit = await auditPersistence.readAuditTrail(dir);
-    const match = audit.find(
-      (entry) => entry.id === id && entry.detail.operationId === id,
-    );
+    const match = audit.find((entry) => entry.id === id && entry.detail.operationId === id);
     if (!match) throw new Error(`Missing baseline event ${id}`);
   }
 }
