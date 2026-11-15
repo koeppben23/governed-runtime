@@ -419,7 +419,6 @@ function areAdjacentAnchors(
   return beforeIndex !== undefined && afterIndex === beforeIndex + 1;
 }
 
-
 function nearestPersistedId(
   operations: readonly PendingAuditOperation[],
   start: number,

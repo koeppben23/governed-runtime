@@ -38,7 +38,9 @@ describe('durable audit outbox ordering', () => {
 
   it('CORNER: missing common entries do not affect relative order', () => {
     const persisted = [operation(1), operation(2), operation(3), operation(4)];
-    expect(() => assertOrder([persisted[0]!, persisted[2]!, persisted[3]!], persisted)).not.toThrow();
+    expect(() =>
+      assertOrder([persisted[0]!, persisted[2]!, persisted[3]!], persisted),
+    ).not.toThrow();
   });
 
   it('BAD: rejects a reordered prepared outbox instead of normalizing it', () => {
