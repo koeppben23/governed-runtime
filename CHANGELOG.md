@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Bind every canonical audit append and idempotent retry to the persisted
+  FlowGuard session identity. Reject foreign-session events and previously
+  mixed-session histories with CHAIN_BREAK before changing audit bytes.
+
 - Make flowguard_status compact a genuine low-latency projection: preserve
   canonical persisted state and Discovery health while skipping full repository
   drift rediscovery and toolchain probes. Explicitly mark both skipped checks

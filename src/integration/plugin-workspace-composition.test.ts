@@ -197,17 +197,20 @@ describe('createWorkspace composition contract', () => {
   });
 
   it('allocates decision sequences from receipts bound to either session identity', async () => {
+    // A canonical trail cannot mix FlowGuard session IDs. Exercise the
+    // FlowGuard and host-session matching cases in independent valid trails.
     await withSessionDir(async (sessDir) => {
       await appendAuditEvent(sessDir, decisionReceipt(FLOWGUARD_SESSION_ID, undefined, 3));
-      await appendAuditEvent(sessDir, decisionReceipt(OTHER_SESSION_ID, FLOWGUARD_SESSION_ID, 8));
-      await appendAuditEvent(sessDir, decisionReceipt(OTHER_SESSION_ID, 'other-host', 99));
-
+      await appendAuditEvent(sessDir, decisionReceipt(FLOWGUARD_SESSION_ID, 'other-host', 8));
       const ws = createWorkspace({ auditWorktree: undefined });
       expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(9);
-      // Reservation is idempotent until a decision is persisted: repeating the
-      // call must not burn a sequence that was never committed.
+      // Reading an uncommitted reservation is idempotent.
       expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(9);
-      // A receipt bound to this session's host identity advances it.
+    });
+    await withSessionDir(async (sessDir) => {
+      await appendAuditEvent(sessDir, decisionReceipt(OTHER_SESSION_ID, FLOWGUARD_SESSION_ID, 8));
+      const ws = createWorkspace({ auditWorktree: undefined });
+      expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(9);
       await appendAuditEvent(sessDir, decisionReceipt(OTHER_SESSION_ID, FLOWGUARD_SESSION_ID, 100));
       expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(101);
     });
