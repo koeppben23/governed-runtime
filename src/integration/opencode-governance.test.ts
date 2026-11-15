@@ -376,9 +376,8 @@ describe('native governance delegation correlation', () => {
       internals.settledReviewerDispatches.add(key);
     }
     await authorize(dispatch('after-settled-reviewers'));
-    expect(
-      host.activation.values.has(governanceDelegationKey('root', 'message', 'after-settled-reviewers')),
-    ).toBe(true);
+    const key = governanceDelegationKey('root', 'message', 'after-settled-reviewers');
+    expect(host.activation.values.has(key)).toBe(true);
   });
 
   it('deduplicates repeated native progress for the same exact call', async () => {
