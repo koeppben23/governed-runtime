@@ -975,6 +975,11 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Use a same-directory copy-on-write clone to prepare the next canonical
+  audit.jsonl version when the filesystem supports reflinks, then append,
+  fsync and atomically rename. Keep the fully durable rewrite on filesystems
+  without clone support, preserving existing audit semantics and contracts.
+
 - Advance the reconciliation audit-chain cursor only after a durable append
   succeeds, using the writer-tracked persisted chain tip rather than an
   uncommitted provisional event hash.
