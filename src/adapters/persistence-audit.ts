@@ -224,10 +224,26 @@ function rememberAuditAppendCache(sessionDir: string, cache: AuditAppendCache): 
   }
 }
 
-/** Forget the in-process append proof for one or all sessions. */
-function clearAuditAppendCache(sessionDir?: string): void {
-  if (sessionDir === undefined) auditAppendCaches.clear();
-  else auditAppendCaches.delete(sessionDir);
+/** Forget the in-process append proof for one session. */
+function clearAuditAppendCache(sessionDir: string): void {
+  auditAppendCaches.delete(sessionDir);
+}
+
+/** @internal Read-only projection for append-proof regression tests. */
+export function auditAppendCacheForTests(sessionDir: string):
+  | {
+      readonly lastSequence: number;
+      readonly appendsSinceVerify: number;
+      readonly ids: readonly string[];
+    }
+  | undefined {
+  const cache = auditAppendCaches.get(sessionDir);
+  if (!cache) return undefined;
+  return {
+    lastSequence: cache.lastSequence,
+    appendsSinceVerify: cache.appendsSinceVerify,
+    ids: [...cache.ids],
+  };
 }
 
 async function appendAuditLineAtomically(

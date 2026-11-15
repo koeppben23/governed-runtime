@@ -2115,6 +2115,10 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Add append-proof cache regression coverage for proof reuse, failure
+  invalidation, bounded session retention and the 60-second/256-append full
+  verification windows. The targeted `persistence-audit.ts` mutation score is
+  83.04% against the 80% break threshold.
 - Run the default `npm test` path without timing-sensitive PERF tests; dedicated
   `test:unit:perf` and `test:integration:perf` jobs remain the only performance
   gates. Full status now runs independent discovery drift and toolchain probes

@@ -80,7 +80,7 @@ import { initWorkspace, archiveSession } from './workspace/index.js';
 import { benchmarkSync, measureAsync, PERF_BUDGETS } from '../test-policy.js';
 import { verifyChain } from '../audit/integrity.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
-import { CURRENT_AUDIT_FORMAT_VERSION } from '../audit/types.js';
+import { computeChainHash, CURRENT_AUDIT_FORMAT_VERSION, GENESIS_HASH } from '../audit/types.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -113,6 +113,24 @@ function makeValidAuditEvent(overrides: Partial<AuditEventBody> = {}): AuditEven
     detail: { kind: 'transition', from: 'TICKET', to: 'PLAN' },
     ...overrides,
   };
+}
+
+/** Build a fully chained canonical event for damaged-trail fixtures. */
+function chainedAuditEvent(
+  body: AuditEventBody,
+  auditSequence: number,
+  prevHash: string,
+): Record<string, unknown> {
+  const withPosition = {
+    ...body,
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
+    auditSequence,
+    recordedAt: FIXED_TIME,
+    prevHash,
+  };
+  const semanticEventDigest = computeCanonicalEventDigest(withPosition);
+  const finalized = { ...withPosition, semanticEventDigest };
+  return { ...finalized, chainHash: computeChainHash(prevHash, finalized) };
 }
 
 /** Create a minimal valid ReviewReport for persistence tests. */
@@ -423,7 +441,46 @@ describe('persistence', () => {
 
       await expect(
         appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
-      ).rejects.toThrow(/invalid audit chain/i);
+      ).rejects.toThrow(/invalid audit chain at sequence 1/i);
+    });
+
+    it('rejects a persisted trail containing duplicate event identities', async () => {
+      const duplicateId = crypto.randomUUID();
+      const first = chainedAuditEvent(
+        makeValidAuditEvent({ id: duplicateId, event: 'first' }),
+        1,
+        GENESIS_HASH,
+      );
+      const second = chainedAuditEvent(
+        makeValidAuditEvent({ id: duplicateId, event: 'second' }),
+        2,
+        String(first['chainHash']),
+      );
+      await fs.writeFile(
+        auditPath(tmpDir),
+        `${JSON.stringify(first)}\n${JSON.stringify(second)}\n`,
+        'utf-8',
+      );
+
+      await expect(
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+      ).rejects.toThrow(/duplicate event id/i);
+    });
+
+    it('starts a fresh chain after the persisted file disappears', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      await fs.unlink(auditPath(tmpDir));
+      const secondId = crypto.randomUUID();
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: secondId }));
+
+      const events = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        id: secondId,
+        auditSequence: 1,
+        prevHash: GENESIS_HASH,
+      });
+      expect(verifyChain(events).valid).toBe(true);
     });
 
     // ── CORNER ──────────────────────────────────────────────
