@@ -595,7 +595,8 @@ export class OpenCodeGovernance {
         },
       };
       const timer = setTimeout(() => {
-        this.waiters.get(childId)?.delete(waiter);
+        const group = this.waiters.get(childId);
+        if (group?.delete(waiter) && group.size === 0) this.waiters.delete(childId);
         reject(this.error('No exact native parent-call/child progress receipt was observed.'));
       }, 5_000);
       const group = this.waiters.get(childId) ?? new Set<EnrollmentWaiter>();

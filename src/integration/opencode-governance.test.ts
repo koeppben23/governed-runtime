@@ -514,6 +514,7 @@ describe('native governance delegation correlation', () => {
       kind: 'inactive',
     });
     expect(vi.getTimerCount()).toBe(0);
+    expect((governance as unknown as { waiters: Map<string, Set<unknown>> }).waiters.size).toBe(0);
   });
 
   it('never waits for an unenrolled child while reading committed-only authority', async () => {

@@ -66,6 +66,9 @@ export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDep
   });
 }
 
+/** Serializes retirement for one session across concurrent delete notifications. */
+const retiringSessions = new Set<string>();
+
 /** A verified deletion is the sole retirement boundary for in-memory routing.
  * Persisted BLOCKED authority is never discarded by native notifications. */
 async function dispatchDeletedSession(
@@ -73,27 +76,35 @@ async function dispatchDeletedSession(
   deps: EventDispatchDeps,
 ): Promise<void> {
   const { adapter, governance, runtimes, sessionRoots } = deps;
+  const sessionId = projected.sessionId;
   // Deleted sessions are no longer queryable. Only previously admitted sessions
   // own ephemeral metadata, and unknown notifications never authorize cleanup.
-  if (!sessionRoots.has(projected.sessionId)) return;
-  adapter.forgetSession(projected.sessionId);
-  const authority = await resolveGovernanceActivation(governance.store, projected.sessionId);
-  if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
-  const root = sessionRoots.get(projected.sessionId);
-  const entry = root === undefined ? undefined : runtimes.get(root);
-  if (entry) {
-    const runtime = (await entry).runtime;
-    if (authority.kind === 'active' && authority.record.rootSessionId === projected.sessionId) {
-      // The root event handler owns its canonical audit and ephemeral cleanup.
-      await handlePluginEvent(runtime, projected.event, projected.sessionId);
-    } else {
-      // Delegated and inactive sessions have no root event handler, but their
-      // transient workspace/diagnostic state must still be released.
-      cleanupSessionRuntime(runtime, projected.sessionId);
+  // A concurrent duplicate must not run the handler twice; keep the admission
+  // entry until retirement actually completes so failures remain retryable.
+  if (retiringSessions.has(sessionId) || !sessionRoots.has(sessionId)) return;
+  retiringSessions.add(sessionId);
+  try {
+    adapter.forgetSession(sessionId);
+    const authority = await resolveGovernanceActivation(governance.store, sessionId);
+    if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
+    const root = sessionRoots.get(sessionId);
+    const entry = root === undefined ? undefined : runtimes.get(root);
+    if (entry) {
+      const runtime = (await entry).runtime;
+      if (authority.kind === 'active' && authority.record.rootSessionId === sessionId) {
+        // The root event handler owns its canonical audit and ephemeral cleanup.
+        await handlePluginEvent(runtime, projected.event, sessionId);
+      } else {
+        // Delegated and inactive sessions have no root event handler, but their
+        // transient workspace/diagnostic state must still be released.
+        cleanupSessionRuntime(runtime, sessionId);
+      }
     }
+    sessionRoots.delete(sessionId);
+    deps.forgetFenceSession?.(sessionId);
+  } finally {
+    retiringSessions.delete(sessionId);
   }
-  sessionRoots.delete(projected.sessionId);
-  deps.forgetFenceSession?.(projected.sessionId);
 }
 
 function record(value: unknown): value is Record<string, unknown> {

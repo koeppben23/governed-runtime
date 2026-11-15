@@ -301,6 +301,58 @@ describe('native success to canonical system-work composition', () => {
     controller.abort();
   });
 
+  it('serializes concurrent duplicate deletion notifications exactly once', async () => {
+    const { host } = await fixture();
+    const controller = new AbortController();
+    const adapter = new OpenCodeHostAdapter(host.ctx, controller.signal);
+    const governance = new OpenCodeGovernance(host.ctx, adapter, controller.signal);
+    let release!: (
+      value: Awaited<ReturnType<typeof activation.resolveGovernanceActivation>>,
+    ) => void;
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<Awaited<ReturnType<typeof activation.resolveGovernanceActivation>>>(
+      (resolve) => {
+        release = resolve;
+      },
+    );
+    vi.spyOn(activation, 'resolveGovernanceActivation').mockImplementation(async () => {
+      started();
+      return gate;
+    });
+    const sessionRoots = new Map([['root', 'worktree']]);
+    const forget = vi.spyOn(adapter, 'forgetSession');
+    const forgetFenceSession = vi.fn();
+    const deps = {
+      adapter,
+      governance,
+      sessionRoots,
+      forgetFenceSession,
+      runtimes: new Map(),
+      invoke: async () => undefined,
+    };
+    const event = {
+      type: 'session.deleted' as const,
+      id: 'concurrent-deleted',
+      created: 101,
+      durable: { aggregateID: 'root', seq: 2, version: 2 as const },
+      data: { sessionID: 'root' },
+    };
+
+    const first = dispatchEvent(event, deps);
+    await startedPromise;
+    const second = dispatchEvent(event, deps);
+    release({ kind: 'inactive', record: null });
+    await Promise.all([first, second]);
+
+    expect(forget).toHaveBeenCalledExactlyOnceWith('root');
+    expect(forgetFenceSession).toHaveBeenCalledExactlyOnceWith('root');
+    expect(sessionRoots.size).toBe(0);
+    controller.abort();
+  });
+
   it('releases inactive-session workspace state without any ACTIVE audit handler', async () => {
     const { host } = await fixture();
     const runtime = {
