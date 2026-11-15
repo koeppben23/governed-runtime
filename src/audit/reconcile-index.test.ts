@@ -36,9 +36,7 @@ describe('audit reconciliation snapshot index', () => {
   });
 
   it('EDGE: index stays bounded across 10,000 historical events', () => {
-    const history = Array.from({ length: 10_000 }, (_, i) =>
-      event(`audit-${i}`, `audit-${i}`),
-    );
+    const history = Array.from({ length: 10_000 }, (_, i) => event(`audit-${i}`, `audit-${i}`));
     const wanted = new Set(['audit-7', 'audit-7000', 'absent']);
     const result = indexCommittedOperationAudits(history, wanted);
     expect([...result.keys()]).toEqual(['audit-7', 'audit-7000']);
