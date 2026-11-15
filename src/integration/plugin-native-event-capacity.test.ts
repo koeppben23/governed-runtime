@@ -13,6 +13,8 @@ import type { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 
 function eventAt(index: number): OpenCodeEvent {
   return {
+    id: `progress-${index}`,
+    created: index + 1,
     type: 'session.tool.progress',
     data: {
       sessionID: 'root',
@@ -72,10 +74,7 @@ describe('native V2 event handler capacity', () => {
 
   it('BAD: overload limits in-flight handlers and globally revokes admission', async () => {
     const release: Array<() => void> = [];
-    const h = makeHarness(
-      1_000,
-      () => new Promise<void>((resolve) => release.push(resolve)),
-    );
+    const h = makeHarness(1_000, () => new Promise<void>((resolve) => release.push(resolve)));
     await startEventLoop(h.deps);
 
     expect(h.observeProgress).toHaveBeenCalledTimes(256);
@@ -98,11 +97,7 @@ describe('native V2 event handler capacity', () => {
 
   it('CORNER: exactly at capacity is admitted, not prematurely rejected', async () => {
     const release: Array<() => void> = [];
-    const h = makeHarness(
-      256,
-      () => new Promise<void>((resolve) => release.push(resolve)),
-      true,
-    );
+    const h = makeHarness(256, () => new Promise<void>((resolve) => release.push(resolve)), true);
     await startEventLoop(h.deps);
     expect(h.observeProgress).toHaveBeenCalledTimes(256);
     expect(h.operations.size).toBe(256);
