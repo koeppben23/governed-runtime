@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Read and schema-validate the audit trail once per durable outbox reconciliation
+  batch rather than once per pending operation. Index only relevant operation
+  identities, retaining fail-closed digest comparison and writer idempotency.
+
 - Advance the reconciliation audit-chain cursor only after a durable append
   succeeds, using the writer-tracked persisted chain tip rather than an
   uncommitted provisional event hash.
