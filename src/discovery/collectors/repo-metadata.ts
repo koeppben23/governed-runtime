@@ -32,10 +32,10 @@ export async function collectRepoMetadata(
 ): Promise<CollectorOutput<RepoMetadata>> {
   try {
     const [branch, commit, clean, remote] = await Promise.all([
-      io.defaultBranch(input.worktreePath),
-      io.headCommit(input.worktreePath),
-      io.isClean(input.worktreePath),
-      io.remoteOriginUrl(input.worktreePath),
+      io.defaultBranch(input.worktreePath, input.signal),
+      io.headCommit(input.worktreePath, input.signal),
+      io.isClean(input.worktreePath, input.signal),
+      io.remoteOriginUrl(input.worktreePath, undefined, input.signal),
     ]);
 
     return {
@@ -50,6 +50,7 @@ export async function collectRepoMetadata(
       },
     };
   } catch {
+    input.signal?.throwIfAborted();
     // Partial: return what we can with safe defaults
     return {
       status: 'partial',

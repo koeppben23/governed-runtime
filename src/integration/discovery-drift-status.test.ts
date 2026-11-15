@@ -110,7 +110,7 @@ describe('buildDiscoveryDriftStatus', () => {
 
   it('projects timeout explicitly without pretending underlying work was cancelled', async () => {
     const projection = await buildDiscoveryDriftStatus({
-      workspaceDir: '/workspace',
+      workspaceDir: '/workspace-timeout',
       worktree: '/repo',
       fingerprint: 'a1b2c3d4e5f6a1b2c3d4e5f6',
       timeoutMs: 1,
@@ -119,7 +119,77 @@ describe('buildDiscoveryDriftStatus', () => {
 
     expect(projection.status).toBe('timeout');
     expect(projection.warnings[0]?.message).toContain('status budget');
-    expect(projection.warnings[0]?.message).toContain('may continue');
+    expect(projection.warnings[0]?.message).toContain('Cancellation was requested');
+  });
+
+  it('BAD: requests cancellation on timeout and observes cooperative teardown', async () => {
+    let observedSignal: AbortSignal | undefined;
+    let active = 0;
+    const projection = await buildDiscoveryDriftStatus({
+      workspaceDir: '/workspace-cooperative-timeout',
+      worktree: '/repo',
+      fingerprint: 'a1b2c3d4e5f6a1b2c3d4e5f6',
+      timeoutMs: 1,
+      check: async (_ws, _wt, _fp, signal) => {
+        observedSignal = signal;
+        active += 1;
+        try {
+          await new Promise<void>((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          });
+          return CLEAN_DRIFT;
+        } finally {
+          active -= 1;
+        }
+      },
+    });
+    expect(projection.status).toBe('timeout');
+    expect(observedSignal?.aborted).toBe(true);
+    await Promise.resolve();
+    expect(active).toBe(0);
+  });
+
+  it('CORNER: parallel status requests share exactly one in-flight discovery', async () => {
+    let finish!: (result: DriftResult) => void;
+    let starts = 0;
+    const check = async (): Promise<DriftResult> => {
+      starts += 1;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    };
+    const input = {
+      workspaceDir: '/workspace-singleflight',
+      worktree: '/repo',
+      fingerprint: 'a1b2c3d4e5f6a1b2c3d4e5f6',
+      check,
+    };
+    const one = buildDiscoveryDriftStatus(input);
+    const two = buildDiscoveryDriftStatus(input);
+    await Promise.resolve();
+    expect(starts).toBe(1);
+    finish(CLEAN_DRIFT);
+    const results = await Promise.all([one, two]);
+    expect(results.map((result) => result.status)).toEqual(['clean', 'clean']);
+  });
+
+  it('EDGE: a non-cooperative timed-out check blocks new overlapping work', async () => {
+    let starts = 0;
+    const input = {
+      workspaceDir: '/workspace-stuck',
+      worktree: '/repo',
+      fingerprint: 'a1b2c3d4e5f6a1b2c3d4e5f6',
+      timeoutMs: 1,
+      check: async (): Promise<DriftResult> => {
+        starts += 1;
+        return new Promise<DriftResult>(() => {});
+      },
+    };
+    const timedOut = await buildDiscoveryDriftStatus(input);
+    const later = await buildDiscoveryDriftStatus(input);
+    expect(timedOut.status).toBe('timeout');
+    expect(later.status).toBe('not_checked');
+    expect(starts).toBe(1);
   });
 
   it('supports explicit not_checked status for skipped contexts', () => {

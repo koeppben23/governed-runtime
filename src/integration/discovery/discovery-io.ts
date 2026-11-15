@@ -20,9 +20,9 @@ import type { DiscoveryIoPort } from '../../discovery/io-port.js';
  */
 export const DISCOVERY_IO: DiscoveryIoPort = {
   readPersistedDiscovery: (workspaceDir) => readDiscovery(workspaceDir),
-  listRepoSignals: (worktree) => listRepoSignals(worktree),
-  defaultBranch: (worktree) => defaultBranch(worktree),
-  headCommit: (worktree) => headCommit(worktree),
-  isClean: (worktree) => isClean(worktree),
-  remoteOriginUrl: (worktree) => remoteOriginUrl(worktree),
+  listRepoSignals: (worktree, signal) => listRepoSignals(worktree, signal),
+  defaultBranch: (worktree, signal) => defaultBranch(worktree, signal),
+  headCommit: (worktree, signal) => headCommit(worktree, signal),
+  isClean: (worktree, signal) => isClean(worktree, signal),
+  remoteOriginUrl: (worktree, timeoutMs, signal) => remoteOriginUrl(worktree, timeoutMs, signal),
 };
