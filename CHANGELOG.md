@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add ADR-015 for the audit append proof and proposed segmented journal,
+  including the local threat model, external-anchor boundary and downgrade
+  contract. Add a standalone segment PoC plus canonical scale, independent-writer
+  and real-process SIGKILL harnesses; unsupported CoW filesystems remain
+  explicitly `NOT_VERIFIED`.
 - Require a structural `flowguard-evidence-design` declaration for every
   critical plan claim: positive observable, concrete faulty variant, expected
   failure, and the active counterexample candidate. The preflight rejects
@@ -975,6 +980,15 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Remove the empty enrollment-waiter map entry after its final timeout and
+  serialize concurrent duplicate `session.deleted` retirement so cleanup runs
+  exactly once per admitted session. Reviewer dispatch retention remains a
+  documented open item pending a behavior-preserving compact-tombstone design.
+- Invalidate the in-process audit append proof on any file-identity change,
+  tamper, duplicate ID, append failure or periodic full verification; avoid the
+  eager `existing + line` allocation and cache unsupported reflink capability
+  observations so the fallback does not probe a known-unsupported filesystem on
+  every append.
 - Add real-Git runtime bootstrap, durable audit CoW p50/p95/p99, and interleaved
   compact-status latency measurements to the V2 hardening verification suite.
   Enforce the requested factor-three status threshold in CI. Compact status
@@ -2101,6 +2115,10 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Run the default `npm test` path without timing-sensitive PERF tests; dedicated
+  `test:unit:perf` and `test:integration:perf` jobs remain the only performance
+  gates. Full status now runs independent discovery drift and toolchain probes
+  concurrently, while compact status continues to skip both explicitly.
 - Updated native OpenCode API packages and type baselines to 2.2.7; the
   independently verified CLI host smoke pin remains 2.2.5, and installed
   Desktop/CLI support is not certified by this update.
