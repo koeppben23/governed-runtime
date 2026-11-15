@@ -47,6 +47,8 @@ export type MutableChainState = {
 /** Dependencies for the workspace factory. */
 export interface WorkspaceDeps {
   auditWorktree: string | undefined;
+  /** Already verified in the same loadRuntime invocation; never session authority. */
+  diagnosticBootstrapFingerprint?: string;
 }
 
 /** All helpers returned by the workspace factory. */
@@ -101,7 +103,12 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   private readonly _sessionQueues = new Map<string, Promise<void>>();
   private readonly _enforcementStates = new Map<string, SessionEnforcementState>();
 
-  constructor(private readonly _deps: WorkspaceDeps) {}
+  constructor(private readonly _deps: WorkspaceDeps) {
+    if (_deps.auditWorktree && _deps.diagnosticBootstrapFingerprint) {
+      this._cachedFingerprint = _deps.diagnosticBootstrapFingerprint;
+      this._cachedWsDir = resolveWorkspaceDir(_deps.diagnosticBootstrapFingerprint);
+    }
+  }
 
   get cachedFingerprint(): string | null {
     return this._cachedFingerprint;

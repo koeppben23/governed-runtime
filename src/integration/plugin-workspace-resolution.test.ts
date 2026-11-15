@@ -18,6 +18,35 @@ vi.mock('../adapters/session-authority.js', () => ({
 import { PluginWorkspaceImpl } from './plugin-workspace.js';
 
 describe('PluginWorkspaceImpl workspace resolution', () => {
+  it('uses same-invocation verified fingerprint for logging without caching session authority', async () => {
+    computeFingerprint.mockClear();
+    resolveCanonicalAuthority.mockClear();
+    resolveCanonicalAuthority.mockResolvedValue({
+      status: 'absent',
+      sessDir: '/workspace/canonical/host-session',
+      worktreeRoot: '/repo',
+      fingerprint: 'canonical',
+    });
+    const workspace = new PluginWorkspaceImpl({
+      auditWorktree: '/repo',
+      diagnosticBootstrapFingerprint: 'canonical',
+    });
+
+    expect(workspace.cachedFingerprint).toBe('canonical');
+    expect(workspace.cachedWsDir).toBe('/workspace/canonical');
+    expect(await workspace.resolveFingerprint()).toBe('canonical');
+    expect(computeFingerprint).not.toHaveBeenCalled();
+
+    // Separate security boundaries ALWAYS call the canonical resolver afresh.
+    await workspace.resolveSessionAuthority('host-session');
+    await workspace.resolveSessionAuthority('host-session');
+    expect(resolveCanonicalAuthority).toHaveBeenCalledTimes(2);
+    expect(resolveCanonicalAuthority).toHaveBeenNthCalledWith(1, {
+      root: '/repo',
+      sessionId: 'host-session',
+    });
+  });
+
   it('caches one resolved fingerprint for boot metadata and delegates session authority canonically', async () => {
     computeFingerprint.mockResolvedValue({ fingerprint: 'workspace-fingerprint' });
     resolveCanonicalAuthority.mockResolvedValue({
