@@ -22,7 +22,7 @@ function eventAt(index: number): OpenCodeEvent {
       id: `tool-${index}`,
       metadata: { status: 'running', sessionID: 'child' },
     },
-  } as OpenCodeEvent;
+  };
 }
 
 function makeHarness(
