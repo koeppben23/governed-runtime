@@ -478,6 +478,52 @@ describe('persistence', () => {
       expect(await fs.readFile(file, 'utf-8')).toBe(unterminated);
     });
 
+    it('BAD: fails closed before extending a tampered canonical audit trail', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      const file = auditPath(tmpDir);
+      const canonical = await fs.readFile(file, 'utf-8');
+      const event = JSON.parse(canonical.trim()) as Record<string, unknown>;
+      event.occurredAt = new Date(Date.parse(event.occurredAt as string) + 1_000).toISOString();
+      const tampered = JSON.stringify(event) + '\n';
+      await fs.writeFile(file, tampered, 'utf-8');
+
+      await expect(
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+      ).rejects.toMatchObject({ code: 'CHAIN_BREAK' });
+      expect(await fs.readFile(file, 'utf-8')).toBe(tampered);
+    });
+
+    it('CORNER: refuses to extend a reordered trail of individually valid records', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      const file = auditPath(tmpDir);
+      const canonical = await fs.readFile(file, 'utf-8');
+      const lines = canonical.trimEnd().split('\n');
+      expect(lines).toHaveLength(2);
+      const reordered = [lines[1], lines[0]].join('\n') + '\n';
+      await fs.writeFile(file, reordered, 'utf-8');
+
+      await expect(
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+      ).rejects.toMatchObject({ code: 'CHAIN_BREAK' });
+      expect(await fs.readFile(file, 'utf-8')).toBe(reordered);
+    });
+
+    it('EDGE: an idempotent replay does not bypass persisted chain verification', async () => {
+      const original = makeValidAuditEvent({ id: crypto.randomUUID() });
+      await appendAuditEvent(tmpDir, original);
+      const file = auditPath(tmpDir);
+      const event = JSON.parse((await fs.readFile(file, 'utf-8')).trim()) as Record<string, unknown>;
+      event.auditSequence = 2;
+      const tampered = JSON.stringify(event) + '\n';
+      await fs.writeFile(file, tampered, 'utf-8');
+
+      await expect(appendAuditEvent(tmpDir, original)).rejects.toMatchObject({
+        code: 'CHAIN_BREAK',
+      });
+      expect(await fs.readFile(file, 'utf-8')).toBe(tampered);
+    });
+
     it('fsyncs the audit directory so a committed append survives a crash after the rename', async () => {
       // Regression: the append previously hand-rolled temp+fsync+rename and
       // omitted the parent-directory fsync that durableAtomicWrite performs.

@@ -21,11 +21,12 @@ import {
   PersistenceError,
   isEnoent,
 } from './persistence.js';
-import { getLastChainHash } from '../audit/integrity.js';
+import { getLastChainHash, verifyEvent } from '../audit/integrity.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import {
   computeChainHash,
   CURRENT_AUDIT_FORMAT_VERSION,
+  GENESIS_HASH,
   type ChainedAuditEvent,
 } from '../audit/types.js';
 
@@ -35,6 +36,16 @@ class AuditFormatError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'AuditFormatError';
+  }
+}
+
+/** A canonical envelope can still contain tampered or reordered evidence. */
+class AuditChainError extends Error {
+  readonly code = 'CHAIN_BREAK' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuditChainError';
   }
 }
 
@@ -165,6 +176,20 @@ async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): P
     );
   }
   const existingEvents = parseAuditTrail(existing);
+
+  // Envelope validity alone does not establish that persisted audit evidence
+  // is still intact. Never extend a modified or reordered chain (including
+  // an idempotent retry) and thereby give corrupted evidence a fresh tip.
+  let priorHash: string = GENESIS_HASH;
+  for (const [index, prior] of existingEvents.entries()) {
+    const verified = verifyEvent(prior, priorHash, index);
+    if (!verified.valid) {
+      throw new AuditChainError(
+        `Refusing append to invalid audit chain at sequence ${index + 1}: ${verified.reason ?? 'integrity failure'}`,
+      );
+    }
+    priorHash = prior.chainHash;
+  }
 
   // Exactly-once under the audit write lock: an event id is a commit
   // identity. A crash between append and acknowledgement may re-deliver the
