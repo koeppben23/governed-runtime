@@ -364,8 +364,11 @@ export async function emitAuditBodyWithEvidence(input: {
       'Finalized audit event is missing its chain hash',
     );
   }
-  ctx.prevHash = chainHash;
+  // Only a durable append advances this reconciliation context. The writer
+  // re-stamps the position and timestamp under its lock, so the finalized
+  // in-memory hash is provisional. Read the writer's tracked persisted tip.
   await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
+  ctx.prevHash = await deps.initChain(ctx.sessDir, sessionId);
 }
 
 /**

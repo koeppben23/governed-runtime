@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Advance the reconciliation audit-chain cursor only after a durable append
+  succeeds, using the writer-tracked persisted chain tip rather than an
+  uncommitted provisional event hash.
+
 - Reject an unterminated canonical JSONL audit record before appending the next
   event, preserving the original evidence bytes and failing closed with
   AUDIT_ENVELOPE_INVALID instead of concatenating two JSON objects.
