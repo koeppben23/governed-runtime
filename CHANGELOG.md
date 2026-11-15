@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Read and schema-validate the audit trail once per durable outbox reconciliation
+  batch rather than once per pending operation. Index only relevant operation
+  identities, retaining fail-closed digest comparison and writer idempotency.
+
 - Verify each existing canonical audit-chain.v3 record's sequence, hash
   linkage, chain hash and semantic digest under the append lock before
   extending the trail. A previously tampered or reordered chain now
