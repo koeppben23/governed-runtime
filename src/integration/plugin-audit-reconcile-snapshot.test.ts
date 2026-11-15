@@ -49,11 +49,18 @@ describe('audit outbox reconciliation reads', () => {
         initChain: vi.fn(async () => persistedHash),
         log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
       } as unknown as AuditDeps;
-      const ctx = {
+      const ctx: AuditContext = {
         sessDir: dir,
+        emitToolCalls: false,
         prevHash: 'genesis',
         emitTransitions: true,
         enableChainHash: true,
+        actor: 'machine',
+        now: OCCURRED_AT,
+        phase: 'PLAN',
+        success: true,
+        errorMessage: undefined,
+        parsed: null,
         timestampAssurance: {
           enabled: false,
           mode: 'local_only',
@@ -62,7 +69,7 @@ describe('audit outbox reconciliation reads', () => {
           ntpDriftThresholdMs: 30_000,
           tsaTimeoutMs: 10_000,
         },
-      } as AuditContext;
+      };
       vi.mocked(readAuditTrail).mockClear();
       await emitTransitionAudits({
         deps,

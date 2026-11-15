@@ -217,7 +217,9 @@ export async function emitTransitionAudits(input: {
   // checks idempotency and chain integrity under its own lock, so an event
   // committed after this snapshot is still deduplicated safely by the writer.
   // Index only the pending IDs to bound extra memory to the outbox size.
-  const operationIds = new Set(operations.map((operation) => operation.operationId));
+  const operationIds = new Set(
+    operations.map((operation) => operation.operationId),
+  );
   const existingAudits = indexCommittedOperationAudits(
     await readAuditTrail(ctx.sessDir),
     operationIds,
@@ -231,7 +233,11 @@ export async function emitTransitionAudits(input: {
         `Audit operation ${operation.operationId} does not match its committed event digest`,
       );
     }
-    const existing = findOperationAudit(state, operation, existingAudits.get(operation.operationId));
+    const existing = findOperationAudit(
+      state,
+      operation,
+      existingAudits.get(operation.operationId),
+    );
     if (existing) {
       await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
       continue;

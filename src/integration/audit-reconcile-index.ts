@@ -6,14 +6,19 @@
  * historical audit records. Index only relevant IDs, retaining the original
  * first-match behavior when a duplicate identity occurs in a supplied trail.
  */
-import type { AuditEvent } from '../state/evidence.js';
 
-/** Return only valid matching operation identities from a parsed audit snapshot. */
-export function indexCommittedOperationAudits(
-  events: readonly AuditEvent[],
+/** The minimal shape required to recognize an audit outbox identity. */
+interface OperationIdentityEvent {
+  readonly id: string;
+  readonly detail: { readonly operationId?: unknown };
+}
+
+/** Return only matching operation identities from a parsed audit snapshot. */
+export function indexCommittedOperationAudits<T extends OperationIdentityEvent>(
+  events: readonly T[],
   operationIds: ReadonlySet<string>,
-): ReadonlyMap<string, AuditEvent> {
-  const found = new Map<string, AuditEvent>();
+): ReadonlyMap<string, T> {
+  const found = new Map<string, T>();
   for (const event of events) {
     if (
       operationIds.has(event.id) &&

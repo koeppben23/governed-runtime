@@ -16,7 +16,9 @@ import {
   appendAuditEvent,
   readAuditTrail,
 } from '../../dist/adapters/persistence-audit.js';
-import { indexCommittedOperationAudits } from '../../dist/integration/audit-reconcile-index.js';
+import {
+  indexCommittedOperationAudits,
+} from '../../dist/integration/audit-reconcile-index.js';
 
 const SESSION_ID = randomUUID();
 const QUERIES = 20;
@@ -91,7 +93,9 @@ for (const count of [100, 500, 1_000]) {
       `${count}\t${before.toFixed(2)} ms\t${after.toFixed(2)} ms\t${speedup.toFixed(2)}x`,
     );
     if (count === 1_000 && speedup < 3) {
-      console.error('NOT_VERIFIED: factor-3 improvement not reached for 1,000 events');
+      console.error(
+        'NOT_VERIFIED: factor-3 improvement not reached for 1,000 events',
+      );
       process.exitCode = 1;
     }
   } finally {
