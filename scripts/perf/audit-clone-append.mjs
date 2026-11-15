@@ -37,7 +37,8 @@ async function sample(fn, rounds = 7) {
 }
 
 try {
-  const data = (line.repeat(200_000)).slice(0, 8 * 1024 * 1024);
+  const repeats = Math.ceil((8 * 1024 * 1024) / Buffer.byteLength(line));
+  const data = line.repeat(repeats);
   await fs.writeFile(baselinePath, data);
   await fs.writeFile(clonePath, data);
   const probe = join(dir, 'reflink-probe');
@@ -55,10 +56,19 @@ try {
     await fs.rm(probe, { force: true });
   }
   if (supported) {
-    await persistence.durableAtomicWrite(baselinePath, data);
-    await auditClone.durableAtomicCloneAppend(clonePath, '', data);
-    const baselineMs = await sample(() => persistence.durableAtomicWrite(baselinePath, data + line));
-    const optimizedMs = await sample(() => auditClone.durableAtomicCloneAppend(clonePath, line, data + line));
+    let baselineContent = data;
+    let clonedContent = data;
+    const baselineMs = await sample(async () => {
+      baselineContent += line;
+      await persistence.durableAtomicWrite(baselinePath, baselineContent);
+    });
+    const optimizedMs = await sample(async () => {
+      clonedContent += line;
+      await auditClone.durableAtomicCloneAppend(clonePath, line, clonedContent);
+    });
+    if ((await fs.readFile(baselinePath, 'utf8')) !== (await fs.readFile(clonePath, 'utf8'))) {
+      throw new Error('Clone benchmark output differs from durable rewrite output');
+    }
     const speedup = baselineMs / optimizedMs;
     console.log(`Baseline full rewrite: ${baselineMs.toFixed(2)} ms`);
     console.log(`Clone+append+fsync: ${optimizedMs.toFixed(2)} ms`);
