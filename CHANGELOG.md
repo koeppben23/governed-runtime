@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Release native session routing metadata on a deleted, inactive host session
+  without treating it as an ACTIVE governance event. Preserve blocked authority
+  fencing and avoid leaking session-root mappings across long-lived hosts.
+
 - Bind every canonical audit append and idempotent retry to the persisted
   FlowGuard session identity. Reject foreign-session events and previously
   mixed-session histories with CHAIN_BREAK before changing audit bytes.
