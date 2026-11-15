@@ -279,6 +279,15 @@ describe('status compact canonical projection', () => {
     expect(compact.verificationCandidates).toEqual(full.verificationCandidates);
     expect(compact.detectedStack).toEqual(full.detectedStack);
     expect(compact.compact).toBe(true);
+    const fullGuidance = full.implementationGuidance as Record<string, unknown>;
+    const compactGuidance = compact.implementationGuidance as Record<string, unknown>;
+    expect(fullGuidance.kind).toBe('derived_implementation_guidance');
+    expect(compactGuidance.kind).toBe(fullGuidance.kind);
+    expect(compactGuidance.confidence).toBe('none');
+    expect(compactGuidance.notVerified).toEqual(
+      expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
+    );
+    expect(compactGuidance.relevantFiles).toEqual([]);
     const drift = compact.discoveryDrift as Record<string, unknown>;
     expect(drift.status).toBe('not_checked');
     expect(drift.notVerified).toEqual(
@@ -294,25 +303,33 @@ describe('status compact canonical projection', () => {
     'BENCHMARK: compact fast path is at least 3x faster than full status',
     async () => {
       await hydrateSession({ policyMode: 'team' });
-      const samples = async (compact: boolean): Promise<number[]> => {
-        const values: number[] = [];
-        for (let i = 0; i < 7; i++) {
+      const samples = { full: [] as number[], compact: [] as number[] };
+      // Warm both paths equally, then collect enough alternating samples to
+      // reduce JIT, filesystem and short-lived runner scheduling noise.
+      for (let i = 0; i < 3; i++) {
+        await status.execute({}, ctx);
+        await status.execute({ compact: true }, ctx);
+      }
+      // Fresh authority is resolved on every call; no shared trust cache.
+      for (let i = 0; i < 31; i++) {
+        const order = i % 2 === 0 ? [false, true] : [true, false];
+        for (const compact of order) {
           const start = performance.now();
           await status.execute(compact ? { compact: true } : {}, ctx);
-          values.push(performance.now() - start);
+          samples[compact ? 'compact' : 'full'].push(performance.now() - start);
         }
-        return values;
-      };
-      const median = (numbers: number[]): number => {
+      }
+      const distribution = (numbers: number[]) => {
         const sorted = [...numbers].sort((a, b) => a - b);
-        return sorted[Math.floor(sorted.length / 2)]!;
+        const percentile = (p: number) => sorted[Math.ceil((p / 100) * sorted.length) - 1]!;
+        return { p50: percentile(50), p95: percentile(95), p99: percentile(99) };
       };
-      const fullMs = median(await samples(false));
-      const compactMs = median(await samples(true));
-      const speedup = fullMs / compactMs;
+      const full = distribution(samples.full);
+      const compact = distribution(samples.compact);
+      const speedup = full.p50 / compact.p50;
       console.info(
-        `FlowGuard status real workspace median: full=${fullMs.toFixed(2)}ms ` +
-          `compact=${compactMs.toFixed(2)}ms speedup=${speedup.toFixed(2)}x`,
+        `FlowGuard status real workspace: full=${JSON.stringify(full)} ` +
+          `compact=${JSON.stringify(compact)} speedupP50=${speedup.toFixed(2)}x`,
       );
       expect(speedup).toBeGreaterThanOrEqual(3);
     },

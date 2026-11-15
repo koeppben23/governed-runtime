@@ -975,6 +975,13 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Add real-Git runtime bootstrap, durable audit CoW p50/p95/p99, and interleaved
+  compact-status latency measurements to the V2 hardening verification suite.
+  Enforce the requested factor-three status threshold in CI. Compact status
+  skips derived implementation guidance with an explicit NOT_VERIFIED advisory
+  while retaining the typed response shape; full status is unchanged. Do not
+  treat unsupported reflink filesystems or unexecuted crash tests as verified.
+
 - Reuse the fingerprint already verified during a V2 runtime load for its
   diagnostic/logging bootstrap instead of running a redundant Git probe.
   Every subsequent session security boundary still resolves canonical authority

@@ -21,19 +21,25 @@ const baselinePath = join(dir, 'rewrite.jsonl');
 const clonePath = join(dir, 'clone.jsonl');
 const line = JSON.stringify({ id: randomUUID(), event: 'benchmark' }) + '\n';
 
-function median(samples) {
+function distribution(samples) {
   const sorted = [...samples].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
+  const percentile = (p) => sorted[Math.ceil((p / 100) * sorted.length) - 1];
+  return {
+    n: sorted.length,
+    p50: percentile(50),
+    p95: percentile(95),
+    p99: percentile(99),
+  };
 }
 
-async function sample(fn, rounds = 7) {
+async function sample(fn, rounds = 21) {
   const times = [];
   for (let i = 0; i < rounds; i++) {
     const start = performance.now();
     await fn();
     times.push(performance.now() - start);
   }
-  return median(times);
+  return distribution(times);
 }
 
 try {
@@ -69,10 +75,23 @@ try {
     if (!baselineBytes.equals(cloneBytes)) {
       throw new Error('Clone benchmark output differs from durable rewrite output');
     }
-    const speedup = baselineMs / optimizedMs;
-    console.log(`Baseline full rewrite: ${baselineMs.toFixed(2)} ms`);
-    console.log(`Clone+append+fsync: ${optimizedMs.toFixed(2)} ms`);
-    console.log(`Speedup: ${speedup.toFixed(2)}x`);
+    const speedup = baselineMs.p50 / optimizedMs.p50;
+    console.log(
+      JSON.stringify(
+        {
+          benchmark: 'audit-durable-append',
+          filesystemCoW: 'verified',
+          units: 'ms',
+          baseline: baselineMs,
+          clone: optimizedMs,
+          speedupP50: speedup,
+          result: speedup >= 3 ? 'PASS' : 'BELOW_3X',
+          scope: 'isolated snapshot publication, not end-to-end audit latency',
+        },
+        null,
+        2,
+      ),
+    );
     if (speedup < 3) process.exitCode = 1;
   }
 } finally {
