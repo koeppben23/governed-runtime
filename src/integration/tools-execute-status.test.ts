@@ -279,6 +279,15 @@ describe('status compact canonical projection', () => {
     expect(compact.verificationCandidates).toEqual(full.verificationCandidates);
     expect(compact.detectedStack).toEqual(full.detectedStack);
     expect(compact.compact).toBe(true);
+    const fullGuidance = full.implementationGuidance as Record<string, unknown>;
+    const compactGuidance = compact.implementationGuidance as Record<string, unknown>;
+    expect(fullGuidance.kind).toBe('derived_implementation_guidance');
+    expect(compactGuidance.kind).toBe(fullGuidance.kind);
+    expect(compactGuidance.confidence).toBe('none');
+    expect(compactGuidance.notVerified).toEqual(
+      expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
+    );
+    expect(compactGuidance.relevantFiles).toEqual([]);
     const drift = compact.discoveryDrift as Record<string, unknown>;
     expect(drift.status).toBe('not_checked');
     expect(drift.notVerified).toEqual(
