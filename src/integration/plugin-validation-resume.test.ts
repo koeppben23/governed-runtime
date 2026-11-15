@@ -265,10 +265,12 @@ describe('native success to canonical system-work composition', () => {
     const sessionRoots = new Map([['root', 'worktree']]);
     const runtimeHandler = vi.spyOn(afterhooks, 'handlePluginEvent');
     const forget = vi.spyOn(adapter, 'forgetSession');
+    const forgetFenceSession = vi.fn();
     const deps = {
       adapter,
       governance,
       sessionRoots,
+      forgetFenceSession,
       runtimes: new Map(),
       invoke: async () => undefined,
     };
@@ -285,6 +287,7 @@ describe('native success to canonical system-work composition', () => {
 
     expect(forget).toHaveBeenCalledExactlyOnceWith('root');
     expect(sessionRoots.size).toBe(0);
+    expect(forgetFenceSession).toHaveBeenCalledExactlyOnceWith('root');
     expect(runtimeHandler).not.toHaveBeenCalled();
     controller.abort();
   });
