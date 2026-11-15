@@ -242,14 +242,22 @@ export async function hashWorktreeFiles(
  * The profile detect() functions only check for specific filenames, so even
  * large arrays are fast (linear scan with early exit).
  */
-export async function listRepoSignals(worktree: string): Promise<{
+export async function listRepoSignals(
+  worktree: string,
+  signal?: AbortSignal,
+): Promise<{
   files: string[];
   packageFilePaths: string[];
   configFilePaths: string[];
 }> {
   let raw: string;
   try {
-    raw = await gitRaw(worktree, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
+    raw = await gitRaw(
+      worktree,
+      ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+      undefined,
+      signal,
+    );
   } catch (err) {
     if (
       err instanceof GitError &&
@@ -260,6 +268,7 @@ export async function listRepoSignals(worktree: string): Promise<{
     }
     throw err;
   }
+  signal?.throwIfAborted();
   const allFiles = raw
     .split('\0')
     .filter((file) => file.length > 0)
@@ -279,5 +288,6 @@ export async function listRepoSignals(worktree: string): Promise<{
     }
   }
 
+  signal?.throwIfAborted();
   return { files: allFiles, packageFilePaths, configFilePaths };
 }

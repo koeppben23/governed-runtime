@@ -21,9 +21,13 @@ export interface DiscoveryRepoSignals {
 /** Injected read-only I/O capabilities for discovery. */
 export interface DiscoveryIoPort {
   readPersistedDiscovery(workspaceDir: string): Promise<DiscoveryResult | null>;
-  listRepoSignals(worktree: string): Promise<DiscoveryRepoSignals>;
-  defaultBranch(worktree: string): Promise<string | null>;
-  headCommit(worktree: string): Promise<string | null>;
-  isClean(worktree: string): Promise<boolean>;
-  remoteOriginUrl(worktree: string): Promise<string | null>;
+  listRepoSignals(worktree: string, signal?: AbortSignal): Promise<DiscoveryRepoSignals>;
+  defaultBranch(worktree: string, signal?: AbortSignal): Promise<string | null>;
+  headCommit(worktree: string, signal?: AbortSignal): Promise<string | null>;
+  isClean(worktree: string, signal?: AbortSignal): Promise<boolean>;
+  remoteOriginUrl(
+    worktree: string,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<string | null>;
 }

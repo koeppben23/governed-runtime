@@ -42,10 +42,52 @@ interface BuildDiscoveryDriftStatusInput {
     workspaceDir: string,
     worktree: string,
     fingerprint: string,
+    signal: AbortSignal,
   ) => Promise<DriftResult>;
 }
 
 const DEFAULT_STATUS_DRIFT_TIMEOUT_MS = 3_000;
+
+/** A flight is retained until its underlying operation actually settles. */
+interface DriftFlight {
+  readonly fingerprint: string;
+  readonly controller: AbortController;
+  readonly promise: Promise<DriftResult>;
+}
+
+/** No two rediscoveries for the same workspace may overlap. */
+const activeDriftChecks = new Map<string, DriftFlight>();
+
+function driftKey(input: BuildDiscoveryDriftStatusInput): string {
+  return JSON.stringify([input.workspaceDir, input.worktree]);
+}
+
+function beginDriftCheck(
+  input: BuildDiscoveryDriftStatusInput,
+  check: NonNullable<BuildDiscoveryDriftStatusInput['check']>,
+): DriftFlight | null {
+  const key = driftKey(input);
+  const current = activeDriftChecks.get(key);
+  if (current) {
+    if (current.fingerprint === input.fingerprint && !current.controller.signal.aborted) {
+      return current;
+    }
+    // Even a non-cooperative timed-out operation must not admit another run.
+    return null;
+  }
+
+  const controller = new AbortController();
+  const promise = Promise.resolve().then(() =>
+    check(input.workspaceDir, input.worktree, input.fingerprint, controller.signal),
+  );
+  const flight: DriftFlight = { fingerprint: input.fingerprint, controller, promise };
+  activeDriftChecks.set(key, flight);
+  const release = (): void => {
+    if (activeDriftChecks.get(key) === flight) activeDriftChecks.delete(key);
+  };
+  void promise.then(release, release);
+  return flight;
+}
 
 const BASE_NOT_VERIFIED = [
   'NOT_VERIFIED: Discovery drift status is advisory and never overrides phase, policy, review, validation, or approval gates.',
@@ -57,15 +99,22 @@ export async function buildDiscoveryDriftStatus(
 ): Promise<DiscoveryDriftStatusProjection> {
   const check =
     input.check ??
-    ((workspaceDir, worktree, fingerprint) =>
-      checkDiscoveryDrift(workspaceDir, worktree, fingerprint, DISCOVERY_IO));
+    ((workspaceDir, worktree, fingerprint, signal) =>
+      checkDiscoveryDrift(workspaceDir, worktree, fingerprint, DISCOVERY_IO, signal));
   const timeoutMs = input.timeoutMs ?? DEFAULT_STATUS_DRIFT_TIMEOUT_MS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return explicitFailure('unavailable', 'discovery_drift_unavailable', 'Invalid status timeout.');
+  }
+
+  const flight = beginDriftCheck(input, check);
+  if (flight === null) {
+    return notCheckedDiscoveryDriftStatus(
+      'A previous discovery drift check is still running or cancelling for this workspace.',
+    );
+  }
 
   try {
-    const result = await withStatusTimeout(
-      check(input.workspaceDir, input.worktree, input.fingerprint),
-      timeoutMs,
-    );
+    const result = await withStatusTimeout(flight.promise, timeoutMs, flight.controller);
     return fromDriftResult(result);
   } catch (error) {
     if (isStatusTimeout(error)) {
@@ -170,10 +219,18 @@ function compactDiagnostics(result: DriftResult): string[] {
     .slice(0, 12);
 }
 
-function withStatusTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+function withStatusTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  controller: AbortController,
+): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new StatusTimeoutError()), timeoutMs);
-    promise.then(
+    const timeout = setTimeout(() => {
+      const error = new StatusTimeoutError();
+      reject(error);
+      controller.abort(error);
+    }, timeoutMs);
+    void promise.then(
       (value) => {
         clearTimeout(timeout);
         resolve(value);
@@ -189,7 +246,7 @@ function withStatusTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
 function timeoutMessage(timeoutMs: number): string {
   return (
     `Discovery drift check exceeded ${timeoutMs}ms status budget. ` +
-    'The timeout bounds the status response only; underlying discovery work may continue if existing discovery APIs do not support abort signals.'
+    'Cancellation was requested; underlying work may continue if a collector ignores the abort signal.'
   );
 }
 
