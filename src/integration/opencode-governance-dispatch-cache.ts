@@ -8,11 +8,27 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 type LinkedDispatch = { readonly dispatchKey: string; readonly operation: Promise<void> };
 
+/** Bounded identities only; the durable activation store remains anti-replay
+ * authority, so old tombstones can be evicted after a safe cap. */
+export const MAX_ENROLLED_REVIEWER_BINDINGS = 4_096;
+
 export interface NativeDispatchMemory {
   readonly dispatches: Map<string, GovernanceDelegationDispatch>;
   readonly dispatchChildren: Map<string, string>;
   readonly linking: Map<string, LinkedDispatch>;
   readonly settledReviewerDispatches: Set<string>;
+  /** Reviewer dispatch identities whose child enrollment must stay bindable. */
+  readonly enrolledReviewerDispatchKeys: Set<string>;
+}
+
+function rememberBounded(set: Set<string>, key: string): void {
+  set.delete(key);
+  set.add(key);
+  while (set.size > MAX_ENROLLED_REVIEWER_BINDINGS) {
+    const oldest = set.values().next().value;
+    if (oldest === undefined) break;
+    set.delete(oldest);
+  }
 }
 
 export function hasPendingDispatchInMemory(
@@ -52,6 +68,22 @@ export function pendingContinuationInMemory(
   return undefined;
 }
 
+/** Remove a quarantined reviewer intent from every in-memory projection. */
+export function quarantineReviewerDispatchMemory(
+  memory: NativeDispatchMemory,
+  dispatchKey: string,
+): void {
+  const dispatch = memory.dispatches.get(dispatchKey);
+  const reviewer =
+    dispatch?.agent === REVIEWER_SUBAGENT_TYPE ||
+    memory.enrolledReviewerDispatchKeys.has(dispatchKey);
+  if (!reviewer) return;
+  memory.dispatches.delete(dispatchKey);
+  memory.dispatchChildren.delete(dispatchKey);
+  memory.settledReviewerDispatches.delete(dispatchKey);
+  memory.enrolledReviewerDispatchKeys.delete(dispatchKey);
+}
+
 /** Do not retire reviewer identity while its enrolled child is governed.
  * Ordinary and failed attempts release immediately; persistent replay checks
  * remain intact independent of process lifetime. */
@@ -63,10 +95,16 @@ export function retireSettledDispatch(
 ): void {
   const dispatch = memory.dispatches.get(dispatchKey);
   if (enrolled && dispatch?.agent === REVIEWER_SUBAGENT_TYPE) {
-    memory.settledReviewerDispatches.add(dispatchKey);
+    // Keep only the identity needed to prove the enrolled child's dispatch
+    // binding. The full dispatch body and durable anti-replay record are not
+    // duplicated in memory.
+    rememberBounded(memory.settledReviewerDispatches, dispatchKey);
+    rememberBounded(memory.enrolledReviewerDispatchKeys, dispatchKey);
+    memory.dispatches.delete(dispatchKey);
   } else {
     memory.dispatches.delete(dispatchKey);
     memory.settledReviewerDispatches.delete(dispatchKey);
+    memory.enrolledReviewerDispatchKeys.delete(dispatchKey);
   }
   memory.dispatchChildren.delete(dispatchKey);
   if (memory.linking.get(childId)?.dispatchKey === dispatchKey) memory.linking.delete(childId);

@@ -11,9 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add ADR-015 for the audit append proof and proposed segmented journal,
   including the local threat model, external-anchor boundary and downgrade
-  contract. Add a standalone segment PoC plus canonical scale, independent-writer
-  and real-process SIGKILL harnesses; unsupported CoW filesystems remain
-  explicitly `NOT_VERIFIED`.
+  contract. Add a standalone segment PoC plus canonical scale, independent-writer,
+  real-process SIGKILL and lifecycle-soak harnesses; unsupported CoW filesystems
+  remain explicitly `NOT_VERIFIED`.
 - Require a structural `flowguard-evidence-design` declaration for every
   critical plan claim: positive observable, concrete faulty variant, expected
   failure, and the active counterexample candidate. The preflight rejects
@@ -980,10 +980,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
-- Remove the empty enrollment-waiter map entry after its final timeout and
-  serialize concurrent duplicate `session.deleted` retirement so cleanup runs
-  exactly once per admitted session. Reviewer dispatch retention remains a
-  documented open item pending a behavior-preserving compact-tombstone design.
+- Remove the empty enrollment-waiter map entry after its final timeout, release
+  full settled reviewer dispatch objects while retaining bounded identity
+  bindings for enrolled children, and serialize concurrent duplicate
+  `session.deleted` retirement so cleanup runs exactly once per admitted session.
 - Invalidate the in-process audit append proof on any file-identity change,
   tamper, duplicate ID, append failure or periodic full verification; avoid the
   eager `existing + line` allocation and cache unsupported reflink capability

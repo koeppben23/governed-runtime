@@ -66,6 +66,7 @@
     "perf:audit-concurrent-writers": "node scripts/perf/audit-concurrent-writers.mjs",
     "perf:audit-crash-matrix": "node scripts/perf/audit-crash-matrix.mjs",
     "perf:audit-segment-poc": "node scripts/perf/audit-segment-poc.mjs",
+    "perf:runtime-soak": "node scripts/perf/runtime-soak.mjs",
     "check:unused-dependencies": "knip --dependencies --treat-config-hints-as-errors --treat-tag-hints-as-errors",
     "lint": "eslint \"src/**/*.ts\"",
     "lint:strict": "eslint \"src/**/*.ts\" --max-warnings=0",

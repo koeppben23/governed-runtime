@@ -130,6 +130,9 @@ APFS; 200-byte detail for 5,000 and 100-byte for 10,000):
 - `scripts/perf/audit-crash-matrix.mjs` kills real append processes after
   deterministic delays and verifies the surviving trail; it does not claim every
   instruction-level fsync/rename boundary.
+- `scripts/perf/runtime-soak.mjs` churns 10,000 workspace and reviewer
+  lifecycles and asserts bounded map cardinality; real multi-hour host RSS
+  acceptance remains separate.
 - `scripts/perf/audit-clone-append.mjs` reports `NOT_VERIFIED` where forced CoW
   is unsupported; a green job must not count that as a performance PASS.
 - Regression tests must cover: append after a tampered file, duplicate event IDs,

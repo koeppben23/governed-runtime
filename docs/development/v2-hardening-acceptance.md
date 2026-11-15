@@ -18,6 +18,7 @@ node scripts/perf/audit-append-scale.mjs
 node scripts/perf/audit-segment-poc.mjs
 AUDIT_WRITERS=32 node scripts/perf/audit-concurrent-writers.mjs
 node scripts/perf/audit-crash-matrix.mjs
+SOAK_ITERATIONS=10000 node scripts/perf/runtime-soak.mjs
 FLOWGUARD_STATUS_BENCHMARK=1 npx vitest run --project integration \
   src/integration/tools-execute-status.test.ts -t 'BENCHMARK: compact fast path'
 node scripts/perf/audit-clone-append.mjs
