@@ -248,7 +248,9 @@ jobs:
           FORCE_COLOR: 0
           FLOWGUARD_PERF: '1'
       - name: Verify compact status is at least 3x faster
-        run: npx vitest run --project integration src/integration/tools-execute-status.test.ts -t 'BENCHMARK: compact fast path'
+        run: |
+          npx vitest run --project integration src/integration/tools-execute-status.test.ts \
+            -t 'BENCHMARK: compact fast path'
         env:
           FORCE_COLOR: 0
           FLOWGUARD_STATUS_BENCHMARK: '1'
