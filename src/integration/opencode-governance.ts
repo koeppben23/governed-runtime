@@ -73,6 +73,8 @@ export class OpenCodeGovernance {
     { readonly dispatchKey: string; readonly operation: Promise<void> }
   >();
   private readonly dispatchChildren = new Map<string, string>();
+  /** Enrolled reviewer children retain their exact in-process dispatch binding. */
+  private readonly settledReviewerDispatches = new Set<string>();
   private readonly waiters = new Map<string, Set<EnrollmentWaiter>>();
 
   constructor(
@@ -424,6 +426,7 @@ export class OpenCodeGovernance {
     if (this.dispatches.get(key)?.agent !== REVIEWER_SUBAGENT_TYPE) return;
     this.dispatches.delete(key);
     this.dispatchChildren.delete(key);
+    this.settledReviewerDispatches.delete(key);
   }
 
   /** Called synchronously by the event-loop consumer before it awaits more I/O. */
@@ -435,7 +438,7 @@ export class OpenCodeGovernance {
       event.data.id,
     );
     const dispatch = this.dispatches.get(dispatchKey);
-    if (!dispatch) return undefined;
+    if (!dispatch || this.settledReviewerDispatches.has(dispatchKey)) return undefined;
     const childId = event.data.metadata.sessionID;
     if (typeof childId !== 'string' || event.data.metadata.status !== 'running') return undefined;
     const observedChild = this.dispatchChildren.get(dispatchKey);
@@ -449,7 +452,7 @@ export class OpenCodeGovernance {
       this.linking.set(childId, linking);
       const finish = (error?: unknown): void => {
         this.settle(childId, dispatchKey, error);
-        this.retireDispatch(dispatchKey, childId);
+        this.retireDispatch(dispatchKey, childId, error === undefined);
       };
       void operation.then(() => finish(), finish);
     }
@@ -557,12 +560,17 @@ export class OpenCodeGovernance {
   }
 
   private hasPendingDispatch(parentId: string): boolean {
-    return [...this.dispatches.values()].some((dispatch) => dispatch.sessionId === parentId);
+    return [...this.dispatches.entries()].some(
+      ([key, dispatch]) =>
+        dispatch.sessionId === parentId && !this.settledReviewerDispatches.has(key),
+    );
   }
 
   private pendingContinuation(childId: string): string | undefined {
     return [...this.dispatches.entries()].find(
-      ([, dispatch]) => dispatch.requestedChildSessionId === childId,
+      ([key, dispatch]) =>
+        dispatch.requestedChildSessionId === childId &&
+        !this.settledReviewerDispatches.has(key),
     )?.[0];
   }
 
@@ -598,9 +606,16 @@ export class OpenCodeGovernance {
     });
   }
 
-  /** Durable replay prevention remains in the activation store. */
-  private retireDispatch(dispatchKey: string, childId: string): void {
-    this.dispatches.delete(dispatchKey);
+  /** Durable replay prevention remains in the activation store. Reviewer
+   * enrollment is a live authority binding, not a disposable dispatch cache. */
+  private retireDispatch(dispatchKey: string, childId: string, enrolled: boolean): void {
+    const dispatch = this.dispatches.get(dispatchKey);
+    if (enrolled && dispatch?.agent === REVIEWER_SUBAGENT_TYPE) {
+      this.settledReviewerDispatches.add(dispatchKey);
+    } else {
+      this.dispatches.delete(dispatchKey);
+      this.settledReviewerDispatches.delete(dispatchKey);
+    }
     this.dispatchChildren.delete(dispatchKey);
     if (this.linking.get(childId)?.dispatchKey === dispatchKey) this.linking.delete(childId);
   }
