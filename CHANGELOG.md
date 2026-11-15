@@ -975,6 +975,11 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Bound the state-owned reconciled outbox to a 32-operation recent tail.
+  Older entries retire only after complete chain and canonical event-digest
+  verification, with an atomic chain-position checkpoint. Every unresolved
+  operation remains in the session state.
+
 - Release native session routing metadata on a deleted, inactive host session
   without treating it as an ACTIVE governance event. Preserve blocked authority
   fencing and avoid leaking session-root mappings across long-lived hosts.
