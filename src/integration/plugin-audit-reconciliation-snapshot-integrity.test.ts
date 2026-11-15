@@ -122,12 +122,18 @@ describe('read-only audit reconciliation chain integrity', () => {
     expect(await fs.readFile(file, 'utf8')).toBe(tampered);
   });
 
-  it('CORNER: rejects a corrupted earlier event even when the last transition matches', async () => {
+  it('CORNER: rejects earlier tampering despite matching final transition', async () => {
     await appendAuditEvent(dir, {
       ...transitionEvent(),
       id: randomUUID(),
-      detail: { kind: 'transition', from: 'READY', to: 'TICKET', event: 'TICKET_SELECTED',
-        autoAdvanced: false, chainIndex: 0 },
+      detail: {
+        kind: 'transition',
+        from: 'READY',
+        to: 'TICKET',
+        event: 'TICKET_SELECTED',
+        autoAdvanced: false,
+        chainIndex: 0,
+      },
       phase: 'TICKET',
       event: 'transition:TICKET_SELECTED',
       occurredAt: '2026-11-15T11:59:00.000Z',
