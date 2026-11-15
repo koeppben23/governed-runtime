@@ -375,6 +375,16 @@ export function buildFullStatusResponse(input: FullStatusInput): string {
       phaseRelevantRules: renderPhaseAwareMandates({}, state.phase),
     },
     build: buildIdentityField(),
+    ...(input.compact === true
+      ? {
+          runtimeReadiness: {
+            status: 'not_checked',
+            notVerified:
+              'NOT_VERIFIED: Compact status skips fresh toolchain runtime probes. ' +
+              'Call full flowguard_status for current executable readiness.',
+          },
+        }
+      : {}),
   };
 
   const projectionResponse =
