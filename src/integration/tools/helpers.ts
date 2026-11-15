@@ -27,6 +27,7 @@ import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { IntegrationInvariantError } from '../errors.js';
 import { createPolicyContext, resolvePolicyFromState } from './workflow-policy-context.js';
+import { assertPreparedOrderMatchesPersisted } from './audit-outbox-order.js';
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -345,25 +346,6 @@ function withCarriedAuditOperations(previous: SessionState, next: SessionState):
   return { ...next, pendingAuditOperations: applyPreparedInsertions(persisted, insertions) };
 }
 
-function assertPreparedOrderMatchesPersisted(
-  prepared: readonly PendingAuditOperation[],
-  persisted: readonly PendingAuditOperation[],
-  persistedById: ReadonlyMap<string, PendingAuditOperation>,
-): void {
-  const commonIds = prepared
-    .map((operation) => operation.operationId)
-    .filter((id) => persistedById.has(id));
-  const persistedCommonIds = persisted
-    .map((operation) => operation.operationId)
-    .filter((id) => commonIds.includes(id));
-  if (!sameOrder(commonIds, persistedCommonIds)) {
-    throw new PersistenceError(
-      'OUTBOX_ORDER_CONFLICT',
-      'Refusing prepared state that reorders persisted pending audit operations',
-    );
-  }
-}
-
 function collectPreparedInsertions(
   prepared: readonly PendingAuditOperation[],
   persisted: readonly PendingAuditOperation[],
@@ -435,10 +417,6 @@ function areAdjacentAnchors(
   const beforeIndex = persistedIndexById.get(before);
   const afterIndex = persistedIndexById.get(after);
   return beforeIndex !== undefined && afterIndex === beforeIndex + 1;
-}
-
-function sameOrder(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
 function nearestPersistedId(

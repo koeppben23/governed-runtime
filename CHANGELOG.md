@@ -979,6 +979,10 @@ last read` without a click, while a completion in another session left the
   event, preserving the original evidence bytes and failing closed with
   AUDIT_ENVELOPE_INVALID instead of concatenating two JSON objects.
 
+- Reduce durable audit-outbox order validation from quadratic to linear membership
+  checks without weakening conflict detection; add deterministic ordering tests
+  and an executable baseline-versus-current performance benchmark.
+
 - Bound status drift rediscovery to a single flight per workspace, requesting cancellation
   on timeout and propagating abort signals through Git subprocesses and file-scanning
   collectors. Preserve read-only advisory status and fail-closed timeout diagnostics.
