@@ -979,6 +979,11 @@ last read` without a click, while a completion in another session left the
   succeeds, using the writer-tracked persisted chain tip rather than an
   uncommitted provisional event hash.
 
+- Verify each existing canonical audit-chain.v3 record's sequence, hash
+  linkage, chain hash and semantic digest under the append lock before
+  extending the trail. A previously tampered or reordered chain now
+  fails closed with CHAIN_BREAK even on an idempotent retry.
+
 - Reject an unterminated canonical JSONL audit record before appending the next
   event, preserving the original evidence bytes and failing closed with
   AUDIT_ENVELOPE_INVALID instead of concatenating two JSON objects.
