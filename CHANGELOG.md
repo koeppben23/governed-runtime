@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Reduce durable audit-outbox order validation from quadratic to linear membership
+  checks without weakening conflict detection; add deterministic ordering tests
+  and an executable baseline-versus-current performance benchmark.
+
 - Fail closed on native event-handler saturation without blocking event consumption,
   bounding simultaneous event handler work while preserving synchronous reviewer
   progress observation and session-scoped error fencing.
