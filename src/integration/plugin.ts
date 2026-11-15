@@ -329,7 +329,7 @@ async function loadRuntime(
   sessionRoots.set(scope.sessionId, root);
   let entry = runtimes.get(root);
   if (!entry) {
-    entry = createSessionRuntime(adapter, root);
+    entry = createSessionRuntime(adapter, root, authority.fingerprint);
     runtimes.set(root, entry);
     const initializing = entry;
     void initializing.catch(() => {
@@ -367,14 +367,19 @@ async function disposeResources(
 async function createSessionRuntime(
   adapter: OpenCodeHostAdapter,
   root: string,
+  verifiedFingerprint: string,
 ): Promise<RuntimeEntry> {
   if (!isUsableWorktree(root))
     throw buildEnforcementError(
       'PLUGIN_ENFORCEMENT_UNAVAILABLE',
       'The host session has no usable worktree.',
     );
-  const ws = createWorkspace({ auditWorktree: root });
-  await ws.resolveFingerprint();
+  // Reuse the fingerprint verified by loadRuntime in this invocation for
+  // diagnostic/logging bootstrap only. Every later authority gate probes afresh.
+  const ws = createWorkspace({
+    auditWorktree: root,
+    diagnosticBootstrapFingerprint: verifiedFingerprint,
+  });
   const { log, config, configReadError, disposeLogging } = await createPluginLogger(
     undefined,
     ws.cachedWsDir,
