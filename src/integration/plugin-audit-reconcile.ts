@@ -106,9 +106,7 @@ class AuditReconciliationChainError extends Error {
 }
 
 /** Read-only checks may not acknowledge an event from a corrupted chain. */
-function assertVerifiedAuditSnapshot(
-  events: Awaited<ReturnType<typeof readAuditTrail>>,
-): void {
+function assertVerifiedAuditSnapshot(events: Awaited<ReturnType<typeof readAuditTrail>>): void {
   const result = verifyChain(events);
   if (!result.valid) {
     throw new AuditReconciliationChainError(
