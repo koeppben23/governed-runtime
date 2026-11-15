@@ -30,12 +30,10 @@ export function pendingDispatchCountInMemory(
   memory: NativeDispatchMemory,
   rootId: string,
 ): number {
-  let count = 0;
-  for (const [key, dispatch] of memory.dispatches) {
-    if (memory.settledReviewerDispatches.has(key)) continue;
-    if (dispatch.rootSessionId === rootId) count++;
-  }
-  return count;
+  return [...memory.dispatches.entries()].filter(
+    ([key, dispatch]) =>
+      dispatch.rootSessionId === rootId && !memory.settledReviewerDispatches.has(key),
+  ).length;
 }
 
 export function pendingContinuationInMemory(
