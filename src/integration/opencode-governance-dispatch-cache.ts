@@ -6,13 +6,12 @@
 import type { GovernanceDelegationDispatch } from '../state/governance-activation.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
+type LinkedDispatch = { readonly dispatchKey: string; readonly operation: Promise<void> };
+
 export interface NativeDispatchMemory {
   readonly dispatches: Map<string, GovernanceDelegationDispatch>;
   readonly dispatchChildren: Map<string, string>;
-  readonly linking: Map<
-    string,
-    { readonly dispatchKey: string; readonly operation: Promise<void> }
-  >;
+  readonly linking: Map<string, LinkedDispatch>;
   readonly settledReviewerDispatches: Set<string>;
 }
 
@@ -34,8 +33,9 @@ export function pendingContinuationInMemory(
     if (
       dispatch.requestedChildSessionId === childId &&
       !memory.settledReviewerDispatches.has(key)
-    )
+    ) {
       return key;
+    }
   }
   return undefined;
 }
