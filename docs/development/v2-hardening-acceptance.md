@@ -4,6 +4,8 @@ Scope: [#1239](https://github.com/koeppben23/governed-runtime/issues/1239).
 This document is an execution checklist, **not** a release certificate.
 The benchmark scripts output observations obtained at execution time. A green
 workflow does not automatically prove every host/hardware-dependent claim.
+The current execution record is maintained in the
+[V2 hardening evidence matrix](./v2-hardening-evidence.md).
 
 ## Reproducible performance gates
 
