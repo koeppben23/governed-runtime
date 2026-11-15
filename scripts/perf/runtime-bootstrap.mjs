@@ -9,6 +9,7 @@
  * Neither arm caches authority across calls. This measures the complete
  * invocation-local bootstrap (not other plugin hooks).
  */
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { resolveSessionAuthority } from '../../dist/adapters/session-authority.js';
@@ -92,7 +93,7 @@ console.log(
     {
       benchmark: 'same-invocation-v2-runtime-bootstrap',
       worktree: root,
-      git: process.env.GIT_VERSION_PIN ?? 'runner-git-not-pinned',
+      git: execFileSync('git', ['--version'], { encoding: 'utf8' }).trim(),
       units: 'ms',
       baseline: before,
       optimized: after,
