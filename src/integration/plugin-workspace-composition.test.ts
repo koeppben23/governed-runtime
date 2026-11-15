@@ -201,26 +201,17 @@ describe('createWorkspace composition contract', () => {
     // FlowGuard and host-session matching cases in independent valid trails.
     await withSessionDir(async (sessDir) => {
       await appendAuditEvent(sessDir, decisionReceipt(FLOWGUARD_SESSION_ID, undefined, 3));
-      await appendAuditEvent(
-        sessDir,
-        decisionReceipt(FLOWGUARD_SESSION_ID, 'other-host', 8),
-      );
+      await appendAuditEvent(sessDir, decisionReceipt(FLOWGUARD_SESSION_ID, 'other-host', 8));
       const ws = createWorkspace({ auditWorktree: undefined });
       expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(9);
       // Reading an uncommitted reservation is idempotent.
       expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(9);
     });
     await withSessionDir(async (sessDir) => {
-      await appendAuditEvent(
-        sessDir,
-        decisionReceipt(OTHER_SESSION_ID, FLOWGUARD_SESSION_ID, 8),
-      );
+      await appendAuditEvent(sessDir, decisionReceipt(OTHER_SESSION_ID, FLOWGUARD_SESSION_ID, 8));
       const ws = createWorkspace({ auditWorktree: undefined });
       expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(9);
-      await appendAuditEvent(
-        sessDir,
-        decisionReceipt(OTHER_SESSION_ID, FLOWGUARD_SESSION_ID, 100),
-      );
+      await appendAuditEvent(sessDir, decisionReceipt(OTHER_SESSION_ID, FLOWGUARD_SESSION_ID, 100));
       expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(101);
     });
   });
