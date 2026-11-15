@@ -975,6 +975,9 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Release per-session reviewer enforcement state when a host session is deleted,
+  so long-lived plugin processes do not retain enforcement registries for
+  terminated sessions.
 - Clarify shared plan-author guidance across OpenCode, Claude Code and Codex:
   design claim-specific falsification before submission, distinguish incidental
   suite coverage without dropping required critical claims, and bind warning-free
