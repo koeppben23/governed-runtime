@@ -25,6 +25,18 @@ export function hasPendingDispatchInMemory(
   return false;
 }
 
+/** Settled reviewer identities remain authoritative but consume no pending slots. */
+export function pendingDispatchCountInMemory(
+  memory: NativeDispatchMemory,
+  rootId: string,
+): number {
+  let count = 0;
+  for (const [key, dispatch] of memory.dispatches) {
+    if (dispatch.rootSessionId === rootId && !memory.settledReviewerDispatches.has(key)) count++;
+  }
+  return count;
+}
+
 export function pendingContinuationInMemory(
   memory: NativeDispatchMemory,
   childId: string,
