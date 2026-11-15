@@ -379,14 +379,12 @@ export class OpenCodeGovernance {
       )
         throw this.error('The child already has an unsettled continuation dispatch.');
       await this.validateRequestedChild(dispatch);
-      // Per-root lock serializes reservations, so the limit is strict even
-      // when several native calls attempt authorization concurrently.
+      // The root lock serializes capacity reservations.
       const pendingForRoot = [...this.dispatches.values()].filter(
         (item) => item.rootSessionId === scope.root.sessionId,
       ).length;
-      if (pendingForRoot >= 256) {
+      if (pendingForRoot >= 256)
         throw this.error('Native dispatch capacity exceeded for the ACTIVE root session.');
-      }
       if (dispatch.agent === REVIEWER_SUBAGENT_TYPE) {
         if (!this.reviewer)
           throw this.error(
@@ -449,16 +447,11 @@ export class OpenCodeGovernance {
       const operation = this.withLock(dispatch.rootSessionId, () => this.enroll(dispatch, childId));
       linking = { dispatchKey, operation };
       this.linking.set(childId, linking);
-      void operation.then(
-        () => {
-          this.settle(childId, dispatchKey);
-          this.retireDispatch(dispatchKey, childId);
-        },
-        (error) => {
-          this.settle(childId, dispatchKey, error);
-          this.retireDispatch(dispatchKey, childId);
-        },
-      );
+      const finish = (error?: unknown): void => {
+        this.settle(childId, dispatchKey, error);
+        this.retireDispatch(dispatchKey, childId);
+      };
+      void operation.then(() => finish(), finish);
     }
     return linking.operation;
   }
@@ -605,13 +598,11 @@ export class OpenCodeGovernance {
     });
   }
 
-  /** Durable replay prevention remains in the activation store, not this cache. */
+  /** Durable replay prevention remains in the activation store. */
   private retireDispatch(dispatchKey: string, childId: string): void {
     this.dispatches.delete(dispatchKey);
     this.dispatchChildren.delete(dispatchKey);
-    if (this.linking.get(childId)?.dispatchKey === dispatchKey) {
-      this.linking.delete(childId);
-    }
+    if (this.linking.get(childId)?.dispatchKey === dispatchKey) this.linking.delete(childId);
   }
 
   private settle(childId: string, dispatchKey: string, error?: unknown): void {
