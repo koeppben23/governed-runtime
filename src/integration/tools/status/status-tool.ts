@@ -432,7 +432,7 @@ export const status: ToolDefinition = {
         discoveryHealth,
         discoveryDrift,
         presentation,
-        runtimeCandidates,
+        ...(runtimeCandidates === undefined ? {} : { runtimeCandidates }),
         compact,
       });
     } catch (err) {
