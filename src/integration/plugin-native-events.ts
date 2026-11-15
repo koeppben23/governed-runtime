@@ -8,7 +8,7 @@ import type { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { projectOpenCodeEvent } from './opencode-host-adapter.js';
 import { resolveGovernanceActivation } from '../adapters/governance-activation.js';
 import { handlePluginEvent } from './plugin-afterhooks.js';
-import type { FlowGuardPluginRuntime } from './plugin-shared.js';
+import { cleanupSessionRuntime, type FlowGuardPluginRuntime } from './plugin-shared.js';
 import { recordValidationProgress, type PresentationStore } from './plugin-presentation.js';
 import type { SessionState } from '../state/schema.js';
 import type { NativeReviewStateAuthority } from './review/dispatch/native-review-dispatch.js';
@@ -79,11 +79,18 @@ async function dispatchDeletedSession(
   adapter.forgetSession(projected.sessionId);
   const authority = await resolveGovernanceActivation(governance.store, projected.sessionId);
   if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
-  if (authority.kind === 'active') {
-    const root = sessionRoots.get(projected.sessionId);
-    const entry = root === undefined ? undefined : runtimes.get(root);
-    if (entry && authority.record.rootSessionId === projected.sessionId)
-      await handlePluginEvent((await entry).runtime, projected.event, projected.sessionId);
+  const root = sessionRoots.get(projected.sessionId);
+  const entry = root === undefined ? undefined : runtimes.get(root);
+  if (entry) {
+    const runtime = (await entry).runtime;
+    if (authority.kind === 'active' && authority.record.rootSessionId === projected.sessionId) {
+      // The root event handler owns its canonical audit and ephemeral cleanup.
+      await handlePluginEvent(runtime, projected.event, projected.sessionId);
+    } else {
+      // Delegated and inactive sessions have no root event handler, but their
+      // transient workspace/diagnostic state must still be released.
+      cleanupSessionRuntime(runtime, projected.sessionId);
+    }
   }
   sessionRoots.delete(projected.sessionId);
   deps.forgetFenceSession?.(projected.sessionId);
