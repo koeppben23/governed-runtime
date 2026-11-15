@@ -975,6 +975,11 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Add real-Git runtime bootstrap, durable audit CoW p50/p95/p99, and interleaved
+  compact-status latency measurements to the V2 hardening verification suite.
+  Enforce the requested factor-three status threshold in CI; do not treat
+  unsupported reflink filesystems or unexecuted crash tests as verified.
+
 - Retire native delegation dispatch, child and linking caches immediately
   after observed enrollment settles; durable activation records continue to
   reject replay. Bound unsettled dispatch reservations to 256 per governed
