@@ -70,7 +70,10 @@ import {
   buildWhyPresentationProjection,
   buildFinishPresentationProjection,
 } from '../../status/status-why-finish.js';
-import { buildDiscoveryDriftStatus } from '../../discovery/discovery-drift-status.js';
+import {
+  buildDiscoveryDriftStatus,
+  notCheckedDiscoveryDriftStatus,
+} from '../../discovery/discovery-drift-status.js';
 import { buildNoSessionDocument } from '../../status/status-presentation.js';
 import { buildWhyDocument } from '../../status/why-presentation.js';
 import { buildFinishDocument } from '../../status/finish-presentation.js';
@@ -353,9 +356,9 @@ export const status: ToolDefinition = {
       .boolean()
       .optional()
       .describe(
-        'Return the compact canonical projection: routing- and evidence-critical ' +
-          'fields plus digest-addressed profile rules and mandates. The full ' +
-          'projection (complete rule and mandate text) stays the default.',
+        'Return a low-latency compact projection of canonical state and persisted ' +
+          'evidence, with digest-addressed rules. Fresh repository drift and ' +
+          'toolchain probes are NOT_VERIFIED; call full status for live checks.',
       ),
   },
   async execute(_args, context) {
@@ -405,15 +408,21 @@ export const status: ToolDefinition = {
       });
       if (projection !== null) return projection;
 
-      // Full status only: resolve runtime readiness via toolchain probes
-      // (planner for profile IDs).
-      const runtimeCandidates = await resolveRuntimeWithProfileIds(state);
+      // Authority and state are freshly verified above. Compact avoids
+      // external probes; explicitly report NOT_VERIFIED rather than "clean".
+      const compact = args.compact === true;
+      const runtimeCandidates = compact ? undefined : await resolveRuntimeWithProfileIds(state);
       const { discovery, discoveryHealth } = await loadDiscoveryStatusContext(wsDir);
-      const discoveryDrift = await buildDiscoveryDriftStatus({
-        workspaceDir: wsDir,
-        worktree: state.binding.worktree,
-        fingerprint: state.binding.fingerprint,
-      });
+      const discoveryDrift = compact
+        ? notCheckedDiscoveryDriftStatus(
+            'Compact status does not assess fresh repository drift. ' +
+              'Call full flowguard_status or /hydrate to verify current drift.',
+          )
+        : await buildDiscoveryDriftStatus({
+            workspaceDir: wsDir,
+            worktree: state.binding.worktree,
+            fingerprint: state.binding.fingerprint,
+          });
       return buildFullStatusResponse({
         state,
         policy,
@@ -423,8 +432,8 @@ export const status: ToolDefinition = {
         discoveryHealth,
         discoveryDrift,
         presentation,
-        runtimeCandidates,
-        compact: args.compact === true,
+        ...(runtimeCandidates === undefined ? {} : { runtimeCandidates }),
+        compact,
       });
     } catch (err) {
       if (err instanceof ActorClaimError) {
