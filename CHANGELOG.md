@@ -979,6 +979,10 @@ last read` without a click, while a completion in another session left the
   FlowGuard session identity. Reject foreign-session events and previously
   mixed-session histories with CHAIN_BREAK before changing audit bytes.
 
+- Verify the complete persisted audit chain before acknowledging an already
+  recorded operation or trusting read-only transition evidence. Malformed
+  chain hashes and reordered records now fail closed during reconciliation.
+
 - Use a same-directory copy-on-write clone to prepare the next canonical
   audit.jsonl version when the filesystem supports reflinks, then append,
   fsync and atomically rename. Keep the fully durable rewrite on filesystems
