@@ -155,6 +155,15 @@ async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): P
   } catch (err) {
     if (!isEnoent(err)) throw err;
   }
+  // A valid JSON object without the final JSONL delimiter is not appendable:
+  // concatenating another record would corrupt future audit reads. Preserve
+  // historical evidence exactly and require explicit forensic recovery.
+  if (existing.length > 0 && !existing.endsWith('\n')) {
+    throw new AuditFormatError(
+      'Audit trail lacks the required final newline; refusing append to preserve ' +
+        'original evidence and prevent concatenated JSONL records.',
+    );
+  }
   const existingEvents = parseAuditTrail(existing);
 
   // Exactly-once under the audit write lock: an event id is a commit

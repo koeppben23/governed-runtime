@@ -59,7 +59,12 @@ import {
   isEnoent,
   atomicWrite,
 } from './persistence.js';
-import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
+import {
+  appendAuditEvent,
+  appendAuditEventAlreadyLocked,
+  readAuditTrail,
+  withAuditTrailLock,
+} from './persistence-audit.js';
 import type { SessionState } from '../state/schema.js';
 import type { AuditEvent, AuditEventBody, ReviewReport } from '../state/evidence.js';
 import { withTestEnv } from '../integration/test-helpers.js';
@@ -435,6 +440,42 @@ describe('persistence', () => {
       } finally {
         restoreRename();
       }
+    });
+
+    it('BAD: rejects append to a valid JSONL record lacking the final newline', async () => {
+      const first = makeValidAuditEvent({ id: crypto.randomUUID() });
+      const second = makeValidAuditEvent({ id: crypto.randomUUID() });
+      await appendAuditEvent(tmpDir, first);
+      const file = auditPath(tmpDir);
+      const canonical = await fs.readFile(file, 'utf-8');
+      expect(canonical.endsWith('\n')).toBe(true);
+      const unterminated = canonical.slice(0, -1);
+      await fs.writeFile(file, unterminated, 'utf-8');
+
+      await expect(appendAuditEvent(tmpDir, second)).rejects.toMatchObject({
+        code: 'AUDIT_ENVELOPE_INVALID',
+      });
+      expect(await fs.readFile(file, 'utf-8')).toBe(unterminated);
+      const persisted = await readAuditTrail(tmpDir);
+      expect(persisted).toHaveLength(1);
+      expect(verifyChain(persisted).valid).toBe(true);
+    });
+
+    it('EDGE: already-locked append refuses an unterminated audit record', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      const file = auditPath(tmpDir);
+      const canonical = await fs.readFile(file, 'utf-8');
+      const unterminated = canonical.slice(0, -1);
+      await fs.writeFile(file, unterminated, 'utf-8');
+
+      const appendUnderLock = () =>
+        withAuditTrailLock(tmpDir, () =>
+          appendAuditEventAlreadyLocked(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+        );
+      await expect(appendUnderLock()).rejects.toMatchObject({
+        code: 'AUDIT_ENVELOPE_INVALID',
+      });
+      expect(await fs.readFile(file, 'utf-8')).toBe(unterminated);
     });
 
     it('fsyncs the audit directory so a committed append survives a crash after the rename', async () => {

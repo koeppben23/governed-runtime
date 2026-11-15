@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Reject an unterminated canonical JSONL audit record before appending the next
+  event, preserving the original evidence bytes and failing closed with
+  AUDIT_ENVELOPE_INVALID instead of concatenating two JSON objects.
+
 - Reduce durable audit-outbox order validation from quadratic to linear membership
   checks without weakening conflict detection; add deterministic ordering tests
   and an executable baseline-versus-current performance benchmark.
