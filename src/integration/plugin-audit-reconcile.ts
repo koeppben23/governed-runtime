@@ -285,7 +285,9 @@ async function compactReconciledOutbox(sessDir: string): Promise<void> {
     const state = await readState(sessDir);
     if (!state) return;
     const count = state.pendingAuditOperations.filter((op) => op.status === 'reconciled').length;
-    if (count <= MAX_RECONCILED_OUTBOX_OPERATIONS) return;
+    // Amortize the full canonical-chain verification: tolerate a bounded
+    // 64-record state tail, then compact back to 32 in one verified batch.
+    if (count <= MAX_RECONCILED_OUTBOX_OPERATIONS * 2) return;
     const events = await readAuditTrail(sessDir);
     const compacted = compactVerifiedOutbox(state, events);
     await writeStateAlreadyLocked(sessDir, compacted);
