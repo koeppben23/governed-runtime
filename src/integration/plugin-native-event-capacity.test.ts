@@ -11,13 +11,13 @@ import { createEventFence, startEventLoop, type EventLoopDeps } from './plugin-n
 import type { OpenCodeGovernance, ActiveGovernanceScope } from './opencode-governance.js';
 import type { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 
-function eventAt(index: number): OpenCodeEvent {
+function eventAt(index: number, sessionId = 'root'): OpenCodeEvent {
   return {
     id: `progress-${index}`,
     created: index + 1,
     type: 'session.tool.progress',
     data: {
-      sessionID: 'root',
+      sessionID: sessionId,
       assistantMessageID: `message-${index}`,
       id: `tool-${index}`,
       metadata: { status: 'running', sessionID: 'child' },
@@ -120,12 +120,10 @@ describe('native V2 event handler capacity', () => {
     h.fence.assert(root);
     h.fence.assert(child);
     h.fence.forgetSession('child');
-    h.fence.failed(new Error('late native event'), {
-      ...eventAt(0),
-      data: { ...eventAt(0).data, sessionID: 'child' },
-    });
+    h.fence.failed(new Error('late native event'), eventAt(0, 'child'));
     expect(h.failPending).toHaveBeenCalledWith('Native event observation failed.', 'child');
-    expect(() => h.fence.assert(child)).toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    // The deleted child's hint is gone: an unrelated root remains admissible.
+    expect(() => h.fence.assert(root)).not.toThrow();
     expect(() => h.fence.assert(root)).not.toThrow();
     h.fence.failed(new Error('root stream failed'), eventAt(0));
     h.fence.forgetSession('root');
