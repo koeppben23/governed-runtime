@@ -1,15 +1,14 @@
 /**
  * @module audit/outbox-compaction
- * @description Bounded, cryptographically checked reconciled-outbox retention.
+ * @description Bounded, cryptographically verified audit outbox retention.
  *
- * The canonical audit JSONL is the historic correlation ledger. A state
- * checkpoint binds retirement to one exact chain position. No unresolved
- * outbox item is ever removed. The caller atomically commits the resulting
- * state under the session write lock.
+ * The canonical audit JSONL is the historic correlation ledger. The atomic
+ * state checkpoint binds retirement to an exact chain position. Unresolved
+ * operations remain in state.
  */
 import { computeCanonicalEventDigest } from './canonical-digest.js';
 import { verifyChain } from './integrity.js';
-import { SessionState, type AuditOutboxCheckpoint } from '../state/schema.js';
+import { SessionState, type AuditOutboxCheckpoint, type PendingAuditOperation } from '../state/schema.js';
 import type { AuditEvent } from '../state/evidence.js';
 
 export const MAX_RECONCILED_OUTBOX_OPERATIONS = 32;
@@ -44,6 +43,64 @@ function verifyAnchor(
   }
 }
 
+/** Validate the full trail before using any retired-operation evidence. */
+function verifiedEvents(
+  state: SessionState,
+  events: AuditEvent[],
+): Map<string, AuditEvent> {
+  const expectedFlowguardSessionId = state.flowguardSessionId;
+  const verified = verifyChain(events, { expectedFlowguardSessionId });
+  if (!verified.valid) {
+    invalid(`Cannot retire outbox items: invalid audit chain (${verified.reason ?? 'unknown'})`);
+  }
+  verifyAnchor(state.auditOutboxCheckpoint, events);
+  const byId = new Map<string, AuditEvent>();
+  for (const event of events) {
+    if (byId.has(event.id)) invalid(`Duplicate canonical audit identity ${event.id}`);
+    byId.set(event.id, event);
+  }
+  return byId;
+}
+
+/** Every retired operation must already have exactly matching immutable evidence. */
+function lastVerifiedRetiredEvent(
+  retiring: readonly PendingAuditOperation[],
+  events: ReadonlyMap<string, AuditEvent>,
+): AuditEvent {
+  let last: AuditEvent | undefined;
+  for (const operation of retiring) {
+    const event = events.get(operation.operationId);
+    if (
+      !event ||
+      event.detail.operationId !== operation.operationId ||
+      computeCanonicalEventDigest(event) !== operation.auditEventDigest
+    ) {
+      invalid(`Missing bound audit evidence for reconciled ${operation.operationId}`);
+    }
+    last = event;
+  }
+  if (!last) invalid('No verified reconciled operation to retire');
+  return last;
+}
+
+function nextCheckpoint(
+  lastRetired: AuditEvent,
+  prior: AuditOutboxCheckpoint | undefined,
+  retiredCount: number,
+): AuditOutboxCheckpoint {
+  if (prior && lastRetired.auditSequence <= prior.auditSequence) {
+    invalid('Outbox checkpoint sequence must advance monotonically');
+  }
+  return {
+    version: 1,
+    reconciledCount: (prior?.reconciledCount ?? 0) + retiredCount,
+    lastOperationId: lastRetired.id,
+    auditSequence: lastRetired.auditSequence,
+    chainHash: lastRetired.chainHash,
+    auditEventDigest: computeCanonicalEventDigest(lastRetired),
+  };
+}
+
 /** Retire only the oldest fully verified reconciled state duplicates. */
 export function compactVerifiedOutbox(
   state: SessionState,
@@ -53,52 +110,20 @@ export function compactVerifiedOutbox(
     (operation) => operation.status === 'reconciled',
   );
   if (reconciled.length <= MAX_RECONCILED_OUTBOX_OPERATIONS) return state;
-  const expectedFlowguardSessionId = state.flowguardSessionId;
-  const verified = verifyChain(events, { expectedFlowguardSessionId });
-  if (!verified.valid) {
-    invalid(`Cannot retire outbox items from invalid audit chain: ${verified.reason ?? 'unknown'}`);
-  }
-  verifyAnchor(state.auditOutboxCheckpoint, events);
 
-  const retireCount = reconciled.length - MAX_RECONCILED_OUTBOX_OPERATIONS;
-  const toRetire = reconciled.slice(0, retireCount);
-  const eventsById = new Map<string, AuditEvent>();
-  for (const event of events) {
-    if (eventsById.has(event.id)) invalid(`Duplicate audit identity ${event.id}`);
-    eventsById.set(event.id, event);
-  }
-  let lastRetired: AuditEvent | undefined;
-  for (const operation of toRetire) {
-    const event = eventsById.get(operation.operationId);
-    if (
-      !event ||
-      event.detail.operationId !== operation.operationId ||
-      computeCanonicalEventDigest(event) !== operation.auditEventDigest
-    ) {
-      invalid(`Reconciled outbox operation ${operation.operationId} lacks bound audit evidence`);
-    }
-    lastRetired = event;
-  }
-  if (!lastRetired) invalid('Cannot retire zero reconciled operations');
-  const prior = state.auditOutboxCheckpoint;
-  if (prior && lastRetired.auditSequence <= prior.auditSequence) {
-    invalid('Outbox checkpoint sequence must advance monotonically');
-  }
-  const retiredIds = new Set(toRetire.map((op) => op.operationId));
+  const count = reconciled.length - MAX_RECONCILED_OUTBOX_OPERATIONS;
+  const retiring = reconciled.slice(0, count);
+  const byId = verifiedEvents(state, events);
+  const last = lastVerifiedRetiredEvent(retiring, byId);
+  const checkpoint = nextCheckpoint(last, state.auditOutboxCheckpoint, count);
+  const retiredIds = new Set(retiring.map((operation) => operation.operationId));
   const result = SessionState.safeParse({
     ...state,
     pendingAuditOperations: state.pendingAuditOperations.filter(
-      (op) => !retiredIds.has(op.operationId),
+      (operation) => !retiredIds.has(operation.operationId),
     ),
-    auditOutboxCheckpoint: {
-      version: 1,
-      reconciledCount: (prior?.reconciledCount ?? 0) + retireCount,
-      lastOperationId: lastRetired.id,
-      auditSequence: lastRetired.auditSequence,
-      chainHash: lastRetired.chainHash,
-      auditEventDigest: computeCanonicalEventDigest(lastRetired),
-    },
+    auditOutboxCheckpoint: checkpoint,
   });
-  if (!result.success) invalid(`Compacted state violates schema: ${result.error.message}`);
+  if (!result.success) invalid(`Compacted state is invalid: ${result.error.message}`);
   return result.data;
 }
