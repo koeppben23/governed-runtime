@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Verify the complete persisted audit chain before acknowledging an already
+  recorded operation or trusting read-only transition evidence. Malformed
+  chain hashes and reordered records now fail closed during reconciliation.
+
 - Read and schema-validate the audit trail once per durable outbox reconciliation
   batch rather than once per pending operation. Index only relevant operation
   identities, retaining fail-closed digest comparison and writer idempotency.

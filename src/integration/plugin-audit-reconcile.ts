@@ -25,6 +25,7 @@ import {
 } from '../audit/types.js';
 import { buildSemanticAuditBody } from '../audit/semantic-event.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
+import { verifyChain } from '../audit/integrity.js';
 import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
@@ -93,6 +94,27 @@ export function createStrictTimestampTracker(
     },
     failure: () => failure,
   };
+}
+
+class AuditReconciliationChainError extends Error {
+  readonly code = 'CHAIN_BREAK' as const;
+
+  constructor(reason: string) {
+    super(`Refusing to trust unverified audit snapshot: ${reason}`);
+    this.name = 'AuditReconciliationChainError';
+  }
+}
+
+/** Read-only checks may not acknowledge an event from a corrupted chain. */
+function assertVerifiedAuditSnapshot(
+  events: Awaited<ReturnType<typeof readAuditTrail>>,
+): void {
+  const result = verifyChain(events);
+  if (!result.valid) {
+    throw new AuditReconciliationChainError(
+      result.firstBreak?.reason ?? result.reason ?? 'unknown audit integrity failure',
+    );
+  }
 }
 
 class AuditTransitionEvidenceGapError extends Error {
@@ -217,6 +239,7 @@ export async function emitTransitionAudits(input: {
   // under its lock for audit events committed after this read.
   const operationIds = new Set(operations.map((op) => op.operationId));
   const snapshot = await readAuditTrail(ctx.sessDir);
+  assertVerifiedAuditSnapshot(snapshot);
   const existingAudits = indexCommittedOperationAudits(snapshot, operationIds);
   for (const operation of operations) {
     const body = buildOperationAuditBody(state, operation, ctx.prevHash);
@@ -274,6 +297,7 @@ function assertLatestOperationMatchesState(
 async function assertNoTransitionGap(sessDir: string, state: SessionState | null): Promise<void> {
   if (!state?.transition) return;
   const events = await readAuditTrail(sessDir);
+  assertVerifiedAuditSnapshot(events);
   const transition = state.transition;
   const evidenceExists = events.some(
     (event) =>
