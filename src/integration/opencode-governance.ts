@@ -392,9 +392,13 @@ export class OpenCodeGovernance {
       )
         throw this.error('The child already has an unsettled continuation dispatch.');
       await this.validateRequestedChild(dispatch);
-      // The root lock serializes capacity reservations.
-      const pendingForRoot = [...this.dispatches.values()].filter(
-        (item) => item.rootSessionId === scope.root.sessionId,
+      // The root lock serializes pending reservations. Enrolled reviewer
+      // identities remain in memory for execution authority, but are settled
+      // and must not exhaust capacity reserved for *pending* dispatches.
+      const pendingForRoot = [...this.dispatches.entries()].filter(
+        ([key, item]) =>
+          item.rootSessionId === scope.root.sessionId &&
+          !this.settledReviewerDispatches.has(key),
       ).length;
       if (pendingForRoot >= 256)
         throw this.error('Native dispatch capacity exceeded for the ACTIVE root session.');
