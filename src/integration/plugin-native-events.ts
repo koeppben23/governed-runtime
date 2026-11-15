@@ -131,6 +131,9 @@ export function startEventLoop(deps: EventLoopDeps): Promise<void> {
   );
 }
 
+/** A hard ceiling avoids unbounded host-event fan-out and heap retention. */
+const MAX_IN_FLIGHT_NATIVE_EVENT_HANDLERS = 256;
+
 async function consumeEvents(
   ctx: Plugin.Context,
   signal: AbortSignal,
@@ -138,18 +141,40 @@ async function consumeEvents(
   failed: (error: unknown, event?: OpenCodeEvent) => void,
   operations: Set<Promise<unknown>>,
 ): Promise<void> {
+  let inFlight = 0;
+  let observationLost = false;
   try {
     for await (const event of ctx.event.subscribe({ signal })) {
-      // Never make the source await a handler whose host I/O can publish events.
+      if (signal.aborted) break;
+      // Never await a handler here: a handler may require a later host event.
+      // Saturation cannot silently drop evidence. Revoke admission globally,
+      // continue draining the source without retaining further event bodies.
+      if (observationLost) continue;
+      if (inFlight >= MAX_IN_FLIGHT_NATIVE_EVENT_HANDLERS) {
+        observationLost = true;
+        failed(
+          buildEnforcementError(
+            'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+            'Native event handler capacity was exceeded; event observation is incomplete.',
+          ),
+        );
+        continue;
+      }
+      // Observe progress synchronously before advancing the stream. In particular,
+      // reviewer enrollment cannot wait behind a queue of host-dependent handlers.
       const operation = consume(event);
+      inFlight += 1;
       operations.add(operation);
       void operation
         .catch((error) => {
-          if (!signal.aborted) failed(error, event);
+          if (!signal.aborted && !observationLost) failed(error, event);
         })
-        .finally(() => operations.delete(operation));
+        .finally(() => {
+          inFlight -= 1;
+          operations.delete(operation);
+        });
     }
-    if (!signal.aborted)
+    if (!signal.aborted && !observationLost)
       failed(
         buildEnforcementError(
           'PLUGIN_ENFORCEMENT_UNAVAILABLE',
@@ -157,7 +182,7 @@ async function consumeEvents(
         ),
       );
   } catch (error) {
-    if (!signal.aborted) failed(error);
+    if (!signal.aborted && !observationLost) failed(error);
   }
 }
 

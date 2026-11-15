@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Fail closed on native event-handler saturation without blocking event consumption,
+  bounding simultaneous event handler work while preserving synchronous reviewer
+  progress observation and session-scoped error fencing.
+
 - Release per-session reviewer enforcement state when a host session is deleted,
   so long-lived plugin processes do not retain enforcement registries for
   terminated sessions.
