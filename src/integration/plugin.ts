@@ -386,9 +386,7 @@ async function createSessionRuntime(
     repoConfigPath(root),
   );
   try {
-    // Logging may fall back to defaults; governed execution may not. An
-    // unreadable or invalid flowguard.json blocks every ACTIVE operation of this
-    // worktree instead of silently running with default policy or reviewer budgets.
+    // Invalid config must block ACTIVE work even when logging can use defaults.
     if (configReadError !== undefined)
       throw buildEnforcementError(
         'CONFIG_INVALID',
