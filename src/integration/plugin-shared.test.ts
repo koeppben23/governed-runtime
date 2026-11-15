@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
+import { createWorkspace } from './plugin-workspace.js';
 import {
   cleanupSessionRuntime,
   consumeToolLatency,
@@ -22,7 +23,7 @@ import {
 
 function makeRuntime(): FlowGuardPluginRuntime {
   return {
-    ws: { invalidateChainState: vi.fn() },
+    ws: { invalidateChainState: vi.fn(), releaseEnforcementState: vi.fn() },
     toolLatencyStarts: new Map<string, number>(),
     activeCommandScopes: new Map(),
     checkReworkContinuations: new Set(),
@@ -65,10 +66,23 @@ describe('cleanupSessionRuntime', () => {
     cleanupSessionRuntime(runtime, 's1');
 
     expect(runtime.ws.invalidateChainState).toHaveBeenCalledWith('s1');
+    expect(runtime.ws.releaseEnforcementState).toHaveBeenCalledWith('s1');
     expect(runtime.activeCommandScopes.has('s1')).toBe(false);
     expect(runtime.checkReworkContinuations.has('s1')).toBe(false);
     expect(runtime.activeCommandScopes.get('s2')).toBe('check');
     expect(runtime.checkReworkContinuations.has('s2')).toBe(true);
+  });
+
+  it('BAD: runtime cleanup releases the actual workspace enforcement registry', () => {
+    const ws = createWorkspace({ auditWorktree: undefined });
+    const runtime = { ...makeRuntime(), ws };
+    const old = ws.getEnforcementState('root');
+    const other = ws.getEnforcementState('root-other');
+
+    cleanupSessionRuntime(runtime, 'root');
+
+    expect(ws.getEnforcementState('root')).not.toBe(old);
+    expect(ws.getEnforcementState('root-other')).toBe(other);
   });
 
   it('EDGE: cleaning an unknown session is a no-op', () => {

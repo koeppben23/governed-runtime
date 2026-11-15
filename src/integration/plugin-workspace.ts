@@ -82,6 +82,8 @@ export interface PluginWorkspace {
   nextDecisionSequence(sessDir: string, sessionId: string): Promise<number>;
   runSerializedForSession(sessionId: string, task: () => Promise<void>): Promise<void>;
   getEnforcementState(sessionId: string): SessionEnforcementState;
+  /** Discard transient reviewer enforcement state when a host session terminates. */
+  releaseEnforcementState(sessionId: string): void;
   readonly cachedFingerprint: string | null;
   readonly cachedWsDir: string | null;
 }
@@ -284,6 +286,10 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
     }
     return state;
   }
+
+  releaseEnforcementState(sessionId: string): void {
+    this._enforcementStates.delete(sessionId);
+  }
 }
 
 export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
@@ -302,6 +308,7 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
     nextDecisionSequence: (sd, sid) => impl.nextDecisionSequence(sd, sid),
     runSerializedForSession: (sid, t) => impl.runSerializedForSession(sid, t),
     getEnforcementState: (sid) => impl.getEnforcementState(sid),
+    releaseEnforcementState: (sid) => impl.releaseEnforcementState(sid),
     get cachedFingerprint() {
       return impl.cachedFingerprint;
     },

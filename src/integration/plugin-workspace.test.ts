@@ -108,6 +108,25 @@ describe('integration/plugin-workspace', () => {
         const b = ws.getEnforcementState('s1');
         expect(a).toBe(b);
       });
+
+      it('BAD: releasing enforcement state affects only the terminated session', () => {
+        const ws = new PluginWorkspaceImpl(fakeDeps());
+        const old = ws.getEnforcementState('s1');
+        const other = ws.getEnforcementState('s10');
+        ws.releaseEnforcementState('s1');
+        expect(ws.getEnforcementState('s1')).not.toBe(old);
+        expect(ws.getEnforcementState('s10')).toBe(other);
+        expect(() => ws.releaseEnforcementState('unknown')).not.toThrow();
+      });
+
+      it('EDGE: releases all 1,000 terminated session enforcement entries', () => {
+        const ws = new PluginWorkspaceImpl(fakeDeps());
+        for (let i = 0; i < 1_000; i++) ws.getEnforcementState(`session-${i}`);
+        for (let i = 0; i < 1_000; i++) ws.releaseEnforcementState(`session-${i}`);
+        expect(
+          (ws as unknown as { _enforcementStates: Map<string, unknown> })._enforcementStates.size,
+        ).toBe(0);
+      });
     });
 
     describe('CORNER', () => {
