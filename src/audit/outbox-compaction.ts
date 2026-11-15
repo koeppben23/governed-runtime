@@ -8,7 +8,11 @@
  */
 import { computeCanonicalEventDigest } from './canonical-digest.js';
 import { verifyChain } from './integrity.js';
-import { SessionState, type AuditOutboxCheckpoint, type PendingAuditOperation } from '../state/schema.js';
+import {
+  SessionState,
+  type AuditOutboxCheckpoint,
+  type PendingAuditOperation,
+} from '../state/schema.js';
 import type { AuditEvent } from '../state/evidence.js';
 
 export const MAX_RECONCILED_OUTBOX_OPERATIONS = 32;
@@ -44,14 +48,11 @@ function verifyAnchor(
 }
 
 /** Validate the full trail before using any retired-operation evidence. */
-function verifiedEvents(
-  state: SessionState,
-  events: AuditEvent[],
-): Map<string, AuditEvent> {
+function verifiedEvents(state: SessionState, events: AuditEvent[]): Map<string, AuditEvent> {
   const expectedFlowguardSessionId = state.flowguardSessionId;
   const verified = verifyChain(events, { expectedFlowguardSessionId });
   if (!verified.valid) {
-    invalid(`Cannot retire outbox items: invalid audit chain (${verified.reason ?? 'unknown'})`);
+    invalid(`Invalid canonical chain: ${verified.reason ?? 'unknown'}`);
   }
   verifyAnchor(state.auditOutboxCheckpoint, events);
   const byId = new Map<string, AuditEvent>();
@@ -102,10 +103,7 @@ function nextCheckpoint(
 }
 
 /** Retire only the oldest fully verified reconciled state duplicates. */
-export function compactVerifiedOutbox(
-  state: SessionState,
-  events: AuditEvent[],
-): SessionState {
+export function compactVerifiedOutbox(state: SessionState, events: AuditEvent[]): SessionState {
   const reconciled = state.pendingAuditOperations.filter(
     (operation) => operation.status === 'reconciled',
   );
