@@ -11,9 +11,7 @@
  * benchmark; it does not measure fsync, JSONL I/O or complete state commits.
  */
 import { performance } from 'node:perf_hooks';
-import {
-  assertPreparedOrderMatchesPersisted,
-} from '../../dist/integration/tools/audit-outbox-order.js';
+import * as auditOrder from '../../dist/integration/tools/audit-outbox-order.js';
 
 function oldOrder(prepared, persisted, persistedById) {
   const commonIds = prepared
@@ -58,7 +56,7 @@ for (const count of [100, 1_000, 5_000, 10_000]) {
   const byId = new Map(persisted.map((entry) => [entry.operationId, entry]));
   const data = { prepared, persisted, byId };
   const baselineMs = sample(oldOrder, data, 9);
-  const currentMs = sample(assertPreparedOrderMatchesPersisted, data, 9);
+  const currentMs = sample(auditOrder.assertPreparedOrderMatchesPersisted, data, 9);
   const speedup = baselineMs / currentMs;
   console.log(
     `${count}\t${baselineMs.toFixed(3)}\t${currentMs.toFixed(3)}\t${speedup.toFixed(2)}x`,
