@@ -11,13 +11,13 @@ import { createEventFence, startEventLoop, type EventLoopDeps } from './plugin-n
 import type { OpenCodeGovernance, ActiveGovernanceScope } from './opencode-governance.js';
 import type { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 
-function eventAt(index: number): OpenCodeEvent {
+function eventAt(index: number, sessionId = 'root'): OpenCodeEvent {
   return {
     id: `progress-${index}`,
     created: index + 1,
     type: 'session.tool.progress',
     data: {
-      sessionID: 'root',
+      sessionID: sessionId,
       assistantMessageID: `message-${index}`,
       id: `tool-${index}`,
       metadata: { status: 'running', sessionID: 'child' },
@@ -105,6 +105,29 @@ describe('native V2 event handler capacity', () => {
     for (const resolve of release) resolve();
     await Promise.allSettled([...h.operations]);
     await vi.waitFor(() => expect(h.operations.size).toBe(0));
+  });
+
+  it('EDGE: retiring event hints retains sticky failure latches', () => {
+    const h = makeHarness(0, async () => undefined);
+    const root = {
+      sessionId: 'root',
+      root: { sessionId: 'root' },
+    } as ActiveGovernanceScope;
+    const child = {
+      sessionId: 'child',
+      root: { sessionId: 'root' },
+    } as ActiveGovernanceScope;
+    h.fence.assert(root);
+    h.fence.assert(child);
+    h.fence.forgetSession('child');
+    h.fence.failed(new Error('late native event'), eventAt(0, 'child'));
+    expect(h.failPending).toHaveBeenCalledWith('Native event observation failed.', 'child');
+    // The deleted child's hint is gone: an unrelated root remains admissible.
+    expect(() => h.fence.assert(root)).not.toThrow();
+    expect(() => h.fence.assert(root)).not.toThrow();
+    h.fence.failed(new Error('root stream failed'), eventAt(0));
+    h.fence.forgetSession('root');
+    expect(() => h.fence.assert(root)).toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
   });
 
   it('EDGE: a stopped stream never schedules new event handlers', async () => {
