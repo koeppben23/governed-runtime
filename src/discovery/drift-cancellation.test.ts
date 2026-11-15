@@ -53,7 +53,9 @@ describe('read-only discovery drift cancellation', () => {
   it('EDGE: an already aborted signal never starts repository discovery', async () => {
     const controller = new AbortController();
     controller.abort(new Error('cancelled before start'));
-    const io = makeIo(vi.fn(async () => ({ files: [], packageFilePaths: [], configFilePaths: [] })));
+    const io = makeIo(
+      vi.fn(async () => ({ files: [], packageFilePaths: [], configFilePaths: [] })),
+    );
     await expect(
       checkDiscoveryDrift('/workspace', '/repo', 'a'.repeat(24), io, controller.signal),
     ).rejects.toThrow('cancelled before start');
