@@ -374,8 +374,6 @@ async function createSessionRuntime(
       'PLUGIN_ENFORCEMENT_UNAVAILABLE',
       'The host session has no usable worktree.',
     );
-  // Reuse the fingerprint verified by loadRuntime in this invocation for
-  // diagnostic/logging bootstrap only. Every later authority gate probes afresh.
   const ws = createWorkspace({
     auditWorktree: root,
     diagnosticBootstrapFingerprint: verifiedFingerprint,
