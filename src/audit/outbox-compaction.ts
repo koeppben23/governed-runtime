@@ -9,7 +9,6 @@
  */
 import { computeCanonicalEventDigest } from './canonical-digest.js';
 import { verifyChain } from './integrity.js';
-
 import { SessionState, type AuditOutboxCheckpoint } from '../state/schema.js';
 import type { AuditEvent } from '../state/evidence.js';
 
@@ -54,11 +53,10 @@ export function compactVerifiedOutbox(
     (operation) => operation.status === 'reconciled',
   );
   if (reconciled.length <= MAX_RECONCILED_OUTBOX_OPERATIONS) return state;
-  const verified = verifyChain(events, { expectedFlowguardSessionId: state.flowguardSessionId });
+  const expectedFlowguardSessionId = state.flowguardSessionId;
+  const verified = verifyChain(events, { expectedFlowguardSessionId });
   if (!verified.valid) {
-    invalid(
-      `Cannot retire outbox items from an invalid audit chain: ${verified.reason ?? 'unknown'}`,
-    );
+    invalid(`Cannot retire outbox items from invalid audit chain: ${verified.reason ?? 'unknown'}`);
   }
   verifyAnchor(state.auditOutboxCheckpoint, events);
 
