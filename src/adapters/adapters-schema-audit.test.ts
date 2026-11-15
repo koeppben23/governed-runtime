@@ -513,7 +513,9 @@ describe('persistence', () => {
       const original = makeValidAuditEvent({ id: crypto.randomUUID() });
       await appendAuditEvent(tmpDir, original);
       const file = auditPath(tmpDir);
-      const event = JSON.parse((await fs.readFile(file, 'utf-8')).trim()) as Record<string, unknown>;
+      const event = JSON.parse(
+        (await fs.readFile(file, 'utf-8')).trim(),
+      ) as Record<string, unknown>;
       event.auditSequence = 2;
       const tampered = JSON.stringify(event) + '\n';
       await fs.writeFile(file, tampered, 'utf-8');
