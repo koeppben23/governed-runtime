@@ -9,14 +9,23 @@
  */
 import { computeCanonicalEventDigest } from './canonical-digest.js';
 import { verifyChain } from './integrity.js';
-import { PersistenceError } from '../adapters/persistence.js';
+
 import { SessionState, type AuditOutboxCheckpoint } from '../state/schema.js';
 import type { AuditEvent } from '../state/evidence.js';
 
 export const MAX_RECONCILED_OUTBOX_OPERATIONS = 32;
 
+class AuditOutboxCompactionError extends Error {
+  readonly code = 'SCHEMA_VALIDATION_FAILED' as const;
+
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'AuditOutboxCompactionError';
+  }
+}
+
 function invalid(reason: string): never {
-  throw new PersistenceError('SCHEMA_VALIDATION_FAILED', reason);
+  throw new AuditOutboxCompactionError(reason);
 }
 
 function verifyAnchor(
@@ -47,7 +56,9 @@ export function compactVerifiedOutbox(
   if (reconciled.length <= MAX_RECONCILED_OUTBOX_OPERATIONS) return state;
   const verified = verifyChain(events, { expectedFlowguardSessionId: state.flowguardSessionId });
   if (!verified.valid) {
-    invalid(`Cannot retire outbox items from an invalid audit chain: ${verified.reason ?? 'unknown'}`);
+    invalid(
+      `Cannot retire outbox items from an invalid audit chain: ${verified.reason ?? 'unknown'}`,
+    );
   }
   verifyAnchor(state.auditOutboxCheckpoint, events);
 

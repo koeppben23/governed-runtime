@@ -34,7 +34,10 @@ import type { SessionAuthorityResolution } from '../adapters/session-authority.j
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { computeStateDigest, mutateStateWithAuditOperations } from './audit-outbox.js';
 import { indexCommittedOperationAudits } from '../audit/reconcile-index.js';
-import { compactVerifiedOutbox, MAX_RECONCILED_OUTBOX_OPERATIONS } from '../audit/outbox-compaction.js';
+import {
+  compactVerifiedOutbox,
+  MAX_RECONCILED_OUTBOX_OPERATIONS,
+} from '../audit/outbox-compaction.js';
 
 /** Closure dependencies injected from plugin.ts. */
 export interface AuditDeps {
@@ -281,9 +284,7 @@ async function compactReconciledOutbox(sessDir: string): Promise<void> {
   await withSessionWriteLock(sessDir, async () => {
     const state = await readState(sessDir);
     if (!state) return;
-    const count = state.pendingAuditOperations.filter(
-      (op) => op.status === 'reconciled',
-    ).length;
+    const count = state.pendingAuditOperations.filter((op) => op.status === 'reconciled').length;
     if (count <= MAX_RECONCILED_OUTBOX_OPERATIONS) return;
     const events = await readAuditTrail(sessDir);
     const compacted = compactVerifiedOutbox(state, events);
