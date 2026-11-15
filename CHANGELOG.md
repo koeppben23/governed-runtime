@@ -979,6 +979,11 @@ last read` without a click, while a completion in another session left the
   recorded operation or trusting read-only transition evidence. Malformed
   chain hashes and reordered records now fail closed during reconciliation.
 
+- Use a same-directory copy-on-write clone to prepare the next canonical
+  audit.jsonl version when the filesystem supports reflinks, then append,
+  fsync and atomically rename. Keep the fully durable rewrite on filesystems
+  without clone support, preserving existing audit semantics and contracts.
+
 - Read and schema-validate the audit trail once per durable outbox reconciliation
   batch rather than once per pending operation. Index only relevant operation
   identities, retaining fail-closed digest comparison and writer idempotency.

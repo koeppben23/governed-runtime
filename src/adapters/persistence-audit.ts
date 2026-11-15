@@ -22,6 +22,7 @@ import {
   isEnoent,
 } from './persistence.js';
 import { getLastChainHash, verifyEvent } from '../audit/integrity.js';
+import { durableAtomicCloneAppend } from './persistence-audit-clone.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import {
   computeChainHash,
@@ -238,13 +239,15 @@ async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): P
   }
   const line = JSON.stringify(chainedResult.data) + '\n';
 
-  // Durability is delegated to the canonical writer: it fsyncs the file AND
-  // the parent directory, so a crash after the rename cannot resurrect the
-  // pre-append trail. A hand-rolled temp+sync+rename here previously omitted
-  // the directory fsync, which silently dropped the whole batch of appends
-  // since the last directory sync while leaving a chain-valid prefix that
-  // verifyChain still reports as valid.
-  await durableAtomicWrite(filePath, existing + line);
+  // Both write paths fsync the temporary file, atomically rename it and
+  // fsync its parent directory. A CoW reflink reduces the rewrite cost on
+  // supporting filesystems; unsupported clones fall back to the original
+  // durable rewrite without altering audit integrity or atomicity.
+  if (existing.length === 0) {
+    await durableAtomicWrite(filePath, line);
+  } else {
+    await durableAtomicCloneAppend(filePath, line, existing + line);
+  }
   return chainedResult.data;
 }
 
