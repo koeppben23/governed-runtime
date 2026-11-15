@@ -307,7 +307,7 @@ describe('native success to canonical system-work composition', () => {
       ws: { invalidateChainState: vi.fn(), releaseEnforcementState: vi.fn() },
       activeCommandScopes: new Map([['root', 'check']]),
       checkReworkContinuations: new Set(['root']),
-      toolLatencyStarts: new Map([['root\\u0000call', 10]]),
+      toolLatencyStarts: new Map([['root\u0000call', 10]]),
     } as unknown as Parameters<typeof afterhooks.handlePluginEvent>[0];
     const controller = new AbortController();
     const adapter = new OpenCodeHostAdapter(host.ctx, controller.signal);
