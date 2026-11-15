@@ -16,7 +16,7 @@ import { archiveCompletionExport } from '../adapters/workspace/archive.js';
 import { materializeEvidenceArtifacts } from '../adapters/workspace/evidence-artifacts.js';
 import { sessionDir, workspacesHome } from '../adapters/workspace/index.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
-import { writeState } from '../adapters/persistence.js';
+import { auditPath, writeState } from '../adapters/persistence.js';
 import { BINDING, FIXED_TIME, makeProgressedState } from '../fixtures.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashFile, hashText } from '../shared/hashing.js';
@@ -466,10 +466,20 @@ describe('runIso27001Inspect', () => {
     // package (the live chain no longer proves the publication binding), so no
     // report with a positive status can exist.
     const foreign = await createFixture();
-    await appendAuditEvent(
-      foreign.sessDir,
-      materializedEvent('00000000-0000-4000-8000-0000000000ff', '2026-01-01T00:02:00.000Z'),
-    );
+    const forgedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-foreign-audit-fixture-'));
+    try {
+      // A trusted writer now rejects mixed-session append requests. Construct
+      // the externally corrupted live evidence directly, rather than
+      // pretending the production append authority could generate it.
+      await appendAuditEvent(
+        forgedDir,
+        materializedEvent('00000000-0000-4000-8000-0000000000ff', '2026-01-01T00:02:00.000Z'),
+      );
+      const forgedRecord = await fs.readFile(auditPath(forgedDir), 'utf8');
+      await fs.appendFile(auditPath(foreign.sessDir), forgedRecord);
+    } finally {
+      await fs.rm(forgedDir, { recursive: true, force: true });
+    }
     const foreignResult = await runCli({ mappingPath: foreign.mappingPath });
     expect(foreignResult.exit).toBe(2);
     expect(foreignResult.stdout).toBe('');

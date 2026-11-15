@@ -164,6 +164,30 @@ function normalizeCurrentAuditBody(event: AuditEventBody | AuditEvent): Record<s
   return { ...semantic, auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION };
 }
 
+/**
+ * Validate persisted hash/sequence integrity and its immutable session binding.
+ * Extracted from the append core to keep a single fail-closed audit authority.
+ */
+function assertAppendableAuditChain(
+  events: readonly AuditEvent[],
+  incomingSessionId: string,
+): void {
+  const trailSessionId = events[0]?.flowguardSessionId;
+  let priorHash: string = GENESIS_HASH;
+  for (const [index, prior] of events.entries()) {
+    const verified = verifyEvent(prior, priorHash, index);
+    if (!verified.valid) {
+      throw new AuditChainError(
+        `Refusing append to invalid audit chain at sequence ${index + 1}: ${verified.reason ?? 'integrity failure'}`,
+      );
+    }
+    assertAuditSessionIdentity(trailSessionId, prior.flowguardSessionId, index + 1);
+    priorHash = prior.chainHash;
+  }
+  // A foreign event may reuse an existing ID; validate before replay.
+  assertAuditSessionIdentity(trailSessionId, incomingSessionId, events.length + 1);
+}
+
 async function appendAuditLineAtomically(
   sessionDir: string,
   event: AuditEventBody,
@@ -192,23 +216,9 @@ async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): P
   }
   const existingEvents = parseAuditTrail(existing);
 
-  // Envelope validity alone does not establish that persisted audit evidence
-  // is still intact. Never extend a modified or reordered chain (including
-  // an idempotent retry) and thereby give corrupted evidence a fresh tip.
-  let priorHash: string = GENESIS_HASH;
-  const trailSessionId = existingEvents[0]?.flowguardSessionId;
-  for (const [index, prior] of existingEvents.entries()) {
-    const verified = verifyEvent(prior, priorHash, index);
-    if (!verified.valid) {
-      throw new AuditChainError(
-        `Refusing append to invalid audit chain at sequence ${index + 1}: ${verified.reason ?? 'integrity failure'}`,
-      );
-    }
-    assertAuditSessionIdentity(trailSessionId, prior.flowguardSessionId, index + 1);
-    priorHash = prior.chainHash;
-  }
-  // Check before the idempotent replay path: a foreign event may reuse an ID.
-  assertAuditSessionIdentity(trailSessionId, event.flowguardSessionId, existingEvents.length + 1);
+  // Validate before deduplication: even an idempotent retry must not
+  // accept a corrupted or cross-session canonical trail.
+  assertAppendableAuditChain(existingEvents, event.flowguardSessionId);
 
   // Exactly-once under the audit write lock: an event id is a commit
   // identity. A crash between append and acknowledgement may re-deliver the
