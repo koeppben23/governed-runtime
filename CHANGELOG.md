@@ -975,6 +975,11 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Retire native delegation dispatch, child and linking caches immediately
+  after observed enrollment settles; durable activation records continue to
+  reject replay. Bound unsettled dispatch reservations to 256 per governed
+  root and fail closed rather than retaining unbounded host calls.
+
 - Release native session routing metadata on a deleted, inactive host session
   without treating it as an ACTIVE governance event. Preserve blocked authority
   fencing and avoid leaking session-root mappings across long-lived hosts.

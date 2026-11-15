@@ -73,7 +73,6 @@ export class OpenCodeGovernance {
     { readonly dispatchKey: string; readonly operation: Promise<void> }
   >();
   private readonly dispatchChildren = new Map<string, string>();
-  private readonly settledDispatches = new Set<string>();
   private readonly waiters = new Map<string, Set<EnrollmentWaiter>>();
 
   constructor(
@@ -380,6 +379,14 @@ export class OpenCodeGovernance {
       )
         throw this.error('The child already has an unsettled continuation dispatch.');
       await this.validateRequestedChild(dispatch);
+      // Per-root lock serializes reservations, so the limit is strict even
+      // when several native calls attempt authorization concurrently.
+      const pendingForRoot = [...this.dispatches.values()].filter(
+        (item) => item.rootSessionId === scope.root.sessionId,
+      ).length;
+      if (pendingForRoot >= 256) {
+        throw this.error('Native dispatch capacity exceeded for the ACTIVE root session.');
+      }
       if (dispatch.agent === REVIEWER_SUBAGENT_TYPE) {
         if (!this.reviewer)
           throw this.error(
@@ -418,7 +425,7 @@ export class OpenCodeGovernance {
     const key = governanceDelegationKey(event.sessionID, event.messageID, event.id);
     if (this.dispatches.get(key)?.agent !== REVIEWER_SUBAGENT_TYPE) return;
     this.dispatches.delete(key);
-    this.settledDispatches.add(key);
+    this.dispatchChildren.delete(key);
   }
 
   /** Called synchronously by the event-loop consumer before it awaits more I/O. */
@@ -431,7 +438,6 @@ export class OpenCodeGovernance {
     );
     const dispatch = this.dispatches.get(dispatchKey);
     if (!dispatch) return undefined;
-    if (this.settledDispatches.has(dispatchKey)) return undefined;
     const childId = event.data.metadata.sessionID;
     if (typeof childId !== 'string' || event.data.metadata.status !== 'running') return undefined;
     const observedChild = this.dispatchChildren.get(dispatchKey);
@@ -445,12 +451,12 @@ export class OpenCodeGovernance {
       this.linking.set(childId, linking);
       void operation.then(
         () => {
-          this.settledDispatches.add(dispatchKey);
           this.settle(childId, dispatchKey);
+          this.retireDispatch(dispatchKey, childId);
         },
         (error) => {
-          this.settledDispatches.add(dispatchKey);
           this.settle(childId, dispatchKey, error);
+          this.retireDispatch(dispatchKey, childId);
         },
       );
     }
@@ -558,15 +564,12 @@ export class OpenCodeGovernance {
   }
 
   private hasPendingDispatch(parentId: string): boolean {
-    return [...this.dispatches.entries()].some(
-      ([key, dispatch]) => dispatch.sessionId === parentId && !this.settledDispatches.has(key),
-    );
+    return [...this.dispatches.values()].some((dispatch) => dispatch.sessionId === parentId);
   }
 
   private pendingContinuation(childId: string): string | undefined {
     return [...this.dispatches.entries()].find(
-      ([key, dispatch]) =>
-        dispatch.requestedChildSessionId === childId && !this.settledDispatches.has(key),
+      ([, dispatch]) => dispatch.requestedChildSessionId === childId,
     )?.[0];
   }
 
@@ -600,6 +603,15 @@ export class OpenCodeGovernance {
       group.add(waiter);
       this.waiters.set(childId, group);
     });
+  }
+
+  /** Durable replay prevention remains in the activation store, not this cache. */
+  private retireDispatch(dispatchKey: string, childId: string): void {
+    this.dispatches.delete(dispatchKey);
+    this.dispatchChildren.delete(dispatchKey);
+    if (this.linking.get(childId)?.dispatchKey === dispatchKey) {
+      this.linking.delete(childId);
+    }
   }
 
   private settle(childId: string, dispatchKey: string, error?: unknown): void {
