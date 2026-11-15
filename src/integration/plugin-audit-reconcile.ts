@@ -32,6 +32,7 @@ import { resolveAuditContext, type AuditContext } from './plugin-audit-context.j
 import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { computeStateDigest, mutateStateWithAuditOperations } from './audit-outbox.js';
+import { indexCommittedOperationAudits } from '../audit/reconcile-index.js';
 
 /** Closure dependencies injected from plugin.ts. */
 export interface AuditDeps {
@@ -212,6 +213,11 @@ export async function emitTransitionAudits(input: {
     count: operations.length,
   });
   assertLatestOperationMatchesState(state, operations);
+  // One snapshot per batch. The writer still checks idempotency and integrity
+  // under its lock for audit events committed after this read.
+  const operationIds = new Set(operations.map((op) => op.operationId));
+  const snapshot = await readAuditTrail(ctx.sessDir);
+  const existingAudits = indexCommittedOperationAudits(snapshot, operationIds);
   for (const operation of operations) {
     const body = buildOperationAuditBody(state, operation, ctx.prevHash);
     const expectedDigest = computeCanonicalEventDigest(body);
@@ -221,7 +227,8 @@ export async function emitTransitionAudits(input: {
         `Audit operation ${operation.operationId} does not match its committed event digest`,
       );
     }
-    const existing = await findOperationAudit(ctx.sessDir, state, operation);
+    const committed = existingAudits.get(operation.operationId);
+    const existing = findOperationAudit(state, operation, committed);
     if (existing) {
       await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
       continue;
@@ -279,17 +286,11 @@ async function assertNoTransitionGap(sessDir: string, state: SessionState | null
   if (!evidenceExists) throw new AuditTransitionEvidenceGapError(transition);
 }
 
-async function findOperationAudit(
-  sessDir: string,
+function findOperationAudit(
   state: SessionState,
   operation: PendingAuditOperation,
-): Promise<boolean> {
-  const events = await readAuditTrail(sessDir);
-  const event = events.find(
-    (candidate) =>
-      candidate.id === operation.operationId &&
-      candidate.detail.operationId === operation.operationId,
-  );
+  event: Awaited<ReturnType<typeof readAuditTrail>>[number] | undefined,
+): boolean {
   if (!event) return false;
   // The loop already verified digest(operation body) === operation.auditEventDigest;
   // here only the persisted event must equal that same expected digest.
