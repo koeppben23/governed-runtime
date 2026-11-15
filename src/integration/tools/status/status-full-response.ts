@@ -32,7 +32,11 @@ import { BUILD_INFO } from '../../../shared/build-info.js';
 import { buildStatusDocument } from '../../status/status-presentation.js';
 import { renderMarkdown } from '../../../presentation/index.js';
 import { buildStatusProjection } from '../../status/status.js';
-import { buildImplementationGuidance } from '../../implementation-guidance.js';
+import {
+  buildImplementationGuidance,
+  IMPLEMENTATION_GUIDANCE_LIMITS,
+  type ImplementationGuidanceProjection,
+} from '../../implementation-guidance.js';
 import type { ResolvedVerificationCandidate } from '../../verification-runtime-resolution.js';
 import { computeProviderCapabilities } from './status-provider-projection.js';
 import { latestReviewSummary } from './status-summary.js';
@@ -314,6 +318,37 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
   };
 }
 
+/** Compact status never derives repository-specific implementation hints.
+ * Keep the existing typed advisory shape, with explicit NOT_VERIFIED contents.
+ * Full status still computes the complete advisory from canonical discovery. */
+function compactImplementationGuidance(
+  state: SessionState,
+  discovery: DiscoveryResult | null,
+): ImplementationGuidanceProjection {
+  return {
+    kind: 'derived_implementation_guidance',
+    advisory: true,
+    runtimeOnly: true,
+    source: {
+      task: state.ticket?.text || state.plan?.current.body ? 'session_ticket_plan' : 'missing',
+      discovery: discovery === null ? 'unavailable' : 'persisted_discovery_result',
+    },
+    confidence: 'none',
+    notVerified: [
+      'NOT_VERIFIED: Compact status skips derived implementation guidance. ' +
+        'Call full flowguard_status to assess current task and repository hints.',
+    ],
+    warnings: [],
+    relevantFiles: [],
+    modules: [],
+    surfaces: [],
+    tests: [],
+    contracts: [],
+    riskHotspots: [],
+    limits: IMPLEMENTATION_GUIDANCE_LIMITS,
+  };
+}
+
 export function buildFullStatusResponse(input: FullStatusInput): string {
   const {
     state,
@@ -326,11 +361,10 @@ export function buildFullStatusResponse(input: FullStatusInput): string {
     presentation,
   } = input;
   const projection = buildStatusProjection(state, policy);
-  const implementationGuidance = buildImplementationGuidance({
-    state,
-    discovery,
-    discoveryHealth,
-  });
+  const implementationGuidance =
+    input.compact === true
+      ? compactImplementationGuidance(state, discovery)
+      : buildImplementationGuidance({ state, discovery, discoveryHealth });
 
   const presentationDoc = buildStatusDocument({
     status: projection,
