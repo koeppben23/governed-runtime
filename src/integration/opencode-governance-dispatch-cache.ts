@@ -26,6 +26,7 @@ export function hasPendingDispatchInMemory(
 }
 
 /** Settled reviewer identities remain authoritative but consume no pending slots. */
+// prettier-ignore -- keep this helper aligned with the host's explicit pending-only capacity semantics.
 export function pendingDispatchCountInMemory(
   memory: NativeDispatchMemory,
   rootId: string,
