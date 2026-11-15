@@ -132,6 +132,7 @@ export const FlowGuardAuditPlugin = Plugin.define({
         governance,
         runtimes,
         sessionRoots,
+        forgetFenceSession: fence.forgetSession,
         invoke: actions.invoke,
         adapter,
         failed: fence.failed,

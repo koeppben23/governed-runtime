@@ -22,6 +22,8 @@ export interface EventDispatchDeps {
   readonly presentation?: PresentationStore;
   readonly runtimes: ReadonlyMap<string, Promise<EventRuntime>>;
   readonly sessionRoots: Map<string, string>;
+  /** Retire an admitted session's event-route only after verified deletion. */
+  readonly forgetFenceSession?: (sessionId: string) => void;
   readonly governance: OpenCodeGovernance;
   readonly adapter: OpenCodeHostAdapter;
   readonly invoke: <T>(
@@ -47,6 +49,7 @@ export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDep
       // Without this cleanup, every inactive deletion leaks a sessionRoot.
       // Blocked authority stays fenced rather than being discarded.
       sessionRoots.delete(projected.sessionId);
+      deps.forgetFenceSession?.(projected.sessionId);
       return;
     }
     const root = sessionRoots.get(projected.sessionId);
@@ -54,6 +57,7 @@ export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDep
     if (entry && authority.record.rootSessionId === projected.sessionId)
       await handlePluginEvent((await entry).runtime, projected.event, projected.sessionId);
     sessionRoots.delete(projected.sessionId);
+    deps.forgetFenceSession?.(projected.sessionId);
     return;
   }
   if (
@@ -97,6 +101,11 @@ export function createEventFence(governance: OpenCodeGovernance, adapter: OpenCo
           'PLUGIN_ENFORCEMENT_UNAVAILABLE',
           'The ACTIVE scope lost required event observation.',
         );
+    },
+    /** Forget a verifiably deleted session's routing hint, never its root's
+     * failure latch. Unknown late native failures remain fail-closed. */
+    forgetSession(sessionId: string) {
+      roots.delete(sessionId);
     },
     failed(error: unknown, event?: OpenCodeEvent) {
       const data: unknown = event?.data;

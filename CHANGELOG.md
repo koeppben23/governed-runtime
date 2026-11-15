@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Retire native event-fence session routing hints after a verified ACTIVE or
+  INACTIVE session deletion. Keep blocked activation and failed-root fences
+  sticky, including duplicate host deletion events.
+
 - Bound the state-owned reconciled outbox to at most 64 recent records,
   compacting to a 32-operation tail in verified batches. Older reconciled
   copies retire only after complete canonical chain and digest verification

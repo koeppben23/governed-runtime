@@ -107,6 +107,31 @@ describe('native V2 event handler capacity', () => {
     await vi.waitFor(() => expect(h.operations.size).toBe(0));
   });
 
+  it('EDGE: retiring event hints retains sticky failure latches', () => {
+    const h = makeHarness(0, async () => undefined);
+    const root = {
+      sessionId: 'root',
+      root: { sessionId: 'root' },
+    } as ActiveGovernanceScope;
+    const child = {
+      sessionId: 'child',
+      root: { sessionId: 'root' },
+    } as ActiveGovernanceScope;
+    h.fence.assert(root);
+    h.fence.assert(child);
+    h.fence.forgetSession('child');
+    h.fence.failed(new Error('late native event'), {
+      ...eventAt(0),
+      data: { ...eventAt(0).data, sessionID: 'child' },
+    });
+    expect(h.failPending).toHaveBeenCalledWith('Native event observation failed.', 'child');
+    expect(() => h.fence.assert(child)).toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    expect(() => h.fence.assert(root)).not.toThrow();
+    h.fence.failed(new Error('root stream failed'), eventAt(0));
+    h.fence.forgetSession('root');
+    expect(() => h.fence.assert(root)).toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+  });
+
   it('EDGE: a stopped stream never schedules new event handlers', async () => {
     const h = makeHarness(50, async () => undefined);
     h.controller.abort();
