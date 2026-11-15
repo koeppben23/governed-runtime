@@ -295,9 +295,14 @@ describe('status compact canonical projection', () => {
     async () => {
       await hydrateSession({ policyMode: 'team' });
       const samples = { full: [] as number[], compact: [] as number[] };
-      // Interleave both projections so JIT and host scheduling do not always
-      // benefit the second arm. Every call still re-resolves session authority.
-      for (let i = 0; i < 7; i++) {
+      // Warm both paths equally, then collect enough alternating samples to
+      // reduce JIT, filesystem and short-lived runner scheduling noise.
+      for (let i = 0; i < 3; i++) {
+        await status.execute({}, ctx);
+        await status.execute({ compact: true }, ctx);
+      }
+      // Fresh authority is resolved on every call; no shared trust cache.
+      for (let i = 0; i < 31; i++) {
         const order = i % 2 === 0 ? [false, true] : [true, false];
         for (const compact of order) {
           const start = performance.now();
