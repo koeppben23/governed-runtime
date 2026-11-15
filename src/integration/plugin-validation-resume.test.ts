@@ -210,6 +210,10 @@ describe('native success to canonical system-work composition', () => {
       await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(1));
       const runtime = handler.mock.calls[0]![0];
       handler.mockClear();
+      const priorChildState = runtime.ws.getEnforcementState('child');
+      const priorRootState = runtime.ws.getEnforcementState('root');
+      runtime.ws.getChainState('child');
+      runtime.activeCommandScopes.set('child', 'check');
       const controller = new AbortController();
       const adapter = new OpenCodeHostAdapter(host.ctx, controller.signal);
       const governance = new OpenCodeGovernance(host.ctx, adapter, controller.signal);
@@ -249,7 +253,12 @@ describe('native success to canonical system-work composition', () => {
       expect(forget).toHaveBeenCalledWith(sessionId);
       expect(sessionRoots.has(sessionId)).toBe(false);
       expect(handler).toHaveBeenCalledTimes(kind === 'root' ? 1 : 0);
-      if (kind === 'delegated') expect(sessionRoots.has('root')).toBe(true);
+      if (kind === 'delegated') {
+        expect(sessionRoots.has('root')).toBe(true);
+        expect(runtime.activeCommandScopes.has('child')).toBe(false);
+        expect(runtime.ws.getEnforcementState('child')).not.toBe(priorChildState);
+        expect(runtime.ws.getEnforcementState('root')).toBe(priorRootState);
+      }
       controller.abort();
     },
   );
@@ -289,6 +298,51 @@ describe('native success to canonical system-work composition', () => {
     expect(sessionRoots.size).toBe(0);
     expect(forgetFenceSession).toHaveBeenCalledExactlyOnceWith('root');
     expect(runtimeHandler).not.toHaveBeenCalled();
+    controller.abort();
+  });
+
+  it('releases inactive-session workspace state without any ACTIVE audit handler', async () => {
+    const { host } = await fixture();
+    const runtime = {
+      ws: { invalidateChainState: vi.fn(), releaseEnforcementState: vi.fn() },
+      activeCommandScopes: new Map([['root', 'check']]),
+      checkReworkContinuations: new Set(['root']),
+      toolLatencyStarts: new Map([['root\u0000call', 10]]),
+    } as unknown as Parameters<typeof afterhooks.handlePluginEvent>[0];
+    const controller = new AbortController();
+    const adapter = new OpenCodeHostAdapter(host.ctx, controller.signal);
+    const governance = new OpenCodeGovernance(host.ctx, adapter, controller.signal);
+    vi.spyOn(activation, 'resolveGovernanceActivation').mockResolvedValue({
+      kind: 'inactive',
+      record: null,
+    });
+    const handler = vi.spyOn(afterhooks, 'handlePluginEvent');
+    const sessionRoots = new Map([['root', 'worktree']]);
+    const event = {
+      type: 'session.deleted' as const,
+      id: 'inactive-cleanup',
+      created: 101,
+      durable: { aggregateID: 'root', seq: 2, version: 2 as const },
+      data: { sessionID: 'root' },
+    };
+    const deps = {
+      adapter,
+      governance,
+      sessionRoots,
+      runtimes: new Map([['worktree', Promise.resolve({ runtime })]]),
+      invoke: async () => undefined,
+    };
+
+    await dispatchEvent(event, deps);
+    await dispatchEvent(event, deps);
+
+    expect(runtime.ws.invalidateChainState).toHaveBeenCalledExactlyOnceWith('root');
+    expect(runtime.ws.releaseEnforcementState).toHaveBeenCalledExactlyOnceWith('root');
+    expect(runtime.activeCommandScopes.size).toBe(0);
+    expect(runtime.checkReworkContinuations.size).toBe(0);
+    expect(runtime.toolLatencyStarts.size).toBe(0);
+    expect(handler).not.toHaveBeenCalled();
+    expect(sessionRoots.size).toBe(0);
     controller.abort();
   });
 
