@@ -19,6 +19,42 @@ import {
 } from './persistence.js';
 
 const CLONE_FLAGS = constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE_FORCE;
+const CLONE_CAPABILITY_TTL_MS = 60_000;
+const MAX_CLONE_CAPABILITY_ENTRIES = 128;
+
+type FallbackContent = string | (() => string | Promise<string>);
+type CloneCapability = { readonly supported: boolean; readonly checkedAt: number };
+
+const cloneCapability = new Map<string, CloneCapability>();
+
+function rememberCloneCapability(dir: string, supported: boolean): void {
+  cloneCapability.delete(dir);
+  cloneCapability.set(dir, { supported, checkedAt: Date.now() });
+  while (cloneCapability.size > MAX_CLONE_CAPABILITY_ENTRIES) {
+    const oldest = cloneCapability.keys().next().value;
+    if (oldest === undefined) break;
+    cloneCapability.delete(oldest);
+  }
+}
+
+function knownUnsupportedClone(dir: string): boolean {
+  const capability = cloneCapability.get(dir);
+  if (!capability) return false;
+  if (Date.now() - capability.checkedAt > CLONE_CAPABILITY_TTL_MS) {
+    cloneCapability.delete(dir);
+    return false;
+  }
+  return capability.supported === false;
+}
+
+/** Test-only reset for filesystem capability observations. */
+export function resetCloneCapabilityCacheForTests(): void {
+  cloneCapability.clear();
+}
+
+async function resolveFallback(content: FallbackContent): Promise<string> {
+  return typeof content === 'function' ? await content() : content;
+}
 
 function cloneUnsupported(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
@@ -48,17 +84,23 @@ async function unlinkTemp(filePath: string): Promise<void> {
 export async function durableAtomicCloneAppend(
   filePath: string,
   appendedLine: string,
-  fallbackContent: string,
+  fallbackContent: FallbackContent,
 ): Promise<void> {
   const dir = path.dirname(filePath);
+  if (knownUnsupportedClone(dir)) {
+    await durableAtomicWrite(filePath, await resolveFallback(fallbackContent));
+    return;
+  }
   const tempPath = path.join(dir, `.${path.basename(filePath)}.${randomUUID()}.tmp`);
 
   try {
     await fs.copyFile(filePath, tempPath, CLONE_FLAGS);
+    rememberCloneCapability(dir, true);
   } catch (error) {
     await unlinkTemp(tempPath);
     if (cloneUnsupported(error)) {
-      await durableAtomicWrite(filePath, fallbackContent);
+      rememberCloneCapability(dir, false);
+      await durableAtomicWrite(filePath, await resolveFallback(fallbackContent));
       return;
     }
     throw new PersistenceError(

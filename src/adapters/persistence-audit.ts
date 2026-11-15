@@ -126,6 +126,7 @@ async function appendAuditEventWithLock(
       ? await appendAuditLineAtomically(sessionDir, result.data)
       : await appendAuditLineCore(sessionDir, result.data);
   } catch (err: unknown) {
+    clearAuditAppendCache(sessionDir);
     getAdapterLogger().error('persistence-audit', 'Failed to append audit event', {
       sessionDir,
       error: err instanceof Error ? err.message : String(err),
@@ -188,6 +189,47 @@ function assertAppendableAuditChain(
   assertAuditSessionIdentity(trailSessionId, incomingSessionId, events.length + 1);
 }
 
+interface AuditAppendCache {
+  readonly identity: string;
+  readonly sessionId: string | undefined;
+  readonly ids: Set<string>;
+  readonly lastHash: string;
+  readonly lastSequence: number;
+  readonly verifiedAt: number;
+  readonly appendsSinceVerify: number;
+}
+
+const MAX_AUDIT_APPEND_CACHES = 64;
+const FULL_VERIFY_INTERVAL_MS = 60_000;
+const FULL_VERIFY_EVERY_APPENDS = 256;
+const auditAppendCaches = new Map<string, AuditAppendCache>();
+
+async function auditFileIdentity(filePath: string): Promise<string | null> {
+  try {
+    const stat = await fs.stat(filePath);
+    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+  } catch (err) {
+    if (isEnoent(err)) return null;
+    throw err;
+  }
+}
+
+function rememberAuditAppendCache(sessionDir: string, cache: AuditAppendCache): void {
+  auditAppendCaches.delete(sessionDir);
+  auditAppendCaches.set(sessionDir, cache);
+  while (auditAppendCaches.size > MAX_AUDIT_APPEND_CACHES) {
+    const oldest = auditAppendCaches.keys().next().value;
+    if (oldest === undefined) break;
+    auditAppendCaches.delete(oldest);
+  }
+}
+
+/** Forget the in-process append proof for one or all sessions. */
+function clearAuditAppendCache(sessionDir?: string): void {
+  if (sessionDir === undefined) auditAppendCaches.clear();
+  else auditAppendCaches.delete(sessionDir);
+}
+
 async function appendAuditLineAtomically(
   sessionDir: string,
   event: AuditEventBody,
@@ -195,11 +237,54 @@ async function appendAuditLineAtomically(
   return await withAuditWriteLock(sessionDir, () => appendAuditLineCore(sessionDir, event));
 }
 
-async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): Promise<AuditEvent> {
-  await ensureDir(sessionDir);
-  const filePath = auditPath(sessionDir);
-  let existing = '';
+interface AuditAppendState {
+  readonly existing: string;
+  readonly sessionId: string | undefined;
+  readonly ids: Set<string>;
+  readonly lastHash: string;
+  readonly lastSequence: number;
+  readonly cacheHit: boolean;
+  readonly verifiedAt: number;
+  readonly appendsSinceVerify: number;
+}
 
+type AuditAppendLoad =
+  | { readonly kind: 'append'; readonly state: AuditAppendState }
+  | { readonly kind: 'replay'; readonly event: AuditEvent };
+
+function buildAuditIdSet(events: readonly AuditEvent[]): Set<string> {
+  const ids = new Set<string>();
+  for (const prior of events) {
+    if (ids.has(prior.id)) {
+      throw new AuditChainError(
+        `Refusing append to audit chain with duplicate event id ${prior.id}`,
+      );
+    }
+    ids.add(prior.id);
+  }
+  return ids;
+}
+
+function replayEvent(events: readonly AuditEvent[], event: AuditEventBody): AuditEvent | null {
+  const sameId = events.find((candidate) => candidate.id === event.id);
+  if (!sameId) return null;
+  if (
+    computeCanonicalEventDigest(normalizeCurrentAuditBody(sameId)) ===
+    computeCanonicalEventDigest(normalizeCurrentAuditBody(event))
+  ) {
+    return sameId;
+  }
+  throw new PersistenceError(
+    'SCHEMA_VALIDATION_FAILED',
+    `Refusing to append audit event with duplicate id ${event.id} and different content`,
+  );
+}
+
+async function readAndVerifyAuditTrail(
+  filePath: string,
+  event: AuditEventBody,
+): Promise<{ readonly existing: string; readonly events: AuditEvent[] }> {
+  let existing = '';
   try {
     existing = await fs.readFile(filePath, 'utf-8');
   } catch (err) {
@@ -214,40 +299,90 @@ async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): P
         'original evidence and prevent concatenated JSONL records.',
     );
   }
-  const existingEvents = parseAuditTrail(existing);
+  const events = parseAuditTrail(existing);
+  // Validate before deduplication: even an idempotent retry must not accept a
+  // corrupted or cross-session canonical trail.
+  assertAppendableAuditChain(events, event.flowguardSessionId);
+  return { existing, events };
+}
 
-  // Validate before deduplication: even an idempotent retry must not
-  // accept a corrupted or cross-session canonical trail.
-  assertAppendableAuditChain(existingEvents, event.flowguardSessionId);
-
-  // Exactly-once under the audit write lock: an event id is a commit
-  // identity. A crash between append and acknowledgement may re-deliver the
-  // SAME event — return the persisted record instead of appending a
-  // duplicate. The same id with different content is a chain violation and
-  // fails closed.
-  const sameId = existingEvents.find((candidate) => candidate.id === event.id);
-  if (sameId) {
-    if (
-      computeCanonicalEventDigest(normalizeCurrentAuditBody(sameId)) ===
-      computeCanonicalEventDigest(normalizeCurrentAuditBody(event))
-    ) {
-      return sameId;
-    }
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      `Refusing to append audit event with duplicate id ${event.id} and different content`,
-    );
+async function loadAuditAppendState(
+  sessionDir: string,
+  filePath: string,
+  identity: string | null,
+  event: AuditEventBody,
+): Promise<AuditAppendLoad> {
+  const cached = auditAppendCaches.get(sessionDir);
+  const now = Date.now();
+  if (
+    cached !== undefined &&
+    identity !== null &&
+    cached.identity === identity &&
+    cached.appendsSinceVerify < FULL_VERIFY_EVERY_APPENDS &&
+    now - cached.verifiedAt <= FULL_VERIFY_INTERVAL_MS &&
+    !cached.ids.has(event.id)
+  ) {
+    assertAuditSessionIdentity(cached.sessionId, event.flowguardSessionId, cached.lastSequence + 1);
+    return {
+      kind: 'append',
+      state: {
+        existing: '',
+        sessionId: cached.sessionId,
+        ids: cached.ids,
+        lastHash: cached.lastHash,
+        lastSequence: cached.lastSequence,
+        cacheHit: true,
+        verifiedAt: cached.verifiedAt,
+        appendsSinceVerify: cached.appendsSinceVerify,
+      },
+    };
   }
 
-  // Stamp the positional/authority fields. Producers cannot influence
-  // chain position, sequence authority, or record time — any
-  // producer-supplied positional/hash value is dropped before stamping so
-  // it can never leak into a computed digest.
+  const { existing, events } = await readAndVerifyAuditTrail(filePath, event);
+  const ids = buildAuditIdSet(events);
+  const sessionId = events[0]?.flowguardSessionId;
+  const lastHash = getLastChainHash(events);
+  const lastSequence = events.length;
+  const replay = replayEvent(events, event);
+  if (replay !== null) {
+    if (identity !== null) {
+      rememberAuditAppendCache(sessionDir, {
+        identity,
+        sessionId,
+        ids,
+        lastHash,
+        lastSequence,
+        verifiedAt: now,
+        appendsSinceVerify: 0,
+      });
+    }
+    return { kind: 'replay', event: replay };
+  }
+  return {
+    kind: 'append',
+    state: {
+      existing,
+      sessionId,
+      ids,
+      lastHash,
+      lastSequence,
+      cacheHit: false,
+      verifiedAt: now,
+      appendsSinceVerify: 0,
+    },
+  };
+}
+
+function buildChainedAuditEvent(event: AuditEventBody, state: AuditAppendState): AuditEvent {
+  // Stamp the positional/authority fields. Producers cannot influence chain
+  // position, sequence authority, or record time — any producer-supplied
+  // positional/hash value is dropped before stamping so it can never leak into
+  // a computed digest.
   const bodyWithPosition: Omit<ChainedAuditEvent, 'chainHash'> = {
     ...normalizeCurrentAuditBody(event),
-    auditSequence: existingEvents.length + 1,
+    auditSequence: state.lastSequence + 1,
     recordedAt: new Date().toISOString(),
-    prevHash: getLastChainHash(existingEvents),
+    prevHash: state.lastHash,
   } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
   const semanticEventDigest = computeCanonicalEventDigest(bodyWithPosition);
   const finalized: Omit<ChainedAuditEvent, 'chainHash'> = {
@@ -265,18 +400,68 @@ async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): P
       `Refusing to append invalid chained audit event: ${chainedResult.error.message}`,
     );
   }
-  const line = JSON.stringify(chainedResult.data) + '\n';
-
-  // Both write paths fsync the temporary file, atomically rename it and
-  // fsync its parent directory. A CoW reflink reduces the rewrite cost on
-  // supporting filesystems; unsupported clones fall back to the original
-  // durable rewrite without altering audit integrity or atomicity.
-  if (existing.length === 0) {
-    await durableAtomicWrite(filePath, line);
-  } else {
-    await durableAtomicCloneAppend(filePath, line, existing + line);
-  }
   return chainedResult.data;
+}
+
+async function publishAuditLine(
+  filePath: string,
+  identity: string | null,
+  line: string,
+  existing: string,
+): Promise<void> {
+  // Both write paths fsync the temporary file, atomically rename it and fsync
+  // its parent directory. A CoW reflink reduces the rewrite cost on supporting
+  // filesystems; unsupported clones fall back to the original durable rewrite
+  // without altering audit integrity or atomicity.
+  if (identity === null) {
+    await durableAtomicWrite(filePath, line);
+    return;
+  }
+  await durableAtomicCloneAppend(filePath, line, async () => {
+    const current = existing.length > 0 ? existing : await fs.readFile(filePath, 'utf-8');
+    return current + line;
+  });
+}
+
+async function rememberAppendedAudit(
+  sessionDir: string,
+  filePath: string,
+  state: AuditAppendState,
+  event: AuditEventBody,
+  chained: AuditEvent,
+): Promise<void> {
+  let nextIdentity: string | null = null;
+  try {
+    nextIdentity = await auditFileIdentity(filePath);
+  } catch {
+    auditAppendCaches.delete(sessionDir);
+  }
+  if (nextIdentity === null) return;
+  const nextIds = state.cacheHit ? state.ids : new Set(state.ids);
+  nextIds.add(event.id);
+  rememberAuditAppendCache(sessionDir, {
+    identity: nextIdentity,
+    sessionId: state.sessionId ?? event.flowguardSessionId,
+    ids: nextIds,
+    lastHash: chained.chainHash,
+    lastSequence: state.lastSequence + 1,
+    verifiedAt: state.verifiedAt,
+    appendsSinceVerify: state.appendsSinceVerify + 1,
+  });
+}
+
+async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): Promise<AuditEvent> {
+  await ensureDir(sessionDir);
+  const filePath = auditPath(sessionDir);
+  const identity = await auditFileIdentity(filePath);
+  const loaded = await loadAuditAppendState(sessionDir, filePath, identity, event);
+  if (loaded.kind === 'replay') return loaded.event;
+
+  const chained = buildChainedAuditEvent(event, loaded.state);
+  const line = JSON.stringify(chained) + '\n';
+  await publishAuditLine(filePath, identity, line, loaded.state.existing);
+  await rememberAppendedAudit(sessionDir, filePath, loaded.state, event, chained);
+  return chained;
 }
 
 function parseAuditTrail(raw: string): AuditEvent[] {

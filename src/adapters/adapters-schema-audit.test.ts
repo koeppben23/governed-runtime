@@ -410,6 +410,22 @@ describe('persistence', () => {
       expect(events).toHaveLength(0);
     });
 
+    it('invalidates the in-process append proof when the persisted trail changes', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      const filePath = auditPath(tmpDir);
+      const raw = await fs.readFile(filePath, 'utf-8');
+      const first = JSON.parse(raw.trim()) as Record<string, unknown>;
+      const chainHash = String(first['chainHash']);
+      first['chainHash'] = `${chainHash.charAt(0) === 'a' ? 'b' : 'a'}${chainHash.slice(1)}`;
+      // The extra delimiter changes the file identity and leaves a readable but
+      // cryptographically invalid first record.
+      await fs.writeFile(filePath, `${JSON.stringify(first)}\n\n`, 'utf-8');
+
+      await expect(
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+      ).rejects.toThrow(/invalid audit chain/i);
+    });
+
     // ── CORNER ──────────────────────────────────────────────
 
     it('recovers a dead-process audit lock before appending', async () => {
