@@ -410,19 +410,26 @@ export const status: ToolDefinition = {
 
       // Authority and state are freshly verified above. Compact avoids
       // external probes; explicitly report NOT_VERIFIED rather than "clean".
+      // Full status runs independent probes and drift discovery concurrently
+      // to keep the live projection off the serial latency path.
       const compact = args.compact === true;
-      const runtimeCandidates = compact ? undefined : await resolveRuntimeWithProfileIds(state);
-      const { discovery, discoveryHealth } = await loadDiscoveryStatusContext(wsDir);
-      const discoveryDrift = compact
-        ? notCheckedDiscoveryDriftStatus(
-            'Compact status does not assess fresh repository drift. ' +
-              'Call full flowguard_status or /hydrate to verify current drift.',
-          )
-        : await buildDiscoveryDriftStatus({
-            workspaceDir: wsDir,
-            worktree: state.binding.worktree,
-            fingerprint: state.binding.fingerprint,
-          });
+      const [runtimeCandidates, discoveryContext, discoveryDrift] = await Promise.all([
+        compact ? Promise.resolve(undefined) : resolveRuntimeWithProfileIds(state),
+        loadDiscoveryStatusContext(wsDir),
+        compact
+          ? Promise.resolve(
+              notCheckedDiscoveryDriftStatus(
+                'Compact status does not assess fresh repository drift. ' +
+                  'Call full flowguard_status or /hydrate to verify current drift.',
+              ),
+            )
+          : buildDiscoveryDriftStatus({
+              workspaceDir: wsDir,
+              worktree: state.binding.worktree,
+              fingerprint: state.binding.fingerprint,
+            }),
+      ]);
+      const { discovery, discoveryHealth } = discoveryContext;
       return buildFullStatusResponse({
         state,
         policy,
