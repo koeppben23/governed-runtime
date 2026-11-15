@@ -980,6 +980,10 @@ last read` without a click, while a completion in another session left the
   Every subsequent session security boundary still resolves canonical authority
   independently; no authorization cache or performance speedup is claimed.
 
+- Retire transient session workspace/enforcement state on verified native
+  deletion of delegated or inactive sessions. Preserve the root's canonical
+  audit handler and leave blocked activation and in-flight sessions untouched.
+
 - Retire native delegation dispatch, child and linking caches immediately
   after observed enrollment settles; durable activation records continue to
   reject replay. Bound unsettled dispatch reservations to 256 per governed
