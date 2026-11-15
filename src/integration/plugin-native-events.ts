@@ -36,28 +36,9 @@ export interface EventDispatchDeps {
 export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDeps): Promise<void> {
   const projected = projectOpenCodeEvent(event);
   if (!projected) return;
-  const { adapter, governance, runtimes, sessionRoots, invoke } = deps;
+  const { adapter, invoke } = deps;
   if (event.type === 'session.deleted') {
-    // Deleted sessions cannot be looked up. Only a runtime that previously
-    // admitted this session owns its in-memory cleanup.
-    if (!sessionRoots.has(projected.sessionId)) return;
-    adapter.forgetSession(projected.sessionId);
-    const authority = await resolveGovernanceActivation(governance.store, projected.sessionId);
-    if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
-    if (authority.kind === 'inactive') {
-      // A terminated, no-longer-governed session still owns native metadata.
-      // Without this cleanup, every inactive deletion leaks a sessionRoot.
-      // Blocked authority stays fenced rather than being discarded.
-      sessionRoots.delete(projected.sessionId);
-      deps.forgetFenceSession?.(projected.sessionId);
-      return;
-    }
-    const root = sessionRoots.get(projected.sessionId);
-    const entry = root === undefined ? undefined : runtimes.get(root);
-    if (entry && authority.record.rootSessionId === projected.sessionId)
-      await handlePluginEvent((await entry).runtime, projected.event, projected.sessionId);
-    sessionRoots.delete(projected.sessionId);
-    deps.forgetFenceSession?.(projected.sessionId);
+    await dispatchDeletedSession(projected, deps);
     return;
   }
   if (
@@ -83,6 +64,29 @@ export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDep
             recordValidationProgress(presentation, entry.scope.root.sessionId, progress),
     );
   });
+}
+
+/** A verified deletion is the sole retirement boundary for in-memory routing.
+ * Persisted BLOCKED authority is never discarded by native notifications. */
+async function dispatchDeletedSession(
+  projected: NonNullable<ReturnType<typeof projectOpenCodeEvent>>,
+  deps: EventDispatchDeps,
+): Promise<void> {
+  const { adapter, governance, runtimes, sessionRoots } = deps;
+  // Deleted sessions are no longer queryable. Only previously admitted sessions
+  // own ephemeral metadata, and unknown notifications never authorize cleanup.
+  if (!sessionRoots.has(projected.sessionId)) return;
+  adapter.forgetSession(projected.sessionId);
+  const authority = await resolveGovernanceActivation(governance.store, projected.sessionId);
+  if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
+  if (authority.kind === 'active') {
+    const root = sessionRoots.get(projected.sessionId);
+    const entry = root === undefined ? undefined : runtimes.get(root);
+    if (entry && authority.record.rootSessionId === projected.sessionId)
+      await handlePluginEvent((await entry).runtime, projected.event, projected.sessionId);
+  }
+  sessionRoots.delete(projected.sessionId);
+  deps.forgetFenceSession?.(projected.sessionId);
 }
 
 function record(value: unknown): value is Record<string, unknown> {
