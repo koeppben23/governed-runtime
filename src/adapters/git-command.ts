@@ -74,11 +74,14 @@ export async function gitRaw(
   cwd: string,
   args: string[],
   timeoutMs: number = GIT_COMMAND_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<string> {
+  signal?.throwIfAborted();
   try {
     const { stdout } = await execFileAsync('git', args, {
       cwd,
       timeout: timeoutMs,
+      signal,
       windowsHide: true,
       // maxBuffer: 10MB -- sufficient for large repos with many files
       maxBuffer: 10 * 1024 * 1024,
@@ -91,6 +94,8 @@ export async function gitRaw(
     // parsePorcelainZ. Use `git()` (trimmed) only for single-value commands.
     return stdout;
   } catch (err: unknown) {
+    // Preserve caller cancellation instead of reclassifying it as a git failure.
+    if (signal?.aborted) throw signal.reason;
     if (isEnoent(err)) {
       getAdapterLogger().error('git', 'git executable not found in PATH');
       throw new GitError(
@@ -122,8 +127,9 @@ export async function git(
   cwd: string,
   args: string[],
   timeoutMs: number = GIT_COMMAND_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<string> {
-  return (await gitRaw(cwd, args, timeoutMs)).trim();
+  return (await gitRaw(cwd, args, timeoutMs, signal)).trim();
 }
 
 /** Type-safe timeout check (process killed). */

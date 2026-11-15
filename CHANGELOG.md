@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Bound status drift rediscovery to a single flight per workspace, requesting cancellation
+  on timeout and propagating abort signals through Git subprocesses and file-scanning
+  collectors. Preserve read-only advisory status and fail-closed timeout diagnostics.
+
 - Fail closed on native event-handler saturation without blocking event consumption,
   bounding simultaneous event handler work while preserving synchronous reviewer
   progress observation and session-scoped error fencing.

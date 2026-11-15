@@ -59,13 +59,17 @@ export async function checkDiscoveryDrift(
   worktree: string,
   fingerprint: string,
   io: DiscoveryIoPort,
+  signal?: AbortSignal,
 ): Promise<DriftResult> {
+  signal?.throwIfAborted();
   // Read existing persisted discovery (may not exist for first-run)
   const persisted = await io.readPersistedDiscovery(workspaceDir);
+  signal?.throwIfAborted();
   const persistedDigest = persisted ? computeStableDriftDigest(persisted) : null;
 
   // Re-run discovery (read-only — we never write)
-  const repoSignals = await io.listRepoSignals(worktree);
+  const repoSignals = await io.listRepoSignals(worktree, signal);
+  signal?.throwIfAborted();
   const freshResult = await runDiscovery(
     {
       worktreePath: worktree,
@@ -75,7 +79,10 @@ export async function checkDiscoveryDrift(
       configFilePaths: repoSignals.configFilePaths,
     },
     io,
+    undefined,
+    signal,
   );
+  signal?.throwIfAborted();
 
   const currentDigest = computeStableDriftDigest(freshResult);
   const drifted = persistedDigest !== null && currentDigest !== persistedDigest;

@@ -99,8 +99,8 @@ export async function buildDiscoveryDriftStatus(
 ): Promise<DiscoveryDriftStatusProjection> {
   const check =
     input.check ??
-    ((workspaceDir, worktree, fingerprint, _signal) =>
-      checkDiscoveryDrift(workspaceDir, worktree, fingerprint, DISCOVERY_IO));
+    ((workspaceDir, worktree, fingerprint, signal) =>
+      checkDiscoveryDrift(workspaceDir, worktree, fingerprint, DISCOVERY_IO, signal));
   const timeoutMs = input.timeoutMs ?? DEFAULT_STATUS_DRIFT_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return explicitFailure('unavailable', 'discovery_drift_unavailable', 'Invalid status timeout.');
