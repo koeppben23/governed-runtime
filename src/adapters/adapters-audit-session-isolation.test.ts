@@ -10,6 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { verifyChain } from '../audit/integrity.js';
+import { computeChainHash } from '../audit/types.js';
 import type { AuditEventBody } from '../state/evidence.js';
 import { auditPath } from './persistence.js';
 import {
@@ -77,6 +78,35 @@ describe('canonical audit session identity binding', () => {
       appendAuditEvent(dir, { ...original, flowguardSessionId: FOREIGN_ID }),
     ).rejects.toMatchObject({ code: 'CHAIN_BREAK' });
     expect(await fs.readFile(file, 'utf8')).toBe(before);
+  });
+
+  it('EDGE: refuses previously mixed-session history with valid positional hashes', async () => {
+    const foreignDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-foreign-'));
+    try {
+      const first = await appendAuditEvent(dir, event());
+      const second = await appendAuditEvent(foreignDir, event(FOREIGN_ID));
+      const { chainHash: _originalHash, ...rest } = second;
+      const rethreaded = {
+        ...rest,
+        prevHash: first.chainHash,
+        auditSequence: 2,
+      };
+      const forged = {
+        ...rethreaded,
+        chainHash: computeChainHash(first.chainHash, rethreaded),
+      };
+      const file = auditPath(dir);
+      const mixed = [JSON.stringify(first), JSON.stringify(forged)].join('\n') + '\n';
+      await fs.writeFile(file, mixed, 'utf8');
+
+      expect(verifyChain([first, forged]).valid).toBe(false);
+      await expect(appendAuditEvent(dir, event())).rejects.toMatchObject({
+        code: 'CHAIN_BREAK',
+      });
+      expect(await fs.readFile(file, 'utf8')).toBe(mixed);
+    } finally {
+      await fs.rm(foreignDir, { recursive: true, force: true });
+    }
   });
 
   it('EDGE: caller-held audit lock enforces the same session isolation', async () => {
