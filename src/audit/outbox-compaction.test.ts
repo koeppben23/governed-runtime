@@ -44,7 +44,6 @@ async function prepared(count: number, unresolved = 0) {
     await appendAuditEvent(dir, event);
     operations.push({
       kind: 'state_write',
-      operationId: id,
       ...detail,
       auditEventDigest: computeCanonicalEventDigest(event),
       stateWrite: { phase: 'PLAN', at: AT },
@@ -96,7 +95,8 @@ describe('verified outbox compaction', () => {
           i === 0 ? { ...op, auditEventDigest: 'f'.repeat(64) } : op,
         ),
       };
-      expect(() => compactVerifiedOutbox(wrong, await readAuditTrail(dir))).toThrow();
+      const events = await readAuditTrail(dir);
+      expect(() => compactVerifiedOutbox(wrong, events)).toThrow();
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
