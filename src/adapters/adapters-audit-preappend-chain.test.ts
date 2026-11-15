@@ -44,7 +44,7 @@ describe('fail-closed audit append with a damaged persisted chain', () => {
     const file = auditPath(tmpDir);
     const original = await fs.readFile(file, 'utf-8');
     const event = JSON.parse(original.trim()) as Record<string, unknown>;
-    event.occurredAt = new Date(FIXED_TIME).toISOString().replace('00.000Z', '01.000Z');
+    event.occurredAt = new Date(Date.parse(FIXED_TIME) + 1_000).toISOString();
     const tampered = JSON.stringify(event) + '\n';
     await fs.writeFile(file, tampered, 'utf-8');
 
