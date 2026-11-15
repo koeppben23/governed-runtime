@@ -1,5 +1,5 @@
 /**
- * @module integration/audit-reconcile-index
+ * @module audit/reconcile-index
  * @description Bounded index of already committed operations in one audit snapshot.
  *
  * A live reconciliation may have many operations but substantially more

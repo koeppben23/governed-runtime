@@ -979,6 +979,10 @@ last read` without a click, while a completion in another session left the
   batch rather than once per pending operation. Index only relevant operation
   identities, retaining fail-closed digest comparison and writer idempotency.
 
+- Advance the reconciliation audit-chain cursor only after a durable append
+  succeeds, using the writer-tracked persisted chain tip rather than an
+  uncommitted provisional event hash.
+
 - Verify each existing canonical audit-chain.v3 record's sequence, hash
   linkage, chain hash and semantic digest under the append lock before
   extending the trail. A previously tampered or reordered chain now

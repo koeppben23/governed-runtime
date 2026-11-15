@@ -12,13 +12,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import {
-  appendAuditEvent,
-  readAuditTrail,
-} from '../../dist/adapters/persistence-audit.js';
-import {
-  indexCommittedOperationAudits,
-} from '../../dist/integration/audit-reconcile-index.js';
+import * as auditPersistence from '../../dist/adapters/persistence-audit.js';
+import * as auditIndex from '../../dist/audit/reconcile-index.js';
 
 const SESSION_ID = randomUUID();
 const QUERIES = 20;
@@ -40,7 +35,7 @@ async function duration(task, rounds = 7) {
 
 async function legacyLookup(dir, wanted) {
   for (const id of wanted) {
-    const audit = await readAuditTrail(dir);
+    const audit = await auditPersistence.readAuditTrail(dir);
     const match = audit.find(
       (entry) => entry.id === id && entry.detail.operationId === id,
     );
@@ -49,8 +44,8 @@ async function legacyLookup(dir, wanted) {
 }
 
 async function snapshotLookup(dir, wanted) {
-  const events = await readAuditTrail(dir);
-  const byId = indexCommittedOperationAudits(events, new Set(wanted));
+  const events = await auditPersistence.readAuditTrail(dir);
+  const byId = auditIndex.indexCommittedOperationAudits(events, new Set(wanted));
   for (const id of wanted) {
     if (!byId.has(id)) throw new Error(`Missing indexed event ${id}`);
   }
@@ -65,7 +60,7 @@ for (const count of [100, 500, 1_000]) {
     for (let i = 0; i < count; i++) {
       const id = randomUUID();
       ids.push(id);
-      await appendAuditEvent(dir, {
+      await auditPersistence.appendAuditEvent(dir, {
         id,
         flowguardSessionId: SESSION_ID,
         hostSessionId: 'ses_bench',
@@ -89,13 +84,15 @@ for (const count of [100, 500, 1_000]) {
     const before = await duration(() => legacyLookup(dir, wanted));
     const after = await duration(() => snapshotLookup(dir, wanted));
     const speedup = before / after;
-    console.log(
-      `${count}\t${before.toFixed(2)} ms\t${after.toFixed(2)} ms\t${speedup.toFixed(2)}x`,
-    );
+    const row = [
+      String(count),
+      `${before.toFixed(2)} ms`,
+      `${after.toFixed(2)} ms`,
+      `${speedup.toFixed(2)}x`,
+    ];
+    console.log(row.join('\t'));
     if (count === 1_000 && speedup < 3) {
-      console.error(
-        'NOT_VERIFIED: factor-3 improvement not reached for 1,000 events',
-      );
+      console.error('NOT_VERIFIED: fewer than 3x faster at 1,000 events');
       process.exitCode = 1;
     }
   } finally {

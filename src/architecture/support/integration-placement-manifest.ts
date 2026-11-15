@@ -340,7 +340,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/archive-preflight.ts', owner: 'root-authority' },
   { file: 'integration/artifacts/madr-writer.ts', owner: 'artifacts' },
   { file: 'integration/audit-outbox.ts', owner: 'root-authority' },
-  { file: 'integration/audit-reconcile-index.ts', owner: 'root-composition' },
   { file: 'integration/blocked-result.ts', owner: 'root-authority' },
   { file: 'integration/discovery/discovery-drift-status.ts', owner: 'discovery' },
   { file: 'integration/discovery/discovery-health-audit.ts', owner: 'discovery' },

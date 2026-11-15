@@ -32,7 +32,7 @@ import { resolveAuditContext, type AuditContext } from './plugin-audit-context.j
 import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { computeStateDigest, mutateStateWithAuditOperations } from './audit-outbox.js';
-import { indexCommittedOperationAudits } from './audit-reconcile-index.js';
+import { indexCommittedOperationAudits } from '../audit/reconcile-index.js';
 
 /** Closure dependencies injected from plugin.ts. */
 export interface AuditDeps {
@@ -213,17 +213,11 @@ export async function emitTransitionAudits(input: {
     count: operations.length,
   });
   assertLatestOperationMatchesState(state, operations);
-  // Read the durable audit trail only once per drain. The append authority
-  // checks idempotency and chain integrity under its own lock, so an event
-  // committed after this snapshot is still deduplicated safely by the writer.
-  // Index only the pending IDs to bound extra memory to the outbox size.
-  const operationIds = new Set(
-    operations.map((operation) => operation.operationId),
-  );
-  const existingAudits = indexCommittedOperationAudits(
-    await readAuditTrail(ctx.sessDir),
-    operationIds,
-  );
+  // One snapshot per batch. The writer still checks idempotency and integrity
+  // under its lock for audit events committed after this read.
+  const operationIds = new Set(operations.map((op) => op.operationId));
+  const snapshot = await readAuditTrail(ctx.sessDir);
+  const existingAudits = indexCommittedOperationAudits(snapshot, operationIds);
   for (const operation of operations) {
     const body = buildOperationAuditBody(state, operation, ctx.prevHash);
     const expectedDigest = computeCanonicalEventDigest(body);
@@ -233,11 +227,8 @@ export async function emitTransitionAudits(input: {
         `Audit operation ${operation.operationId} does not match its committed event digest`,
       );
     }
-    const existing = findOperationAudit(
-      state,
-      operation,
-      existingAudits.get(operation.operationId),
-    );
+    const committed = existingAudits.get(operation.operationId);
+    const existing = findOperationAudit(state, operation, committed);
     if (existing) {
       await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
       continue;
@@ -374,8 +365,11 @@ export async function emitAuditBodyWithEvidence(input: {
       'Finalized audit event is missing its chain hash',
     );
   }
-  ctx.prevHash = chainHash;
+  // Only a durable append advances this reconciliation context. The writer
+  // re-stamps the position and timestamp under its lock, so the finalized
+  // in-memory hash is provisional. Read the writer's tracked persisted tip.
   await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
+  ctx.prevHash = await deps.initChain(ctx.sessDir, sessionId);
 }
 
 /**
