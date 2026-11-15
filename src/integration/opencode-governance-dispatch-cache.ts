@@ -32,7 +32,9 @@ export function pendingDispatchCountInMemory(
 ): number {
   let count = 0;
   for (const [key, dispatch] of memory.dispatches) {
-    if (dispatch.rootSessionId === rootId && !memory.settledReviewerDispatches.has(key)) count++;
+    if (dispatch.rootSessionId === rootId && !memory.settledReviewerDispatches.has(key)) {
+      count++;
+    }
   }
   return count;
 }
