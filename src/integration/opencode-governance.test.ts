@@ -365,6 +365,22 @@ describe('native governance delegation correlation', () => {
     expect(host.activation.values.has(key)).toBe(false);
   });
 
+  it('does not count settled reviewer identities as pending root reservations', async () => {
+    const internals = governance as unknown as {
+      dispatches: Map<string, { rootSessionId: string; agent: string }>;
+      settledReviewerDispatches: Set<string>;
+    };
+    for (let i = 0; i < 256; i++) {
+      const key = `settled-reviewer-${i}`;
+      internals.dispatches.set(key, { rootSessionId: 'root', agent: 'flowguard-reviewer' });
+      internals.settledReviewerDispatches.add(key);
+    }
+    await authorize(dispatch('after-settled-reviewers'));
+    expect(
+      host.activation.values.has(governanceDelegationKey('root', 'message', 'after-settled-reviewers')),
+    ).toBe(true);
+  });
+
   it('deduplicates repeated native progress for the same exact call', async () => {
     await authorize();
     const first = governance.observeProgress(receipt());
