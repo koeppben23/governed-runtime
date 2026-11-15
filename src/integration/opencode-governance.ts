@@ -30,6 +30,7 @@ import type { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { buildEnforcementError } from './blocked-result.js';
 import {
   hasPendingDispatchInMemory,
+  pendingDispatchCountInMemory,
   pendingContinuationInMemory,
   retireSettledDispatch,
 } from './opencode-governance-dispatch-cache.js';
@@ -392,14 +393,8 @@ export class OpenCodeGovernance {
       )
         throw this.error('The child already has an unsettled continuation dispatch.');
       await this.validateRequestedChild(dispatch);
-      // The root lock serializes pending reservations. Enrolled reviewer
-      // identities remain in memory for execution authority, but are settled
-      // and must not exhaust capacity reserved for *pending* dispatches.
-      const pendingForRoot = [...this.dispatches.entries()].filter(
-        ([key, item]) =>
-          item.rootSessionId === scope.root.sessionId &&
-          !this.settledReviewerDispatches.has(key),
-      ).length;
+      // The root lock serializes pending reservations.
+      const pendingForRoot = pendingDispatchCountInMemory(this.dispatchMemory, scope.root.sessionId);
       if (pendingForRoot >= 256)
         throw this.error('Native dispatch capacity exceeded for the ACTIVE root session.');
       if (dispatch.agent === REVIEWER_SUBAGENT_TYPE) {
