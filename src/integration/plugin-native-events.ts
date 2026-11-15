@@ -42,7 +42,13 @@ export async function dispatchEvent(event: OpenCodeEvent, deps: EventDispatchDep
     adapter.forgetSession(projected.sessionId);
     const authority = await resolveGovernanceActivation(governance.store, projected.sessionId);
     if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
-    if (authority.kind !== 'active') return;
+    if (authority.kind === 'inactive') {
+      // A terminated, no-longer-governed session still owns native metadata.
+      // Without this cleanup, every inactive deletion leaks a sessionRoot.
+      // Blocked authority stays fenced rather than being discarded.
+      sessionRoots.delete(projected.sessionId);
+      return;
+    }
     const root = sessionRoots.get(projected.sessionId);
     const entry = root === undefined ? undefined : runtimes.get(root);
     if (entry && authority.record.rootSessionId === projected.sessionId)

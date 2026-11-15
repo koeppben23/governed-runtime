@@ -253,6 +253,42 @@ describe('native success to canonical system-work composition', () => {
       controller.abort();
     },
   );
+  it('releases native session routing metadata on an inactive deletion', async () => {
+    const { host } = await fixture();
+    const controller = new AbortController();
+    const adapter = new OpenCodeHostAdapter(host.ctx, controller.signal);
+    const governance = new OpenCodeGovernance(host.ctx, adapter, controller.signal);
+    vi.spyOn(activation, 'resolveGovernanceActivation').mockResolvedValue({
+      kind: 'inactive',
+      record: null,
+    });
+    const sessionRoots = new Map([['root', 'worktree']]);
+    const runtimeHandler = vi.spyOn(afterhooks, 'handlePluginEvent');
+    const forget = vi.spyOn(adapter, 'forgetSession');
+    const deps = {
+      adapter,
+      governance,
+      sessionRoots,
+      runtimes: new Map(),
+      invoke: async () => undefined,
+    };
+    const event = {
+      type: 'session.deleted' as const,
+      id: 'inactive-deleted',
+      created: 101,
+      durable: { aggregateID: 'root', seq: 2, version: 2 as const },
+      data: { sessionID: 'root' },
+    };
+
+    await dispatchEvent(event, deps);
+    await dispatchEvent(event, deps);
+
+    expect(forget).toHaveBeenCalledExactlyOnceWith('root');
+    expect(sessionRoots.size).toBe(0);
+    expect(runtimeHandler).not.toHaveBeenCalled();
+    controller.abort();
+  });
+
   it('routes one admitted root notification through the timestamped canonical resume path', async () => {
     const { host, resume, claim } = await fixture();
     host.emit(success());
