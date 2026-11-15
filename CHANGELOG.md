@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Bind every canonical audit append and idempotent retry to the persisted
+  FlowGuard session identity. Reject foreign-session events and previously
+  mixed-session histories with CHAIN_BREAK before changing audit bytes.
+
 - Use a same-directory copy-on-write clone to prepare the next canonical
   audit.jsonl version when the filesystem supports reflinks, then append,
   fsync and atomically rename. Keep the fully durable rewrite on filesystems

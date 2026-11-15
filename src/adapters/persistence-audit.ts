@@ -50,6 +50,20 @@ class AuditChainError extends Error {
   }
 }
 
+/** A single canonical JSONL trail may never mix FlowGuard session identities. */
+function assertAuditSessionIdentity(
+  expected: string | undefined,
+  actual: string,
+  sequence: number,
+): void {
+  if (expected !== undefined && actual !== expected) {
+    throw new AuditChainError(
+      `Refusing audit event at sequence ${sequence}: flowguardSessionId ` +
+        `mismatch, expected "${expected}", got "${actual}"`,
+    );
+  }
+}
+
 import { acquireNamedWriteLock } from './persistence-lock.js';
 
 const AUDIT_LOCK_FILE = 'audit.jsonl.lock';
@@ -182,6 +196,7 @@ async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): P
   // is still intact. Never extend a modified or reordered chain (including
   // an idempotent retry) and thereby give corrupted evidence a fresh tip.
   let priorHash: string = GENESIS_HASH;
+  const trailSessionId = existingEvents[0]?.flowguardSessionId;
   for (const [index, prior] of existingEvents.entries()) {
     const verified = verifyEvent(prior, priorHash, index);
     if (!verified.valid) {
@@ -189,8 +204,11 @@ async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): P
         `Refusing append to invalid audit chain at sequence ${index + 1}: ${verified.reason ?? 'integrity failure'}`,
       );
     }
+    assertAuditSessionIdentity(trailSessionId, prior.flowguardSessionId, index + 1);
     priorHash = prior.chainHash;
   }
+  // Check before the idempotent replay path: a foreign event may reuse an ID.
+  assertAuditSessionIdentity(trailSessionId, event.flowguardSessionId, existingEvents.length + 1);
 
   // Exactly-once under the audit write lock: an event id is a commit
   // identity. A crash between append and acknowledgement may re-deliver the
