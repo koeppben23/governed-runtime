@@ -254,7 +254,7 @@ function isDirectorySyncUnsupported(err: unknown): boolean {
   return code === 'EISDIR' || code === 'EINVAL';
 }
 
-async function syncDirectory(dir: string): Promise<void> {
+export async function syncDirectory(dir: string): Promise<void> {
   let handle: Awaited<ReturnType<typeof fs.open>> | null = null;
   // Read-only open of an EXISTING directory to fsync the rename entry. No
   // file is created; the explicit 0o600 mode is ignored for an existing
