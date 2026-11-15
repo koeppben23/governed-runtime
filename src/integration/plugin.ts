@@ -329,7 +329,7 @@ async function loadRuntime(
   sessionRoots.set(scope.sessionId, root);
   let entry = runtimes.get(root);
   if (!entry) {
-    entry = createSessionRuntime(adapter, root);
+    entry = createSessionRuntime(adapter, root, authority.fingerprint);
     runtimes.set(root, entry);
     const initializing = entry;
     void initializing.catch(() => {
@@ -364,17 +364,24 @@ async function disposeResources(
     throw new PluginCleanupError(errors, 'OpenCode V2 plugin cleanup was incomplete.');
 }
 
+function createDiagnosticWorkspace(root: string, fingerprint: string) {
+  return createWorkspace({
+    auditWorktree: root,
+    diagnosticBootstrapFingerprint: fingerprint,
+  });
+}
+
 async function createSessionRuntime(
   adapter: OpenCodeHostAdapter,
   root: string,
+  verifiedFingerprint: string,
 ): Promise<RuntimeEntry> {
   if (!isUsableWorktree(root))
     throw buildEnforcementError(
       'PLUGIN_ENFORCEMENT_UNAVAILABLE',
       'The host session has no usable worktree.',
     );
-  const ws = createWorkspace({ auditWorktree: root });
-  await ws.resolveFingerprint();
+  const ws = createDiagnosticWorkspace(root, verifiedFingerprint);
   const { log, config, configReadError, disposeLogging } = await createPluginLogger(
     undefined,
     ws.cachedWsDir,
@@ -383,9 +390,7 @@ async function createSessionRuntime(
     repoConfigPath(root),
   );
   try {
-    // Logging may fall back to defaults; governed execution may not. An
-    // unreadable or invalid flowguard.json blocks every ACTIVE operation of this
-    // worktree instead of silently running with default policy or reviewer budgets.
+    // Invalid config must block ACTIVE work even when logging can use defaults.
     if (configReadError !== undefined)
       throw buildEnforcementError(
         'CONFIG_INVALID',

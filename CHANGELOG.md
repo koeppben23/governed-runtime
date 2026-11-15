@@ -975,6 +975,11 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Reuse the fingerprint already verified during a V2 runtime load for its
+  diagnostic/logging bootstrap instead of running a redundant Git probe.
+  Every subsequent session security boundary still resolves canonical authority
+  independently; no authorization cache or performance speedup is claimed.
+
 - Retire transient session workspace/enforcement state on verified native
   deletion of delegated or inactive sessions. Preserve the root's canonical
   audit handler and leave blocked activation and in-flight sessions untouched.
