@@ -29,6 +29,11 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { buildEnforcementError } from './blocked-result.js';
 import {
+  hasPendingDispatchInMemory,
+  pendingContinuationInMemory,
+  retireSettledDispatch,
+} from './opencode-governance-dispatch-cache.js';
+import {
   endRootActivation,
   type EndRootPrepare,
   type EndRootResult,
@@ -75,6 +80,12 @@ export class OpenCodeGovernance {
   private readonly dispatchChildren = new Map<string, string>();
   /** Enrolled reviewer children retain their exact in-process dispatch binding. */
   private readonly settledReviewerDispatches = new Set<string>();
+  private readonly dispatchMemory = {
+    dispatches: this.dispatches,
+    dispatchChildren: this.dispatchChildren,
+    linking: this.linking,
+    settledReviewerDispatches: this.settledReviewerDispatches,
+  };
   private readonly waiters = new Map<string, Set<EnrollmentWaiter>>();
 
   constructor(
@@ -228,7 +239,7 @@ export class OpenCodeGovernance {
     const parent = await this.resolve(parentId, ancestors, waitForEnrollment);
     if (parent.kind !== 'active') return parent;
     if (!waitForEnrollment) return this.block('The child has no committed enrollment.');
-    if (!this.hasPendingDispatch(parentId))
+    if (!hasPendingDispatchInMemory(this.dispatchMemory, parentId))
       return this.block(
         'Native parent lineage exists, but this child was not authorized by a governed subagent dispatch.',
       );
@@ -245,7 +256,7 @@ export class OpenCodeGovernance {
     ancestors: ReadonlySet<string>,
     waitForEnrollment: boolean,
   ): Promise<NativeGovernanceResolution> {
-    const continuation = this.pendingContinuation(session.sessionId);
+    const continuation = pendingContinuationInMemory(this.dispatchMemory, session.sessionId);
     if (!continuation) return this.validateActive(session, record, ancestors, waitForEnrollment);
     // A root-lock holder must not wait for an enrollment that needs that lock.
     if (!waitForEnrollment) return this.block('A continuation receipt is still pending.');
@@ -377,7 +388,7 @@ export class OpenCodeGovernance {
         throw this.error('A native subagent call identity cannot be replayed.');
       if (
         dispatch.requestedChildSessionId !== null &&
-        this.pendingContinuation(dispatch.requestedChildSessionId)
+        pendingContinuationInMemory(this.dispatchMemory, dispatch.requestedChildSessionId)
       )
         throw this.error('The child already has an unsettled continuation dispatch.');
       await this.validateRequestedChild(dispatch);
@@ -452,7 +463,7 @@ export class OpenCodeGovernance {
       this.linking.set(childId, linking);
       const finish = (error?: unknown): void => {
         this.settle(childId, dispatchKey, error);
-        this.retireDispatch(dispatchKey, childId, error === undefined);
+        retireSettledDispatch(this.dispatchMemory, dispatchKey, childId, error === undefined);
       };
       void operation.then(() => finish(), finish);
     }
@@ -559,21 +570,6 @@ export class OpenCodeGovernance {
       throw this.error('Continuation attempted to reuse a foreign or stale enrolled child.');
   }
 
-  private hasPendingDispatch(parentId: string): boolean {
-    return [...this.dispatches.entries()].some(
-      ([key, dispatch]) =>
-        dispatch.sessionId === parentId && !this.settledReviewerDispatches.has(key),
-    );
-  }
-
-  private pendingContinuation(childId: string): string | undefined {
-    return [...this.dispatches.entries()].find(
-      ([key, dispatch]) =>
-        dispatch.requestedChildSessionId === childId &&
-        !this.settledReviewerDispatches.has(key),
-    )?.[0];
-  }
-
   private async awaitEnrollment(
     childId: string,
     rootId: string,
@@ -604,20 +600,6 @@ export class OpenCodeGovernance {
       group.add(waiter);
       this.waiters.set(childId, group);
     });
-  }
-
-  /** Durable replay prevention remains in the activation store. Reviewer
-   * enrollment is a live authority binding, not a disposable dispatch cache. */
-  private retireDispatch(dispatchKey: string, childId: string, enrolled: boolean): void {
-    const dispatch = this.dispatches.get(dispatchKey);
-    if (enrolled && dispatch?.agent === REVIEWER_SUBAGENT_TYPE) {
-      this.settledReviewerDispatches.add(dispatchKey);
-    } else {
-      this.dispatches.delete(dispatchKey);
-      this.settledReviewerDispatches.delete(dispatchKey);
-    }
-    this.dispatchChildren.delete(dispatchKey);
-    if (this.linking.get(childId)?.dispatchKey === dispatchKey) this.linking.delete(childId);
   }
 
   private settle(childId: string, dispatchKey: string, error?: unknown): void {
