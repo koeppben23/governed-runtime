@@ -975,6 +975,10 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Reject an unterminated canonical JSONL audit record before appending the next
+  event, preserving the original evidence bytes and failing closed with
+  AUDIT_ENVELOPE_INVALID instead of concatenating two JSON objects.
+
 - Bound status drift rediscovery to a single flight per workspace, requesting cancellation
   on timeout and propagating abort signals through Git subprocesses and file-scanning
   collectors. Preserve read-only advisory status and fail-closed timeout diagnostics.
