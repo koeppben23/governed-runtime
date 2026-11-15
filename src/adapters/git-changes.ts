@@ -242,7 +242,10 @@ export async function hashWorktreeFiles(
  * The profile detect() functions only check for specific filenames, so even
  * large arrays are fast (linear scan with early exit).
  */
-export async function listRepoSignals(worktree: string, signal?: AbortSignal): Promise<{
+export async function listRepoSignals(
+  worktree: string,
+  signal?: AbortSignal,
+): Promise<{
   files: string[];
   packageFilePaths: string[];
   configFilePaths: string[];

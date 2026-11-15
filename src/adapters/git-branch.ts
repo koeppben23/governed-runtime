@@ -94,9 +94,17 @@ function isMissingHeadFailure(message: string): boolean {
  * Returns the branch name only (e.g., "main"), not the full ref.
  * Returns null if the default branch cannot be determined.
  */
-export async function defaultBranch(worktree: string, signal?: AbortSignal): Promise<string | null> {
+export async function defaultBranch(
+  worktree: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   try {
-    const ref = await git(worktree, ['symbolic-ref', 'refs/remotes/origin/HEAD'], undefined, signal);
+    const ref = await git(
+      worktree,
+      ['symbolic-ref', 'refs/remotes/origin/HEAD'],
+      undefined,
+      signal,
+    );
     // ref is "refs/remotes/origin/main" — extract last segment
     const parts = ref.split('/');
     return parts[parts.length - 1] || null;

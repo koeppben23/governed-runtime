@@ -19,6 +19,10 @@ import { runDiscovery } from './orchestrator.js';
 import type { DiscoveryIoPort } from './io-port.js';
 import type { CollectorDiagnostic } from './types.js';
 
+function throwIfCancelled(signal?: AbortSignal): void {
+  signal?.throwIfAborted();
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Result of a read-only drift comparison. */
@@ -61,15 +65,15 @@ export async function checkDiscoveryDrift(
   io: DiscoveryIoPort,
   signal?: AbortSignal,
 ): Promise<DriftResult> {
-  signal?.throwIfAborted();
+  throwIfCancelled(signal);
   // Read existing persisted discovery (may not exist for first-run)
   const persisted = await io.readPersistedDiscovery(workspaceDir);
-  signal?.throwIfAborted();
+  throwIfCancelled(signal);
   const persistedDigest = persisted ? computeStableDriftDigest(persisted) : null;
 
   // Re-run discovery (read-only — we never write)
   const repoSignals = await io.listRepoSignals(worktree, signal);
-  signal?.throwIfAborted();
+  throwIfCancelled(signal);
   const freshResult = await runDiscovery(
     {
       worktreePath: worktree,
@@ -82,7 +86,7 @@ export async function checkDiscoveryDrift(
     undefined,
     signal,
   );
-  signal?.throwIfAborted();
+  throwIfCancelled(signal);
 
   const currentDigest = computeStableDriftDigest(freshResult);
   const drifted = persistedDigest !== null && currentDigest !== persistedDigest;

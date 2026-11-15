@@ -24,5 +24,5 @@ export const DISCOVERY_IO: DiscoveryIoPort = {
   defaultBranch: (worktree, signal) => defaultBranch(worktree, signal),
   headCommit: (worktree, signal) => headCommit(worktree, signal),
   isClean: (worktree, signal) => isClean(worktree, signal),
-  remoteOriginUrl: (worktree, signal) => remoteOriginUrl(worktree, undefined, signal),
+  remoteOriginUrl: (worktree, timeoutMs, signal) => remoteOriginUrl(worktree, timeoutMs, signal),
 };

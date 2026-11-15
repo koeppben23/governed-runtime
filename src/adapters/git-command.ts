@@ -37,6 +37,10 @@ const execFileAsync = promisify(execFile);
 /** Default timeout for git commands (ms). 5 seconds is generous for local ops. */
 export const GIT_COMMAND_TIMEOUT_MS = 5_000;
 
+function throwIfCancelled(signal?: AbortSignal): void {
+  signal?.throwIfAborted();
+}
+
 /**
  * Typed git error.
  * Codes:
@@ -76,7 +80,7 @@ export async function gitRaw(
   timeoutMs: number = GIT_COMMAND_TIMEOUT_MS,
   signal?: AbortSignal,
 ): Promise<string> {
-  signal?.throwIfAborted();
+  throwIfCancelled(signal);
   try {
     const { stdout } = await execFileAsync('git', args, {
       cwd,
@@ -95,7 +99,7 @@ export async function gitRaw(
     return stdout;
   } catch (err: unknown) {
     // Preserve caller cancellation instead of reclassifying it as a git failure.
-    if (signal?.aborted) throw signal.reason;
+    throwIfCancelled(signal);
     if (isEnoent(err)) {
       getAdapterLogger().error('git', 'git executable not found in PATH');
       throw new GitError(

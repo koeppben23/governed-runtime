@@ -35,7 +35,13 @@ describe('read-only discovery drift cancellation', () => {
       }
     });
     const io = makeIo(listRepoSignals);
-    const pending = checkDiscoveryDrift('/workspace', '/repo', 'a'.repeat(24), io, controller.signal);
+    const pending = checkDiscoveryDrift(
+      '/workspace',
+      '/repo',
+      'a'.repeat(24),
+      io,
+      controller.signal,
+    );
     await vi.waitFor(() => expect(active).toBe(1));
     controller.abort(new Error('cancelled'));
     await expect(pending).rejects.toThrow('cancelled');

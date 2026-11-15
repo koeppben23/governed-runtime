@@ -284,10 +284,7 @@ function readErrorCode(err: unknown): string {
   return '';
 }
 
-async function readSourceCandidate(
-  fullPath: string,
-  signal?: AbortSignal,
-): Promise<CandidateRead> {
+async function readSourceCandidate(fullPath: string, signal?: AbortSignal): Promise<CandidateRead> {
   signal?.throwIfAborted();
   let content: string;
   try {

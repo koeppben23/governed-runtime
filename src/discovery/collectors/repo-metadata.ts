@@ -35,7 +35,7 @@ export async function collectRepoMetadata(
       io.defaultBranch(input.worktreePath, input.signal),
       io.headCommit(input.worktreePath, input.signal),
       io.isClean(input.worktreePath, input.signal),
-      io.remoteOriginUrl(input.worktreePath, input.signal),
+      io.remoteOriginUrl(input.worktreePath, undefined, input.signal),
     ]);
 
     return {

@@ -25,5 +25,9 @@ export interface DiscoveryIoPort {
   defaultBranch(worktree: string, signal?: AbortSignal): Promise<string | null>;
   headCommit(worktree: string, signal?: AbortSignal): Promise<string | null>;
   isClean(worktree: string, signal?: AbortSignal): Promise<boolean>;
-  remoteOriginUrl(worktree: string, signal?: AbortSignal): Promise<string | null>;
+  remoteOriginUrl(
+    worktree: string,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<string | null>;
 }
