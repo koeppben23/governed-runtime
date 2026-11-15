@@ -44,14 +44,12 @@ try {
   const probe = join(dir, 'reflink-probe');
   let supported = false;
   try {
-    await fs.copyFile(
-      clonePath,
-      probe,
-      constants.COPYFILE_FICLONE_FORCE | constants.COPYFILE_EXCL,
-    );
+    const cloneFlags = constants.COPYFILE_FICLONE_FORCE | constants.COPYFILE_EXCL;
+    await fs.copyFile(clonePath, probe, cloneFlags);
     supported = true;
   } catch (error) {
-    console.log(`NOT_VERIFIED: filesystem has no forced CoW clone: ${error.code ?? error}`);
+    const reason = error instanceof Error ? error.message : String(error);
+    console.log(`NOT_VERIFIED: filesystem has no forced CoW clone: ${reason}`);
   } finally {
     await fs.rm(probe, { force: true });
   }
@@ -66,7 +64,9 @@ try {
       clonedContent += line;
       await auditClone.durableAtomicCloneAppend(clonePath, line, clonedContent);
     });
-    if ((await fs.readFile(baselinePath, 'utf8')) !== (await fs.readFile(clonePath, 'utf8'))) {
+    const baselineBytes = await fs.readFile(baselinePath);
+    const cloneBytes = await fs.readFile(clonePath);
+    if (!baselineBytes.equals(cloneBytes)) {
       throw new Error('Clone benchmark output differs from durable rewrite output');
     }
     const speedup = baselineMs / optimizedMs;
