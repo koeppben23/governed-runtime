@@ -57,6 +57,5 @@ export function retireSettledDispatch(
     memory.settledReviewerDispatches.delete(dispatchKey);
   }
   memory.dispatchChildren.delete(dispatchKey);
-  if (memory.linking.get(childId)?.dispatchKey === dispatchKey)
-    memory.linking.delete(childId);
+  if (memory.linking.get(childId)?.dispatchKey === dispatchKey) memory.linking.delete(childId);
 }

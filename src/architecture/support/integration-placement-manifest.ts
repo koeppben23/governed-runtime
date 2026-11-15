@@ -374,6 +374,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/installed-commands.ts', owner: 'root-host-runtime' },
   { file: 'integration/opencode-host-adapter.ts', owner: 'root-host-runtime' },
   { file: 'integration/opencode-governance.ts', owner: 'root-host-runtime' },
+  { file: 'integration/opencode-governance-dispatch-cache.ts', owner: 'root-host-runtime' },
   { file: 'integration/opencode-governance-rpc.ts', owner: 'root-host-runtime' },
   { file: 'integration/risk-path-extraction.ts', owner: 'root-authority' },
   { file: 'integration/phase-tool-gate.ts', owner: 'root-authority' },
