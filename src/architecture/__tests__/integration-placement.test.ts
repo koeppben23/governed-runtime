@@ -152,9 +152,11 @@ describe('integration placement authority', () => {
       rootFiles.filter((entry) => entry.owner === owner).length;
 
     expect(countByOwner('root-composition')).toBe(38);
-    expect(countByOwner('root-host-runtime')).toBe(8);
+    // The extracted native-dispatch cache is explicitly part of host runtime,
+    // not an unchecked extra module or an owner-free budget exception.
+    expect(countByOwner('root-host-runtime')).toBe(9);
     expect(countByOwner('root-authority')).toBe(15);
-    expect(rootFiles.length).toBe(61);
+    expect(rootFiles.length).toBe(62);
   });
 
   it('freezes the host/runtime boundary set exactly', () => {
@@ -168,6 +170,7 @@ describe('integration placement authority', () => {
       'integration/gui-rpc-client-contract.ts',
       'integration/host-mutation-observation.ts',
       'integration/installed-commands.ts',
+      'integration/opencode-governance-dispatch-cache.ts',
       'integration/opencode-governance-rpc.ts',
       'integration/opencode-governance.ts',
       'integration/opencode-host-adapter.ts',

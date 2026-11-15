@@ -333,6 +333,53 @@ describe('native governance delegation correlation', () => {
     },
   );
 
+  it('releases settled dispatch caches while retaining durable anti-replay authority', async () => {
+    await authorize();
+    await governance.observeProgress(receipt());
+    const internals = governance as unknown as {
+      dispatches: Map<string, unknown>;
+      dispatchChildren: Map<string, unknown>;
+      linking: Map<string, unknown>;
+    };
+    expect(internals.dispatches.size).toBe(0);
+    expect(internals.dispatchChildren.size).toBe(0);
+    expect(internals.linking.size).toBe(0);
+    expect(governance.observeProgress(receipt())).toBeUndefined();
+    await expect(authorize()).rejects.toThrow('cannot be replayed');
+    expect(await resolveGovernanceActivation(host.activation.store, 'child')).toMatchObject({
+      kind: 'active',
+    });
+  });
+
+  it('refuses native dispatch growth beyond the per-root admission limit', async () => {
+    const internals = governance as unknown as {
+      dispatches: Map<string, { rootSessionId: string }>;
+    };
+    for (let i = 0; i < 256; i++) {
+      internals.dispatches.set(`pending-${i}`, { rootSessionId: 'root' });
+    }
+    await expect(authorize(dispatch('capacity-denied'))).rejects.toThrow(
+      'Native dispatch capacity exceeded',
+    );
+    const key = governanceDelegationKey('root', 'message', 'capacity-denied');
+    expect(host.activation.values.has(key)).toBe(false);
+  });
+
+  it('does not count settled reviewer identities as pending root reservations', async () => {
+    const internals = governance as unknown as {
+      dispatches: Map<string, { rootSessionId: string; agent: string }>;
+      settledReviewerDispatches: Set<string>;
+    };
+    for (let i = 0; i < 256; i++) {
+      const key = `settled-reviewer-${i}`;
+      internals.dispatches.set(key, { rootSessionId: 'root', agent: 'flowguard-reviewer' });
+      internals.settledReviewerDispatches.add(key);
+    }
+    await authorize(dispatch('after-settled-reviewers'));
+    const key = governanceDelegationKey('root', 'message', 'after-settled-reviewers');
+    expect(host.activation.values.has(key)).toBe(true);
+  });
+
   it('deduplicates repeated native progress for the same exact call', async () => {
     await authorize();
     const first = governance.observeProgress(receipt());

@@ -29,6 +29,12 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { buildEnforcementError } from './blocked-result.js';
 import {
+  hasPendingDispatchInMemory,
+  pendingDispatchCountInMemory,
+  pendingContinuationInMemory,
+  retireSettledDispatch,
+} from './opencode-governance-dispatch-cache.js';
+import {
   endRootActivation,
   type EndRootPrepare,
   type EndRootResult,
@@ -73,7 +79,14 @@ export class OpenCodeGovernance {
     { readonly dispatchKey: string; readonly operation: Promise<void> }
   >();
   private readonly dispatchChildren = new Map<string, string>();
-  private readonly settledDispatches = new Set<string>();
+  /** Enrolled reviewer children retain their exact in-process dispatch binding. */
+  private readonly settledReviewerDispatches = new Set<string>();
+  private readonly dispatchMemory = {
+    dispatches: this.dispatches,
+    dispatchChildren: this.dispatchChildren,
+    linking: this.linking,
+    settledReviewerDispatches: this.settledReviewerDispatches,
+  };
   private readonly waiters = new Map<string, Set<EnrollmentWaiter>>();
 
   constructor(
@@ -227,7 +240,7 @@ export class OpenCodeGovernance {
     const parent = await this.resolve(parentId, ancestors, waitForEnrollment);
     if (parent.kind !== 'active') return parent;
     if (!waitForEnrollment) return this.block('The child has no committed enrollment.');
-    if (!this.hasPendingDispatch(parentId))
+    if (!hasPendingDispatchInMemory(this.dispatchMemory, parentId))
       return this.block(
         'Native parent lineage exists, but this child was not authorized by a governed subagent dispatch.',
       );
@@ -244,7 +257,7 @@ export class OpenCodeGovernance {
     ancestors: ReadonlySet<string>,
     waitForEnrollment: boolean,
   ): Promise<NativeGovernanceResolution> {
-    const continuation = this.pendingContinuation(session.sessionId);
+    const continuation = pendingContinuationInMemory(this.dispatchMemory, session.sessionId);
     if (!continuation) return this.validateActive(session, record, ancestors, waitForEnrollment);
     // A root-lock holder must not wait for an enrollment that needs that lock.
     if (!waitForEnrollment) return this.block('A continuation receipt is still pending.');
@@ -376,10 +389,17 @@ export class OpenCodeGovernance {
         throw this.error('A native subagent call identity cannot be replayed.');
       if (
         dispatch.requestedChildSessionId !== null &&
-        this.pendingContinuation(dispatch.requestedChildSessionId)
+        pendingContinuationInMemory(this.dispatchMemory, dispatch.requestedChildSessionId)
       )
         throw this.error('The child already has an unsettled continuation dispatch.');
       await this.validateRequestedChild(dispatch);
+      // The root lock serializes pending reservations.
+      const pendingForRoot = pendingDispatchCountInMemory(
+        this.dispatchMemory,
+        scope.root.sessionId,
+      );
+      if (pendingForRoot >= 256)
+        throw this.error('Native dispatch capacity exceeded for the ACTIVE root session.');
       if (dispatch.agent === REVIEWER_SUBAGENT_TYPE) {
         if (!this.reviewer)
           throw this.error(
@@ -418,7 +438,8 @@ export class OpenCodeGovernance {
     const key = governanceDelegationKey(event.sessionID, event.messageID, event.id);
     if (this.dispatches.get(key)?.agent !== REVIEWER_SUBAGENT_TYPE) return;
     this.dispatches.delete(key);
-    this.settledDispatches.add(key);
+    this.dispatchChildren.delete(key);
+    this.settledReviewerDispatches.delete(key);
   }
 
   /** Called synchronously by the event-loop consumer before it awaits more I/O. */
@@ -430,8 +451,7 @@ export class OpenCodeGovernance {
       event.data.id,
     );
     const dispatch = this.dispatches.get(dispatchKey);
-    if (!dispatch) return undefined;
-    if (this.settledDispatches.has(dispatchKey)) return undefined;
+    if (!dispatch || this.settledReviewerDispatches.has(dispatchKey)) return undefined;
     const childId = event.data.metadata.sessionID;
     if (typeof childId !== 'string' || event.data.metadata.status !== 'running') return undefined;
     const observedChild = this.dispatchChildren.get(dispatchKey);
@@ -443,16 +463,11 @@ export class OpenCodeGovernance {
       const operation = this.withLock(dispatch.rootSessionId, () => this.enroll(dispatch, childId));
       linking = { dispatchKey, operation };
       this.linking.set(childId, linking);
-      void operation.then(
-        () => {
-          this.settledDispatches.add(dispatchKey);
-          this.settle(childId, dispatchKey);
-        },
-        (error) => {
-          this.settledDispatches.add(dispatchKey);
-          this.settle(childId, dispatchKey, error);
-        },
-      );
+      const finish = (error?: unknown): void => {
+        this.settle(childId, dispatchKey, error);
+        retireSettledDispatch(this.dispatchMemory, dispatchKey, childId, error === undefined);
+      };
+      void operation.then(() => finish(), finish);
     }
     return linking.operation;
   }
@@ -555,19 +570,6 @@ export class OpenCodeGovernance {
       record.parentDispatch?.sessionId !== dispatch.sessionId
     )
       throw this.error('Continuation attempted to reuse a foreign or stale enrolled child.');
-  }
-
-  private hasPendingDispatch(parentId: string): boolean {
-    return [...this.dispatches.entries()].some(
-      ([key, dispatch]) => dispatch.sessionId === parentId && !this.settledDispatches.has(key),
-    );
-  }
-
-  private pendingContinuation(childId: string): string | undefined {
-    return [...this.dispatches.entries()].find(
-      ([key, dispatch]) =>
-        dispatch.requestedChildSessionId === childId && !this.settledDispatches.has(key),
-    )?.[0];
   }
 
   private async awaitEnrollment(
