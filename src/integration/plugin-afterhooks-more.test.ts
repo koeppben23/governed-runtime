@@ -49,6 +49,7 @@ function makeRuntime(
       resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
       getEnforcementState: vi.fn(() => createSessionState()),
       invalidateChainState: vi.fn(),
+      releaseEnforcementState: vi.fn(),
       runSerializedForSession: vi.fn(async (_sid: string, fn: () => Promise<void>) => fn()),
       updateReviewAssurance: vi.fn(),
       ...(overrides.ws ?? {}),
@@ -248,6 +249,7 @@ describe('handlePluginEvent', () => {
     );
 
     expect(runtime.ws.invalidateChainState).toHaveBeenCalledWith(SESSION_ID);
+    expect(runtime.ws.releaseEnforcementState).toHaveBeenCalledWith(SESSION_ID);
     expect(runtime.activeCommandScopes.has(SESSION_ID)).toBe(false);
     expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(false);
   });

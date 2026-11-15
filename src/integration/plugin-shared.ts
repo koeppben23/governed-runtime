@@ -67,6 +67,7 @@ export interface FlowGuardPluginRuntime {
  */
 export function cleanupSessionRuntime(runtime: FlowGuardPluginRuntime, sessionId: string): void {
   runtime.ws.invalidateChainState(sessionId);
+  runtime.ws.releaseEnforcementState(sessionId);
   runtime.activeCommandScopes.delete(sessionId);
   runtime.checkReworkContinuations.delete(sessionId);
   const latencyKeyPrefix = `${sessionId}${LATENCY_KEY_SEPARATOR}`;
