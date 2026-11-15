@@ -568,6 +568,9 @@ jobs:
         run: npm run test:install-verify
         env:
           FORCE_COLOR: 0
+      - name: Measure durable audit clone on macOS CoW filesystem
+        if: matrix.os == 'macos-latest'
+        run: node scripts/perf/audit-clone-append.mjs
 
   smoke:
     name: smoke
