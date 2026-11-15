@@ -8,14 +8,25 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-11-12):
+(counts updated 2026-11-15):
 
 - `root-composition`: 38 files (plugin lifecycle entrypoints and barrels)
-- `root-host-runtime`: exactly 8 named files (`gui-rpc-client-contract.ts`,
-  `host-mutation-observation.ts`, `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
+- `root-host-runtime`: exactly 9 named files (`gui-rpc-client-contract.ts`,
+  `host-mutation-observation.ts`, `installed-commands.ts`,
+  `opencode-governance-dispatch-cache.ts`, `opencode-governance-rpc.ts`,
+  `opencode-governance.ts`, `opencode-host-adapter.ts`,
+  `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 61 root production files
+- total: 62 root production files
+
+The native V2 dispatch lifecycle extraction adds
+`opencode-governance-dispatch-cache.ts` to the root host/runtime zone. It
+contains only in-memory pending-lookup and settlement helpers extracted from
+`opencode-governance.ts` to preserve the 650-LOC limit. Durable activation
+journals, reviewer authority, and replay enforcement remain with their
+existing owners. Reviewer-child dispatch identity stays live until a verified
+retirement boundary; ordinary settled dispatches are released.
 
 The native event-lifecycle repair adds `plugin-session-error-audit.ts` as
 composition of the canonical audit lock, trail reader and idempotent writer.
