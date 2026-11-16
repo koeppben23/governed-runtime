@@ -978,14 +978,6 @@ last read` without a click, while a completion in another session left the
   only. Exits 1 when the workspace is not upgrade-ready; `--json` emits the
   structured report.
 
-### Changed
-
-- Bump the production dependency group: `jose` 6.2.15 → 6.2.17, the OpenTelemetry
-  exporters/sdk from 0.301.0 → 0.301.2, `@opentelemetry/sdk-logs` 3.1.0 → 3.1.1
-  and `@opentelemetry/auto-instrumentations-node` 0.83.0 → 0.83.1. Patch-level
-  update of optional telemetry and JWT verification dependencies; no governance
-  authority, evidence format or transition contract changes.
-
 ### Fixed
 
 - Remove the empty enrollment-waiter map entry after its final timeout, release
@@ -2129,6 +2121,12 @@ stop`, reviewer child reported it could not complete the falsification).
   the derived outcome (`applied`, `skipped`, or `failed`).
 
 ### Changed
+
+- Bump the production dependency group: `jose` 6.2.15 → 6.2.17, the OpenTelemetry
+  exporters/sdk from 0.301.0 → 0.301.2, `@opentelemetry/sdk-logs` 3.1.0 → 3.1.1
+  and `@opentelemetry/auto-instrumentations-node` 0.83.0 → 0.83.1. Patch-level
+  update of optional telemetry and JWT verification dependencies; no governance
+  authority, evidence format or transition contract changes.
 
 - Add a deterministic persistence-phase SIGKILL matrix for the continuity
   marker, first and existing audit publication, clone fallback and
