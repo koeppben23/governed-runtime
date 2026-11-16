@@ -68,6 +68,20 @@ describe('mandate registry invariants', () => {
     expect(FLOWGUARD_MANDATES_KERNEL).not.toContain('## 9. Implementation Checklist');
     expect(FLOWGUARD_MANDATES_KERNEL).not.toContain('## 10. Review Checklist');
     expect(FLOWGUARD_MANDATES_KERNEL).not.toContain('## 11. High-Risk Extension');
+    expect(FLOWGUARD_MANDATES_KERNEL).not.toContain('Increase methodological depth');
+  });
+
+  it('keeps the methodological-depth rule in the implementation checklist', () => {
+    const checklist = MANDATES_SECTION_DEFINITIONS.find(
+      (section) => section.id === 'implementation-checklist',
+    );
+    expect(checklist).toBeDefined();
+    expect(checklist?.content).toContain(
+      'For STANDARD and HIGH-RISK work, select concrete methods',
+    );
+    expect(checklist?.content).toContain(
+      'Increase methodological depth, not task scope or complexity.',
+    );
   });
 
   it('retains every universal security/evidence stop invariant in the kernel', () => {
