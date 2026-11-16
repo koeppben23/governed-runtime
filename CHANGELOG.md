@@ -983,11 +983,13 @@ last read` without a click, while a completion in another session left the
 - Publish archives without destroying the previously attested generation. The
   current archive/checksum pair is retained as `.previous` before any canonical
   name is rewritten, restored byte for byte when the new publication fails, and
-  removed only after the new pair is published; an interrupted publication is
-  restored at the start of the next publish. A failed publish no longer deletes
-  the old archive, the old sidecar or the staged inputs. The existing regression
-  test that pinned the destructive outcome (`all four paths removed`) is
-  inverted to assert restoration instead.
+  removed only after the new pair is published. A publish journal records the
+  next pair's digests as the commit point, so recovery never rolls a published
+  generation back onto an older retained copy, and a crash during the retain
+  step restores the single moved file instead of aborting. A failed publish no
+  longer deletes the old archive, the old sidecar or the staged inputs. The
+  existing regression test that pinned the destructive outcome (`all four paths
+removed`) is inverted to assert restoration instead.
 
 - Classify an empty audit trail explicitly instead of inheriting the vacuously
   valid `verifyChain([])` result. An archived audit member with no record is

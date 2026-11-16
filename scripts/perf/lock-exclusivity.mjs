@@ -149,9 +149,15 @@ async function previousBoot() {
     pathToFileURL(join(process.cwd(), 'dist/adapters/persistence-lock-owner.js')).href
   );
   const previousBootRef = bootRefMs() - 6 * 60 * 60 * 1000;
+  // After a reboot the recorded PID is normally no longer running. The boot
+  // reference alone is never proof of absence (a wall-clock adjustment moves it
+  // for a live process too), so the recorded owner must also be gone.
+  const deceased = spawn(process.execPath, ['--input-type=module', '-e', '']);
+  const deadPid = deceased.pid;
+  await waitForExit(deceased);
   await writeFile(
     join(dir, 'session-state.json.lock'),
-    `pid=${process.pid}\ntoken=previous-boot\nformat=flowguard-lock-owner.v1\n` +
+    `pid=${deadPid}\ntoken=previous-boot\nformat=flowguard-lock-owner.v1\n` +
       `host=${(await import('node:os')).hostname()}\nboot=${previousBootRef}\n`,
     'utf-8',
   );
@@ -165,7 +171,7 @@ process.stdout.write('REACQUIRED\\n');
   record(
     'L2 previous boot',
     exit.code === 0 && exit.stdout.includes('REACQUIRED'),
-    exit.code === 0 ? 'live PID from a previous boot reclaimed' : exit.stderr.trim(),
+    exit.code === 0 ? 'lock from a previous boot with a gone owner reclaimed' : exit.stderr.trim(),
   );
 }
 

@@ -240,14 +240,22 @@ and the archive remains usable.
 
 **Publication safety.** The archive and its sidecar cannot be replaced by one
 atomic filesystem operation, so publication does not claim an atomic pair swap.
-It guarantees the evidence property instead: the currently published pair is
-retained as `<name>.previous` before any canonical name is rewritten, restored
-verbatim if the new publication fails, and removed only after the new pair is
-published. Every crash point leaves at least one complete generation on disk; a
-later publish first restores a retained generation, so an interrupted
-publication converges back to the last published archive instead of a mixed
-pair. A partially published state that a reader observes in the crash window
-fails archive verification closed rather than verifying a mismatched pair.
+It guarantees the evidence property instead: a publish journal records the
+digests of the next pair before anything is moved, the currently published pair
+is retained as `<name>.previous`, and the journal is removed as the commit
+point before the retained pair is deleted. A failure restores the previous pair
+verbatim; every crash point leaves at least one complete generation on disk.
+
+Recovery at the next publish uses the journal, never the mere presence of a
+retained file: if the canonical files already match the recorded next digests,
+the publication completed and only the retained garbage is removed — a
+published generation is never rolled back. Without a journal, retained files are
+treated as cleanup leftovers and deleted. A journal left behind by a crash
+during the retain step restores the one file that was already moved instead of
+aborting. An unreadable journal fails closed and preserves the directory for
+manual analysis. A partially published state observed by a reader in the crash
+window fails archive verification closed rather than verifying a mismatched
+pair.
 
 ## Integrity Chain
 

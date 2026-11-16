@@ -100,15 +100,32 @@ describe('persistence-lock owner identity', () => {
     expect(verdict.verdict).toBe('alive');
   });
 
-  it('CORNER: a lock written in a previous boot is stale even for a live PID', async () => {
+  it('CORNER: a wall-clock adjustment never makes a live owner stale', async () => {
     const owner = parseLockOwner(
-      ownerBody({ pid: process.pid, bootRefMs: bootRefMs() - 6 * 60 * 60 * 1000 }),
+      ownerBody({
+        pid: process.pid,
+        startIdentity: 'proc-starttime:7',
+        bootRefMs: bootRefMs() - 61_000,
+      }),
     );
     const verdict = await classifyLockOwner(owner!, {
       host: os.hostname(),
       bootRefMs: bootRefMs(),
       isProcessAlive: () => true,
-      processStartIdentity: async () => 'unused',
+      processStartIdentity: async () => 'proc-starttime:7',
+    });
+    expect(verdict.verdict).toBe('alive');
+  });
+
+  it('CORNER: a lock from a previous boot is stale when its owner is gone', async () => {
+    const owner = parseLockOwner(
+      ownerBody({ pid: 4242, bootRefMs: bootRefMs() - 6 * 60 * 60 * 1000 }),
+    );
+    const verdict = await classifyLockOwner(owner!, {
+      host: os.hostname(),
+      bootRefMs: bootRefMs(),
+      isProcessAlive: () => false,
+      processStartIdentity: async () => null,
     });
     expect(verdict.verdict).toBe('stale');
   });
@@ -306,6 +323,26 @@ describe('persistence-lock stale reclamation', () => {
     expect(await fs.readFile(lockPath, 'utf-8')).toBe(bodyBefore);
     // Same inode: the file was neither replaced nor deleted.
     expect(after.ino).toBe(before.ino);
+    await owner.release();
+  });
+
+  it('L4: a shifted boot reference never evicts the live owner', async () => {
+    const dir = await makeSessionDir();
+    const owner = await acquireSessionWriteLock(dir);
+    const lockPath = sessionLockPath(dir);
+    const body = await fs.readFile(lockPath, 'utf-8');
+    const shifted = body.replace(
+      /^boot=(\d+)$/m,
+      (_match, value: string) => `boot=${Number(value) - 61_000}`,
+    );
+    expect(shifted).not.toBe(body);
+    await fs.writeFile(lockPath, shifted, 'utf-8');
+
+    await expect(acquireSessionWriteLock(dir, 150)).rejects.toMatchObject({
+      code: 'LOCK_TIMEOUT',
+    });
+    // The live owner keeps its exact lock: a wall-clock step is not proof of absence.
+    await expect(fs.readFile(lockPath, 'utf-8')).resolves.toBe(shifted);
     await owner.release();
   });
 });

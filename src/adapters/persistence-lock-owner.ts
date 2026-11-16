@@ -158,8 +158,12 @@ export async function readProcessStartIdentity(pid: number): Promise<string | nu
 /**
  * Classify a recorded owner.
  *
- * Order matters: boot mismatch, then PID death, then start identity. Every
- * branch that cannot positively prove the owner gone returns `alive`.
+ * Liveness of the PID is decided before any boot reference. A wall-clock
+ * adjustment (NTP step, manual change, VM resume) shifts the estimated boot
+ * reference of a running process, so a boot mismatch alone can never prove that
+ * an owner is gone. Proof of absence requires a dead PID or, for a live PID, a
+ * derivable start identity that differs (PID reuse). Every branch that cannot
+ * positively prove the owner gone returns `alive`.
  */
 export async function classifyLockOwner(
   owner: LockOwner,
@@ -170,9 +174,6 @@ export async function classifyLockOwner(
       verdict: 'alive',
       reason: `lock is owned by host "${owner.host}", which cannot be verified from "${probe.host}"`,
     };
-  }
-  if (owner.bootRefMs !== null && !isSameBoot(owner.bootRefMs, probe.bootRefMs)) {
-    return { verdict: 'stale', reason: 'lock was written during a previous boot' };
   }
   if (!probe.isProcessAlive(owner.pid)) {
     return { verdict: 'stale', reason: 'owning process is not running' };
@@ -188,6 +189,15 @@ export async function classifyLockOwner(
     if (current !== owner.startIdentity) {
       return { verdict: 'stale', reason: 'owning PID was reused by a different process' };
     }
+    return { verdict: 'alive', reason: 'owning process is running' };
+  }
+  if (owner.bootRefMs !== null && !isSameBoot(owner.bootRefMs, probe.bootRefMs)) {
+    return {
+      verdict: 'alive',
+      reason:
+        'owning PID is alive; a differing boot reference cannot distinguish a reboot ' +
+        'with PID reuse from a wall-clock adjustment',
+    };
   }
   return { verdict: 'alive', reason: 'owning process is running' };
 }

@@ -63,9 +63,10 @@ host, boot reference and, where the platform exposes it, process start
 identity). Stale reclamation is bounded as follows:
 
 - An owner is only considered gone when that is positively proven: the PID is
-  not running, the record belongs to a previous boot, or the live PID has a
-  different start identity (PID reuse). Anything unknown — unreadable lock,
-  foreign host, underivable start identity — is treated as alive and the
+  not running, or the live PID has a different start identity (PID reuse). The
+  boot reference is never a staleness proof on its own, because a wall-clock
+  adjustment moves it for a running process too. Anything unknown — unreadable
+  lock, foreign host, underivable start identity — is treated as alive and the
   acquisition fails closed with `LOCK_TIMEOUT`.
 - Reclamation is serialized through `<lock>.reclaim/`, a directory whose
   deletion is conditional on emptiness. A reclaimer therefore cannot delete a
