@@ -978,12 +978,6 @@ last read` without a click, while a completion in another session left the
   only. Exits 1 when the workspace is not upgrade-ready; `--json` emits the
   structured report.
 
-### Changed
-
-- Bump the development dependency group: `knip` 6.44.1 → 6.45.1, `prettier`
-  3.9.10 → 3.10.1 and `typescript-eslint` 8.72.1 → 8.72.2. Toolchain-only
-  update; no product runtime, governance authority or evidence contract changes.
-
 ### Fixed
 
 - Publish archives without destroying the previously attested generation. The
@@ -2167,6 +2161,9 @@ stop`, reviewer child reported it could not complete the falsification).
   and `@opentelemetry/auto-instrumentations-node` 0.83.0 → 0.83.1. Patch-level
   update of optional telemetry and JWT verification dependencies; no governance
   authority, evidence format or transition contract changes.
+- Bump the development dependency group: `knip` 6.44.1 → 6.45.1, `prettier`
+  3.9.10 → 3.10.1 and `typescript-eslint` 8.72.1 → 8.72.2. Toolchain-only
+  update; no product runtime, governance authority or evidence contract changes.
 
 - Add a deterministic persistence-phase SIGKILL matrix for the continuity
   marker, first and existing audit publication, clone fallback and
