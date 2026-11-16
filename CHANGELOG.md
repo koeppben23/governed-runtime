@@ -980,6 +980,20 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Give the session state and audit locks a real owner identity instead of a bare
+  PID. The lock record now carries the writer's host, boot reference and, where
+  the platform exposes it, the process start identity, so a lock left by a
+  crashed process is reclaimed across restarts and after a reboot. A live PID
+  whose start identity differs (PID reuse) is provably a different process and
+  no longer blocks the session forever; an owner that cannot be positively
+  proven gone is still treated as alive (fail-closed). Serialize stale
+  reclamation through a directory guard whose deletion is conditional on
+  emptiness, so a reclaimer can never delete a lock that another process created
+  after its stale verdict, and a release can never remove a foreign owner's
+  entry. Add deterministic regression tests for the reclamation race, previous
+  boot, recovered PID, crash recovery and live-owner eviction, plus an
+  independent-process acceptance matrix (`npm run perf:lock-exclusivity`).
+
 - Remove the empty enrollment-waiter map entry after its final timeout, release
   full settled reviewer dispatch objects while retaining bounded identity
   bindings for enrolled children, and serialize concurrent duplicate
