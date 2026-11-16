@@ -74,6 +74,17 @@ export const PREFLIGHT_INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'AUDIT_EVIDENCE_MISSING',
+    category: 'adapter',
+    messageTemplate:
+      'Session {sessionId} has an empty audit trail although its state records audit evidence',
+    recoverySteps: [
+      'Preserve the session directory; the trail disappeared after canonical history was recorded',
+      'Restore the audit trail from a matching backup instead of fabricating audit events',
+    ],
+  },
+
+  {
     code: 'AUDIT_INVALID',
     category: 'adapter',
     messageTemplate: 'Session {sessionId} live audit trail is not admissible: {reason}',

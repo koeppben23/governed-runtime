@@ -175,7 +175,15 @@ pre-boundary session is rejected again at the next read.
    audit blocker. Fully resolved sessions and empty historical workspaces do
    not block. Resolve or repair the prior sessions with the release that wrote
    them, then re-run the preflight. Historical archives are
-   reported as warnings only. A release that predates `--upgrade-check` skips
+   reported as warnings only. An archive member that is present but carries no
+   audit record is classified `unknown` (reported as
+   `ARCHIVE_CONTRACT_UNKNOWN`), never `compatible`: an empty trail cannot be
+   verified, and it must not mask a legacy classification of the remaining
+   members. A live session whose audit file is empty while its persisted state
+   records audit evidence (outbox acknowledgements or a retired checkpoint) is
+   a `blocker` with `AUDIT_EVIDENCE_MISSING`; an empty trail without such
+   evidence is a legitimate fresh session. A release that predates
+   `--upgrade-check` skips
    this step; the blockers below still apply. The preflight reports an active
    session as
    `ACTIVE_SESSION` and incompatible or unreadable state as `STATE_INCOMPATIBLE`

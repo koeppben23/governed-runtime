@@ -208,7 +208,10 @@ describe('inspect --upgrade-check classification helpers', () => {
     expect(classifyAuditMember({ kind: 'blocked' })).toBe('unknown');
     expect(classifyAuditMember({ kind: 'ok', content: 'not json' })).toBe('unknown');
     expect(classifyAuditMember({ kind: 'ok', content: JSON.stringify({}) })).toBe('incompatible');
-    expect(classifyAuditMember({ kind: 'ok', content: '' })).toBe('compatible');
+    // An empty member carries no record to verify. `verifyChain([])` is
+    // vacuously valid, so the boundary must not inherit that as "compatible";
+    // it is unclassifiable, and it must not mask a legacy sibling member.
+    expect(classifyAuditMember({ kind: 'ok', content: '' })).toBe('unknown');
   });
 });
 

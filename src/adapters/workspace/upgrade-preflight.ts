@@ -12,21 +12,23 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { verifyChain } from '../../audit/integrity.js';
-import { ARCHIVE_MANIFEST_SCHEMA_VERSION, ArchiveManifestSchema } from '../../archive/types.js';
 import { TERMINAL } from '../../machine/topology.js';
 import type { SessionState } from '../../state/schema.js';
-import {
-  assessPersistedStateDocument,
-  auditPath,
-  readState,
-  repoConfigPath,
-} from '../persistence.js';
+import { auditPath, readState, repoConfigPath } from '../persistence.js';
 import { readAuditTrail } from '../persistence-audit.js';
+import { hasPublishedAuditEvidence } from '../persistence-audit-continuity.js';
 import { inspectArchiveTar, readArchiveTextMember } from './archive-tar.js';
 import { ARCHIVE_MANIFEST_FILE } from './archive-layout.js';
 const ARCHIVE_STATE_MEMBER = 'state/session-state.json';
 import { sessionDir, workspaceDir } from './init.js';
 import { scanWorktreeWorkspaces, type WorkspaceEvidence } from './upgrade-preflight-identity.js';
+import {
+  classifyAuditMember,
+  classifyManifestMember,
+  classifyStateMember,
+  combineArchiveContract,
+  type ArchiveContractStatus,
+} from './upgrade-preflight-archive-contract.js';
 import { classifyLiveStateReadFailure } from './upgrade-preflight-live-state.js';
 import { validateSessionId } from './types.js';
 
@@ -44,7 +46,6 @@ export interface UpgradeCheckFinding {
 export type LiveStateStatus =
   'ok' | 'incompatible' | 'unreadable' | 'missing' | 'integrity_mismatch';
 export type LiveAuditStatus = 'ok' | 'invalid' | 'unreadable' | 'missing';
-export type ArchiveContractStatus = 'compatible' | 'incompatible' | 'invalid' | 'unknown';
 export type ArchiveExtractable = 'yes' | 'no';
 
 export interface SessionCheckEntry {
@@ -96,90 +97,13 @@ export type UpgradePreflightResult =
 
 // ─── Pure classification ─────────────────────────────────────────────────────
 
-/**
- * Combine the archive member classifications (manifest, audit, session state)
- * into one archive contract status. Integrity under the current contract
- * (`invalid`) outranks expected legacy incompatibility (`incompatible`);
- * anything not fully assessed is `unknown`.
- */
-export function combineArchiveContract(
-  ...statuses: readonly ArchiveContractStatus[]
-): ArchiveContractStatus {
-  if (statuses.includes('invalid')) return 'invalid';
-  if (statuses.includes('incompatible')) return 'incompatible';
-  if (statuses.every((status) => status === 'compatible')) return 'compatible';
-  return 'unknown';
-}
-
-/**
- * Classify the archived state member through the canonical boundary authority
- * the live read uses; a pre-cut payload must not be reported compatible.
- */
-export function classifyStateMember(
-  member: { readonly kind: 'ok'; readonly content: string } | { readonly kind: 'blocked' },
-): ArchiveContractStatus {
-  if (member.kind !== 'ok') return 'unknown';
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(member.content);
-  } catch {
-    return 'invalid';
-  }
-  const assessment = assessPersistedStateDocument(parsed);
-  if (assessment.kind === 'incompatible') return 'incompatible';
-  return assessment.kind === 'invalid' || assessment.kind === 'integrity_mismatch'
-    ? 'invalid'
-    : 'compatible';
-}
-
-/** Classify a manifest member read against the current archive contract. */
-export function classifyManifestMember(
-  member: { readonly kind: 'ok'; readonly content: string } | { readonly kind: 'blocked' },
-): ArchiveContractStatus {
-  if (member.kind !== 'ok') return 'unknown';
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(member.content);
-  } catch {
-    return 'unknown';
-  }
-  if (
-    typeof parsed !== 'object' ||
-    parsed === null ||
-    (parsed as { schemaVersion?: unknown }).schemaVersion !== ARCHIVE_MANIFEST_SCHEMA_VERSION
-  ) {
-    return 'incompatible';
-  }
-  return ArchiveManifestSchema.safeParse(parsed).success ? 'compatible' : 'invalid';
-}
-
-/** Classify an archived audit member against the current audit contract. */
-export function classifyAuditMember(
-  member: { readonly kind: 'ok'; readonly content: string } | { readonly kind: 'blocked' },
-): ArchiveContractStatus {
-  if (member.kind !== 'ok') return 'unknown';
-  const records = parseJsonLines(member.content);
-  if (records === null) return 'unknown';
-  const chain = verifyChain(records);
-  if (chain.valid) return 'compatible';
-  return chain.reason === 'AUDIT_ENVELOPE_INVALID' ? 'incompatible' : 'invalid';
-}
-
-function parseJsonLines(raw: string): Record<string, unknown>[] | null {
-  const records: Record<string, unknown>[] = [];
-  for (const line of raw.split(/\r?\n/)) {
-    if (line.trim().length === 0) continue;
-    let value: unknown;
-    try {
-      value = JSON.parse(line);
-    } catch {
-      return null;
-    }
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
-    records.push(value as Record<string, unknown>);
-  }
-  return records;
-}
+export {
+  combineArchiveContract,
+  classifyAuditMember,
+  classifyManifestMember,
+  classifyStateMember,
+  type ArchiveContractStatus,
+} from './upgrade-preflight-archive-contract.js';
 
 // ─── Live session classification ─────────────────────────────────────────────
 
@@ -188,6 +112,11 @@ interface LiveStateClassification {
   readonly phase: string | null;
   readonly terminal: boolean | null;
   readonly findings: readonly UpgradeCheckFinding[];
+  /**
+   * Whether the persisted state proves that canonical audit evidence existed.
+   * `null` when no readable state is available to decide.
+   */
+  readonly hasAuditEvidence: boolean | null;
 }
 
 async function classifyLiveState(
@@ -199,10 +128,17 @@ async function classifyLiveState(
     state = await readState(sessDir);
   } catch (error) {
     const failure = classifyLiveStateReadFailure(sessionId, error);
-    return { status: failure.status, phase: null, terminal: null, findings: [failure.finding] };
+    return {
+      status: failure.status,
+      phase: null,
+      terminal: null,
+      findings: [failure.finding],
+      hasAuditEvidence: null,
+    };
   }
 
-  if (state === null) return { status: 'missing', phase: null, terminal: null, findings: [] };
+  if (state === null)
+    return { status: 'missing', phase: null, terminal: null, findings: [], hasAuditEvidence: null };
 
   const terminal = TERMINAL.has(state.phase);
   const findings: UpgradeCheckFinding[] = terminal
@@ -218,10 +154,17 @@ async function classifyLiveState(
           ],
         },
       ];
-  return { status: 'ok', phase: state.phase, terminal, findings };
+  return {
+    status: 'ok',
+    phase: state.phase,
+    terminal,
+    findings,
+    hasAuditEvidence: hasPublishedAuditEvidence(state),
+  };
 }
 
-async function classifyLiveAudit(
+/** @internal Exported for unit testing only. */
+export async function classifyLiveAudit(
   sessDir: string,
   sessionId: string,
   state: LiveStateClassification,
@@ -247,8 +190,33 @@ async function classifyLiveAudit(
   }
 
   try {
-    const chain = verifyChain(await readAuditTrail(sessDir));
-    if (chain.valid) return { status: 'ok', findings };
+    const events = await readAuditTrail(sessDir);
+    const chain = verifyChain(events);
+    if (chain.valid) {
+      // An empty trail is a legitimate fresh session, but not when the persisted
+      // state proves canonical audit evidence already existed: `verifyChain([])`
+      // is vacuously valid, so the empty case is decided here.
+      if (events.length === 0 && state.hasAuditEvidence === true) {
+        return {
+          status: 'invalid',
+          findings: [
+            ...findings,
+            {
+              severity: 'blocker',
+              code: 'AUDIT_EVIDENCE_MISSING',
+              message:
+                `Session ${sessionId} has an empty audit trail although its state records ` +
+                'audit evidence (audit outbox acknowledgements or a retired checkpoint).',
+              recovery: [
+                'Preserve the session directory; the trail disappeared after canonical history was recorded.',
+                'Restore the audit trail from a matching backup instead of fabricating audit events.',
+              ],
+            },
+          ],
+        };
+      }
+      return { status: 'ok', findings };
+    }
     return {
       status: 'invalid',
       findings: [

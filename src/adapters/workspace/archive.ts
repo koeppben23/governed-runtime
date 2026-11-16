@@ -47,7 +47,7 @@ import {
 import { inspectArchiveTar } from './archive-tar.js';
 import {
   publishArchiveArtifacts,
-  removeArchiveArtifacts,
+  removeArchiveTemporaries,
   writeArchiveChecksum,
 } from './archive-publish.js';
 
@@ -385,7 +385,9 @@ async function stagePublishAndBind(input: {
         existingPublication,
       );
     } catch (error) {
-      await removeArchiveArtifacts(archiveArtifacts);
+      // Only the staging inputs are discarded. A published or retained
+      // generation is never removed by a failed attempt.
+      await removeArchiveTemporaries(archiveArtifacts);
       throw error;
     }
     if (existingPublication?.publicationId === publication.publicationId) return;
@@ -437,10 +439,8 @@ async function createAndPublishArchive(
     await fs.rm(artifacts.temporaryChecksumPath, { force: true });
     return publication;
   }
-  await Promise.all([
-    fs.rm(artifacts.archivePath, { force: true }),
-    fs.rm(artifacts.checksumPath, { force: true }),
-  ]);
+  // No files are removed here: publishArchiveArtifacts retains the current
+  // generation and restores it if this attempt fails.
   await publishArchiveArtifacts(artifacts);
   return publication;
 }

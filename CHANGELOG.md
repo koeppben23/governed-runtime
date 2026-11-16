@@ -980,6 +980,24 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Publish archives without destroying the previously attested generation. The
+  current archive/checksum pair is retained as `.previous` before any canonical
+  name is rewritten, restored byte for byte when the new publication fails, and
+  removed only after the new pair is published; an interrupted publication is
+  restored at the start of the next publish. A failed publish no longer deletes
+  the old archive, the old sidecar or the staged inputs. The existing regression
+  test that pinned the destructive outcome (`all four paths removed`) is
+  inverted to assert restoration instead.
+
+- Classify an empty audit trail explicitly instead of inheriting the vacuously
+  valid `verifyChain([])` result. An archived audit member with no record is
+  `unknown` (never `compatible`, and never masking a legacy `incompatible`
+  sibling), and a live session whose audit file is empty while its persisted
+  state proves audit evidence (outbox acknowledgements or a retired checkpoint)
+  is a blocker with `AUDIT_EVIDENCE_MISSING`. An empty trail without such
+  evidence remains a legitimate fresh session. `verifyChain` itself keeps its
+  general semantics.
+
 - Give the session state and audit locks a real owner identity instead of a bare
   PID. The lock record now carries the writer's host, boot reference and, where
   the platform exposes it, the process start identity, so a lock left by a

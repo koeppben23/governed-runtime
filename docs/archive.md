@@ -238,6 +238,17 @@ archive lifecycle. Abort is an emergency escape with no archive guarantee.
 fatal (`ARCHIVE_FAILED`). In non-regulated mode, sidecar failure is non-fatal
 and the archive remains usable.
 
+**Publication safety.** The archive and its sidecar cannot be replaced by one
+atomic filesystem operation, so publication does not claim an atomic pair swap.
+It guarantees the evidence property instead: the currently published pair is
+retained as `<name>.previous` before any canonical name is rewritten, restored
+verbatim if the new publication fails, and removed only after the new pair is
+published. Every crash point leaves at least one complete generation on disk; a
+later publish first restores a retained generation, so an interrupted
+publication converges back to the last published archive instead of a mixed
+pair. A partially published state that a reader observes in the crash window
+fails archive verification closed rather than verifying a mismatched pair.
+
 ## Integrity Chain
 
 Archives include tamper-evident features:
