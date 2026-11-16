@@ -10,6 +10,16 @@ import { createNativeHostProbe, type NativeHostProbe } from './opencode-native-t
 import { createPackedFlowGuardInstall } from './opencode-packed-install-test-helpers.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
+
+/**
+ * Host-owned experimental tools are not part of the FlowGuard surface. Whether
+ * the pinned host exposes one depends on its provider capabilities, not on the
+ * installed product, so the parity comparison must not fail on them; the
+ * explicit FlowGuard-namespace assertion below is the actual product contract.
+ */
+function isHostExperimentalTool(name: string): boolean {
+  return name.startsWith('experimental_');
+}
 const probes: NativeHostProbe[] = [];
 let artifact: Awaited<ReturnType<typeof createPackedFlowGuardInstall>>;
 let installedTemplate: string | undefined;
@@ -129,7 +139,13 @@ describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
       const names = tools.map((tool) => tool.function.name).sort();
       expect(names).toEqual(expect.arrayContaining(['edit', 'shell']));
       expect(probe.errors).toEqual([]);
-      catalogues.push(names.filter((name) => name !== TOOL_FLOWGUARD_HELP));
+      // FlowGuard may add exactly the inert help affordance — never another tool.
+      expect(
+        names.filter((name) => name.startsWith('flowguard_') && name !== TOOL_FLOWGUARD_HELP),
+      ).toEqual([]);
+      catalogues.push(
+        names.filter((name) => name !== TOOL_FLOWGUARD_HELP && !isHostExperimentalTool(name)),
+      );
     }
     expect(catalogues[1]).toEqual(catalogues[0]);
   }, 180_000);
