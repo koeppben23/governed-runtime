@@ -88,7 +88,7 @@ export async function removeMarkerIfTrailMissing(sessionDir: string): Promise<vo
  * a retired outbox checkpoint reference canonical audit positions, so their
  * presence without a trail requires explicit recovery.
  */
-function hasPublishedAuditEvidence(state: SessionState): boolean {
+export function hasPublishedAuditEvidence(state: SessionState): boolean {
   if (state.auditOutboxCheckpoint !== undefined) return true;
   return state.pendingAuditOperations.some((operation) => operation.status !== 'state_committed');
 }

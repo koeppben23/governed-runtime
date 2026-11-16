@@ -337,7 +337,7 @@ describe('persistence', () => {
       expect(tmpFiles).toHaveLength(0);
     });
 
-    it('ARCHIVE: final artifacts are removed when atomic checksum publication fails', async () => {
+    it('ARCHIVE: a failed publication keeps the previously published checksum', async () => {
       const worktree = tmpDir;
       const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-archive-config-'));
       const cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
@@ -378,7 +378,10 @@ describe('persistence', () => {
         });
         restoreRename();
 
-        expect(existsSync(checksumPath)).toBe(false);
+        // The previous generation is restored, never destroyed by the failure.
+        expect(existsSync(checksumPath)).toBe(true);
+        await expect(fs.readFile(checksumPath, 'utf-8')).resolves.toContain(sessionId);
+        expect(existsSync(`${checksumPath}.previous`)).toBe(false);
 
         // No orphan .tmp files remain beside the checksum sidecar.
         const entries = await fs.readdir(archiveDir);

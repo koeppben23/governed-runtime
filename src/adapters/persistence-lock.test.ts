@@ -8,6 +8,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   (globalThis as Record<string, unknown>).__persistenceLockFsActual = actual;
   return {
     ...actual,
+    open: vi.fn((...args: Parameters<typeof actual.open>) => actual.open(...args)),
+    link: vi.fn((...args: Parameters<typeof actual.link>) => actual.link(...args)),
     readFile: vi.fn((...args: Parameters<typeof actual.readFile>) => actual.readFile(...args)),
     writeFile: vi.fn((...args: Parameters<typeof actual.writeFile>) => actual.writeFile(...args)),
     unlink: vi.fn((...args: Parameters<typeof actual.unlink>) => actual.unlink(...args)),
@@ -33,6 +35,12 @@ function errno(code: string, message: string): NodeJS.ErrnoException {
 
 function restoreFsMocks(): void {
   const actual = actualFs();
+  vi.mocked(fs.open).mockImplementation((...args: Parameters<typeof fs.open>) =>
+    actual.open(...args),
+  );
+  vi.mocked(fs.link).mockImplementation((...args: Parameters<typeof fs.link>) =>
+    actual.link(...args),
+  );
   vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) =>
     actual.readFile(...args),
   );
@@ -79,11 +87,13 @@ describe('persistence-lock', () => {
     expect(raw).toContain(`pid=${process.pid}\n`);
     expect(raw).toMatch(/^token=.+$/m);
     expect(lock.waited).toBe(false);
-    expect(fs.writeFile).toHaveBeenCalledWith(lockPath, expect.any(String), {
-      encoding: 'utf-8',
-      flag: 'wx',
-      mode: 0o600,
-    });
+    // The record is staged durably and published with link(); the staging name
+    // never survives the acquisition.
+    const entries = await fs.readdir(sessionDir);
+    expect(entries.filter((entry) => entry.endsWith('.tmp'))).toEqual([]);
+    if (process.platform !== 'win32') {
+      expect((await fs.stat(lockPath)).mode & 0o777).toBe(0o600);
+    }
 
     await lock.release();
 
@@ -398,19 +408,17 @@ describe('persistence-lock', () => {
 
   it('CORNER: disappeared lockfile during stale check is treated as stale and retried', async () => {
     const lockPath = sessionLockPath(sessionDir);
-    let writeAttempts = 0;
+    let publishAttempts = 0;
 
-    vi.mocked(fs.writeFile).mockImplementation(((
-      file: Parameters<typeof fs.writeFile>[0],
-      ...args: [data: string, options?: Parameters<typeof fs.writeFile>[2]]
-    ) => {
-      if (String(file) === lockPath && writeAttempts === 0) {
-        writeAttempts += 1;
-        throw errno('EEXIST', 'lock already exists');
-      }
-      writeAttempts += 1;
-      return actualFs().writeFile(file, args[0], args[1]);
-    }) as typeof fs.writeFile);
+    // First publish ties on EEXIST; the body read then proves the lock already
+    // disappeared, so the next publish must succeed without any contention wait.
+    vi.mocked(fs.link).mockImplementation(
+      (existingPath: Parameters<typeof fs.link>[0], newPath: Parameters<typeof fs.link>[1]) => {
+        publishAttempts += 1;
+        if (publishAttempts === 1) throw errno('EEXIST', 'lock already exists');
+        return actualFs().link(existingPath, newPath);
+      },
+    );
     vi.mocked(fs.readFile).mockImplementation(
       (
         file: Parameters<typeof fs.readFile>[0],
@@ -427,7 +435,8 @@ describe('persistence-lock', () => {
 
     restoreFsMocks();
     await expect(fs.access(lockPath)).resolves.toBeUndefined();
-    expect(writeAttempts).toBe(2);
+    expect(lock.waited).toBe(false);
+    expect(publishAttempts).toBe(2);
 
     await lock.release();
   });
@@ -486,40 +495,33 @@ describe('persistence-lock', () => {
 
   // ─── MUTATION KILL: targeted gap coverage ─────────────────────────────
   describe('MUTATION: targeted gap coverage', () => {
-    it('writeFile EACCES throws directly (not treated as EEXIST)', async () => {
-      const lockPath = sessionLockPath(sessionDir);
-      vi.mocked(fs.writeFile).mockImplementation(((file: Parameters<typeof fs.writeFile>[0]) => {
-        if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
-        return actualFs().writeFile(file, '', { encoding: 'utf-8' });
-      }) as typeof fs.writeFile);
+    it('staging EACCES surfaces as a typed write failure (not treated as contention)', async () => {
+      vi.mocked(fs.open).mockImplementation(() => {
+        throw errno('EACCES', 'permission denied');
+      });
 
-      // EACCES should propagate directly, not be treated as EEXIST
+      // A non-EEXIST creation error must propagate as a typed persistence
+      // failure, never as LOCK_TIMEOUT or a silent retry.
       await expect(acquireSessionWriteLock(sessionDir, 1000)).rejects.toMatchObject({
-        code: 'EACCES',
+        code: 'WRITE_FAILED',
       });
     });
 
     it('disappeared lockfile during stale check is treated as stale (waited=false)', async () => {
       const lockPath = sessionLockPath(sessionDir);
-      let writeAttempts = 0;
+      // A real lockfile makes the first publish attempt tie on EEXIST.
+      await fs.writeFile(lockPath, `pid=${process.pid}\ntoken=occupied\n`);
 
-      vi.mocked(fs.writeFile).mockImplementation(((
-        file: Parameters<typeof fs.writeFile>[0],
-        ...args: [data: string, options?: Parameters<typeof fs.writeFile>[2]]
-      ) => {
-        if (String(file) === lockPath && writeAttempts === 0) {
-          writeAttempts += 1;
-          throw errno('EEXIST', 'lock already exists');
-        }
-        writeAttempts += 1;
-        return actualFs().writeFile(file, args[0], args[1]);
-      }) as typeof fs.writeFile);
+      // The current holder releases it before we can inspect the body.
       vi.mocked(fs.readFile).mockImplementation(
-        (
+        async (
           file: Parameters<typeof fs.readFile>[0],
           ...args: [options?: Parameters<typeof fs.readFile>[1]]
         ) => {
-          if (String(file) === lockPath) throw errno('ENOENT', 'lock disappeared');
+          if (String(file) === lockPath) {
+            await actualFs().unlink(lockPath);
+            throw errno('ENOENT', 'lock disappeared');
+          }
           return args[0] === undefined
             ? actualFs().readFile(file)
             : actualFs().readFile(file, args[0]);

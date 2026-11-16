@@ -264,6 +264,8 @@ jobs:
         run: AUDIT_OUTBOX_DEPTH=10000 npm run perf:audit-outbox-scale
       - name: Verify independent audit writers
         run: AUDIT_WRITERS=32 node scripts/perf/audit-concurrent-writers.mjs
+      - name: Verify independent-process lock exclusivity and recovery
+        run: LOCK_WRITERS=32 node scripts/perf/lock-exclusivity.mjs
       - name: Verify audit crash recovery
         run: node scripts/perf/audit-crash-matrix.mjs
       - name: Verify deterministic persistence phase crash recovery

@@ -980,6 +980,40 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Publish archives without destroying the previously attested generation. The
+  current archive/checksum pair is retained as `.previous` before any canonical
+  name is rewritten, restored byte for byte when the new publication fails, and
+  removed only after the new pair is published. A publish journal records the
+  next pair's digests as the commit point, so recovery never rolls a published
+  generation back onto an older retained copy, and a crash during the retain
+  step restores the single moved file instead of aborting. A failed publish no
+  longer deletes the old archive, the old sidecar or the staged inputs. The
+  existing regression test that pinned the destructive outcome (`all four paths
+removed`) is inverted to assert restoration instead.
+
+- Classify an empty audit trail explicitly instead of inheriting the vacuously
+  valid `verifyChain([])` result. An archived audit member with no record is
+  `unknown` (never `compatible`, and never masking a legacy `incompatible`
+  sibling), and a live session whose audit file is empty while its persisted
+  state proves audit evidence (outbox acknowledgements or a retired checkpoint)
+  is a blocker with `AUDIT_EVIDENCE_MISSING`. An empty trail without such
+  evidence remains a legitimate fresh session. `verifyChain` itself keeps its
+  general semantics.
+
+- Give the session state and audit locks a real owner identity instead of a bare
+  PID. The lock record now carries the writer's host, boot reference and, where
+  the platform exposes it, the process start identity, so a lock left by a
+  crashed process is reclaimed across restarts and after a reboot. A live PID
+  whose start identity differs (PID reuse) is provably a different process and
+  no longer blocks the session forever; an owner that cannot be positively
+  proven gone is still treated as alive (fail-closed). Serialize stale
+  reclamation through a directory guard whose deletion is conditional on
+  emptiness, so a reclaimer can never delete a lock that another process created
+  after its stale verdict, and a release can never remove a foreign owner's
+  entry. Add deterministic regression tests for the reclamation race, previous
+  boot, recovered PID, crash recovery and live-owner eviction, plus an
+  independent-process acceptance matrix (`npm run perf:lock-exclusivity`).
+
 - Remove the empty enrollment-waiter map entry after its final timeout, release
   full settled reviewer dispatch objects while retaining bounded identity
   bindings for enrolled children, and serialize concurrent duplicate

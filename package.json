@@ -66,6 +66,7 @@
     "perf:audit-append-depth": "node scripts/perf/audit-append-depth.mjs",
     "perf:audit-outbox-scale": "node scripts/perf/audit-outbox-scale.mjs",
     "perf:audit-concurrent-writers": "node scripts/perf/audit-concurrent-writers.mjs",
+    "perf:lock-exclusivity": "node scripts/perf/lock-exclusivity.mjs",
     "perf:audit-crash-matrix": "node scripts/perf/audit-crash-matrix.mjs",
     "perf:persistence-crash-matrix": "node scripts/perf/persistence-crash-matrix.mjs",
     "perf:audit-cache-memory": "node --expose-gc scripts/perf/audit-cache-memory.mjs",
