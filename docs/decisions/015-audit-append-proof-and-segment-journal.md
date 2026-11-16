@@ -56,23 +56,48 @@ writer keeps an in-process proof for a session only while all of these hold:
   captured at the last full verification;
 - the proof is at most 60 seconds old;
 - at most 256 appends have occurred since the last full verification;
-- the incoming event ID is not already in the proof.
+- the incoming event ID is not already in the proof's bounded id filter.
 
-On a proof hit, the writer reuses the verified last sequence/hash and the
-event-ID set, avoiding a full parse and chain verification. The complete content
-digest is still computed on every append, so a change to any byte is detected
-even if `size`, `mtime`, inode and other metadata are restored with `utimes`.
-Any mismatch, tamper suspicion, duplicate ID, append failure, stale proof or
-periodic re-verification falls back to the existing full read/parse/verify path.
-The fallback is never reported as a successful fast path.
+On a proof hit, the writer reuses the verified last sequence/hash and a
+fixed-size Bloom filter of event IDs, avoiding a full parse and chain
+verification. The filter has no false negatives: a filter miss proves that the
+ID was never inserted. A filter hit (a real duplicate or a false positive) runs
+the exact full parse and replay comparison, so duplicate detection remains
+exact. The complete content digest is still computed on every append, so a
+change to any byte is detected even if `size`, `mtime`, inode and other metadata
+are restored with `utimes`. Any mismatch, tamper suspicion, duplicate ID, append
+failure, stale proof or periodic re-verification falls back to the existing full
+read/parse/verify path. The fallback is never reported as a successful fast
+path, and the full next-file content is resolved lazily only when the reflink
+clone path is unavailable.
 
 The proof is process-local and is never a cross-invocation authority. A second
 process changing the file changes the content digest and therefore invalidates
-the proof. A missing or empty trail is only treated as genesis when no prior
-in-process proof or durable `.audit-history` marker exists and the persisted
-session state has no transition/outbox history; otherwise append fails closed
-with an explicit recovery requirement. This prevents a deleted audit file from
-silently restarting an existing chain across a process restart.
+the proof.
+
+### Continuity across restarts
+
+The durable `.audit-history` marker is written with temp-file fsync, atomic
+rename and parent-directory fsync **before** any audit bytes are published. A
+crash between marker persistence and audit publication therefore leaves a
+marker without a trail; the next writer rejects that state with an explicit
+recovery requirement instead of silently starting a new genesis chain. If the
+first publication fails during normal operation, the writer removes the
+freshly-created marker only when the audit file is still absent. A marker is
+never removed when audit bytes exist, even if the publish reported an fsync or
+rename failure after the rename committed.
+
+A missing or empty trail is only treated as genesis when no prior in-process
+proof or durable marker exists and the persisted session state carries no audit
+evidence. The state check uses only positive publication evidence:
+`audit_committed`/`reconciled` outbox operations and a retired
+`auditOutboxCheckpoint`. A `state_committed` outbox entry is the pre-audit
+hand-off and must not block a legitimate first append.
+
+The marker bounds retained proof memory independently of history length:
+64 cached sessions × 128 KiB is about 8 MiB, versus one string per historical
+event ID in the previous proof. The full-verification path still builds a
+transient exact duplicate set, which is released before the proof is stored.
 
 ### Phase 2 — segmented immutable journal (proposed, not implemented)
 
@@ -113,8 +138,10 @@ detect retroactive modification of older records.
   a proof is active; that read/hash cost is the security price for detecting
   byte changes independently of filesystem metadata.
 - `.audit-history` is a local continuity marker, not audit evidence and not part
-  of archive contents. Its loss cannot authorize a silent chain reset; the
-  persisted session transition/outbox check remains the second safeguard.
+  of archive contents. It is durable before the audit bytes, so a crash can only
+  produce a false positive (explicit recovery after a marker-only crash), never
+  a silent reset after an audit commit. Published outbox state is the second
+  safeguard for pre-marker sessions.
 - 100,000-event acceptance remains **NOT_VERIFIED** until Phase 2 or an
   equivalent segmented design is implemented and measured.
 - No archive, export or recovery reader may depend on the in-process proof.
@@ -123,23 +150,40 @@ detect retroactive modification of older records.
 ## Verification
 
 Measured after Phase 1 on the reference workstation (Node 24.20.0, macOS,
-APFS; 200-byte detail for 5,000 and 100-byte for 10,000):
+APFS; 100-byte detail):
 
-- 1,000 events: 15.9 s total, p50 15.3 ms, p95 20.6 ms, p99 33.4 ms.
-- 5,000 events: 87.9 s total, p50 17.7 ms, p95 20.9 ms, p99 25.4 ms.
-- 10,000 events: 185.5 s total, p50 18.3 ms, p95 21.7 ms, p99 27.4 ms.
-- 100,000 events: **NOT_VERIFIED**; the full-file rewrite path remains
-  O(n) bytes per append on filesystems without forced CoW.
+- 1,000 events: 12.7 s total, p50 12.6 ms, p95 14.8 ms, p99 17.4 ms.
+- 5,000 events: 78.4 s total, p50 15.2 ms, p95 19.9 ms, p99 38.0 ms.
+- 10,000 events: 183.7 s total, p50 18.0 ms, p95 23.1 ms, p99 31.3 ms.
+- 10,000-event history depth: first append 112.2 ms, cached p50 22.1 ms,
+  7.7 MB rewritten per append.
+- 100,000-event history depth: first append 872.9 ms, cached p50 132.7 ms,
+  77.2 MB rewritten per append; the retained id filter remains 128 KiB.
+- A 100,000-record append loop is **NOT_VERIFIED**; seeding plus measured
+  appends at that depth proves the per-append O(n) read/hash/rewrite cost, not
+  the time to perform every rewrite.
+- Retained memory: 10,000 events across two cached sessions added 0.2 MB of
+  heap and retained 256 KiB of id filters (structural cap 8 MiB). RSS
+  high-water grows with transient full-file buffers and is not the retained
+  proof.
 
 - `scripts/perf/audit-append-scale.mjs` measures 1,000/10,000/100,000 events
   with p50/p95/p99 and bytes written.
+- `scripts/perf/audit-append-depth.mjs` seeds a canonical chain once and measures
+  the first and cached append cost at 10,000/100,000 history depth without
+  performing the full O(n²) loop.
 - `scripts/perf/audit-segment-poc.mjs` demonstrates partial-tail recovery,
   closed-segment tamper detection and a JSONL downgrade view.
 - `scripts/perf/audit-concurrent-writers.mjs` runs independent writer processes
   against one session.
 - `scripts/perf/audit-crash-matrix.mjs` kills real append processes after
-  deterministic delays and verifies the surviving trail; it does not claim every
+  deterministic delays, verifies the surviving trail, and kills one child exactly
+  between durable marker persistence and audit publication through a
+  `diagnostics_channel` observation seam. It does not claim every
   instruction-level fsync/rename boundary.
+- `scripts/perf/audit-cache-memory.mjs` (`node --expose-gc`) verifies that every
+  cached session retains exactly one 128 KiB id filter and reports heap/RSS
+  deltas for multi-session histories.
 - `scripts/perf/runtime-soak.mjs` churns 10,000 workspace and reviewer
   lifecycles and asserts bounded map cardinality; real multi-hour host RSS
   acceptance remains separate.

@@ -11,6 +11,7 @@
  */
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,6 +37,29 @@ await appendAuditEvent(process.env.DIR, {
   occurredAt: '2026-11-15T12:00:00.000Z',
   actor: 'machine',
   detail: { operationId: randomUUID(), index: 999, pad: 'x'.repeat(4 * 1024 * 1024) },
+});
+`;
+
+// Deterministic crash exactly between the durable continuity-marker write and
+// the audit publication. The diagnostics channel is only an observation seam;
+// production has no subscribers.
+const markerGapChildCode = `
+import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+import { subscribe } from 'node:diagnostics_channel';
+const moduleUrl = pathToFileURL(join(process.cwd(), 'dist/adapters/persistence-audit.js')).href;
+const { appendAuditEvent } = await import(moduleUrl);
+subscribe('flowguard.audit.continuity-marker', () => process.kill(process.pid, 'SIGKILL'));
+await appendAuditEvent(process.env.DIR, {
+  id: randomUUID(),
+  flowguardSessionId: process.env.SESSION,
+  hostSessionId: 'ses_host',
+  phase: 'IMPLEMENTATION',
+  event: 'state_write',
+  occurredAt: '2026-11-15T12:00:00.000Z',
+  actor: 'machine',
+  detail: { operationId: randomUUID(), index: 1000, pad: 'x'.repeat(100) },
 });
 `;
 
@@ -113,12 +137,55 @@ for (const [index, delayMs] of delays.entries()) {
   }
 }
 
+// Deterministic cut-point: the child kills itself after the durable marker
+// write and before audit publication. A crash there must leave the marker and
+// no trail, and the next writer must fail closed instead of starting genesis.
+{
+  const dir = await mkdtemp(join(tmpdir(), 'fg-audit-marker-gap-'));
+  try {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', markerGapChildCode], {
+      cwd: process.cwd(),
+      env: { ...process.env, DIR: dir, SESSION: sessionId },
+      stdio: 'ignore',
+    });
+    const timeout = setTimeout(() => child.kill('SIGKILL'), 10_000);
+    const exit = await new Promise((resolve) =>
+      child.on('exit', (code, signal) => resolve({ code, signal })),
+    );
+    clearTimeout(timeout);
+    const marker = existsSync(join(dir, '.audit-history'));
+    const trail = existsSync(join(dir, 'audit.jsonl'));
+    let valid = exit.signal === 'SIGKILL' && marker && !trail;
+    let reason = valid
+      ? null
+      : `marker gap state invalid (signal=${exit.signal}, code=${exit.code}, marker=${marker}, trail=${trail})`;
+    if (valid) {
+      try {
+        await appendAuditEvent(dir, body(1001));
+        valid = false;
+        reason = 'append after marker-only crash did not fail closed';
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/explicit recovery is required/i.test(message)) {
+          valid = false;
+          reason = `unexpected failure after marker-only crash: ${message}`;
+        }
+      }
+    }
+    results.push({ scenario: 'marker-before-publication', valid, reason });
+    if (!valid) process.exitCode = 1;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 console.log(
   JSON.stringify({
     benchmark: 'audit-sigkill-matrix',
     iterations: results.length,
     results,
     result: results.every((entry) => entry.valid) ? 'PASS' : 'FAIL',
-    scope: 'cut-points are time-based, not every fsync/rename instruction boundary',
+    scope:
+      'time-based SIGKILL cut-points plus one deterministic marker-before-publication cut-point; not every fsync/rename boundary',
   }),
 );

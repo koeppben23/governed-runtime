@@ -67,6 +67,20 @@ export function hashBuffer(buffer: Buffer): string {
 }
 
 /**
+ * Hash the UTF-8 concatenation of ordered text parts without allocating the
+ * joined string.
+ *
+ * Byte-identical to `hashText(parts.join(''))`. Use for streaming-style
+ * composition of a value that is defined as plain concatenation; domain digest
+ * formulas with a part boundary use {@link hashParts} instead.
+ */
+export function hashTextConcat(parts: readonly string[]): string {
+  const hash = createHash('sha256');
+  for (const part of parts) hash.update(part, 'utf-8');
+  return hash.digest('hex');
+}
+
+/**
  * Hash an ordered list of byte parts with unambiguous length-prefix framing.
  *
  * Framing is `<utf8ByteLength>:<bytes>` per part, so the part boundary is

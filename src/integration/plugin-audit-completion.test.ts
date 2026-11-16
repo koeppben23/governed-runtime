@@ -54,7 +54,6 @@ function completedState(): SessionState {
 async function completionDeps(state: SessionState): Promise<{ deps: AuditDeps; sessDir: string }> {
   const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-completion-'));
   sessionDirs.push(sessDir);
-  await writeState(sessDir, state);
   const terminalOperation = state.pendingAuditOperations.find(
     (operation): operation is Extract<PendingAuditOperation, { kind: 'transition' }> =>
       operation.kind === 'transition' && operation.transition.to === 'COMPLETE',
@@ -80,6 +79,9 @@ async function completionDeps(state: SessionState): Promise<{ deps: AuditDeps; s
     });
     await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(body, 'genesis'));
   }
+  // Persist the reconciled fixture only after seeding its canonical audit
+  // evidence; the writer now rejects a reconciled outbox without a trail.
+  await writeState(sessDir, state);
   const appendAndTrack = vi.fn(async (event: { chainHash?: string }) => {
     const persisted = await appendAuditEvent(sessDir, event as EventBody);
     event.chainHash = persisted.chainHash;

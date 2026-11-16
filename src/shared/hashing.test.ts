@@ -7,6 +7,7 @@ import {
   hashFile,
   hashParts,
   hashText,
+  hashTextConcat,
   hashTextShort,
 } from './hashing.js';
 
@@ -94,6 +95,23 @@ describe('hashBuffer', () => {
     // A Buffer built from a utf-8 string must hash identically to hashText(str).
     const s = 'governance-evidence';
     expect(hashBuffer(Buffer.from(s, 'utf-8'))).toBe(hashText(s));
+  });
+});
+
+describe('hashTextConcat', () => {
+  it('is byte-identical to hashing the joined string', () => {
+    for (const parts of [
+      ['', ''],
+      ['audit', '-chain'],
+      ['{"a":1}\n', '{"b":2}\n'],
+      ['日本語', 'governance'],
+    ]) {
+      expect(hashTextConcat(parts)).toBe(hashText(parts.join('')));
+    }
+  });
+
+  it('treats an empty part list as the empty byte sequence', () => {
+    expect(hashTextConcat([])).toBe(hashText(''));
   });
 });
 

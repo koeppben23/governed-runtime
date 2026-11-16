@@ -986,13 +986,16 @@ last read` without a click, while a completion in another session left the
   `session.deleted` retirement so cleanup runs exactly once per admitted session.
 - Bind the in-process audit append proof to a SHA-256 digest of the complete
   trail content, not mutable filesystem metadata; restoring `mtime`/size after a
-  byte change no longer bypasses verification. Refuse a silent chain restart
-  when a previously non-empty trail disappears, using the bounded proof, a
-  durable `.audit-history` continuity marker and persisted transition/outbox
-  history. Invalidate the proof on tamper, duplicate ID, append failure or
-  periodic full verification; avoid the eager `existing + line` allocation and
-  cache unsupported reflink capability observations so the fallback does not
-  probe a known-unsupported filesystem on every append.
+  byte change no longer bypasses verification. Write the durable
+  `.audit-history` continuity marker with file and directory fsync before any
+  audit publication; a crash in that window fails closed instead of silently
+  starting a new chain, and a failed first publish removes only a freshly
+  created marker while the trail is still absent. Refuse a missing trail when
+  the proof, marker, an `audit_committed`/`reconciled` outbox entry or a retired
+  outbox checkpoint proves prior audit evidence, without blocking a legitimate
+  `state_committed` first append. Retain event membership in a fixed-size
+  no-false-negative Bloom filter with exact replay fallback, and hash the next
+  content incrementally while resolving the reflink fallback lazily.
 - Add real-Git runtime bootstrap, durable audit CoW p50/p95/p99, and interleaved
   compact-status latency measurements to the V2 hardening verification suite.
   Enforce the requested factor-three status threshold in CI. Compact status
@@ -2120,12 +2123,17 @@ stop`, reviewer child reported it could not complete the falsification).
 ### Changed
 
 - Add append-proof cache regression coverage for proof reuse, failure
-  invalidation, bounded session retention and the 60-second/256-append full
-  verification windows. The targeted `persistence-audit.ts` mutation score is
-  81.62% against the 80% break threshold.
+  invalidation, bounded session retention, the 60-second/256-append full
+  verification windows, no-false-negative filter membership and marker-before-
+  publication crash recovery. Add a retained-memory harness that reports fixed
+  filter bytes plus heap/RSS deltas across multiple cached sessions. The
+  targeted mutation scores are 85.59% for `persistence-audit.ts`, 80.43% for
+  the continuity guard and 92.86% for the id filter against the 80% break
+  threshold.
 - Wire the 1,000-event audit scale, 32 independent writers, real SIGKILL
-  recovery and bounded lifecycle-soak harnesses into the `integration-perf` CI
-  job; a green job now exercises these forensic gates.
+  recovery (including a deterministic marker-before-publication cut-point),
+  bounded append-proof memory and lifecycle-soak harnesses into the
+  `integration-perf` CI job; a green job now exercises these forensic gates.
 - Run the default `npm test` path without timing-sensitive PERF tests; dedicated
   `test:unit:perf` and `test:integration:perf` jobs remain the only performance
   gates. Full status now runs independent discovery drift and toolchain probes
