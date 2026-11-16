@@ -32,6 +32,7 @@ import {
   hasPendingDispatchInMemory,
   pendingDispatchCountInMemory,
   pendingContinuationInMemory,
+  quarantineReviewerDispatchMemory,
   retireSettledDispatch,
 } from './opencode-governance-dispatch-cache.js';
 import {
@@ -49,7 +50,6 @@ export type NativeGovernanceResolution =
   | { readonly kind: 'inactive' }
   | { readonly kind: 'active'; readonly scope: ActiveGovernanceScope }
   | ReturnType<typeof blocked>;
-
 type EnrollmentWaiter = {
   readonly rootId: string;
   readonly dispatchKey: string | undefined;
@@ -81,11 +81,13 @@ export class OpenCodeGovernance {
   private readonly dispatchChildren = new Map<string, string>();
   /** Enrolled reviewer children retain their exact in-process dispatch binding. */
   private readonly settledReviewerDispatches = new Set<string>();
+  private readonly enrolledReviewerDispatchKeys = new Set<string>();
   private readonly dispatchMemory = {
     dispatches: this.dispatches,
     dispatchChildren: this.dispatchChildren,
     linking: this.linking,
     settledReviewerDispatches: this.settledReviewerDispatches,
+    enrolledReviewerDispatchKeys: this.enrolledReviewerDispatchKeys,
   };
   private readonly waiters = new Map<string, Set<EnrollmentWaiter>>();
 
@@ -334,16 +336,15 @@ export class OpenCodeGovernance {
         ),
       ),
     );
+    const dispatchKey = governanceDelegationKey(
+      record.parentDispatch.sessionId,
+      record.parentDispatch.messageId,
+      record.parentDispatch.callId,
+    );
     if (
       dispatch.success &&
       dispatch.data.agent === REVIEWER_SUBAGENT_TYPE &&
-      !this.dispatches.has(
-        governanceDelegationKey(
-          record.parentDispatch.sessionId,
-          record.parentDispatch.messageId,
-          record.parentDispatch.callId,
-        ),
-      )
+      !this.enrolledReviewerDispatchKeys.has(dispatchKey)
     )
       return false; // Reload cannot reconstruct authority to resume an unknown reviewer execution.
     return (
@@ -435,11 +436,10 @@ export class OpenCodeGovernance {
   /** Revoke admission, not execution/quiescence certification. The durable
    * release stays unresolved; neither completion text nor an error re-arms it. */
   quarantineReviewerDispatch(event: Pick<NativeBefore, 'sessionID' | 'messageID' | 'id'>): void {
-    const key = governanceDelegationKey(event.sessionID, event.messageID, event.id);
-    if (this.dispatches.get(key)?.agent !== REVIEWER_SUBAGENT_TYPE) return;
-    this.dispatches.delete(key);
-    this.dispatchChildren.delete(key);
-    this.settledReviewerDispatches.delete(key);
+    quarantineReviewerDispatchMemory(
+      this.dispatchMemory,
+      governanceDelegationKey(event.sessionID, event.messageID, event.id),
+    );
   }
 
   /** Called synchronously by the event-loop consumer before it awaits more I/O. */
@@ -595,7 +595,8 @@ export class OpenCodeGovernance {
         },
       };
       const timer = setTimeout(() => {
-        this.waiters.get(childId)?.delete(waiter);
+        const group = this.waiters.get(childId);
+        if (group?.delete(waiter) && group.size === 0) this.waiters.delete(childId);
         reject(this.error('No exact native parent-call/child progress receipt was observed.'));
       }, 5_000);
       const group = this.waiters.get(childId) ?? new Set<EnrollmentWaiter>();

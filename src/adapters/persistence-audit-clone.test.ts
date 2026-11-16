@@ -21,6 +21,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 import { auditPath } from './persistence.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
+import {
+  durableAtomicCloneAppend,
+  resetCloneCapabilityCacheForTests,
+} from './persistence-audit-clone.js';
 import { verifyChain } from '../audit/integrity.js';
 import type { AuditEventBody } from '../state/evidence.js';
 
@@ -44,6 +48,7 @@ describe('durable clone-append audit writer', () => {
   let actual: typeof fs;
 
   beforeEach(async () => {
+    resetCloneCapabilityCacheForTests();
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-clone-'));
     actual = await vi.importActual<typeof fs>('node:fs/promises');
     vi.mocked(fs.copyFile).mockImplementation((...args) => actual.copyFile(...args));
@@ -54,6 +59,18 @@ describe('durable clone-append audit writer', () => {
     vi.mocked(fs.copyFile).mockReset();
     vi.mocked(fs.rename).mockReset();
     await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it('HAPPY: does not evaluate the full-rewrite fallback when clone succeeds', async () => {
+    const file = auditPath(dir);
+    await fs.writeFile(file, 'base\n', 'utf8');
+    const fallback = vi.fn(() => 'fallback');
+    vi.mocked(fs.copyFile).mockImplementationOnce((src, dest) => actual.copyFile(src, dest));
+
+    await durableAtomicCloneAppend(file, 'line\n', fallback);
+
+    expect(fallback).not.toHaveBeenCalled();
+    expect(await fs.readFile(file, 'utf8')).toBe('base\nline\n');
   });
 
   it('HAPPY: clone path preserves v3 ordering and chain integrity', async () => {
@@ -81,14 +98,18 @@ describe('durable clone-append audit writer', () => {
     expect(await fs.readFile(auditPath(dir), 'utf8')).toBe(original);
   });
 
-  it('CORNER: unsupported reflink falls back to atomic rewrite', async () => {
+  it('CORNER: unsupported reflink falls back and caches the negative capability', async () => {
     await appendAuditEvent(dir, body());
     vi.mocked(fs.copyFile).mockRejectedValueOnce(
       Object.assign(new Error('no reflink'), { code: 'EOPNOTSUPP' }),
     );
     await appendAuditEvent(dir, body());
+    const callsAfterFallback = vi.mocked(fs.copyFile).mock.calls.length;
+    vi.mocked(fs.copyFile).mockImplementation((...args) => actual.copyFile(...args));
+    await appendAuditEvent(dir, body());
+    expect(vi.mocked(fs.copyFile).mock.calls.length).toBe(callsAfterFallback);
     const trail = await readAuditTrail(dir);
-    expect(trail).toHaveLength(2);
+    expect(trail).toHaveLength(3);
     expect(verifyChain(trail).valid).toBe(true);
   });
 

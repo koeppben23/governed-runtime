@@ -14,6 +14,7 @@ import * as fs from 'node:fs/promises';
 import { AuditEvent, AuditEventBodySchema } from '../state/evidence.js';
 import type { AuditEventBody } from '../state/evidence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { hashText, hashTextConcat } from '../shared/hashing.js';
 import {
   auditPath,
   durableAtomicWrite,
@@ -23,6 +24,13 @@ import {
 } from './persistence.js';
 import { getLastChainHash, verifyEvent } from '../audit/integrity.js';
 import { durableAtomicCloneAppend } from './persistence-audit-clone.js';
+import { AuditIdFilter } from './persistence-audit-id-filter.js';
+import {
+  assertAuditHistoryContinuity,
+  ensureAuditHistoryMarker,
+  removeMarkerIfTrailMissing,
+} from './persistence-audit-continuity.js';
+import { AuditChainError, AuditFormatError } from './persistence-audit-errors.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import {
   computeChainHash,
@@ -30,25 +38,6 @@ import {
   GENESIS_HASH,
   type ChainedAuditEvent,
 } from '../audit/types.js';
-
-class AuditFormatError extends Error {
-  readonly code = 'AUDIT_ENVELOPE_INVALID' as const;
-
-  constructor(message: string) {
-    super(message);
-    this.name = 'AuditFormatError';
-  }
-}
-
-/** A canonical envelope can still contain tampered or reordered evidence. */
-class AuditChainError extends Error {
-  readonly code = 'CHAIN_BREAK' as const;
-
-  constructor(message: string) {
-    super(message);
-    this.name = 'AuditChainError';
-  }
-}
 
 /** A single canonical JSONL trail may never mix FlowGuard session identities. */
 function assertAuditSessionIdentity(
@@ -126,6 +115,7 @@ async function appendAuditEventWithLock(
       ? await appendAuditLineAtomically(sessionDir, result.data)
       : await appendAuditLineCore(sessionDir, result.data);
   } catch (err: unknown) {
+    clearAuditAppendCache(sessionDir);
     getAdapterLogger().error('persistence-audit', 'Failed to append audit event', {
       sessionDir,
       error: err instanceof Error ? err.message : String(err),
@@ -188,6 +178,58 @@ function assertAppendableAuditChain(
   assertAuditSessionIdentity(trailSessionId, incomingSessionId, events.length + 1);
 }
 
+interface AuditAppendCache {
+  readonly contentHash: string;
+  readonly sessionId: string | undefined;
+  readonly ids: AuditIdFilter;
+  readonly lastHash: string;
+  readonly lastSequence: number;
+  readonly verifiedAt: number;
+  readonly appendsSinceVerify: number;
+}
+
+const MAX_AUDIT_APPEND_CACHES = 64;
+const FULL_VERIFY_INTERVAL_MS = 60_000;
+const FULL_VERIFY_EVERY_APPENDS = 256;
+const auditAppendCaches = new Map<string, AuditAppendCache>();
+
+function rememberAuditAppendCache(sessionDir: string, cache: AuditAppendCache): void {
+  auditAppendCaches.delete(sessionDir);
+  auditAppendCaches.set(sessionDir, cache);
+  while (auditAppendCaches.size > MAX_AUDIT_APPEND_CACHES) {
+    const oldest = auditAppendCaches.keys().next().value;
+    if (oldest === undefined) break;
+    auditAppendCaches.delete(oldest);
+  }
+}
+
+/** Forget the in-process append proof for one session. */
+function clearAuditAppendCache(sessionDir: string): void {
+  auditAppendCaches.delete(sessionDir);
+}
+
+/** @internal Simulate a process restart for append-proof regression tests. */
+export function resetAuditAppendCacheForTests(): void {
+  auditAppendCaches.clear();
+}
+
+/** @internal Read-only projection for append-proof regression tests. */
+export function auditAppendCacheForTests(sessionDir: string):
+  | {
+      readonly lastSequence: number;
+      readonly appendsSinceVerify: number;
+      readonly idFilterBytes: number;
+    }
+  | undefined {
+  const cache = auditAppendCaches.get(sessionDir);
+  if (!cache) return undefined;
+  return {
+    lastSequence: cache.lastSequence,
+    appendsSinceVerify: cache.appendsSinceVerify,
+    idFilterBytes: cache.ids.byteLength,
+  };
+}
+
 async function appendAuditLineAtomically(
   sessionDir: string,
   event: AuditEventBody,
@@ -195,16 +237,57 @@ async function appendAuditLineAtomically(
   return await withAuditWriteLock(sessionDir, () => appendAuditLineCore(sessionDir, event));
 }
 
-async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): Promise<AuditEvent> {
-  await ensureDir(sessionDir);
-  const filePath = auditPath(sessionDir);
-  let existing = '';
+interface AuditAppendState {
+  readonly existing: string;
+  readonly sessionId: string | undefined;
+  readonly ids: AuditIdFilter;
+  readonly lastHash: string;
+  readonly lastSequence: number;
+  readonly verifiedAt: number;
+  readonly appendsSinceVerify: number;
+}
 
-  try {
-    existing = await fs.readFile(filePath, 'utf-8');
-  } catch (err) {
-    if (!isEnoent(err)) throw err;
+type AuditAppendLoad =
+  | { readonly kind: 'append'; readonly state: AuditAppendState }
+  | { readonly kind: 'replay'; readonly event: AuditEvent };
+
+/**
+ * The proof retains a fixed-size Bloom filter, not one string per event.
+ * Exact duplicate detection during the full verification still needs a
+ * transient set; it is released as soon as the filter is built and is never
+ * retained by the cache.
+ */
+function buildAuditIdFilter(events: readonly AuditEvent[]): AuditIdFilter {
+  const filter = new AuditIdFilter();
+  const seen = new Set<string>();
+  for (const prior of events) {
+    if (seen.has(prior.id)) {
+      throw new AuditChainError(
+        `Refusing append to audit chain with duplicate event id ${prior.id}`,
+      );
+    }
+    seen.add(prior.id);
+    filter.add(prior.id);
   }
+  return filter;
+}
+
+function replayEvent(events: readonly AuditEvent[], event: AuditEventBody): AuditEvent | null {
+  const sameId = events.find((candidate) => candidate.id === event.id);
+  if (!sameId) return null;
+  if (
+    computeCanonicalEventDigest(normalizeCurrentAuditBody(sameId)) ===
+    computeCanonicalEventDigest(normalizeCurrentAuditBody(event))
+  ) {
+    return sameId;
+  }
+  throw new PersistenceError(
+    'SCHEMA_VALIDATION_FAILED',
+    `Refusing to append audit event with duplicate id ${event.id} and different content`,
+  );
+}
+
+function parseAndVerifyAuditTrail(existing: string, event: AuditEventBody): AuditEvent[] {
   // A valid JSON object without the final JSONL delimiter is not appendable:
   // concatenating another record would corrupt future audit reads. Preserve
   // historical evidence exactly and require explicit forensic recovery.
@@ -214,40 +297,85 @@ async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): P
         'original evidence and prevent concatenated JSONL records.',
     );
   }
-  const existingEvents = parseAuditTrail(existing);
+  const events = parseAuditTrail(existing);
+  // Validate before deduplication: even an idempotent retry must not accept a
+  // corrupted or cross-session canonical trail.
+  assertAppendableAuditChain(events, event.flowguardSessionId);
+  return events;
+}
 
-  // Validate before deduplication: even an idempotent retry must not
-  // accept a corrupted or cross-session canonical trail.
-  assertAppendableAuditChain(existingEvents, event.flowguardSessionId);
-
-  // Exactly-once under the audit write lock: an event id is a commit
-  // identity. A crash between append and acknowledgement may re-deliver the
-  // SAME event — return the persisted record instead of appending a
-  // duplicate. The same id with different content is a chain violation and
-  // fails closed.
-  const sameId = existingEvents.find((candidate) => candidate.id === event.id);
-  if (sameId) {
-    if (
-      computeCanonicalEventDigest(normalizeCurrentAuditBody(sameId)) ===
-      computeCanonicalEventDigest(normalizeCurrentAuditBody(event))
-    ) {
-      return sameId;
-    }
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      `Refusing to append audit event with duplicate id ${event.id} and different content`,
-    );
+async function loadAuditAppendState(
+  sessionDir: string,
+  existing: string,
+  contentHash: string,
+  event: AuditEventBody,
+): Promise<AuditAppendLoad> {
+  const cached = auditAppendCaches.get(sessionDir);
+  const now = Date.now();
+  if (
+    cached !== undefined &&
+    cached.contentHash === contentHash &&
+    cached.appendsSinceVerify < FULL_VERIFY_EVERY_APPENDS &&
+    now - cached.verifiedAt <= FULL_VERIFY_INTERVAL_MS &&
+    !cached.ids.mightContain(event.id)
+  ) {
+    assertAuditSessionIdentity(cached.sessionId, event.flowguardSessionId, cached.lastSequence + 1);
+    return {
+      kind: 'append',
+      state: {
+        existing: '',
+        sessionId: cached.sessionId,
+        ids: cached.ids,
+        lastHash: cached.lastHash,
+        lastSequence: cached.lastSequence,
+        verifiedAt: cached.verifiedAt,
+        appendsSinceVerify: cached.appendsSinceVerify,
+      },
+    };
   }
 
-  // Stamp the positional/authority fields. Producers cannot influence
-  // chain position, sequence authority, or record time — any
-  // producer-supplied positional/hash value is dropped before stamping so
-  // it can never leak into a computed digest.
+  const events = parseAndVerifyAuditTrail(existing, event);
+  const ids = buildAuditIdFilter(events);
+  const sessionId = events[0]?.flowguardSessionId;
+  const lastHash = getLastChainHash(events);
+  const lastSequence = events.length;
+  const replay = replayEvent(events, event);
+  if (replay !== null) {
+    rememberAuditAppendCache(sessionDir, {
+      contentHash,
+      sessionId,
+      ids,
+      lastHash,
+      lastSequence,
+      verifiedAt: now,
+      appendsSinceVerify: 0,
+    });
+    return { kind: 'replay', event: replay };
+  }
+  return {
+    kind: 'append',
+    state: {
+      existing,
+      sessionId,
+      ids,
+      lastHash,
+      lastSequence,
+      verifiedAt: now,
+      appendsSinceVerify: 0,
+    },
+  };
+}
+
+function buildChainedAuditEvent(event: AuditEventBody, state: AuditAppendState): AuditEvent {
+  // Stamp the positional/authority fields. Producers cannot influence chain
+  // position, sequence authority, or record time — any producer-supplied
+  // positional/hash value is dropped before stamping so it can never leak into
+  // a computed digest.
   const bodyWithPosition: Omit<ChainedAuditEvent, 'chainHash'> = {
     ...normalizeCurrentAuditBody(event),
-    auditSequence: existingEvents.length + 1,
+    auditSequence: state.lastSequence + 1,
     recordedAt: new Date().toISOString(),
-    prevHash: getLastChainHash(existingEvents),
+    prevHash: state.lastHash,
   } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
   const semanticEventDigest = computeCanonicalEventDigest(bodyWithPosition);
   const finalized: Omit<ChainedAuditEvent, 'chainHash'> = {
@@ -265,18 +393,78 @@ async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): P
       `Refusing to append invalid chained audit event: ${chainedResult.error.message}`,
     );
   }
-  const line = JSON.stringify(chainedResult.data) + '\n';
-
-  // Both write paths fsync the temporary file, atomically rename it and
-  // fsync its parent directory. A CoW reflink reduces the rewrite cost on
-  // supporting filesystems; unsupported clones fall back to the original
-  // durable rewrite without altering audit integrity or atomicity.
-  if (existing.length === 0) {
-    await durableAtomicWrite(filePath, line);
-  } else {
-    await durableAtomicCloneAppend(filePath, line, existing + line);
-  }
   return chainedResult.data;
+}
+
+async function publishAuditLine(
+  filePath: string,
+  hasExisting: boolean,
+  line: string,
+  existing: string,
+): Promise<void> {
+  // Both write paths fsync the temporary file, atomically rename it and fsync
+  // its parent directory. A CoW reflink reduces the rewrite cost on supporting
+  // filesystems; unsupported clones resolve the fallback lazily so the complete
+  // next snapshot is not allocated on the clone path (or on any path that fails
+  // before the fallback is needed).
+  if (!hasExisting) {
+    await durableAtomicWrite(filePath, line);
+    return;
+  }
+  await durableAtomicCloneAppend(filePath, line, () => `${existing}${line}`);
+}
+
+function rememberAppendedAudit(
+  sessionDir: string,
+  state: AuditAppendState,
+  event: AuditEventBody,
+  chained: AuditEvent,
+  contentHash: string,
+): void {
+  state.ids.add(event.id);
+  rememberAuditAppendCache(sessionDir, {
+    contentHash,
+    sessionId: state.sessionId ?? event.flowguardSessionId,
+    ids: state.ids,
+    lastHash: chained.chainHash,
+    lastSequence: state.lastSequence + 1,
+    verifiedAt: state.verifiedAt,
+    appendsSinceVerify: state.appendsSinceVerify + 1,
+  });
+}
+
+async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): Promise<AuditEvent> {
+  await ensureDir(sessionDir);
+  const filePath = auditPath(sessionDir);
+  let existing = '';
+  try {
+    existing = await fs.readFile(filePath, 'utf-8');
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
+  }
+  const hasPriorProof = (auditAppendCaches.get(sessionDir)?.lastSequence ?? 0) > 0;
+  await assertAuditHistoryContinuity(sessionDir, existing, hasPriorProof);
+  const contentHash = hashText(existing);
+  const loaded = await loadAuditAppendState(sessionDir, existing, contentHash, event);
+  // The continuity marker is durable before any audit publication, so a crash
+  // cannot commit audit bytes without the restart guard already being present.
+  const marker = await ensureAuditHistoryMarker(sessionDir);
+  if (loaded.kind === 'replay') return loaded.event;
+
+  const chained = buildChainedAuditEvent(event, loaded.state);
+  const line = JSON.stringify(chained) + '\n';
+  try {
+    await publishAuditLine(filePath, existing.length > 0, line, existing);
+  } catch (err) {
+    if (marker.created && existing.length === 0) {
+      await removeMarkerIfTrailMissing(sessionDir);
+    }
+    throw err;
+  }
+  // Hash the concatenation incrementally: no complete next snapshot string is
+  // allocated just to refresh the proof.
+  rememberAppendedAudit(sessionDir, loaded.state, event, chained, hashTextConcat([existing, line]));
+  return chained;
 }
 
 function parseAuditTrail(raw: string): AuditEvent[] {

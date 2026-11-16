@@ -22,7 +22,16 @@ npm run lint:strict
 **Normal behavior**
 
 ```sh
+# Default correctness suite; timing-sensitive PERF contracts are excluded.
 npm test
+npm run test:unit:no-perf
+npm run test:integration:no-perf
+
+# Explicit performance gates (single-worker jobs)
+npm run test:unit:perf
+npm run test:integration:perf
+
+# Full projects including PERF contracts
 npm run test:unit
 npm run test:integration
 ```
@@ -242,7 +251,9 @@ into a second single-worker phase. The parallel phase excludes exactly that sele
 so every test still runs once in CI with the same source, thresholds and
 timeouts. This isolates wall-clock p99 assertions from concurrent unit files;
 it does not establish a prior miss's cause or permit a budget increase. Local
-`npm run test:unit` retains its single-invocation convenience.
+`npm test` now runs the unit and integration correctness phases sequentially with
+the same PERF exclusion; the explicit `test:unit`/`test:integration` scripts and the
+dedicated PERF jobs retain full coverage.
 
 The independent-review verifier retains both mandatory positive release/capture
 titles and runs them against the real native host and product, alongside the

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add ADR-015 for the audit append proof and proposed segmented journal,
+  including the local threat model, external-anchor boundary and downgrade
+  contract. Add a standalone segment PoC plus canonical scale, independent-writer,
+  real-process SIGKILL and lifecycle-soak harnesses; unsupported CoW filesystems
+  remain explicitly `NOT_VERIFIED`.
 - Require a structural `flowguard-evidence-design` declaration for every
   critical plan claim: positive observable, concrete faulty variant, expected
   failure, and the active counterexample candidate. The preflight rejects
@@ -975,6 +980,22 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Remove the empty enrollment-waiter map entry after its final timeout, release
+  full settled reviewer dispatch objects while retaining bounded identity
+  bindings for enrolled children, and serialize concurrent duplicate
+  `session.deleted` retirement so cleanup runs exactly once per admitted session.
+- Bind the in-process audit append proof to a SHA-256 digest of the complete
+  trail content, not mutable filesystem metadata; restoring `mtime`/size after a
+  byte change no longer bypasses verification. Write the durable
+  `.audit-history` continuity marker with file and directory fsync before any
+  audit publication; a crash in that window fails closed instead of silently
+  starting a new chain, and a failed first publish removes only a freshly
+  created marker while the trail is still absent. Refuse a missing trail when
+  the proof, marker, an `audit_committed`/`reconciled` outbox entry or a retired
+  outbox checkpoint proves prior audit evidence, without blocking a legitimate
+  `state_committed` first append. Retain event membership in a fixed-size
+  no-false-negative Bloom filter with exact replay fallback, and hash the next
+  content incrementally while resolving the reflink fallback lazily.
 - Add real-Git runtime bootstrap, durable audit CoW p50/p95/p99, and interleaved
   compact-status latency measurements to the V2 hardening verification suite.
   Enforce the requested factor-three status threshold in CI. Compact status
@@ -2101,6 +2122,22 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Add append-proof cache regression coverage for proof reuse, failure
+  invalidation, bounded session retention, the 60-second/256-append full
+  verification windows, no-false-negative filter membership and marker-before-
+  publication crash recovery. Add a retained-memory harness that reports fixed
+  filter bytes plus heap/RSS deltas across multiple cached sessions. The
+  targeted mutation scores are 85.59% for `persistence-audit.ts`, 80.43% for
+  the continuity guard and 92.86% for the id filter against the 80% break
+  threshold.
+- Wire the 1,000-event audit scale, 32 independent writers, real SIGKILL
+  recovery (including a deterministic marker-before-publication cut-point),
+  bounded append-proof memory and lifecycle-soak harnesses into the
+  `integration-perf` CI job; a green job now exercises these forensic gates.
+- Run the default `npm test` path without timing-sensitive PERF tests; dedicated
+  `test:unit:perf` and `test:integration:perf` jobs remain the only performance
+  gates. Full status now runs independent discovery drift and toolchain probes
+  concurrently, while compact status continues to skip both explicitly.
 - Updated native OpenCode API packages and type baselines to 2.2.7; the
   independently verified CLI host smoke pin remains 2.2.5, and installed
   Desktop/CLI support is not certified by this update.

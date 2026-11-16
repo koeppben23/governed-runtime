@@ -4,6 +4,8 @@ Scope: [#1239](https://github.com/koeppben23/governed-runtime/issues/1239).
 This document is an execution checklist, **not** a release certificate.
 The benchmark scripts output observations obtained at execution time. A green
 workflow does not automatically prove every host/hardware-dependent claim.
+The current execution record is maintained in the
+[V2 hardening evidence matrix](./v2-hardening-evidence.md).
 
 ## Reproducible performance gates
 
@@ -14,10 +16,20 @@ operating system and filesystem in the test report.
 npm ci
 npm run build
 node scripts/perf/runtime-bootstrap.mjs
+node scripts/perf/audit-append-scale.mjs
+node scripts/perf/audit-segment-poc.mjs
+AUDIT_WRITERS=32 node scripts/perf/audit-concurrent-writers.mjs
+node scripts/perf/audit-crash-matrix.mjs
+SOAK_ITERATIONS=10000 node scripts/perf/runtime-soak.mjs
 FLOWGUARD_STATUS_BENCHMARK=1 npx vitest run --project integration \
   src/integration/tools-execute-status.test.ts -t 'BENCHMARK: compact fast path'
 node scripts/perf/audit-clone-append.mjs
 ```
+
+The append-proof and segmented-journal threat model, external-anchor limit and
+downgrade contract are recorded in
+[ADR-015](../decisions/015-audit-append-proof-and-segment-journal.md). The
+segment PoC is a local proof of concept, not production acceptance.
 
 - **Session authority:** the real Git bootstrap benchmark compares a fresh
   canonical resolution followed by a redundant diagnostic fingerprint probe

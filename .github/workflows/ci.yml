@@ -256,6 +256,18 @@ jobs:
           FLOWGUARD_STATUS_BENCHMARK: '1'
       - name: Measure real-Git V2 runtime bootstrap before and after
         run: npm run build && node scripts/perf/runtime-bootstrap.mjs
+      - name: Verify audit append scale baseline
+        run: AUDIT_SCALE_COUNTS=1000 AUDIT_SCALE_PAD=100 node scripts/perf/audit-append-scale.mjs
+      - name: Verify audit append cost at 10k history depth
+        run: AUDIT_DEPTH_COUNTS=10000 AUDIT_DEPTH_APPENDS=3 node scripts/perf/audit-append-depth.mjs
+      - name: Verify independent audit writers
+        run: AUDIT_WRITERS=32 node scripts/perf/audit-concurrent-writers.mjs
+      - name: Verify audit crash recovery
+        run: node scripts/perf/audit-crash-matrix.mjs
+      - name: Verify bounded audit append-proof memory
+        run: npm run perf:audit-cache-memory
+      - name: Verify bounded runtime lifecycle soak
+        run: SOAK_ITERATIONS=10000 node scripts/perf/runtime-soak.mjs
       - name: Measure durable audit clone speed on actual runner filesystem
         run: node scripts/perf/audit-clone-append.mjs
 

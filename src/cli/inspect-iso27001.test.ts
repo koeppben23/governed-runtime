@@ -493,10 +493,18 @@ describe('runIso27001Inspect', () => {
       await fs.readFile(path.join(forked.sessDir, 'session-state.json'), 'utf-8'),
     ) as { flowguardSessionId: string };
     await fs.rm(path.join(forked.sessDir, 'audit.jsonl'));
-    await appendAuditEvent(
-      forked.sessDir,
-      materializedEvent(forkedState.flowguardSessionId, '2026-01-01T00:03:00.000Z'),
-    );
+    // The production writer now rejects a deleted trail; construct the forked
+    // evidence externally, exactly as an attacker would.
+    const forkDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-forked-audit-fixture-'));
+    try {
+      await appendAuditEvent(
+        forkDir,
+        materializedEvent(forkedState.flowguardSessionId, '2026-01-01T00:03:00.000Z'),
+      );
+      await fs.copyFile(auditPath(forkDir), path.join(forked.sessDir, 'audit.jsonl'));
+    } finally {
+      await fs.rm(forkDir, { recursive: true, force: true });
+    }
     const forkedResult = await runCli({ mappingPath: forked.mappingPath });
     expect(forkedResult.exit).toBe(2);
     expect(forkedResult.stdout).toBe('');
