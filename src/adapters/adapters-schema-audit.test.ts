@@ -63,6 +63,7 @@ import {
   appendAuditEvent,
   appendAuditEventAlreadyLocked,
   readAuditTrail,
+  resetAuditAppendCacheForTests,
   withAuditTrailLock,
 } from './persistence-audit.js';
 import type { SessionState } from '../state/schema.js';
@@ -467,20 +468,15 @@ describe('persistence', () => {
       ).rejects.toThrow(/duplicate event id/i);
     });
 
-    it('starts a fresh chain after the persisted file disappears', async () => {
+    it('refuses to silently restart a chain after the persisted file disappears', async () => {
       await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
       await fs.unlink(auditPath(tmpDir));
-      const secondId = crypto.randomUUID();
-      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: secondId }));
+      resetAuditAppendCacheForTests();
 
-      const events = await readAuditTrail(tmpDir);
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({
-        id: secondId,
-        auditSequence: 1,
-        prevHash: GENESIS_HASH,
-      });
-      expect(verifyChain(events).valid).toBe(true);
+      await expect(
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+      ).rejects.toThrow(/explicit recovery is required/i);
+      expect(await readAuditTrail(tmpDir)).toHaveLength(0);
     });
 
     // ── CORNER ──────────────────────────────────────────────

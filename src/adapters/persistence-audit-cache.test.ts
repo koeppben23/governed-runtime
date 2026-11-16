@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appendAuditEvent, auditAppendCacheForTests } from './persistence-audit.js';
+import { auditPath } from './persistence.js';
 import type { AuditEventBody } from '../state/evidence.js';
 
 let dir: string;
@@ -47,6 +48,20 @@ describe('audit append proof cache', () => {
       lastSequence: 2,
       appendsSinceVerify: 2,
     });
+  });
+
+  it('detects content tampering even when size and mtime are restored', async () => {
+    await appendAuditEvent(dir, body());
+    const filePath = auditPath(dir);
+    const before = await fs.stat(filePath);
+    const raw = await fs.readFile(filePath, 'utf8');
+    const event = JSON.parse(raw.trim()) as Record<string, unknown>;
+    const chainHash = String(event['chainHash']);
+    event['chainHash'] = `${chainHash.charAt(0) === 'a' ? 'b' : 'a'}${chainHash.slice(1)}`;
+    await fs.writeFile(filePath, `${JSON.stringify(event)}\n`, 'utf8');
+    await fs.utimes(filePath, before.atime, before.mtime);
+
+    await expect(appendAuditEvent(dir, body())).rejects.toThrow(/invalid audit chain/i);
   });
 
   it('clears the proof when an append fails', async () => {

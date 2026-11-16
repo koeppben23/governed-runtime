@@ -52,23 +52,27 @@ trusted anchor**, not tamper-proof against a privileged local attacker.
 The canonical `audit.jsonl` format remains authoritative and unchanged. The
 writer keeps an in-process proof for a session only while all of these hold:
 
-- the file identity (`dev`, `inode`, `size`, `mtime`) is unchanged since the
-  last full verification;
+- the SHA-256 digest of the complete current JSONL bytes matches the digest
+  captured at the last full verification;
 - the proof is at most 60 seconds old;
 - at most 256 appends have occurred since the last full verification;
 - the incoming event ID is not already in the proof.
 
 On a proof hit, the writer reuses the verified last sequence/hash and the
-event-ID set, avoiding a full parse and chain verification. Any mismatch,
-tamper suspicion, duplicate ID, append failure, stale proof or periodic
-re-verification falls back to the existing full read/parse/verify path. The
-fallback is never reported as a successful fast path.
+event-ID set, avoiding a full parse and chain verification. The complete content
+digest is still computed on every append, so a change to any byte is detected
+even if `size`, `mtime`, inode and other metadata are restored with `utimes`.
+Any mismatch, tamper suspicion, duplicate ID, append failure, stale proof or
+periodic re-verification falls back to the existing full read/parse/verify path.
+The fallback is never reported as a successful fast path.
 
 The proof is process-local and is never a cross-invocation authority. A second
-process changing the file changes its inode/size/mtime and therefore invalidates
-the proof. A privileged attacker who rewrites files and restores exact metadata
-is outside the Phase-1 guarantee; the periodic full verification bounds the
-window only for non-adversarial metadata changes.
+process changing the file changes the content digest and therefore invalidates
+the proof. A missing or empty trail is only treated as genesis when no prior
+in-process proof or durable `.audit-history` marker exists and the persisted
+session state has no transition/outbox history; otherwise append fails closed
+with an explicit recovery requirement. This prevents a deleted audit file from
+silently restarting an existing chain across a process restart.
 
 ### Phase 2 — segmented immutable journal (proposed, not implemented)
 
@@ -105,7 +109,12 @@ detect retroactive modification of older records.
 
 - Phase 1 is a bounded, reversible optimization with no format change.
 - Full-chain verification still occurs on first append, cache misses, periodic
-  refresh and any integrity error.
+  refresh and any integrity error. Content hashing remains O(n) per append while
+  a proof is active; that read/hash cost is the security price for detecting
+  byte changes independently of filesystem metadata.
+- `.audit-history` is a local continuity marker, not audit evidence and not part
+  of archive contents. Its loss cannot authorize a silent chain reset; the
+  persisted session transition/outbox check remains the second safeguard.
 - 100,000-event acceptance remains **NOT_VERIFIED** until Phase 2 or an
   equivalent segmented design is implemented and measured.
 - No archive, export or recovery reader may depend on the in-process proof.
@@ -116,8 +125,9 @@ detect retroactive modification of older records.
 Measured after Phase 1 on the reference workstation (Node 24.20.0, macOS,
 APFS; 200-byte detail for 5,000 and 100-byte for 10,000):
 
-- 5,000 events: 71.8 s total, p50 14.1 ms, p95 17.1 ms, p99 20.1 ms.
-- 10,000 events: 158.4 s total, p50 15.9 ms, p95 18.9 ms, p99 21.2 ms.
+- 1,000 events: 15.9 s total, p50 15.3 ms, p95 20.6 ms, p99 33.4 ms.
+- 5,000 events: 87.9 s total, p50 17.7 ms, p95 20.9 ms, p99 25.4 ms.
+- 10,000 events: 185.5 s total, p50 18.3 ms, p95 21.7 ms, p99 27.4 ms.
 - 100,000 events: **NOT_VERIFIED**; the full-file rewrite path remains
   O(n) bytes per append on filesystems without forced CoW.
 

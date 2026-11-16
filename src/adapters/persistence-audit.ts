@@ -11,9 +11,11 @@
  */
 
 import * as fs from 'node:fs/promises';
+import { join } from 'node:path';
 import { AuditEvent, AuditEventBodySchema } from '../state/evidence.js';
 import type { AuditEventBody } from '../state/evidence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { hashText } from '../shared/hashing.js';
 import {
   auditPath,
   durableAtomicWrite,
@@ -190,7 +192,7 @@ function assertAppendableAuditChain(
 }
 
 interface AuditAppendCache {
-  readonly identity: string;
+  readonly contentHash: string;
   readonly sessionId: string | undefined;
   readonly ids: Set<string>;
   readonly lastHash: string;
@@ -202,17 +204,8 @@ interface AuditAppendCache {
 const MAX_AUDIT_APPEND_CACHES = 64;
 const FULL_VERIFY_INTERVAL_MS = 60_000;
 const FULL_VERIFY_EVERY_APPENDS = 256;
+const AUDIT_HISTORY_MARKER = '.audit-history';
 const auditAppendCaches = new Map<string, AuditAppendCache>();
-
-async function auditFileIdentity(filePath: string): Promise<string | null> {
-  try {
-    const stat = await fs.stat(filePath);
-    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
-  } catch (err) {
-    if (isEnoent(err)) return null;
-    throw err;
-  }
-}
 
 function rememberAuditAppendCache(sessionDir: string, cache: AuditAppendCache): void {
   auditAppendCaches.delete(sessionDir);
@@ -227,6 +220,58 @@ function rememberAuditAppendCache(sessionDir: string, cache: AuditAppendCache): 
 /** Forget the in-process append proof for one session. */
 function clearAuditAppendCache(sessionDir: string): void {
   auditAppendCaches.delete(sessionDir);
+}
+
+async function hasAuditHistoryMarker(sessionDir: string): Promise<boolean> {
+  try {
+    await fs.access(join(sessionDir, AUDIT_HISTORY_MARKER));
+    return true;
+  } catch (err) {
+    if (isEnoent(err)) return false;
+    throw err;
+  }
+}
+
+/** Durable continuity marker survives a process restart; it is not audit evidence. */
+async function markAuditHistory(sessionDir: string): Promise<void> {
+  try {
+    await fs.writeFile(join(sessionDir, AUDIT_HISTORY_MARKER), 'audit-chain.v3\n', {
+      encoding: 'utf-8',
+      flag: 'wx',
+      mode: 0o600,
+    });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+  }
+}
+
+/**
+ * A missing/empty trail is only a valid genesis when no prior history is known.
+ * The in-process proof catches same-process deletion; the durable marker catches
+ * a restart after the first append. Pre-marker sessions whose audit file was
+ * deleted before the first append remain a documented legacy-recovery edge.
+ */
+async function assertAuditHistoryContinuity(
+  sessionDir: string,
+  existing: string,
+  cached: AuditAppendCache | undefined,
+): Promise<void> {
+  if (existing.length > 0) return;
+  if (cached !== undefined && cached.lastSequence > 0) {
+    throw new AuditFormatError(
+      'Audit trail disappeared after canonical history; explicit recovery is required.',
+    );
+  }
+  if (await hasAuditHistoryMarker(sessionDir)) {
+    throw new AuditFormatError(
+      'Audit trail is missing but a prior history marker exists; explicit recovery is required.',
+    );
+  }
+}
+
+/** @internal Simulate a process restart for append-proof regression tests. */
+export function resetAuditAppendCacheForTests(): void {
+  auditAppendCaches.clear();
 }
 
 /** @internal Read-only projection for append-proof regression tests. */
@@ -296,16 +341,7 @@ function replayEvent(events: readonly AuditEvent[], event: AuditEventBody): Audi
   );
 }
 
-async function readAndVerifyAuditTrail(
-  filePath: string,
-  event: AuditEventBody,
-): Promise<{ readonly existing: string; readonly events: AuditEvent[] }> {
-  let existing = '';
-  try {
-    existing = await fs.readFile(filePath, 'utf-8');
-  } catch (err) {
-    if (!isEnoent(err)) throw err;
-  }
+function parseAndVerifyAuditTrail(existing: string, event: AuditEventBody): AuditEvent[] {
   // A valid JSON object without the final JSONL delimiter is not appendable:
   // concatenating another record would corrupt future audit reads. Preserve
   // historical evidence exactly and require explicit forensic recovery.
@@ -319,21 +355,20 @@ async function readAndVerifyAuditTrail(
   // Validate before deduplication: even an idempotent retry must not accept a
   // corrupted or cross-session canonical trail.
   assertAppendableAuditChain(events, event.flowguardSessionId);
-  return { existing, events };
+  return events;
 }
 
 async function loadAuditAppendState(
   sessionDir: string,
-  filePath: string,
-  identity: string | null,
+  existing: string,
+  contentHash: string,
   event: AuditEventBody,
 ): Promise<AuditAppendLoad> {
   const cached = auditAppendCaches.get(sessionDir);
   const now = Date.now();
   if (
     cached !== undefined &&
-    identity !== null &&
-    cached.identity === identity &&
+    cached.contentHash === contentHash &&
     cached.appendsSinceVerify < FULL_VERIFY_EVERY_APPENDS &&
     now - cached.verifiedAt <= FULL_VERIFY_INTERVAL_MS &&
     !cached.ids.has(event.id)
@@ -354,24 +389,22 @@ async function loadAuditAppendState(
     };
   }
 
-  const { existing, events } = await readAndVerifyAuditTrail(filePath, event);
+  const events = parseAndVerifyAuditTrail(existing, event);
   const ids = buildAuditIdSet(events);
   const sessionId = events[0]?.flowguardSessionId;
   const lastHash = getLastChainHash(events);
   const lastSequence = events.length;
   const replay = replayEvent(events, event);
   if (replay !== null) {
-    if (identity !== null) {
-      rememberAuditAppendCache(sessionDir, {
-        identity,
-        sessionId,
-        ids,
-        lastHash,
-        lastSequence,
-        verifiedAt: now,
-        appendsSinceVerify: 0,
-      });
-    }
+    rememberAuditAppendCache(sessionDir, {
+      contentHash,
+      sessionId,
+      ids,
+      lastHash,
+      lastSequence,
+      verifiedAt: now,
+      appendsSinceVerify: 0,
+    });
     return { kind: 'replay', event: replay };
   }
   return {
@@ -421,7 +454,7 @@ function buildChainedAuditEvent(event: AuditEventBody, state: AuditAppendState):
 
 async function publishAuditLine(
   filePath: string,
-  identity: string | null,
+  hasExisting: boolean,
   line: string,
   existing: string,
 ): Promise<void> {
@@ -429,34 +462,24 @@ async function publishAuditLine(
   // its parent directory. A CoW reflink reduces the rewrite cost on supporting
   // filesystems; unsupported clones fall back to the original durable rewrite
   // without altering audit integrity or atomicity.
-  if (identity === null) {
+  if (!hasExisting) {
     await durableAtomicWrite(filePath, line);
     return;
   }
-  await durableAtomicCloneAppend(filePath, line, async () => {
-    const current = existing.length > 0 ? existing : await fs.readFile(filePath, 'utf-8');
-    return current + line;
-  });
+  await durableAtomicCloneAppend(filePath, line, `${existing}${line}`);
 }
 
-async function rememberAppendedAudit(
+function rememberAppendedAudit(
   sessionDir: string,
-  filePath: string,
   state: AuditAppendState,
   event: AuditEventBody,
   chained: AuditEvent,
-): Promise<void> {
-  let nextIdentity: string | null = null;
-  try {
-    nextIdentity = await auditFileIdentity(filePath);
-  } catch {
-    auditAppendCaches.delete(sessionDir);
-  }
-  if (nextIdentity === null) return;
+  contentHash: string,
+): void {
   const nextIds = state.cacheHit ? state.ids : new Set(state.ids);
   nextIds.add(event.id);
   rememberAuditAppendCache(sessionDir, {
-    identity: nextIdentity,
+    contentHash,
     sessionId: state.sessionId ?? event.flowguardSessionId,
     ids: nextIds,
     lastHash: chained.chainHash,
@@ -469,14 +492,25 @@ async function rememberAppendedAudit(
 async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): Promise<AuditEvent> {
   await ensureDir(sessionDir);
   const filePath = auditPath(sessionDir);
-  const identity = await auditFileIdentity(filePath);
-  const loaded = await loadAuditAppendState(sessionDir, filePath, identity, event);
-  if (loaded.kind === 'replay') return loaded.event;
+  let existing = '';
+  try {
+    existing = await fs.readFile(filePath, 'utf-8');
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
+  }
+  await assertAuditHistoryContinuity(sessionDir, existing, auditAppendCaches.get(sessionDir));
+  const contentHash = hashText(existing);
+  const loaded = await loadAuditAppendState(sessionDir, existing, contentHash, event);
+  if (loaded.kind === 'replay') {
+    await markAuditHistory(sessionDir);
+    return loaded.event;
+  }
 
   const chained = buildChainedAuditEvent(event, loaded.state);
   const line = JSON.stringify(chained) + '\n';
-  await publishAuditLine(filePath, identity, line, loaded.state.existing);
-  await rememberAppendedAudit(sessionDir, filePath, loaded.state, event, chained);
+  await publishAuditLine(filePath, existing.length > 0, line, existing);
+  rememberAppendedAudit(sessionDir, loaded.state, event, chained, hashText(`${existing}${line}`));
+  if (!loaded.state.cacheHit) await markAuditHistory(sessionDir);
   return chained;
 }
 

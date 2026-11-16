@@ -984,11 +984,15 @@ last read` without a click, while a completion in another session left the
   full settled reviewer dispatch objects while retaining bounded identity
   bindings for enrolled children, and serialize concurrent duplicate
   `session.deleted` retirement so cleanup runs exactly once per admitted session.
-- Invalidate the in-process audit append proof on any file-identity change,
-  tamper, duplicate ID, append failure or periodic full verification; avoid the
-  eager `existing + line` allocation and cache unsupported reflink capability
-  observations so the fallback does not probe a known-unsupported filesystem on
-  every append.
+- Bind the in-process audit append proof to a SHA-256 digest of the complete
+  trail content, not mutable filesystem metadata; restoring `mtime`/size after a
+  byte change no longer bypasses verification. Refuse a silent chain restart
+  when a previously non-empty trail disappears, using the bounded proof, a
+  durable `.audit-history` continuity marker and persisted transition/outbox
+  history. Invalidate the proof on tamper, duplicate ID, append failure or
+  periodic full verification; avoid the eager `existing + line` allocation and
+  cache unsupported reflink capability observations so the fallback does not
+  probe a known-unsupported filesystem on every append.
 - Add real-Git runtime bootstrap, durable audit CoW p50/p95/p99, and interleaved
   compact-status latency measurements to the V2 hardening verification suite.
   Enforce the requested factor-three status threshold in CI. Compact status
