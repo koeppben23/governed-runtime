@@ -1,0 +1,133 @@
+{
+  "id": "00000000-0000-4000-8000-000000000001",
+  "flowguardSessionId": "00000000-0000-4000-8000-000000000001",
+  "schemaVersion": "v11",
+  "assuranceEpoch": "assurance-epoch.v3",
+  "stateDigestFormat": "state-digest.v2",
+  "runtimeLease": null,
+  "auditChainFormat": "audit-chain.v3",
+  "phase": "READY",
+  "binding": {
+    "hostSessionId": "00000000-0000-4000-8000-000000000002",
+    "worktree": "/tmp/test-repo",
+    "fingerprint": "a1b2c3d4e5f6a1b2c3d4e5f6",
+    "resolvedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "ticket": null,
+  "architecture": null,
+  "plan": null,
+  "selfReview": null,
+  "validation": [],
+  "validationAttempts": [],
+  "mutationAttempts": [],
+  "mutationEpisodes": [],
+  "mutationEpisodeResolutions": [],
+  "challengeResolutions": [],
+  "implValidation": [],
+  "implementation": null,
+  "implementationRiskAssessment": null,
+  "implementationRework": null,
+  "reducedCeremony": null,
+  "implReview": null,
+  "reviewCycles": {
+    "plan": 1,
+    "architecture": 1,
+    "implementation": 1
+  },
+  "reviewDecision": null,
+  "reviewReportPath": null,
+  "peerReviewEvidence": [],
+  "implReviewFindings": [],
+  "peerReviewFindings": [],
+  "nextAdrNumber": 1,
+  "activeProfile": null,
+  "activeChecks": [
+    "test",
+    "lint"
+  ],
+  "implementationBaseline": {
+    "dirtyFiles": [],
+    "capturedAt": "2026-01-01T00:00:00.000Z",
+    "controlPlaneMarker": "test-control-plane-marker"
+  },
+  "proofGraph": {
+    "version": "proofgraph.v2",
+    "claims": [],
+    "evaluatedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "initiatedBy": "initiator-1",
+  "initiatedByIdentity": {
+    "actorId": "initiator-1",
+    "actorEmail": "initiator@test.com",
+    "actorSource": "env",
+    "actorAssurance": "best_effort"
+  },
+  "transition": null,
+  "pendingAuditOperations": [],
+  "error": null,
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "exportCompletionEvidence": null,
+  "pendingSystemWork": null,
+  "regulatedArchiveStatus": null,
+  "policySnapshot": {
+    "riskTriggerPaths": [],
+    "mode": "team",
+    "hashVersion": "policy-digest.v4",
+    "resolvedAt": "2026-01-01T00:00:00.000Z",
+    "requestedMode": "team",
+    "effectiveGateBehavior": "human_gated",
+    "requireHumanGates": true,
+    "reviewBudget": {
+      "plan": 3,
+      "architecture": 3,
+      "implementation": 3
+    },
+    "maxIncoherentReviewerCaptureRetries": 1,
+    "maxReviewerAttempts": 1,
+    "allowSelfApproval": true,
+    "minimumActorAssuranceForApproval": "best_effort",
+    "identityProviderMode": "optional",
+    "challengePolicy": {
+      "version": "challenge-policy.v1",
+      "counts": {
+        "TRIVIAL": 0,
+        "STANDARD": 1,
+        "HIGH-RISK": 2
+      }
+    },
+    "enforceRiskClassification": false,
+    "allowReducedCeremony": false,
+    "discoveryHealth": {
+      "enforcement": "off",
+      "onDegraded": "allow",
+      "onDrift": "allow"
+    },
+    "validationEvidence": {
+      "enforcement": "off",
+      "allowNoCommands": false
+    },
+    "audit": {
+      "emitTransitions": true,
+      "emitToolCalls": true,
+      "enableChainHash": true,
+      "timestampAssurance": {
+        "enabled": false,
+        "mode": "local_only",
+        "strict": false,
+        "criticalEvents": [
+          "decision",
+          "lifecycle"
+        ],
+        "ntpServers": [
+          "pool.ntp.org"
+        ],
+        "ntpDriftThresholdMs": 30000,
+        "tsaTimeoutMs": 10000
+      }
+    },
+    "actorClassification": {
+      "flowguard_decision": "human"
+    },
+    "hash": "ebe10c074fe6b1d359e76bb63b8ed08a501fc40426f04b6bc664660953b8a4ce"
+  }
+}

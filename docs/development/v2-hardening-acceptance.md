@@ -68,6 +68,31 @@ records real measurements and successful output:
 6. Signed-off measured before/after results including machine/filesystem
    provenance, p50/p95/p99, failure injection and rollback decision.
 
+## Current execution status (2026-11-16)
+
+| #1239 item                                | Status                              | Evidence                                                                                                                                                                                 |
+| ----------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native host smoke                         | **PASS for the local macOS target** | OpenCode 2.2.5, Git 2.39.5, Node 22.22.2/npm 10.9.7; install-verify 11/11, full smoke 86/86, review host contract 102/102, reviewer capabilities 3/3. Other deployments are not claimed. |
+| 1k/10k/100k audit scale                   | **PASS**                            | 100k full loop: 7,358.98 s, p50 72.2 ms, p95 125.5 ms, p99 138.0 ms, 77,177,728 bytes, valid chain. 100k depth/restart and 100k outbox checkpoint also pass.                             |
+| 32 independent writers                    | **PASS**                            | 32/32 unique IDs, contiguous sequence, valid chain.                                                                                                                                      |
+| SIGKILL at every state/audit write window | **PASS for durable phases**         | 24 deterministic phase scenarios: marker, first audit, existing audit, clone fallback and state writes; 0 failures. Clone-only phases are `NOT_VERIFIED` on APFS (`ENOSYS`).             |
+| Multi-hour real host soak                 | **NOT_VERIFIED**                    | A 10-minute synthetic soak passed 181,825,000 iterations with bounded maps and RSS 275–281 MB. A real multi-hour host run is still required.                                             |
+| CoW-reflink writer throughput             | **BLOCKED / NOT_VERIFIED**          | Local APFS and CI report `ENOSYS`/`ENOTSUP` for the forced clone path. Recovery: run `audit-clone-append.mjs` on a verified reflink-capable filesystem.                                  |
+| Signed-off measured report                | **PENDING owner sign-off**          | Local evidence and raw logs are available; owner acceptance is not self-issued.                                                                                                          |
+
 **Decision rule:** #1239 remains open until all items above have real evidence.
 A performance threshold missed on a supported system blocks acceptance; a
 missing environment must be recorded as `NOT_VERIFIED`, never as `PASS`.
+
+### Remaining closure blockers
+
+The code, CI and local evidence work is complete. Full #1239 closure now
+requires only:
+
+1. A real multi-hour OpenCode host run with repeated session and reviewer
+   lifecycles, sampled for heap/RSS and map cardinality. The 10-minute synthetic
+   soak is not a substitute.
+2. Forced CoW-reflink measurements on a filesystem where the Node clone path is
+   supported. Local APFS and CI report `ENOSYS`/`ENOTSUP`.
+3. Owner sign-off of the measured report. This document intentionally does not
+   self-issue acceptance.

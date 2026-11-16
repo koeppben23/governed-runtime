@@ -13,6 +13,7 @@ import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
   durableAtomicWrite,
+  publishAtomicWritePhase,
   renameWithRetry,
   syncDirectory,
   PersistenceError,
@@ -96,10 +97,12 @@ export async function durableAtomicCloneAppend(
   try {
     await fs.copyFile(filePath, tempPath, CLONE_FLAGS);
     rememberCloneCapability(dir, true);
+    publishAtomicWritePhase(filePath, 'clone-created');
   } catch (error) {
     await unlinkTemp(tempPath);
     if (cloneUnsupported(error)) {
       rememberCloneCapability(dir, false);
+      publishAtomicWritePhase(filePath, 'clone-unsupported');
       await durableAtomicWrite(filePath, await resolveFallback(fallbackContent));
       return;
     }
@@ -116,12 +119,16 @@ export async function durableAtomicCloneAppend(
     const handle = await fs.open(tempPath, 'a', 0o600);
     try {
       await handle.writeFile(appendedLine, 'utf8');
+      publishAtomicWritePhase(filePath, 'clone-line-written');
       await handle.sync();
+      publishAtomicWritePhase(filePath, 'clone-fsynced');
     } finally {
       await handle.close();
     }
     await renameWithRetry(tempPath, filePath);
+    publishAtomicWritePhase(filePath, 'renamed');
     await syncDirectory(dir);
+    publishAtomicWritePhase(filePath, 'dir-fsynced');
   } catch (error) {
     await unlinkTemp(tempPath);
     throw new PersistenceError(

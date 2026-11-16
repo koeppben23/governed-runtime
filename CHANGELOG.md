@@ -2122,6 +2122,17 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Add a deterministic persistence-phase SIGKILL matrix for the continuity
+  marker, first and existing audit publication, clone fallback and
+  session-state writes. The matrix kills a real child at each temp/open,
+  fsync, rename and directory-fsync phase, then verifies old-or-new state,
+  valid chains and restart behavior. Add `perf:persistence-crash-matrix` to the
+  `integration-perf` CI job; clone-only phases remain `NOT_VERIFIED` on
+  filesystems without forced reflink support.
+- Add restart-process verification to the audit scale and history-depth
+  benchmarks, a 100k outbox checkpoint harness that persists and re-reads the
+  compacted state, and duration/memory sampling to the lifecycle soak so
+  bounded map/RSS behavior can be observed over an extended run.
 - Add append-proof cache regression coverage for proof reuse, failure
   invalidation, bounded session retention, the 60-second/256-append full
   verification windows, no-false-negative filter membership and marker-before-

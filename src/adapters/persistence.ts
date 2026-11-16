@@ -53,6 +53,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
+import { channel } from 'node:diagnostics_channel';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
   CURRENT_ASSURANCE_EPOCH,
@@ -123,6 +124,23 @@ export function repoConfigPath(worktree: string): string {
 // -- Error Types --------------------------------------------------------------
 
 // -- Atomic Write -------------------------------------------------------------
+
+/**
+ * Fault-injection/observability seam for durable publication phases.
+ *
+ * Production has no subscribers and pays only the boolean check. The crash
+ * matrix subscribes to kill a real child at an exact fsync/rename boundary.
+ *
+ * @internal
+ */
+const atomicWriteChannel = channel('flowguard.persistence.atomic-write');
+
+/** @internal Publish a named durable-write phase without changing I/O order. */
+export function publishAtomicWritePhase(filePath: string, phase: string): void {
+  if (atomicWriteChannel.hasSubscribers) {
+    atomicWriteChannel.publish({ filePath, phase });
+  }
+}
 
 /**
  * Rename with retry for Windows EPERM/EBUSY transient failures.
@@ -206,14 +224,19 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
 
   try {
     const handle = await fs.open(tempPath, 'wx', 0o600);
+    publishAtomicWritePhase(filePath, 'temp-opened');
     try {
       await handle.writeFile(content, 'utf-8');
+      publishAtomicWritePhase(filePath, 'temp-written');
       await handle.sync();
+      publishAtomicWritePhase(filePath, 'temp-fsynced');
     } finally {
       await handle.close();
     }
     await renameWithRetry(tempPath, filePath);
+    publishAtomicWritePhase(filePath, 'renamed');
     await syncDirectory(dir);
+    publishAtomicWritePhase(filePath, 'dir-fsynced');
   } catch (err) {
     // Stryker disable next-line BlockStatement — equivalent: the temp-file cleanup is best-effort by design; removing the cleanup block cannot change the fail-closed throw below.
     try {
