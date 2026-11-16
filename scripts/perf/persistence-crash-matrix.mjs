@@ -18,9 +18,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appendAuditEvent, readAuditTrail } from '../../dist/adapters/persistence-audit.js';
+import { appendAuditEvent } from '../../dist/adapters/persistence-audit.js';
 import { readState, writeState } from '../../dist/adapters/persistence.js';
-import { verifyChain } from '../../dist/audit/integrity.js';
+import { computeStateDigest } from '../../dist/integration/audit-outbox.js';
+import { SessionState } from '../../dist/state/schema.js';
 
 const sessionId = '00000000-0000-4000-8000-000000000001';
 const fixturePath = fileURLToPath(
@@ -65,6 +66,74 @@ state.transition = { from: 'READY', to: 'TICKET', event: 'TICKET_SELECTED', at: 
 await writeState(process.env.DIR, state);
 `;
 
+const freshAuditProbeCode = `
+import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+const audit = await import(pathToFileURL(join(process.cwd(), 'dist/adapters/persistence-audit.js')).href);
+const integrity = await import(pathToFileURL(join(process.cwd(), 'dist/audit/integrity.js')).href);
+const dir = process.env.DIR;
+const mode = process.env.MODE;
+async function readTrail() {
+  const trail = await audit.readAuditTrail(dir);
+  const verified = integrity.verifyChain(trail);
+  let raw = '';
+  try { raw = await readFile(join(dir, 'audit.jsonl'), 'utf8'); } catch {}
+  return {
+    count: trail.length,
+    valid: verified.valid,
+    reason: verified.reason ?? null,
+    finalNewline: raw.length === 0 || raw.endsWith('\\n'),
+  };
+}
+function body() {
+  return {
+    id: randomUUID(),
+    flowguardSessionId: process.env.SESSION,
+    hostSessionId: 'ses_restart',
+    phase: 'IMPLEMENTATION',
+    event: 'state_write',
+    occurredAt: '2026-11-16T09:00:00.000Z',
+    actor: 'machine',
+    detail: { operationId: randomUUID(), index: Number(process.env.BODY_INDEX ?? '0'), pad: 'restart' },
+  };
+}
+const before = await readTrail();
+if (mode === 'read') {
+  console.log(JSON.stringify({ mode, ...before }));
+} else if (mode === 'failclosed') {
+  try {
+    await audit.appendAuditEvent(dir, body());
+    console.log(JSON.stringify({ mode, failedClosed: false, message: null }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(JSON.stringify({ mode, failedClosed: /explicit recovery is required/i.test(message), message }));
+  }
+} else if (mode === 'append') {
+  await audit.appendAuditEvent(dir, body());
+  const after = await readTrail();
+  console.log(JSON.stringify({ mode, before, after }));
+}
+`;
+
+const freshStateProbeCode = `
+import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+const persistence = await import(pathToFileURL(join(process.cwd(), 'dist/adapters/persistence.js')).href);
+const outbox = await import(pathToFileURL(join(process.cwd(), 'dist/integration/audit-outbox.js')).href);
+try {
+  const state = await persistence.readState(process.env.DIR);
+  console.log(JSON.stringify({
+    phase: state?.phase ?? null,
+    digest: state ? outbox.computeStateDigest(state) : null,
+    valid: state !== null,
+  }));
+} catch (error) {
+  console.log(JSON.stringify({ valid: false, error: error instanceof Error ? error.message : String(error) }));
+}
+`;
+
 function body(index, pad = 100) {
   return {
     id: randomUUID(),
@@ -100,18 +169,44 @@ async function runChild(code, env, hitPath) {
   return { exit, hit: existsSync(hitPath) };
 }
 
-async function verifyAuditRestart(dir, expectedCount) {
-  const trail = await readAuditTrail(dir);
-  if (trail.length !== expectedCount) {
-    return {
-      valid: false,
-      reason: `expected ${expectedCount} events after restart, got ${trail.length}`,
-    };
-  }
-  const verified = verifyChain(trail);
-  return verified.valid
-    ? { valid: true, reason: null }
-    : { valid: false, reason: verified.reason ?? 'invalid chain after restart' };
+function runProbe(code, env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', code], {
+      cwd: process.cwd(),
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    const timeout = setTimeout(() => child.kill('SIGKILL'), 30_000);
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.on('error', reject);
+    child.on('exit', (code, signal) => {
+      clearTimeout(timeout);
+      if (code !== 0) {
+        reject(
+          new Error(
+            `probe failed (code=${code}, signal=${signal}): ${stderr.trim().slice(0, 500)}`,
+          ),
+        );
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout.trim().split('\n').at(-1)));
+      } catch (error) {
+        reject(
+          new Error(
+            `probe returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+      }
+    });
+  });
 }
 
 async function runAuditPhase({ label, seed, phase, firstAppend, target = 'audit.jsonl' }) {
@@ -152,47 +247,65 @@ async function runAuditPhase({ label, seed, phase, firstAppend, target = 'audit.
       };
     }
 
-    const auditPath = join(dir, 'audit.jsonl');
-    const raw = existsSync(auditPath) ? await readFile(auditPath, 'utf8') : '';
-    if (raw.length > 0 && !raw.endsWith('\n')) {
+    const crashRead = await runProbe(freshAuditProbeCode, {
+      DIR: dir,
+      MODE: 'read',
+      SESSION: sessionId,
+    });
+    if (!crashRead.valid) {
+      valid = false;
+      reason = crashRead.reason ?? 'fresh process rejected the crashed audit trail';
+    }
+    if (crashRead.count !== seed && crashRead.count !== seed + 1) {
+      valid = false;
+      reason = `unexpected audit count ${crashRead.count} after crash (seed=${seed})`;
+    }
+    if (!crashRead.finalNewline) {
       valid = false;
       reason = 'committed audit lacks final newline';
     }
-    const trail = await readAuditTrail(dir);
-    if (trail.length !== seed && trail.length !== seed + 1) {
-      valid = false;
-      reason = `unexpected audit count ${trail.length} after crash (seed=${seed})`;
-    }
-    const verified = verifyChain(trail);
-    if (!verified.valid) {
-      valid = false;
-      reason = verified.reason ?? 'invalid chain after crash';
-    }
-    if (valid && firstAppend && trail.length === 0) {
-      const marker = existsSync(join(dir, '.audit-history'));
-      if (!marker) {
+    if (valid && firstAppend && crashRead.count === 0) {
+      if (!existsSync(join(dir, '.audit-history'))) {
         valid = false;
         reason = 'marker missing before first audit publication';
       } else {
-        try {
-          await appendAuditEvent(dir, body(seed + 1));
+        const failClosed = await runProbe(freshAuditProbeCode, {
+          DIR: dir,
+          MODE: 'failclosed',
+          SESSION: sessionId,
+          BODY_INDEX: String(seed + 1),
+        });
+        if (!failClosed.failedClosed) {
           valid = false;
-          reason = 'restart after marker-only first append did not fail closed';
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (!/explicit recovery is required/i.test(message)) {
-            valid = false;
-            reason = `unexpected restart failure: ${message}`;
-          }
+          reason = 'fresh process did not fail closed after marker-only first append';
         }
       }
     } else if (valid) {
-      await appendAuditEvent(dir, body(seed + trail.length));
-      const restart = await verifyAuditRestart(dir, trail.length + 1);
-      valid = restart.valid;
-      reason = restart.reason;
+      const restart = await runProbe(freshAuditProbeCode, {
+        DIR: dir,
+        MODE: 'append',
+        SESSION: sessionId,
+        BODY_INDEX: String(seed + crashRead.count),
+      });
+      if (
+        !restart.before?.valid ||
+        restart.before.count !== crashRead.count ||
+        !restart.after?.valid ||
+        restart.after.count !== crashRead.count + 1
+      ) {
+        valid = false;
+        reason = `fresh-process restart failed: ${JSON.stringify(restart)}`;
+      }
     }
     return { label, phase, skipped: false, valid, reason };
+  } catch (error) {
+    return {
+      label,
+      phase,
+      skipped: false,
+      valid: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -239,36 +352,48 @@ async function runMarkerPhase(phase) {
     }
     const marker = existsSync(join(dir, '.audit-history'));
     if (marker) {
-      try {
-        await appendAuditEvent(dir, body(1));
-        return {
-          label: 'marker',
-          phase,
-          skipped: false,
-          valid: false,
-          reason: 'marker-only crash did not fail closed on restart',
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return {
-          label: 'marker',
-          phase,
-          skipped: false,
-          valid: /explicit recovery is required/i.test(message),
-          reason: /explicit recovery is required/i.test(message)
-            ? null
-            : `unexpected restart failure: ${message}`,
-        };
-      }
+      const failClosed = await runProbe(freshAuditProbeCode, {
+        DIR: dir,
+        MODE: 'failclosed',
+        SESSION: sessionId,
+        BODY_INDEX: '1',
+      });
+      return {
+        label: 'marker',
+        phase,
+        skipped: false,
+        valid: failClosed.failedClosed,
+        reason: failClosed.failedClosed
+          ? null
+          : 'fresh process did not fail closed after marker-only crash',
+      };
     }
-    await appendAuditEvent(dir, body(1));
-    return verifyAuditRestart(dir, 1).then((restart) => ({
+    const restart = await runProbe(freshAuditProbeCode, {
+      DIR: dir,
+      MODE: 'append',
+      SESSION: sessionId,
+      BODY_INDEX: '1',
+    });
+    const valid =
+      restart.before?.valid &&
+      restart.before.count === 0 &&
+      restart.after?.valid &&
+      restart.after.count === 1;
+    return {
       label: 'marker',
       phase,
       skipped: false,
-      valid: restart.valid,
-      reason: restart.reason,
-    }));
+      valid,
+      reason: valid ? null : `fresh-process restart failed: ${JSON.stringify(restart)}`,
+    };
+  } catch (error) {
+    return {
+      label: 'marker',
+      phase,
+      skipped: false,
+      valid: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -280,6 +405,20 @@ async function runStatePhase(phase) {
   try {
     const fixture = JSON.parse(await readFile(fixturePath, 'utf8'));
     await writeState(dir, fixture);
+    const seeded = await readState(dir);
+    if (seeded === null) throw new Error('seeded state is missing');
+    const oldDigest = computeStateDigest(seeded);
+    const expectedNewState = SessionState.parse({
+      ...fixture,
+      phase: 'TICKET',
+      transition: {
+        from: 'READY',
+        to: 'TICKET',
+        event: 'TICKET_SELECTED',
+        at: '2026-11-16T09:00:00.000Z',
+      },
+    });
+    const newDigest = computeStateDigest(expectedNewState);
     const { exit, hit: phaseHit } = await runChild(
       stateChildCode,
       {
@@ -306,17 +445,27 @@ async function runStatePhase(phase) {
         valid: false,
         reason: `child did not die by SIGKILL (code=${exit.code}, signal=${exit.signal})`,
       };
-    const after = await readState(dir);
-    const expected = ['temp-opened', 'temp-written', 'temp-fsynced'].includes(phase)
+    const probe = await runProbe(freshStateProbeCode, { DIR: dir });
+    const expectedPhase = ['temp-opened', 'temp-written', 'temp-fsynced'].includes(phase)
       ? 'READY'
       : 'TICKET';
-    if (after?.phase !== expected) {
+    const expectedDigest = expectedPhase === 'READY' ? oldDigest : newDigest;
+    if (!probe.valid) {
       return {
         label: 'state',
         phase,
         skipped: false,
         valid: false,
-        reason: `state phase ${after?.phase} != ${expected}`,
+        reason: `fresh process could not read state: ${probe.error ?? 'unknown error'}`,
+      };
+    }
+    if (probe.phase !== expectedPhase || probe.digest !== expectedDigest) {
+      return {
+        label: 'state',
+        phase,
+        skipped: false,
+        valid: false,
+        reason: `fresh state mismatch: phase=${probe.phase}/${expectedPhase}, digest=${probe.digest}/${expectedDigest}`,
       };
     }
     return { label: 'state', phase, skipped: false, valid: true, reason: null };
