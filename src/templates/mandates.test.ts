@@ -41,6 +41,7 @@ describe('mandates — contract anchors', () => {
     expect(REVIEWER_AGENT).toContain('permissions:');
     expect(REVIEWER_AGENT).not.toMatch(/^permission:/m);
     expect(REVIEWER_AGENT).toContain('The task prompt supplies the current obligation');
+    expect(REVIEWER_AGENT).not.toContain('Increase methodological depth');
   });
 
   it('CLAUDE_REVIEWER_AGENT contains platform marker', () => {

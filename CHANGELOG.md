@@ -2156,6 +2156,16 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Add a methodological-depth requirement to the phase-specific Implementation
+  Checklist: for STANDARD and HIGH-RISK work, choose concrete methods by actual
+  risk, inspect authoritative raw evidence, define an ambitious but observable
+  quality bar and concrete failure conditions, and prefer falsification.
+  Role-playing, summaries, repeated green runs, and self-assessment are not
+  verification substitutes; the rule explicitly forbids using it to expand task
+  scope or complexity. The checklist now participates in concise
+  PLAN/IMPLEMENTATION projections; the persistent installed kernel, reviewer
+  system prompt, reviewer criteria, and review generation are unchanged.
+
 - Bump the production dependency group: `jose` 6.2.15 → 6.2.17, the OpenTelemetry
   exporters/sdk from 0.301.0 → 0.301.2, `@opentelemetry/sdk-logs` 3.1.0 → 3.1.1
   and `@opentelemetry/auto-instrumentations-node` 0.83.0 → 0.83.1. Patch-level
