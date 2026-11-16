@@ -2122,6 +2122,12 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Bump the production dependency group: `jose` 6.2.15 → 6.2.17, the OpenTelemetry
+  exporters/sdk from 0.301.0 → 0.301.2, `@opentelemetry/sdk-logs` 3.1.0 → 3.1.1
+  and `@opentelemetry/auto-instrumentations-node` 0.83.0 → 0.83.1. Patch-level
+  update of optional telemetry and JWT verification dependencies; no governance
+  authority, evidence format or transition contract changes.
+
 - Add a deterministic persistence-phase SIGKILL matrix for the continuity
   marker, first and existing audit publication, clone fallback and
   session-state writes. The matrix kills a real child at each temp/open,
