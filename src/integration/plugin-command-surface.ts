@@ -152,11 +152,12 @@ export async function presentCommandStatus(
   ctx: Pick<Plugin.Context, 'session'>,
   sessionID: string,
   summary: string,
+  description: string,
 ): Promise<void> {
   await ctx.session.synthetic({
     sessionID,
     text: `${summary}\n\nStatus only. Do not run another command; wait for the user's explicit command.`,
-    description: 'FlowGuard status',
+    description,
     resume: true,
   });
 }

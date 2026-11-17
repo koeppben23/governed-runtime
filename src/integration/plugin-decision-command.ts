@@ -189,7 +189,10 @@ async function presentDecision(
       typeof result.message === 'string' ? result.message : output,
     );
   try {
-    await presentCommandStatus(ctx, sessionID, decisionConfirmation(result, verdict));
+    const phase = typeof result.phase === 'string' ? result.phase : 'unknown phase';
+    const command = directiveCommands(result)[0];
+    const description = `FlowGuard: ${verdictLabel(verdict)} — ${phase}.${command === undefined ? '' : ` User may run ${command}.`}`;
+    await presentCommandStatus(ctx, sessionID, decisionConfirmation(result, verdict), description);
   } catch (error) {
     console.warn(
       '[FlowGuard] Decision is committed and audited; status presentation failed.',

@@ -318,7 +318,7 @@ async function presentLifecycle(
   step: string,
 ): Promise<void> {
   try {
-    await presentCommandStatus(ctx, sessionID, text);
+    await presentCommandStatus(ctx, sessionID, text, text);
   } catch (error) {
     console.warn(`[FlowGuard] ${step} presentation failed after the durable transition.`, error);
   }

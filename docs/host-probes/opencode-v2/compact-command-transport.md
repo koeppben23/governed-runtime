@@ -62,6 +62,11 @@ hosts keep their portable template files.
   in the inbox and starts no model turn; `resume: true` is delivered immediately
   and starts exactly one turn. The native result path therefore uses a short
   summary with `resume: true`.
+- Live pinned-host TUI smoke: the 2.2.5 terminal UI renders the synthetic
+  **description** (`FlowGuard governance is ACTIVE — team, READY...`) as the
+  compact status and does not print the full text. The chooser still opens,
+  cancels without a transition, and selects `/task`. This is rendered-TUI
+  evidence, not a screenshot.
 - Installer tests: no command template is written for OpenCode; an exact managed
   upgrade file is removed; foreign bytes still block installation.
 - Doctor tests: missing native command files are expected; an obsolete exact
@@ -82,9 +87,9 @@ hosts keep their portable template files.
 - `NOT_VERIFIED`: token accounting. Hiding the body from the transcript does not
   by itself reduce model context; the body still travels in system context for
   the command turn.
-- `NOT_VERIFIED`: visible rendering of the synthetic short status in Desktop and
-  TUI. `resume: true` is delivered and starts one turn on the pinned host, but
-  no screenshot or visual capture was produced.
+- `NOT_VERIFIED`: visible rendering of the synthetic short status in Desktop.
+  The pinned TUI renders the description; Desktop and screenshots remain
+  unverified.
 - The short status still causes one model turn because OpenCode V2 has no
   immediate, turn-free transcript channel. `resume: false` is not a substitute:
   it remains pending until the next wake.

@@ -253,13 +253,14 @@ async function runStart(
       : directive.commands.length > 0
         ? `User may run: ${directive.commands[0]}. Details: /status.`
         : 'Details: /status.';
-  const summary = [
-    `FlowGuard governance ${status} for this session: ${workflow.state.policySnapshot.mode} policy, phase ${workflow.state.phase}.`,
-    ...workflow.report,
-    next,
-  ].join('\n\n');
+  const headline = `FlowGuard governance ${status} for this session: ${workflow.state.policySnapshot.mode} policy, phase ${workflow.state.phase}.`;
+  const summary = [headline, ...workflow.report, next].join('\n\n');
+  const description =
+    directive.code === 'CHOOSE_FLOW'
+      ? `FlowGuard governance ${status} — ${workflow.state.policySnapshot.mode}, ${workflow.state.phase}. User may run /task.`
+      : `FlowGuard governance ${status} — ${workflow.state.policySnapshot.mode}, ${workflow.state.phase}.${directive.commands.length > 0 ? ` User may run ${directive.commands[0]}.` : ''}`;
   await presentCommittedStart(
-    () => presentCommandStatus(ctx, input.sessionID, summary),
+    () => presentCommandStatus(ctx, input.sessionID, summary, description),
     'status report',
     input.sessionID,
   );
