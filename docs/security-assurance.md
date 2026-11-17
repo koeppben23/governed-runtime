@@ -7,14 +7,43 @@ subject to triage under [SECURITY.md](../SECURITY.md).
 
 ## Executable gates
 
-| Gate              | Workflow / job                                               | What it proves                                                                         | What it does not prove                                                                                                        |
-| ----------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Dependency audit  | `.github/workflows/security.yml` / `audit`                   | `npm audit --audit-level=high` completed on PRs, `main`, and the weekly schedule       | It does not cover source-level vulnerabilities, runtime configuration, or advisories that npm does not report                 |
-| CodeQL            | `.github/workflows/security.yml` / `codeql-sast`             | CodeQL `security-extended` runs against the TypeScript build with SARIF upload enabled | It does not prove an absence of findings; open alerts must be triaged                                                         |
-| Secret scan       | `.github/workflows/ci.yml` / `secrets-scan`                  | Gitleaks scanned the checkout and PR history available to the action                   | It does not prove that no secret exists outside the scanned history or in external systems                                    |
-| PVR intent        | `.github/workflows/ci.yml` / `security-policy`               | The repository contains the declarative `.github/security-advisories.yml` intent file  | It does **not** verify the live GitHub private vulnerability reporting setting                                                |
-| Dependency review | `.github/workflows/ci.yml` / `dependency-review`             | The PR dependency diff is reviewed for high-severity advisories                        | This job is advisory: it is PR-only and currently uses `continue-on-error: true`, so it is not a merge-blocking security gate |
-| Workflow hygiene  | `.github/workflows/ci.yml` / `actionlint`, `actions-pinning` | Workflow syntax is valid and action references follow the pinning policy               | It does not prove that pinned actions are free of vulnerabilities                                                             |
+| Gate              | Workflow / job                                               | What it proves                                                                                       | What it does not prove                                                                                                        |
+| ----------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Dependency audit  | `.github/workflows/security.yml` / `audit`                   | High/critical audit with the documented time-boxed exception; any other high/critical advisory fails | It does not cover source-level vulnerabilities, runtime configuration, or advisories that npm does not report                 |
+| CodeQL            | `.github/workflows/security.yml` / `codeql-sast`             | CodeQL `security-extended` runs against the TypeScript build with SARIF upload enabled               | It does not prove an absence of findings; open alerts must be triaged                                                         |
+| Secret scan       | `.github/workflows/ci.yml` / `secrets-scan`                  | Gitleaks scanned the checkout and PR history available to the action                                 | It does not prove that no secret exists outside the scanned history or in external systems                                    |
+| PVR intent        | `.github/workflows/ci.yml` / `security-policy`               | The repository contains the declarative `.github/security-advisories.yml` intent file                | It does **not** verify the live GitHub private vulnerability reporting setting                                                |
+| Dependency review | `.github/workflows/ci.yml` / `dependency-review`             | The PR dependency diff is reviewed for high-severity advisories                                      | This job is advisory: it is PR-only and currently uses `continue-on-error: true`, so it is not a merge-blocking security gate |
+| Workflow hygiene  | `.github/workflows/ci.yml` / `actionlint`, `actions-pinning` | Workflow syntax is valid and action references follow the pinning policy                             | It does not prove that pinned actions are free of vulnerabilities                                                             |
+
+## Time-boxed dependency-audit exception
+
+The `audit` job runs `scripts/security-audit.mjs`, not a blanket ignore. The
+script fails on every high or critical advisory except the single active,
+expiring exception below. A critical advisory is never covered.
+
+| Field    | Value                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------- |
+| Advisory | `GHSA-fc5q-39xc-vjpf` / `CVE-2026-112366`                                                                     |
+| Package  | `picomatch <= 4.0.7`                                                                                          |
+| Severity | High (ReDoS)                                                                                                  |
+| Expires  | **2026-12-17**                                                                                                |
+| Reason   | No patched `picomatch` release exists; npm audit suggests a breaking `vitest` downgrade                       |
+| Removal  | Update `picomatch` to a patched release, regenerate the lockfile, remove this exception, and re-run the audit |
+
+The exception is intentionally narrow:
+
+- Any unrelated high advisory fails the job.
+- Any critical advisory, including a critical revision of this advisory, fails.
+- An expired exception fails before the audit result is accepted.
+- The allowed dependency-chain entries are accepted only while the sole
+  high/critical advisory object is the exception above.
+
+FlowGuard source does not import `picomatch` directly; it is pulled in
+transitively through tooling and the host SDK. CodeQL, Gitleaks, and dependency
+review remain active while this exception is in place. The exception must be
+removed when a patched release is available or on its expiry date, whichever
+comes first.
 
 ## CodeQL
 

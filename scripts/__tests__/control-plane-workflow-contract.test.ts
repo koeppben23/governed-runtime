@@ -112,6 +112,11 @@ describe('scripts/control-plane-workflow-contract', () => {
       expect(ci).toContain('Check declarative PVR configuration intent');
       expect(ci).toContain('does not verify the live GitHub setting');
     });
+
+    it('uses the time-boxed audit gate instead of a blanket audit command', () => {
+      expect(workflow).toContain('node scripts/security-audit.mjs');
+      expect(workflow).not.toContain('npm audit --audit-level=high');
+    });
   });
 
   describe('documentation alignment', () => {
