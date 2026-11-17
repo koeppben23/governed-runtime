@@ -41,21 +41,21 @@ required CI gate.
 
 | Date       | Commit    | OS                          | Node / npm       | Clone | npm ci | check | test | Total | Result |
 | ---------- | --------- | --------------------------- | ---------------- | ----- | ------ | ----- | ---- | ----- | ------ |
-| 2026-11-17 | `5ddf0dc` | macOS 27.0.1 / darwin arm64 | 22.22.2 / 10.9.7 | 0:08  | 0:47   | 0:03  | 2:12 | 3:09  | PASS   |
+| 2026-11-17 | `3767310` | macOS 27.0.1 / darwin arm64 | 22.22.2 / 10.9.7 | 0:09  | 0:47   | 0:03  | 2:11 | 3:10  | PASS   |
 
 Measured commit (full):
-`5ddf0dc6d0cb50e7c97eede5ddc1722839e2f14d`. The run used
+`3767310a984cdc2f0bda908f9e9d9edbb2d481a8`. The run used
 `--expected-sha` with that exact value; the SHA check passed before installation.
-The earlier code-commit run at `ad6c6b19` measured 3:02.
+Earlier onboarding measurements were 3:09 at `5ddf0dc6` and 3:02 at `2538a130`.
 
-The measured target path completed in 3:09 on an Apple Silicon Mac with an
+The measured target path completed in 3:10 on an Apple Silicon Mac with an
 empty npm cache and a full clone. The separate `npm run build` took 0:02 and is
 not included in the target total. The 15-minute target is therefore supported
 for this environment, not for every machine or network.
 
-The only commit after the measured head adds this evidence record. A
-post-merge audit re-runs the smoke against the merged `develop` tree if that
-tree differs from the measured commit.
+This measured head includes the time-boxed audit-exception control. The only
+commit after it adds this evidence record. A post-merge audit re-runs the smoke
+against the merged `develop` tree if that tree differs from the measured commit.
 
 ### Observed flake
 
