@@ -12,7 +12,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { release, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { performance } from 'node:perf_hooks';
@@ -111,7 +111,7 @@ function main() {
     console.log(`| Repository | ${values.repo} |`);
     console.log(`| Ref | ${values.ref} |`);
     console.log(`| Commit | \`${commit}\` |`);
-    console.log(`| OS | ${process.platform} ${process.arch} |`);
+    console.log(`| OS | ${process.platform} ${process.arch} (${release()}) |`);
     console.log(`| Node | ${nodeVersion} |`);
     console.log(`| npm | ${npmVersion} |`);
     console.log(`| Git | ${gitVersion} |`);

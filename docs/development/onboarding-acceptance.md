@@ -35,10 +35,25 @@ The script does not modify this repository and is not a required CI gate.
 
 ## Acceptance record
 
-| Date       | Commit  | OS      | Node / npm | Clone | npm ci | check | test | Total | Result  |
-| ---------- | ------- | ------- | ---------- | ----- | ------ | ----- | ---- | ----- | ------- |
-| 2026-11-17 | pending | pending | pending    | —     | —      | —     | —    | —     | pending |
+| Date       | Commit    | OS                          | Node / npm       | Clone | npm ci | check | test | Total | Result |
+| ---------- | --------- | --------------------------- | ---------------- | ----- | ------ | ----- | ---- | ----- | ------ |
+| 2026-11-17 | `cd36bbd` | macOS 27.0.1 / darwin arm64 | 22.22.2 / 10.9.7 | 0:07  | 0:44   | 0:03  | 2:09 | 3:04  | PASS   |
 
-The final row is replaced with the measured result from the pull-request head.
+The measured target path completed in 3:04 on an Apple Silicon Mac with an
+empty npm cache and a full clone. The separate `npm run build` took 0:02 and is
+not included in the target total. The 15-minute target is therefore supported
+for this environment, not for every machine or network.
+
+### Observed flake
+
+The first fresh-clone attempt failed in
+`src/integration/plugin-native-review-capture.test.ts` at
+`serializes concurrent capture completions exactly once` with zero recorded
+invocations. The same test file passed when the complete file was run, and the
+second fresh-clone attempt passed. The filtered single test fails in isolation,
+which indicates test-order or concurrency sensitivity rather than a change in
+this PR. The 15-minute PASS above is therefore not a claim that the full suite
+is order-independent; a separate follow-up is required to stabilize that test.
+
 A post-merge audit re-runs the measurement against the merged `develop` tree if
 that tree differs from the measured commit.
