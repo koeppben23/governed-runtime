@@ -105,7 +105,7 @@ export async function assertNoObsoleteOpenCodeInstallation(
 }
 
 /** Native-only commands plus every installed template command now surfaced natively. */
-export function nativeOpenCodeCommandNames(): readonly string[] {
+function nativeOpenCodeCommandNames(): readonly string[] {
   return [
     ...NATIVE_PLUGIN_COMMANDS,
     ...Object.keys(COMMANDS).map((file) => file.replace(/\.md$/, '')),

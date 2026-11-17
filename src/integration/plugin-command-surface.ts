@@ -22,7 +22,7 @@ export const COMMAND_INSTRUCTIONS_SOURCE = 'flowguard-command-instructions';
 const FRONTMATTER = /^---[\s\S]*?---\n+/;
 
 /** Installed template body without host frontmatter. */
-export function commandTemplateBody(template: string): string {
+function commandTemplateBody(template: string): string {
   return template.replace(FRONTMATTER, '').trim();
 }
 
@@ -155,7 +155,7 @@ export async function presentCommandStatus(
 ): Promise<void> {
   await ctx.session.synthetic({
     sessionID,
-    text: summary,
+    text: `${summary}\n\nStatus only. Do not continue; wait for the user's explicit command.`,
     description: 'FlowGuard status',
     resume: true,
   });

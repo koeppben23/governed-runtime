@@ -167,7 +167,7 @@ function decisionConfirmation(result: Record<string, unknown>, verdict: ReviewVe
   const next =
     commands.length === 0
       ? 'Details: /status.'
-      : `Next: ${commands[0]}. Details: /status, /status --evidence.`;
+      : `Next command (user-invoked): ${commands[0]}. Details: /status, /status --evidence.`;
   return `**Decision recorded:** ${verdictLabel(verdict)}${phase}. ${next}`;
 }
 
