@@ -348,15 +348,13 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
         unsubscribe();
         await Promise.all(reads);
       }
-      // Only baseline progress is model-free. The original final chat report
-      // still carries check results and the /implement recommendation.
+      // Decision commands are silent by design: the decision is audited, but
+      // there is no post-commit user message and no model turn.
       const approvalRequests = p.requests.slice(requestsBeforeApproval);
-      expect(approvalRequests).toHaveLength(1);
-      expect(JSON.stringify(approvalRequests[0]!.body.messages)).toContain('Decision recorded');
-      expect(JSON.stringify(approvalRequests[0]!.body.messages)).toContain('/implement');
+      expect(approvalRequests).toHaveLength(0);
       const context = await p.client.session.context({ sessionID: root.id });
       expect(JSON.stringify(context)).not.toContain('Validation started');
-      expect(JSON.stringify(context)).toContain('Decision recorded');
+      expect(JSON.stringify(context)).not.toContain('Decision recorded');
       const presentation = await p.client.rpc.call({
         location: p.location,
         rpcID: 'flowguard-governance',
@@ -461,7 +459,7 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
     },
     300_000,
   );
-  it('preserves the visible decision report, actual audit source and one receipt across repeat and SIGKILL/reload', async () => {
+  it('records the decision without a chat report, actual audit source and one receipt across repeat and SIGKILL/reload', async () => {
     const p = await open();
     const root = await p.session();
     await activate(p, root.id);
@@ -476,8 +474,8 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       text: 'Reviewed current ADR.',
     });
     await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
-    expect(p.requests.slice(beforeDecision)).toHaveLength(1);
-    expect(JSON.stringify(await p.client.session.context({ sessionID: root.id }))).toContain(
+    expect(p.requests.slice(beforeDecision)).toHaveLength(0);
+    expect(JSON.stringify(await p.client.session.context({ sessionID: root.id }))).not.toContain(
       'Decision recorded',
     );
     const presentation = await p.client.rpc.call({
@@ -521,7 +519,7 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       input: { sessionID: root.id },
     });
     expect((emptyPresentation.output as { events: unknown[] }).events).toEqual([]);
-    expect(p.requests.slice(beforeDecision)).toHaveLength(1);
+    expect(p.requests.slice(beforeDecision)).toHaveLength(0);
     await expect(
       p.client.session.command({
         sessionID: root.id,
