@@ -148,7 +148,9 @@ describe('native governance lifecycle commands', () => {
     await seedState(makeState('ABORTED'));
     const before = await workflow();
     await host.command('end-governance', sessionID);
-    expect(host.ctx.session.prompt).toHaveBeenCalledWith(expect.objectContaining({ sessionID }));
+    expect(host.ctx.session.synthetic).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionID, resume: true }),
+    );
     expect(await resolveGovernanceActivation(host.activation.store, sessionID)).toMatchObject({
       kind: 'inactive',
       record: { status: 'inactive', decisionSource: 'host_command' },

@@ -19,6 +19,7 @@ import { buildEnforcementError, parseToolResult } from './blocked-result.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { toolBefore } from './plugin-beforehooks.js';
 import { toolAfter } from './plugin-afterhooks.js';
+import { presentCommandStatus } from './plugin-command-surface.js';
 import { recordValidationProgress, type PresentationStore } from './plugin-presentation.js';
 
 export interface DecisionCommandDeps {
@@ -152,13 +153,6 @@ function verdictLabel(verdict: ReviewVerdict): string {
   return 'rejected';
 }
 
-function presentationMarkdown(result: Record<string, unknown>): string | null {
-  const presentation = result.presentation;
-  if (presentation === null || typeof presentation !== 'object') return null;
-  const markdown = (presentation as { markdown?: unknown }).markdown;
-  return typeof markdown === 'string' ? markdown : null;
-}
-
 function directiveCommands(result: Record<string, unknown>): readonly string[] {
   const directive = result.directive;
   if (directive === null || typeof directive !== 'object') return [];
@@ -169,16 +163,12 @@ function directiveCommands(result: Record<string, unknown>): readonly string[] {
 
 function decisionConfirmation(result: Record<string, unknown>, verdict: ReviewVerdict): string {
   const phase = typeof result.phase === 'string' ? `; current phase \`${result.phase}\`` : '';
-  const summary = `**Decision recorded:** ${verdictLabel(verdict)}${phase}.`;
-  const instruction =
-    "This is a FlowGuard host status report, not a request to continue. Wait for the user's explicit next command.";
-  const markdown = presentationMarkdown(result);
-  if (markdown !== null) return `${summary}\n\n${markdown}\n\n${instruction}`;
   const commands = directiveCommands(result);
   const next =
-    commands.length === 0 ? '' : `\n\n## Next\n\n${commands.map((c) => `- \`${c}\``).join('\n')}`;
-  const status = typeof result.status === 'string' ? result.status : 'The decision is durable.';
-  return `${summary}\n\n${status}${next}\n\n${instruction}`;
+    commands.length === 0
+      ? 'Details: /status.'
+      : `Next: ${commands[0]}. Details: /status, /status --evidence.`;
+  return `**Decision recorded:** ${verdictLabel(verdict)}${phase}. ${next}`;
 }
 
 async function presentDecision(
@@ -199,10 +189,7 @@ async function presentDecision(
       typeof result.message === 'string' ? result.message : output,
     );
   try {
-    await ctx.session.prompt({
-      sessionID,
-      text: decisionConfirmation(result, verdict),
-    });
+    await presentCommandStatus(ctx, sessionID, decisionConfirmation(result, verdict));
   } catch (error) {
     console.warn(
       '[FlowGuard] Decision is committed and audited; status presentation failed.',

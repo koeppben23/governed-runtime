@@ -24,9 +24,12 @@ instructions after invocation.
   does not receive the previous body.
 - `/check` uses the same path: only `/check` is submitted, while its canonical
   body is injected.
-- Deterministic native commands (activation, decisions, lifecycle, diagnostics)
-  keep their existing executors and result presentation. Pure UI commands keep
-  their existing panel/chooser actions.
+- Native results from `/start`, decisions and lifecycle are short synthetic
+  FlowGuard status notices (`session.synthetic`, `resume: true`). They show the
+  phase and next command; the full workflow-choice or verification card remains
+  available through `/status` (and `/status --evidence`). Diagnostics and
+  debug-export keep their full requested report.
+- Pure UI commands keep their existing panel/chooser actions.
 
 The mechanism adds no workflow, activation, approval, evidence or audit
 authority. The ordinary tools and machine gates remain the only execution
@@ -50,6 +53,10 @@ hosts keep their portable template files.
   command after a later prompt, never ordinary prose, and never duplicates.
 - Contract test: `/check` submits only `/check` and still waits, restores the
   previous agent and clears scope.
+- Live pinned-host smoke: `session.synthetic({ resume: false })` remains pending
+  in the inbox and starts no model turn; `resume: true` is delivered immediately
+  and starts exactly one turn. The native result path therefore uses a short
+  summary with `resume: true`.
 - Installer tests: no command template is written for OpenCode; an exact managed
   upgrade file is removed; foreign bytes still block installation.
 - Doctor tests: missing native command files are expected; an obsolete exact
@@ -70,6 +77,12 @@ hosts keep their portable template files.
 - `NOT_VERIFIED`: token accounting. Hiding the body from the transcript does not
   by itself reduce model context; the body still travels in system context for
   the command turn.
+- `NOT_VERIFIED`: visible rendering of the synthetic short status in Desktop and
+  TUI. `resume: true` is delivered and starts one turn on the pinned host, but
+  no screenshot or visual capture was produced.
+- The short status still causes one model turn because OpenCode V2 has no
+  immediate, turn-free transcript channel. `resume: false` is not a substitute:
+  it remains pending until the next wake.
 
 ## Required installed-host acceptance
 
@@ -83,7 +96,9 @@ version, package digest and command file removals.
    ordinary prompt.
 3. Verify attachments, mentions and skills still reach the model.
 4. Verify `/check` still restores the previous agent and clears scope.
-5. Verify a blocker or review gate still displays its complete canonical card.
+5. Verify a blocker or review gate still displays its complete canonical card,
+   and that `/status` exposes the full choice/verification detail after a short
+   native status.
 6. Repeat after an upgrade from a previous install that still has command files;
    verify exact managed templates are removed and foreign files are preserved.
 

@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cards are unchanged. Obsolete installed command prompts are removed only when
   byte-identical to the managed template; foreign content remains a fail-closed
   conflict.
+- Show native `/start`, decision and lifecycle results as a short synthetic
+  FlowGuard status with the phase and next command instead of a user prompt.
+  Full workflow-choice and verification cards remain available through
+  `/status`; `/diagnostics` and `/debug-export` keep their full requested
+  report.
 - Add ADR-015 for the audit append proof and proposed segmented journal,
   including the local threat model, external-anchor boundary and downgrade
   contract. Add a standalone segment PoC plus canonical scale, independent-writer,

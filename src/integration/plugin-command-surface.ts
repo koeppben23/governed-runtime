@@ -143,6 +143,25 @@ export interface CommandSurfaceDeps {
 }
 
 /**
+ * Present a native command result as a short synthetic status notice. It is not
+ * a user prompt and does not create a user-authored transcript entry. OpenCode
+ * delivers `resume:true` immediately and starts one turn; the summary therefore
+ * stays short and leaves the full canonical detail to `/status`.
+ */
+export async function presentCommandStatus(
+  ctx: Pick<Plugin.Context, 'session'>,
+  sessionID: string,
+  summary: string,
+): Promise<void> {
+  await ctx.session.synthetic({
+    sessionID,
+    text: summary,
+    description: 'FlowGuard status',
+    resume: true,
+  });
+}
+
+/**
  * Register every installed template command natively. The host never expands a
  * Markdown template into the transcript; the command prompt stays short and
  * the canonical body is supplied by {@link injectCommandInstructions}.

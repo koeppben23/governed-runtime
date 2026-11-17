@@ -49,6 +49,7 @@ import { addCheckCommand } from './plugin-check-command.js';
 import { addInstalledCommandSurface } from './plugin-command-surface.js';
 import { addDebugExportCommand } from './plugin-debug-export-command.js';
 import { addDiagnosticsCommand } from './plugin-diagnostics-command.js';
+import { presentCommandStatus } from './plugin-command-surface.js';
 import { getPresentation, type PresentationStore } from './plugin-presentation.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import {
@@ -58,9 +59,6 @@ import {
 } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
 import { buildGateNotice } from '../presentation/gate-notice.js';
-import { renderMarkdown } from '../presentation/markdown.js';
-import { buildWorkflowChoiceConclusion } from '../presentation/workflow-choice.js';
-import type { CompactCardDocument } from '../presentation/model.js';
 
 type Registration = { dispose(): Promise<void> };
 type CommandInvocation = {
@@ -71,8 +69,6 @@ type StartWorkflow = {
   readonly worktreeRoot: string;
   readonly state: SessionState;
   readonly report: readonly string[];
-  /** The hydrate card already ends with the canonical workflow-choice card. */
-  readonly hasWorkflowChoice: boolean;
   readonly hydration: { readonly args: Record<string, unknown>; readonly output: string } | null;
 };
 
@@ -251,25 +247,19 @@ async function runStart(
         ? 'is ACTIVE (an interrupted Start was completed)'
         : 'is ACTIVE';
   const directive = resolveWorkflowDirective(workflow.state);
-  const choiceDocument: CompactCardDocument = {
-    kind: 'compact_card',
-    density: 'compact',
-    form: 'decision',
-    sections: [],
-    conclusion: buildWorkflowChoiceConclusion(),
-  };
-  const choice =
-    directive.code === 'CHOOSE_FLOW' && !workflow.hasWorkflowChoice
-      ? renderMarkdown(choiceDocument)
-      : null;
-  const text = [
+  const next =
+    directive.code === 'CHOOSE_FLOW'
+      ? 'Next: /task (recommended), /architecture or /review. Details: /status.'
+      : directive.commands.length > 0
+        ? `Next: ${directive.commands[0]}. Details: /status.`
+        : 'Details: /status.';
+  const summary = [
     `FlowGuard governance ${status} for this session: ${workflow.state.policySnapshot.mode} policy, phase ${workflow.state.phase}.`,
     ...workflow.report,
-    ...(choice === null ? [] : [choice]),
-    "This is a FlowGuard host status report. Do not select a workflow automatically; wait for the user's explicit command.",
+    next,
   ].join('\n\n');
   await presentCommittedStart(
-    () => ctx.session.prompt({ sessionID: input.sessionID, text }),
+    () => presentCommandStatus(ctx, input.sessionID, summary),
     'status report',
     input.sessionID,
   );
@@ -372,7 +362,6 @@ async function readBoundWorkflow(
     worktreeRoot: resolution.worktreeRoot,
     state: resolution.state,
     report: notice === null ? [] : [notice],
-    hasWorkflowChoice: false,
     hydration: null,
   };
 }
@@ -575,31 +564,25 @@ async function hydrateWorkflow(
     worktreeRoot,
     state: after.state,
     report: hydrateReport(text, after.state),
-    hasWorkflowChoice: true,
     hydration: { args, output: text },
   };
 }
 
 /**
- * The hydrate presentation the former prompt template printed verbatim. An
- * auto-approve gate notice is required report content; an unreadable report or
- * missing notice fails before activation. Post-commit delivery is best-effort,
- * and an ACTIVE retry reconstructs the notice without rehydration.
+ * Compact hydrate report: only the required auto-approve gate notice survives.
+ * The full hydrate presentation is the workflow-choice card and remains
+ * available through `/status`; it must not be repeated as a command result.
+ * A missing required notice still fails before activation.
  */
 function hydrateReport(output: string, state: SessionState): readonly string[] {
   const record = jsonHead(output);
-  const presentation = isRecord(record.presentation) ? record.presentation.markdown : undefined;
-  const markdown = typeof presentation === 'string' ? presentation : undefined;
   const notice = typeof record.gateNotice === 'string' ? record.gateNotice : undefined;
   if (state.policySnapshot.effectiveGateBehavior === 'auto_approve' && notice === undefined)
     throw buildEnforcementError(
       'PLUGIN_ENFORCEMENT_UNAVAILABLE',
       'Start cannot report the auto-approve gate notice of the hydrated workflow.',
     );
-  return [
-    ...(markdown === undefined ? [] : [markdown]),
-    ...(notice === undefined || markdown?.includes(notice) === true ? [] : [notice]),
-  ];
+  return notice === undefined ? [] : [notice];
 }
 
 /** Tool results carry one JSON head line; an unreadable head yields no fields. */

@@ -181,16 +181,15 @@ describe('native /start command', () => {
       success: true,
     });
     const startText =
-      (host.prompt.mock.calls.at(-1)?.[0] as { text?: string } | undefined)?.text ?? '';
-    expect(host.prompt).toHaveBeenCalledWith(expect.objectContaining({ sessionID: sessionId }));
-    expect(startText).toContain('governance is ACTIVE');
-    expect(startText).toMatch(
-      /## Decision required[\s\S]*Choose one workflow to start\. Nothing runs until you send a command\.[\s\S]*- `\/task` — Capture the task and start the standard governed flow \(recommended\)[\s\S]*- `\/architecture` — Create or revise an ADR without starting a task flow[\s\S]*- `\/review` — Review a diff, branch, PR, or pasted text/,
+      (host.synthetic.mock.calls.at(-1)?.[0] as { text?: string } | undefined)?.text ?? '';
+    expect(host.synthetic).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionID: sessionId, resume: true }),
     );
-    expect(startText).not.toContain('## Workflows');
-    expect(startText).not.toContain('## Next');
+    expect(startText).toContain('governance is ACTIVE');
+    expect(startText).toContain('Next: /task (recommended), /architecture or /review.');
+    expect(startText).toContain('Details: /status.');
+    expect(startText).not.toContain('## Decision required');
     expect((await host.presentation(sessionId)).events).toEqual([]);
-    expect(host.synthetic).not.toHaveBeenCalled();
     const events = await audit.readAuditTrail(authority.sessDir);
     const activated = events.filter((event) => event.event === 'governance:activated');
     expect(activated).toHaveLength(1);
@@ -227,13 +226,13 @@ describe('native /start command', () => {
     const authority = await workflow(sessionId);
     if (authority.status !== 'resolved') throw new Error('Expected workflow state');
     expect(authority.state.policySnapshot.mode).toBe('solo');
-    expect(host.prompt).toHaveBeenCalledWith(
+    expect(host.synthetic).toHaveBeenCalledWith(
       expect.objectContaining({ text: expect.stringContaining('Auto-approve is active') }),
     );
     const hydrate = vi.spyOn(tools.hydrate, 'execute');
     await host.command('start', sessionId);
     expect(hydrate).not.toHaveBeenCalled();
-    expect(host.prompt).toHaveBeenLastCalledWith(
+    expect(host.synthetic).toHaveBeenLastCalledWith(
       expect.objectContaining({ text: expect.stringContaining('Auto-approve is active') }),
     );
   });
@@ -270,7 +269,7 @@ describe('native /start command', () => {
     expect(hydrate).not.toHaveBeenCalled();
     expect(await workflow(sessionId)).toEqual(before);
     expect(revisions().map((item) => item.status)).toEqual(['activating', 'active']);
-    expect(host.prompt).toHaveBeenLastCalledWith(
+    expect(host.synthetic).toHaveBeenLastCalledWith(
       expect.objectContaining({ text: expect.stringContaining('was already ACTIVE') }),
     );
   });
@@ -385,7 +384,7 @@ describe('native /start command', () => {
         detail: expect.objectContaining({ decisionId: pending!.decisionId, generation: 1 }),
       }),
     ]);
-    expect(host.prompt).toHaveBeenLastCalledWith(
+    expect(host.synthetic).toHaveBeenLastCalledWith(
       expect.objectContaining({ text: expect.stringContaining('interrupted Start was completed') }),
     );
   });
@@ -698,7 +697,7 @@ describe('native /start command', () => {
       const sessionId = randomUUID();
       if (phase === 'publish')
         host.context.tool.transform.mockRejectedValueOnce(new Error('publication failed'));
-      else host.prompt.mockRejectedValueOnce(new Error('prompt failed'));
+      else host.synthetic.mockRejectedValueOnce(new Error('status failed'));
       await expect(host.command('start', sessionId)).resolves.toBeUndefined();
       expect(await resolveGovernanceActivation(host.activation.store, sessionId)).toMatchObject({
         kind: 'active',
@@ -711,7 +710,7 @@ describe('native /start command', () => {
       await host.command('start', sessionId);
       expect(hydrate).not.toHaveBeenCalled();
       expect(host.definitions.has('flowguard_status')).toBe(true);
-      expect(host.prompt).toHaveBeenLastCalledWith(
+      expect(host.synthetic).toHaveBeenLastCalledWith(
         expect.objectContaining({ text: expect.stringContaining('was already ACTIVE') }),
       );
       const authority = await workflow(sessionId);
