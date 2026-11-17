@@ -43,8 +43,18 @@ function highCriticalAdvisories(report) {
   return advisories;
 }
 
+function isAuditReport(report) {
+  return (
+    report !== null &&
+    typeof report === 'object' &&
+    report.vulnerabilities !== null &&
+    typeof report.vulnerabilities === 'object' &&
+    !Array.isArray(report.vulnerabilities)
+  );
+}
+
 function hasHighOrCriticalVulnerability(report) {
-  return Object.values(report?.vulnerabilities ?? {}).some((vulnerability) =>
+  return Object.values(report.vulnerabilities).some((vulnerability) =>
     SEVERITIES.has(vulnerability.severity),
   );
 }
@@ -54,6 +64,15 @@ function hasHighOrCriticalVulnerability(report) {
  * Returns a result instead of exiting so the policy is unit-testable.
  */
 export function evaluateAudit(report, { now = new Date(), exceptions = AUDIT_EXCEPTIONS } = {}) {
+  if (!isAuditReport(report)) {
+    return {
+      ok: false,
+      code: 'AUDIT_INVALID_REPORT',
+      message: 'npm audit did not return a report with a vulnerabilities object.',
+      advisories: [],
+    };
+  }
+
   if (!hasHighOrCriticalVulnerability(report)) {
     return { ok: true, code: 'AUDIT_CLEAN', advisories: [] };
   }

@@ -122,4 +122,14 @@ describe('security audit exception gate', () => {
       code: 'AUDIT_HIGH_WITHOUT_ADVISORY',
     });
   });
+
+  it.each([null, {}, { vulnerabilities: null }, { vulnerabilities: [] }])(
+    'fails closed on an invalid audit report: %j',
+    (invalid) => {
+      expect(evaluateAudit(invalid, options)).toMatchObject({
+        ok: false,
+        code: 'AUDIT_INVALID_REPORT',
+      });
+    },
+  );
 });
