@@ -75,4 +75,5 @@ jobs:
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # github/codeql-action v4.39.3
         with:
           category: '/language:typescript'
-          upload: never
+          # Upload SARIF so CodeQL findings appear as GitHub code-scanning alerts.
+          upload: always

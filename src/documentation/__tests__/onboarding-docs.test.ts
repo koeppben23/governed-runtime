@@ -212,6 +212,46 @@ describe('developer onboarding documentation contract', () => {
     expect(firstChange).toContain('CONTRIBUTING.md');
   });
 
+  it('documents the pinned Node setup commands and the onboarding acceptance path', () => {
+    const guide = read('docs/development/index.md');
+    const acceptance = read('docs/development/onboarding-acceptance.md');
+
+    expect(guide).toContain('nvm install "$(cat .node-version)"');
+    expect(guide).toContain('nvm use "$(cat .node-version)"');
+    expect(guide).toContain('[Onboarding Acceptance](./onboarding-acceptance.md)');
+    expect(acceptance).toContain('npm run onboarding:smoke');
+    expect(acceptance).toContain('15:00');
+
+    const packageJson = JSON.parse(read('package.json')) as {
+      scripts?: Record<string, string>;
+    };
+    expect(packageJson.scripts?.['onboarding:smoke']).toBe('node scripts/onboarding-smoke.mjs');
+  });
+
+  it('keeps the canonical live-host debugging guide on V2', () => {
+    const debug = read('docs/development/debugging.md');
+    const candidate = JSON.parse(read('.sdk-baselines/opencode/cli-candidate.json')) as {
+      version: string;
+    };
+
+    expect(debug).not.toContain('1.18.30');
+    expect(debug).toContain(`opencode v${candidate.version}`);
+    expect(debug).toContain('opencode debug paths');
+    expect(debug).toContain('opencode plugin list');
+    expect(debug).toContain('opencode serve --port 4096');
+    expect(debug).not.toContain('--standalone serve');
+    expect(debug).not.toContain('debug.bun.sh');
+  });
+
+  it('keeps the security support matrix aligned with the technical preview', () => {
+    for (const path of ['SECURITY.md', 'docs/support-model.md']) {
+      const document = read(path);
+      expect(document, path).toContain('2.0.0-tp.x');
+      expect(document, path).toContain('Technical preview');
+    }
+    expect(read('SECURITY.md')).toContain('docs/security-assurance.md');
+  });
+
   it('keeps the architecture diagram consistent with the module dependency policy', () => {
     const diagram = read('docs/architecture/architecture-diagram.md');
 

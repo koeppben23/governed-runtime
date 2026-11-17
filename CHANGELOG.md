@@ -2156,6 +2156,15 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Harden repository developer experience and security assurance: align the
+  canonical debugging guide and Node onboarding with OpenCode V2, complete the
+  CI job documentation, upload CodeQL SARIF to GitHub code scanning, mark the
+  PVR check as declarative, document the `2.0.0-tp.x` technical-preview support
+  status, harden generated-file ignores and git-hook installation, format root
+  Markdown, and add a fresh-clone onboarding measurement. The proprietary
+  license is unchanged; code contributions remain limited to authorized
+  contributors.
+
 - Add a methodological-depth requirement to the phase-specific Implementation
   Checklist: for STANDARD and HIGH-RISK work, choose concrete methods by actual
   risk, inspect authoritative raw evidence, define an ambitious but observable

@@ -769,12 +769,14 @@ jobs:
           fi
           echo "SECURITY.md found"
 
-      - name: Check for private vulnerability reporting
+      - name: Check declarative PVR configuration intent
         run: |
           if [ ! -f .github/security-advisories.yml ] && [ ! -d .github/security-advisories ]; then
-            echo "::error::Private vulnerability reporting not configured. Enable it at https://github.com/${{ github.repository }}/security/advisories/new"
+            echo "::error::PVR intent file is missing. Add .github/security-advisories.yml; this does not enable GitHub private vulnerability reporting."
             exit 1
           fi
+          echo "Declarative PVR intent present. This job does not verify the live GitHub setting."
+          echo "Live PVR status is recorded manually in docs/security-assurance.md." >> "$GITHUB_STEP_SUMMARY"
 
   dependency-review:
     name: dependency-review

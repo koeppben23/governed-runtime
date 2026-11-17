@@ -35,8 +35,11 @@ Thumbs.db
 # TypeDoc API reference (generated, deployed via CI)
 docs/api/
 
-# Stryker mutation testing
-.stryker-tmp/
+# Packaging artifacts
+checksums.sha256
+
+# Stryker mutation testing (base and per-profile temp directories)
+.stryker-tmp*/
 reports/mutation/
 
 # fast-check fuzz testing counterexamples
