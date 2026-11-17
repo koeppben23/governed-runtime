@@ -26,7 +26,7 @@ instructions after invocation.
   body is injected.
 - Native results from `/start`, decisions and lifecycle are short synthetic
   FlowGuard status notices (`session.synthetic`, `resume: true`). They show the
-  phase and next **user-invoked** command and end with a one-line stop
+  phase and the commands the **user may run** and end with a one-line stop
   instruction; the full workflow-choice or verification card remains available
   through `/status` (and `/status --evidence`). Diagnostics and debug-export
   keep their full requested report.

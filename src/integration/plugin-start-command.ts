@@ -249,9 +249,9 @@ async function runStart(
   const directive = resolveWorkflowDirective(workflow.state);
   const next =
     directive.code === 'CHOOSE_FLOW'
-      ? 'Next command (user-invoked): /task (recommended), /architecture or /review. Details: /status.'
+      ? 'User may run: /task (recommended), /architecture or /review. Details: /status.'
       : directive.commands.length > 0
-        ? `Next command (user-invoked): ${directive.commands[0]}. Details: /status.`
+        ? `User may run: ${directive.commands[0]}. Details: /status.`
         : 'Details: /status.';
   const summary = [
     `FlowGuard governance ${status} for this session: ${workflow.state.policySnapshot.mode} policy, phase ${workflow.state.phase}.`,

@@ -129,8 +129,8 @@ ordinary prompt no longer carries the previous command body. Other supported
 hosts keep their portable command template files.
 
 Native commands that produce a result (`/start`, decisions, lifecycle) show a
-short synthetic FlowGuard status with the phase and the next **user-invoked**
-command. The status also carries a one-line stop instruction, so the model never
+short synthetic FlowGuard status with the phase and the commands the **user may
+run**. The status also carries a one-line stop instruction, so the model never
 chains into `/export` or another command automatically. The full workflow-choice
 or verification card remains available through `/status` (and
 `/status --evidence`). `/diagnostics` and `/debug-export` still show their full

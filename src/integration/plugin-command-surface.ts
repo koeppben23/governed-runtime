@@ -155,7 +155,7 @@ export async function presentCommandStatus(
 ): Promise<void> {
   await ctx.session.synthetic({
     sessionID,
-    text: `${summary}\n\nStatus only. Do not continue; wait for the user's explicit command.`,
+    text: `${summary}\n\nStatus only. Do not run another command; wait for the user's explicit command.`,
     description: 'FlowGuard status',
     resume: true,
   });

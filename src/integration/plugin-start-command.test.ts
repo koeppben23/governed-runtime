@@ -186,12 +186,10 @@ describe('native /start command', () => {
       expect.objectContaining({ sessionID: sessionId, resume: true }),
     );
     expect(startText).toContain('governance is ACTIVE');
-    expect(startText).toContain(
-      'Next command (user-invoked): /task (recommended), /architecture or /review.',
-    );
+    expect(startText).toContain('User may run: /task (recommended), /architecture or /review.');
     expect(startText).toContain('Details: /status.');
     expect(startText).toContain(
-      "Status only. Do not continue; wait for the user's explicit command.",
+      "Status only. Do not run another command; wait for the user's explicit command.",
     );
     expect(startText).not.toContain('## Decision required');
     expect((await host.presentation(sessionId)).events).toEqual([]);

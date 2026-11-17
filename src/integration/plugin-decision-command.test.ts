@@ -549,8 +549,10 @@ describe('native decision commands', () => {
       const calls = f.synthetic.mock.calls as unknown as Array<[{ text: string }]>;
       const text = calls[0]?.[0].text ?? '';
       expect(text).toContain('**Decision recorded:** approved; current phase `IMPLEMENTATION`.');
-      expect(text).toContain('Next command (user-invoked): /implement.');
-      expect(text).toContain("Status only. Do not continue; wait for the user's explicit command.");
+      expect(text).toContain('User may run: /implement.');
+      expect(text).toContain(
+        "Status only. Do not run another command; wait for the user's explicit command.",
+      );
       expect(text).not.toContain('## Next');
       expect(text).not.toContain("Check 'test' passed");
       expect(text).not.toContain('"directive"');
