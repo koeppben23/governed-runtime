@@ -49,9 +49,10 @@ comes first.
 ### Risk acceptance
 
 This exception is a time-boxed security-policy risk acceptance, not a fix for
-the advisory. Repository owner: Benjamin Fuchs. Approval status: **pending
-explicit owner confirmation in PR #1254**. The gate must not be treated as an
-approved risk acceptance until that confirmation is recorded here.
+the advisory. Repository owner: Benjamin Fuchs. Approval status: **approved on
+2026-11-17 for the period ending 2026-12-17** under the conditions above. The
+approval was explicitly confirmed in PR #1254 and is recorded here for audit
+traceability.
 
 ## CodeQL
 

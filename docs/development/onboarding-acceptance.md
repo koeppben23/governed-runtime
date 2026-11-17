@@ -53,9 +53,10 @@ empty npm cache and a full clone. The separate `npm run build` took 0:02 and is
 not included in the target total. The 15-minute target is therefore supported
 for this environment, not for every machine or network.
 
-This measured head includes the time-boxed audit-exception control. The only
-commit after it adds this evidence record. A post-merge audit re-runs the smoke
-against the merged `develop` tree if that tree differs from the measured commit.
+This measured head includes the time-boxed audit-exception control. The
+subsequent commits add only this evidence record and the owner risk-acceptance
+documentation. A post-merge audit re-runs the smoke against the merged `develop`
+tree if that tree differs from the measured commit.
 
 ### Observed flake
 

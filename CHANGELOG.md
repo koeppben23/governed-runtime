@@ -2165,10 +2165,10 @@ stop`, reviewer child reported it could not complete the falsification).
   license is unchanged; code contributions remain limited to authorized
   contributors.
 
-- Add a time-boxed `npm audit` exception for the unpatched `picomatch` advisory
-  `GHSA-fc5q-39xc-vjpf` / `CVE-2026-112366`. The gate continues to fail on any
-  other high or critical advisory and on the exception's expiry; it is not a
-  blanket ignore.
+- Add an owner-approved, time-boxed `npm audit` exception for the unpatched
+  `picomatch` advisory `GHSA-fc5q-39xc-vjpf` / `CVE-2026-112366`, expiring
+  `2026-12-17`. The gate continues to fail on any other high or critical
+  advisory and on expiry; it is not a blanket ignore.
 
 - Add a methodological-depth requirement to the phase-specific Implementation
   Checklist: for STANDARD and HIGH-RISK work, choose concrete methods by actual
