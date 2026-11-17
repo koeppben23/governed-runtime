@@ -148,6 +148,7 @@ Do not introduce parallel registries, local enum copies, ad-hoc serializers,
 or inline reason or mandate definitions.
 
 ## Verification
+
 1. Run the narrowest test that exercises the changed behavior.
 2. Run `npm run check:format` for every change.
 3. Run `npm run check` for TypeScript changes.
@@ -157,13 +158,13 @@ or inline reason or mandate definitions.
 6. Apply additional verification from every applicable nested `AGENTS.md`.
 7. Mark every relevant check not run as `NOT_VERIFIED`; include the recovery
    command or missing capability when known.
-Also run `npm run build` for distribution changes and
-`npm run check:unused-dependencies` for dependency or module-surface changes.
-For high-risk authority, transition, guard, policy, or security-boundary
-changes, run `npm run mutation` and meaningful negative-path verification.
-At completion, report changed behavior, changed files, executed checks and
-outcomes, relevant `NOT_VERIFIED` checks, and remaining assumptions or
-blockers. Omit empty categories.
+   Also run `npm run build` for distribution changes and
+   `npm run check:unused-dependencies` for dependency or module-surface changes.
+   For high-risk authority, transition, guard, policy, or security-boundary
+   changes, run `npm run mutation` and meaningful negative-path verification.
+   At completion, report changed behavior, changed files, executed checks and
+   outcomes, relevant `NOT_VERIFIED` checks, and remaining assumptions or
+   blockers. Omit empty categories.
 
 ## Git Conventions
 

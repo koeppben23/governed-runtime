@@ -163,6 +163,7 @@ subagent attestation, and the `/review` evidence model.
 | [Profiles](./docs/profiles.md)                                       | Tech stack profiles                                                    |
 | [Archive](./docs/archive.md)                                         | Session archiving                                                      |
 | [Enterprise Readiness](./docs/enterprise-readiness.md)               | Consolidated threat model and control boundaries                       |
+| [Security Assurance](./docs/security-assurance.md)                   | Executable security gates, evidence, and explicit limits               |
 | [Configuration](./docs/configuration.md)                             | Configuration reference                                                |
 | [Troubleshooting](./docs/troubleshooting.md)                         | FAQ and error handling                                                 |
 | [Architecture](./docs/architecture/architecture-diagram.md)          | Architecture layers, three governed flows, SSOT, proof surfaces        |
@@ -196,13 +197,16 @@ executable script authority.
 ### CI Jobs
 
 The required `ci-gate` check aggregates the merge-blocking jobs: `unit` (unit,
-scripts, and assertion-conformance tests), `coverage`, `integration-perf`,
-`provider-conformance`, and `regulated-e2e`. Branch protection additionally
-requires `typecheck`, `lint`, `format`, `architecture`, `build`, `build-clean`,
-`actionlint`, `secrets-scan`, `security-policy`, `independent-review-e2e`, the
-cross-platform `install-verify` jobs, `Validate Commit Messages`
+scripts, and assertion-conformance tests), `scripts-windows`, `critical-windows`,
+`coverage`, `integration-perf`, `provider-conformance`, `regulated-e2e`, and
+`doc-drift`. Branch protection additionally requires `typecheck`, `lint`,
+`format`, `architecture`, `build`, `build-clean`, `actionlint`, `secrets-scan`,
+`security-policy`, `independent-review-e2e`, the cross-platform `install-verify`
+jobs, `Validate Commit Messages`
 (`.github/workflows/conventional-commits.yml`), and `audit` and `codeql-sast`
-(`.github/workflows/security.yml`).
+(`.github/workflows/security.yml`). What each security gate proves, and what it
+does not, is documented in
+[Security Assurance](./docs/security-assurance.md).
 
 The test-focused job-to-script table lives in
 [Testing Strategy](./docs/testing-strategy.md); the PR-CI workflow definition is
@@ -218,7 +222,7 @@ The full release process, artifact contents, integrity verification, and support
 lifecycle are owned by [docs/release-policy.md](./docs/release-policy.md); see
 [CONTRIBUTING.md](./CONTRIBUTING.md) for release branch conventions.
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for authorized-contributor guidelines.
 
 ---
 

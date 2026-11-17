@@ -96,12 +96,15 @@ These are targets, not guarantees. Response and resolution times depend on sever
 
 ## Supported Versions
 
-| Version      | Status                                              |
-| ------------ | --------------------------------------------------- |
-| 1.x (latest) | Supported — receives bug fixes and security patches |
-| < 1.0        | Not supported                                       |
+| Version      | Status                                                                              |
+| ------------ | ----------------------------------------------------------------------------------- |
+| 2.0.0-tp.x   | Technical preview — no production support commitment; security reports are reviewed |
+| 1.x (latest) | Supported — receives bug fixes and security patches                                 |
+| < 1.0        | Not supported                                                                       |
 
-Only the latest release within the supported major version receives patches. Users should upgrade to the latest release before reporting issues.
+Only the latest 1.x release receives patches. The `2.0.0-tp.x` line is a technical
+preview; it is not a GA support claim. Users should upgrade to the latest 1.x
+release before reporting issues that affect the supported line.
 
 ---
 
@@ -155,7 +158,10 @@ This creates a documented procurement path even when no public standard support 
 
 ## Contributing
 
-Bug fixes and improvements are welcome. See [CONTRIBUTING.md](../CONTRIBUTING.md) for development setup, code style, testing requirements, and the PR process.
+Bug reports and security reports are welcome. Code contributions require prior
+written permission from the copyright holder; see
+[CONTRIBUTING.md](../CONTRIBUTING.md) for the authorized-contributor workflow,
+development setup, code style, testing requirements, and the PR process.
 
 ---
 

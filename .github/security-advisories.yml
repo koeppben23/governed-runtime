@@ -1,3 +1,6 @@
+# Repository-local declaration of the intended private vulnerability reporting
+# setting. This file is not a GitHub repository setting and does not enable PVR;
+# the live setting is verified separately and recorded in docs/security-assurance.md.
 schemaVersion: v1
 privateVulnerabilityReporting:
   required: true

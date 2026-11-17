@@ -2,9 +2,24 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.x     | :white_check_mark: |
+| Version      | Status                                                                              |
+| ------------ | ----------------------------------------------------------------------------------- |
+| 2.0.0-tp.x   | Technical preview — no production support commitment; security reports are reviewed |
+| 1.x (latest) | Supported — receives bug fixes and security patches                                 |
+| < 1.0        | Not supported                                                                       |
+
+Only the latest 1.x release receives patches. `2.0.0-tp.x` is a technical preview
+line; it is not a GA support claim.
+
+## Security Assurance
+
+The executable CI security gates and their limits are documented in
+[docs/security-assurance.md](./docs/security-assurance.md). CodeQL analyses are
+configured to upload SARIF to GitHub code scanning; the recorded analysis
+evidence is maintained in that document. The `security-policy` CI job verifies
+only the declarative repository intent file; it does not verify the live GitHub
+private vulnerability reporting setting. The live setting was last verified on
+2026-11-17 and reported `enabled: true`.
 
 ## Security Update Policy
 
