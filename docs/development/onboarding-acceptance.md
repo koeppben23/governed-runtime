@@ -41,12 +41,19 @@ required CI gate.
 
 | Date       | Commit    | OS                          | Node / npm       | Clone | npm ci | check | test | Total | Result |
 | ---------- | --------- | --------------------------- | ---------------- | ----- | ------ | ----- | ---- | ----- | ------ |
-| 2026-11-17 | `cd36bbd` | macOS 27.0.1 / darwin arm64 | 22.22.2 / 10.9.7 | 0:07  | 0:44   | 0:03  | 2:09 | 3:04  | PASS   |
+| 2026-11-17 | `ad6c6b1` | macOS 27.0.1 / darwin arm64 | 22.22.2 / 10.9.7 | 0:08  | 0:42   | 0:04  | 2:08 | 3:02  | PASS   |
 
-The measured target path completed in 3:04 on an Apple Silicon Mac with an
+Measured commit (full):
+`ad6c6b1966e9d94bced6456f9faae557a4c4ed87`. The run used
+`--expected-sha` with that exact value; the SHA check passed before installation.
+
+The measured target path completed in 3:02 on an Apple Silicon Mac with an
 empty npm cache and a full clone. The separate `npm run build` took 0:02 and is
 not included in the target total. The 15-minute target is therefore supported
 for this environment, not for every machine or network.
+
+The final PR head may add only this evidence record after the measured code
+commit; the final-head confirmation run is recorded in PR #1254.
 
 ### Observed flake
 
