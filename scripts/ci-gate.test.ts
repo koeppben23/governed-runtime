@@ -68,6 +68,14 @@ function executeGate(overrides: Record<string, string> = {}) {
 }
 
 describe('required ci-gate documentation enforcement', () => {
+  it('documents every ci-gate dependency in README.md', () => {
+    const readme = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
+
+    for (const dependency of dependencies) {
+      expect(readme, dependency).toContain(dependency.replaceAll('_', '-'));
+    }
+  });
+
   it('keeps installed parity out of the PR gate and in a separate acceptance workflow', () => {
     expect(workflow.jobs).not.toHaveProperty('inactive-parity');
     expect(workflow.jobs).not.toHaveProperty('inactive-parity-windows');

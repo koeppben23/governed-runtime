@@ -3,10 +3,26 @@
 This guide and [Your First Change](./first-change.md) are the only required
 reading for a first contribution. Everything else on this page is reference.
 
-## First 15 minutes
+## First local run
 
-1. Clone the repository.
-2. Use the pinned Node version from `.node-version`.
+Target: a fresh clone should reach a passing local check and test in under 15
+minutes. The measured acceptance is recorded in
+[Onboarding Acceptance](./onboarding-acceptance.md); until that record exists,
+the 15-minute target is not a guarantee.
+
+1. Clone the repository and enter it.
+2. Select the pinned Node version from `.node-version`. With `nvm`:
+
+   ```bash
+   nvm install "$(cat .node-version)"
+   nvm use "$(cat .node-version)"
+   node --version   # v22.22.2
+   npm --version    # >=10.9.2
+   ```
+
+   For `fnm`, `asdf`, or `mise`, select the version declared in `.node-version`
+   with that tool; `.node-version` remains the authority.
+
 3. Install exactly from the lockfile: `npm ci`.
 4. Type-check and run the default suite once: `npm run check && npm test`.
 5. Work through [Your First Change](./first-change.md) — owning file, test,

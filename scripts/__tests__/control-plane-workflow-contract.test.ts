@@ -98,6 +98,27 @@ describe('scripts/control-plane-workflow-contract', () => {
     });
   });
 
+  describe('security workflow', () => {
+    const workflow = readRepoFile('.github/workflows/security.yml');
+    const ci = readRepoFile('.github/workflows/ci.yml');
+
+    it('uploads CodeQL SARIF so code scanning receives findings', () => {
+      expect(workflow).toContain('security-events: write');
+      expect(workflow).toContain('upload: always');
+      expect(workflow).not.toContain('upload: never');
+    });
+
+    it('labels the PVR check as declarative, not a live-setting check', () => {
+      expect(ci).toContain('Check declarative PVR configuration intent');
+      expect(ci).toContain('does not verify the live GitHub setting');
+    });
+
+    it('uses the time-boxed audit gate instead of a blanket audit command', () => {
+      expect(workflow).toContain('node scripts/security-audit.mjs');
+      expect(workflow).not.toContain('npm audit --audit-level=high');
+    });
+  });
+
   describe('documentation alignment', () => {
     const branchProtection = readRepoFile('.github/BRANCH-PROTECTION.md');
 

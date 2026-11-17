@@ -1,6 +1,12 @@
 # Contributing to FlowGuard
 
-Thank you for your interest in contributing to FlowGuard!
+> **Proprietary repository.** FlowGuard is proprietary software. This guide is
+> for contributors who have prior written permission from the copyright holder.
+> Do not submit unsolicited code or open pull requests without that permission.
+> Nothing in this document grants a license to the Work.
+
+This guide describes the development and pull-request workflow for authorized
+contributors.
 
 ## Project Overview
 
@@ -548,4 +554,6 @@ describe('Performance', () => {
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same license as the project.
+Contributions are accepted only from authorized contributors under a separate
+written agreement with the copyright holder. Nothing in this document grants a
+license to the Work. See [LICENSE](LICENSE).

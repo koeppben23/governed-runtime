@@ -2156,6 +2156,20 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Harden repository developer experience and security assurance: align the
+  canonical debugging guide and Node onboarding with OpenCode V2, complete the
+  CI job documentation, upload CodeQL SARIF to GitHub code scanning, mark the
+  PVR check as declarative, document the `2.0.0-tp.x` technical-preview support
+  status, harden generated-file ignores and git-hook installation, format root
+  Markdown, and add a fresh-clone onboarding measurement. The proprietary
+  license is unchanged; code contributions remain limited to authorized
+  contributors.
+
+- Add an owner-approved, time-boxed `npm audit` exception for the unpatched
+  `picomatch` advisory `GHSA-fc5q-39xc-vjpf` / `CVE-2026-112366`, expiring
+  `2026-12-17`. The gate continues to fail on any other high or critical
+  advisory and on expiry; it is not a blanket ignore.
+
 - Add a methodological-depth requirement to the phase-specific Implementation
   Checklist: for STANDARD and HIGH-RISK work, choose concrete methods by actual
   risk, inspect authoritative raw evidence, define an ambitious but observable

@@ -354,7 +354,8 @@ Additional CI jobs from `.github/workflows/ci.yml` (not test-focused):
 `typecheck`, `lint`, `format`, `build`, `actionlint`, `actions-pinning`,
 `secrets-scan`, `security-policy`, `install`. Security jobs (`audit`,
 `codeql-sast`) run in `.github/workflows/security.yml` and are listed in
-`.github/BRANCH-PROTECTION.md`.
+`.github/BRANCH-PROTECTION.md`. The executable security gates and their limits
+are documented in [Security Assurance](./security-assurance.md).
 
 The `typecheck` job runs `npm run check`, which chains `check:prod`,
 `check:tests`, `check:agent-instructions`, `check:doc-paths`, and
