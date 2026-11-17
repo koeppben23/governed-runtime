@@ -26,23 +26,6 @@ function exceptionExpiry(exception) {
   return Number.isNaN(expiry.getTime()) ? null : expiry;
 }
 
-function highCriticalAdvisories(report) {
-  const advisories = [];
-  for (const vulnerability of Object.values(report?.vulnerabilities ?? {})) {
-    for (const via of vulnerability.via ?? []) {
-      if (typeof via !== 'object' || via === null) continue;
-      if (!SEVERITIES.has(via.severity)) continue;
-      advisories.push({
-        url: via.url,
-        title: via.title,
-        severity: via.severity,
-        range: via.range,
-      });
-    }
-  }
-  return advisories;
-}
-
 function isAuditReport(report) {
   return (
     report !== null &&
@@ -53,10 +36,62 @@ function isAuditReport(report) {
   );
 }
 
-function hasHighOrCriticalVulnerability(report) {
-  return Object.values(report.vulnerabilities).some((vulnerability) =>
-    SEVERITIES.has(vulnerability.severity),
-  );
+/**
+ * A critical finding is never covered by the exception, even when its `via`
+ * entry is only a dependency string rather than an advisory object.
+ */
+function criticalFindings(report) {
+  const findings = [];
+  for (const [name, vulnerability] of Object.entries(report.vulnerabilities)) {
+    if (vulnerability.severity === 'critical') {
+      findings.push({
+        name,
+        severity: 'critical',
+        title: `critical vulnerability entry: ${name}`,
+      });
+    }
+    for (const via of vulnerability.via ?? []) {
+      if (typeof via === 'object' && via !== null && via.severity === 'critical') {
+        findings.push({
+          name,
+          severity: 'critical',
+          title: via.title,
+          url: via.url,
+          range: via.range,
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+/**
+ * Follow `via` dependency strings to the high/critical advisory objects that
+ * make a vulnerability high. A high entry with no such path is unattributable.
+ */
+function reachableAdvisoryUrls(name, vulnerabilities, seen = new Set()) {
+  const vulnerability = vulnerabilities[name];
+  if (!vulnerability || seen.has(name)) return new Set();
+  seen.add(name);
+
+  const urls = new Set();
+  for (const via of vulnerability.via ?? []) {
+    if (typeof via === 'string') {
+      for (const url of reachableAdvisoryUrls(via, vulnerabilities, seen)) {
+        urls.add(url);
+      }
+      continue;
+    }
+    if (
+      via !== null &&
+      typeof via === 'object' &&
+      SEVERITIES.has(via.severity) &&
+      typeof via.url === 'string'
+    ) {
+      urls.add(via.url);
+    }
+  }
+  return urls;
 }
 
 /**
@@ -73,21 +108,7 @@ export function evaluateAudit(report, { now = new Date(), exceptions = AUDIT_EXC
     };
   }
 
-  if (!hasHighOrCriticalVulnerability(report)) {
-    return { ok: true, code: 'AUDIT_CLEAN', advisories: [] };
-  }
-
-  const advisories = highCriticalAdvisories(report);
-  if (advisories.length === 0) {
-    return {
-      ok: false,
-      code: 'AUDIT_HIGH_WITHOUT_ADVISORY',
-      message: 'High/critical vulnerabilities were reported without an identifiable advisory.',
-      advisories,
-    };
-  }
-
-  const critical = advisories.filter((advisory) => advisory.severity === 'critical');
+  const critical = criticalFindings(report);
   if (critical.length > 0) {
     return {
       ok: false,
@@ -97,29 +118,59 @@ export function evaluateAudit(report, { now = new Date(), exceptions = AUDIT_EXC
     };
   }
 
-  const active = exceptions
-    .map((exception) => ({ exception, expiry: exceptionExpiry(exception) }))
-    .filter(({ expiry }) => expiry !== null && now <= expiry);
-  const used = active.find(({ exception }) =>
-    advisories.some((advisory) => advisory.url === exception.url),
+  const highEntries = Object.entries(report.vulnerabilities).filter(
+    ([, vulnerability]) => vulnerability.severity === 'high',
   );
+  if (highEntries.length === 0) {
+    return { ok: true, code: 'AUDIT_CLEAN', advisories: [] };
+  }
 
-  if (!used) {
+  const reachableByEntry = highEntries.map(([name]) => ({
+    name,
+    urls: reachableAdvisoryUrls(name, report.vulnerabilities),
+  }));
+  const unattributable = reachableByEntry.filter(({ urls }) => urls.size === 0);
+  if (unattributable.length > 0) {
     return {
       ok: false,
-      code: 'AUDIT_UNEXCEPTED_HIGH',
-      message: 'High advisories are present without an active matching exception.',
-      advisories,
+      code: 'AUDIT_HIGH_UNATTRIBUTABLE',
+      message: 'A high vulnerability is not traceable to any high/critical advisory.',
+      advisories: unattributable.map(({ name }) => ({
+        name,
+        severity: 'high',
+        title: `high vulnerability without an advisory path: ${name}`,
+      })),
     };
   }
 
-  const disallowed = advisories.filter((advisory) => advisory.url !== used.exception.url);
-  if (disallowed.length > 0) {
+  const active = exceptions
+    .map((exception) => ({ exception, expiry: exceptionExpiry(exception) }))
+    .filter(({ expiry }) => expiry !== null && now <= expiry);
+
+  const used = active.find(({ exception }) =>
+    reachableByEntry.every(({ urls }) => urls.size === 1 && urls.has(exception.url)),
+  );
+
+  if (!used) {
+    const allUrls = new Set(reachableByEntry.flatMap(({ urls }) => [...urls]));
+    const matching = active.find(({ exception }) => allUrls.has(exception.url));
+    if (!matching) {
+      return {
+        ok: false,
+        code: 'AUDIT_UNEXCEPTED_HIGH',
+        message: 'High advisories are present without an active matching exception.',
+        advisories: reachableByEntry.flatMap(({ name, urls }) =>
+          [...urls].map((url) => ({ name, severity: 'high', url })),
+        ),
+      };
+    }
     return {
       ok: false,
       code: 'AUDIT_UNEXCEPTED_ADVISORY',
       message: 'A high advisory outside the active exception was reported.',
-      advisories: disallowed,
+      advisories: reachableByEntry
+        .filter(({ urls }) => urls.size !== 1 || !urls.has(matching.exception.url))
+        .flatMap(({ name, urls }) => [...urls].map((url) => ({ name, severity: 'high', url }))),
     };
   }
 
@@ -127,7 +178,9 @@ export function evaluateAudit(report, { now = new Date(), exceptions = AUDIT_EXC
     ok: true,
     code: 'AUDIT_EXCEPTION_APPLIED',
     exception: used.exception,
-    advisories,
+    advisories: reachableByEntry.flatMap(({ name, urls }) =>
+      [...urls].map((url) => ({ name, severity: 'high', url })),
+    ),
   };
 }
 

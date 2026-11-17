@@ -34,16 +34,24 @@ expiring exception below. A critical advisory is never covered.
 The exception is intentionally narrow:
 
 - Any unrelated high advisory fails the job.
-- Any critical advisory, including a critical revision of this advisory, fails.
+- Any critical vulnerability entry fails, including one whose `via` is only a
+  dependency string rather than an advisory object.
+- Every high vulnerability entry must be traceable through its `via` graph to
+  the allowed advisory; an unattributable high entry fails.
 - An expired exception fails before the audit result is accepted.
-- The allowed dependency-chain entries are accepted only while the sole
-  high/critical advisory object is the exception above.
 
 FlowGuard source does not import `picomatch` directly; it is pulled in
 transitively through tooling and the host SDK. CodeQL, Gitleaks, and dependency
 review remain active while this exception is in place. The exception must be
 removed when a patched release is available or on its expiry date, whichever
 comes first.
+
+### Risk acceptance
+
+This exception is a time-boxed security-policy risk acceptance, not a fix for
+the advisory. Repository owner: Benjamin Fuchs. Approval status: **pending
+explicit owner confirmation in PR #1254**. The gate must not be treated as an
+approved risk acceptance until that confirmation is recorded here.
 
 ## CodeQL
 

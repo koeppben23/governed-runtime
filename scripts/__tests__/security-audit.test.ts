@@ -119,8 +119,56 @@ describe('security audit exception gate', () => {
   it('fails closed when a high vulnerability has no identifiable advisory', () => {
     expect(evaluateAudit(reportWith('dependency-chain'), options)).toMatchObject({
       ok: false,
-      code: 'AUDIT_HIGH_WITHOUT_ADVISORY',
+      code: 'AUDIT_HIGH_UNATTRIBUTABLE',
     });
+  });
+
+  it('fails a critical entry even when its via is only a string', () => {
+    expect(
+      evaluateAudit(
+        {
+          vulnerabilities: {
+            picomatch: {
+              severity: 'high',
+              via: [
+                {
+                  severity: 'high',
+                  url: allowed.url,
+                  title: 'allowed',
+                  range: '<=4.0.7',
+                },
+              ],
+            },
+            mystery: { severity: 'critical', via: ['picomatch'] },
+          },
+        },
+        options,
+      ),
+    ).toMatchObject({ ok: false, code: 'AUDIT_CRITICAL' });
+  });
+
+  it('fails a high entry that cannot be traced to the allowed advisory', () => {
+    expect(
+      evaluateAudit(
+        {
+          vulnerabilities: {
+            picomatch: {
+              severity: 'high',
+              via: [
+                {
+                  severity: 'high',
+                  url: allowed.url,
+                  title: 'allowed',
+                  range: '<=4.0.7',
+                },
+              ],
+            },
+            mystery: { severity: 'high', via: ['unknown-package'] },
+          },
+        },
+        options,
+      ),
+    ).toMatchObject({ ok: false, code: 'AUDIT_HIGH_UNATTRIBUTABLE' });
   });
 
   it.each([null, {}, { vulnerabilities: null }, { vulnerabilities: [] }])(
