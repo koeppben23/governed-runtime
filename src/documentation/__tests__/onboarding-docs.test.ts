@@ -220,6 +220,7 @@ describe('developer onboarding documentation contract', () => {
     expect(guide).toContain('nvm use "$(cat .node-version)"');
     expect(guide).toContain('[Onboarding Acceptance](./onboarding-acceptance.md)');
     expect(acceptance).toContain('npm run onboarding:smoke');
+    expect(acceptance).toContain('--expected-sha');
     expect(acceptance).toContain('15:00');
 
     const packageJson = JSON.parse(read('package.json')) as {

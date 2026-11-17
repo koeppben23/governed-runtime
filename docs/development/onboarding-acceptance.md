@@ -26,12 +26,16 @@ From this repository, with Node `22.22.2` active:
 ```bash
 npm run onboarding:smoke -- \
   --repo https://github.com/koeppben23/governed-runtime.git \
-  --ref <branch-or-tag>
+  --ref <branch-or-tag> \
+  --expected-sha <full-40-character-sha>
 ```
 
-The script prints a Markdown report with wall-clock timings, exit codes, and
-environment data. Pass `--with-build` to measure the separate debugging build.
-The script does not modify this repository and is not a required CI gate.
+`--expected-sha` fails closed before installation if the branch moved to a
+different commit. A run without it is exploratory and cannot be used as an
+acceptance record. The script prints a Markdown report with wall-clock timings,
+exit codes, and environment data. Pass `--with-build` to measure the separate
+debugging build. The script does not modify this repository and is not a
+required CI gate.
 
 ## Acceptance record
 
@@ -53,7 +57,9 @@ invocations. The same test file passed when the complete file was run, and the
 second fresh-clone attempt passed. The filtered single test fails in isolation,
 which indicates test-order or concurrency sensitivity rather than a change in
 this PR. The 15-minute PASS above is therefore not a claim that the full suite
-is order-independent; a separate follow-up is required to stabilize that test.
+is order-independent, and this record claims one successful first run rather
+than a guaranteed success rate. A separate follow-up is required to stabilize
+that test.
 
 A post-merge audit re-runs the measurement against the merged `develop` tree if
 that tree differs from the measured commit.

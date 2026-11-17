@@ -13,7 +13,8 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { release, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { performance } from 'node:perf_hooks';
 
@@ -25,6 +26,24 @@ class OnboardingSmokeError extends Error {
   constructor(message) {
     super(message);
     this.code = 'ONBOARDING_SMOKE_FAILED';
+  }
+}
+
+/**
+ * Fail closed when a caller pins the acceptance run to one exact commit.
+ * A branch ref alone can move between invocation and interpretation.
+ */
+export function assertExpectedCommit(actual, expected) {
+  if (expected === undefined) return;
+  if (!/^[0-9a-f]{40}$/i.test(expected)) {
+    throw new OnboardingSmokeError(
+      '--expected-sha must be a full 40-character hexadecimal commit SHA',
+    );
+  }
+  if (actual.toLowerCase() !== expected.toLowerCase()) {
+    throw new OnboardingSmokeError(
+      `expected commit ${expected}, but the clone checked out ${actual}`,
+    );
   }
 }
 
@@ -69,6 +88,7 @@ function main() {
     options: {
       repo: { type: 'string', default: DEFAULT_REPO },
       ref: { type: 'string', default: 'develop' },
+      'expected-sha': { type: 'string' },
       'with-build': { type: 'boolean', default: false },
       keep: { type: 'boolean', default: false },
     },
@@ -88,6 +108,7 @@ function main() {
       cwd: cloneDir,
       encoding: 'utf8',
     }).trim();
+    assertExpectedCommit(commit, values['expected-sha']);
 
     const installMs = run('npm ci', npmCommand, ['ci'], {
       cwd: cloneDir,
@@ -111,6 +132,10 @@ function main() {
     console.log(`| Repository | ${values.repo} |`);
     console.log(`| Ref | ${values.ref} |`);
     console.log(`| Commit | \`${commit}\` |`);
+    console.log(`| Expected SHA | ${values['expected-sha'] ?? 'not supplied'} |`);
+    console.log(
+      `| SHA check | ${values['expected-sha'] === undefined ? 'not requested' : 'PASS'} |`,
+    );
     console.log(`| OS | ${process.platform} ${process.arch} (${release()}) |`);
     console.log(`| Node | ${nodeVersion} |`);
     console.log(`| npm | ${npmVersion} |`);
@@ -143,9 +168,11 @@ function main() {
   }
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`[onboarding-smoke] ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`[onboarding-smoke] ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
 }
