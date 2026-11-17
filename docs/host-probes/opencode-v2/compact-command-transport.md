@@ -24,16 +24,22 @@ instructions after invocation.
   does not receive the previous body.
 - `/check` uses the same path: only `/check` is submitted, while its canonical
   body is injected.
-- Native results from `/start`, decisions and lifecycle are short synthetic
-  FlowGuard status notices (`session.synthetic`, `resume: true`). They show the
-  phase and the commands the **user may run** and end with a one-line stop
-  instruction; the full workflow-choice or verification card remains available
-  through `/status` (and `/status --evidence`). Diagnostics and debug-export
-  keep their full requested report.
-- The stop instruction is required: `resume: true` starts a model turn, and a
-  status that simply names `/export` without the stop line caused the model to
-  chain into export automatically in an installed run. The status names the
-  next command as user-invoked and never authorizes it.
+- Native results from `/start` and lifecycle are short synthetic FlowGuard status
+  notices (`session.synthetic`, `resume: true`). They show the phase and the
+  commands the **user may run** and end with a one-line stop instruction; the
+  full workflow-choice card remains available through `/status`.
+- Decision commands (`/approve`, `/override-approve`, `/request-changes`,
+  `/reject`, `/review-decision`) record and audit the decision **silently**: no
+  post-commit user message and no model turn. This removes the automatic
+  `/export` chain structurally, not just by prompt text. Verification detail and
+  the next action remain available through `/status` (and `/status --evidence`).
+- Diagnostics and debug-export keep their full requested report.
+- The stop instruction is required for the remaining synthetic statuses:
+  `resume: true` starts a model turn, and a status that simply names `/export`
+  without the stop line caused the model to chain into export automatically in
+  an installed run. Decision commands avoid that turn entirely by staying silent.
+  The remaining statuses name the next command as user-invokable and never
+  authorize it.
 - Pure UI commands keep their existing panel/chooser actions.
 
 The mechanism adds no workflow, activation, approval, evidence or audit

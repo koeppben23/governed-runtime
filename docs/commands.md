@@ -128,14 +128,19 @@ the injected body never changes admissibility, evidence or approval. A later
 ordinary prompt no longer carries the previous command body. Other supported
 hosts keep their portable command template files.
 
-Native commands that produce a result (`/start`, decisions, lifecycle) show a
-short synthetic FlowGuard status with the phase and the commands the **user may
-run**. The status also carries a one-line stop instruction, so the model never
-chains into `/export` or another command automatically. The full workflow-choice
-or verification card remains available through `/status` (and
-`/status --evidence`). `/diagnostics` and `/debug-export` still show their full
-requested report; only the command instruction text is kept out of the
-transcript.
+`/start` and lifecycle commands show a short synthetic FlowGuard status with
+the phase and the commands the **user may run**. The status also carries a
+one-line stop instruction, so the model never chains into `/export` or another
+command automatically.
+
+Decision commands (`/approve`, `/override-approve`, `/request-changes`,
+`/reject`, `/review-decision`) record and audit the decision **silently**: they
+create no post-commit user message and no model turn. This prevents an automatic
+chain into `/export` and leaves the canonical gate card, verification detail and
+next action available through `/status` (and `/status --evidence`).
+
+`/diagnostics` and `/debug-export` still show their full requested report; only
+the command instruction text is kept out of the transcript.
 
 Compatibility surfaces such as `/hydrate`, `/ticket`, `/validate`, `/check`,
 `/review-decision`, and `/continue` remain invocable for scripts, CI, and manual

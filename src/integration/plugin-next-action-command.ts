@@ -109,7 +109,6 @@ function blockedDecision(code: string, reason: string): NextActionDecisionResult
 
 /** A native decision control is a request to execute one canonical command. */
 export async function submitDecision(
-  ctx: Plugin.Context,
   deps: NextActionCommandDeps,
   request: NextActionDecisionRequest,
 ): Promise<NextActionDecisionResult> {
@@ -129,7 +128,7 @@ export async function submitDecision(
       verdict: ReviewVerdict.parse(verdict),
       rationale: request.rationale ?? '',
     });
-    await executeDecisionCommand(ctx, deps, {
+    await executeDecisionCommand(deps, {
       sessionID: request.sessionID,
       command: request.invocation,
       args,

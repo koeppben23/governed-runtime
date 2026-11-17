@@ -120,7 +120,7 @@ function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Prom
         }),
     });
     addInstalledCommandSurface(ctx, { guard: deps.guard }, editor);
-    addDecisionCommands(ctx, deps, editor);
+    addDecisionCommands(deps, editor);
     addGovernanceLifecycleCommands(ctx, deps, editor);
     addCheckCommand(ctx, deps, editor);
     addDebugExportCommand(ctx, editor);
@@ -173,7 +173,7 @@ async function registerAutonomousStart(
         sessionID: request.sessionID,
       }),
     GetPresentation: (request) => getPresentation(ctx, deps.presentation, request),
-    SubmitDecision: (request) => deps.guard(() => submitDecision(ctx, deps, request)),
+    SubmitDecision: (request) => deps.guard(() => submitDecision(deps, request)),
   });
   const unsubscribe = deps.presentation.subscribe((sessionID) => {
     void registration.events.emit('PresentationUpdated', { sessionID }).catch((error: unknown) => {

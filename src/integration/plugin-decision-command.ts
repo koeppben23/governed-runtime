@@ -19,7 +19,6 @@ import { buildEnforcementError, parseToolResult } from './blocked-result.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { toolBefore } from './plugin-beforehooks.js';
 import { toolAfter } from './plugin-afterhooks.js';
-import { presentCommandStatus } from './plugin-command-surface.js';
 import { recordValidationProgress, type PresentationStore } from './plugin-presentation.js';
 
 export interface DecisionCommandDeps {
@@ -41,11 +40,7 @@ export interface DecisionCommandDeps {
   readonly presentation: PresentationStore;
 }
 type CommandEditor = Parameters<Parameters<Plugin.Context['command']['transform']>[0]>[0];
-export function addDecisionCommands(
-  ctx: Plugin.Context,
-  deps: DecisionCommandDeps,
-  editor: CommandEditor,
-): void {
+export function addDecisionCommands(deps: DecisionCommandDeps, editor: CommandEditor): void {
   for (const command of INSTALLED_COMMANDS.filter(
     (command) => command.target.toolName === TOOL_FLOWGUARD_DECISION,
   ))
@@ -61,7 +56,7 @@ export function addDecisionCommands(
             verdict: ReviewVerdict.parse(token),
             rationale: fixed === undefined ? text.slice(String(token).length).trim() : text,
           });
-          return executeDecisionCommand(ctx, deps, {
+          return executeDecisionCommand(deps, {
             sessionID: input.sessionID,
             command: command.invocation,
             args,
@@ -71,7 +66,6 @@ export function addDecisionCommands(
 }
 
 export async function executeDecisionCommand(
-  ctx: Plugin.Context,
   deps: DecisionCommandDeps,
   request: {
     readonly sessionID: string;
@@ -140,43 +134,18 @@ export async function executeDecisionCommand(
         metadata: {},
       };
       await toolAfter(runtime, event, audited);
-      await presentDecision(ctx, sessionID, audited.output, args.verdict);
+      assertDecisionResult(audited.output);
     },
     true,
   );
 }
 
-function verdictLabel(verdict: ReviewVerdict): string {
-  if (verdict === 'approve') return 'approved';
-  if (verdict === 'approve_with_governance_override') return 'approved with governance override';
-  if (verdict === 'changes_requested') return 'changes requested';
-  return 'rejected';
-}
-
-function directiveCommands(result: Record<string, unknown>): readonly string[] {
-  const directive = result.directive;
-  if (directive === null || typeof directive !== 'object') return [];
-  const commands = (directive as { commands?: unknown }).commands;
-  if (!Array.isArray(commands)) return [];
-  return commands.filter((command): command is string => typeof command === 'string');
-}
-
-function decisionConfirmation(result: Record<string, unknown>, verdict: ReviewVerdict): string {
-  const phase = typeof result.phase === 'string' ? `; current phase \`${result.phase}\`` : '';
-  const commands = directiveCommands(result);
-  const next =
-    commands.length === 0
-      ? 'Details: /status.'
-      : `User may run: ${commands[0]}. Details: /status, /status --evidence.`;
-  return `**Decision recorded:** ${verdictLabel(verdict)}${phase}. ${next}`;
-}
-
-async function presentDecision(
-  ctx: Plugin.Context,
-  sessionID: string,
-  output: string,
-  verdict: ReviewVerdict,
-): Promise<void> {
+/**
+ * Validate the canonical decision result without manufacturing a chat turn.
+ * A failed result stays a command error; successful decisions are complete
+ * and audited, and the current phase/next action is read through `/status`.
+ */
+function assertDecisionResult(output: string): void {
   const result = parseToolResult(output);
   if (result === null)
     throw buildEnforcementError(
@@ -188,15 +157,4 @@ async function presentDecision(
       typeof result.code === 'string' ? result.code : 'GOVERNANCE_AUTHORITY_BLOCKED',
       typeof result.message === 'string' ? result.message : output,
     );
-  try {
-    const phase = typeof result.phase === 'string' ? result.phase : 'unknown phase';
-    const command = directiveCommands(result)[0];
-    const description = `FlowGuard: ${verdictLabel(verdict)} — ${phase}.${command === undefined ? '' : ` User may run ${command}.`}`;
-    await presentCommandStatus(ctx, sessionID, decisionConfirmation(result, verdict), description);
-  } catch (error) {
-    console.warn(
-      '[FlowGuard] Decision is committed and audited; status presentation failed.',
-      error,
-    );
-  }
 }
