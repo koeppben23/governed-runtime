@@ -9,7 +9,7 @@
  */
 
 import { existsSync } from 'node:fs';
-import { copyFile, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, readFile, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { globalConfigPath } from '../adapters/persistence.js';
 import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
@@ -348,6 +348,15 @@ async function writeCodexArtifacts(ctx: InstallContext, snapshot: SnapshotResult
   );
 }
 
+async function readOptional(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 async function writeOpencodeArtifacts(
   ctx: InstallContext,
   snapshot: SnapshotResult,
@@ -357,12 +366,26 @@ async function writeOpencodeArtifacts(
   const reviewerDefinition = reviewerDefinitionForPlatform(ctx.installPlatform);
   const reviewerPath = join(target, reviewerDefinition.relativePath);
 
-  for (const [name, content] of Object.entries(COMMANDS)) {
-    const cmdOp = await writeIfAbsent(join(target, 'commands', name), content, args.force);
-    ctx.ops.push(cmdOp);
-    if (cmdOp.action !== 'skipped') {
-      journal.record(findPreState(snapshot.preStateEntries, join(target, 'commands', name)));
+  // OpenCode receives these commands from the native plugin now. Remove only
+  // the exact managed template left by an older install; any other bytes are a
+  // conflict and were already rejected by the preflight.
+  for (const [name, managed] of Object.entries(COMMANDS)) {
+    const destination = join(target, 'commands', name);
+    const existing = await readOptional(destination);
+    if (existing === null) continue;
+    if (existing !== managed) {
+      throw new InstallError(
+        'MANAGED_ARTIFACT_CONFLICT',
+        `${destination} changed after the install preflight; refusing to remove it.`,
+      );
     }
+    await unlink(destination);
+    journal.record(findPreState(snapshot.preStateEntries, destination));
+    ctx.ops.push({
+      path: destination,
+      action: 'removed',
+      reason: 'superseded by the native FlowGuard command',
+    });
   }
 
   const revOp = await writeIfAbsent(reviewerPath, reviewerDefinition.content, args.force);

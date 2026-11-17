@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as path from 'node:path';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
+import { installedCommandSurface } from './plugin-command-surface.js';
 import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { encodeHostCallId } from '../state/host-identity.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
@@ -148,6 +149,7 @@ describe('native V2 entrypoint', () => {
     expect(host.context.command.transform).toHaveBeenCalledOnce();
     expect([...host.commands.keys()]).toEqual([
       'start',
+      ...installedCommandSurface().map((command) => command.name),
       'review-decision',
       'approve',
       'override-approve',

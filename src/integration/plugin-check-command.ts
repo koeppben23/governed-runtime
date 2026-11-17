@@ -5,7 +5,6 @@
  * the turn reaches idle. No prompt text can mint this authority.
  */
 import type { Plugin } from '@opencode/plugin';
-import { CHECK_COMMAND } from '../templates/commands/check.js';
 import { NATIVE_CHECK_COMMAND } from '../shared/flowguard-identifiers.js';
 import { buildEnforcementError } from './blocked-result.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
@@ -65,8 +64,8 @@ export async function executeCheckCommand(
         if (switchAgent) await ctx.session.switchAgent({ sessionID, agent: 'build' });
         await ctx.session.prompt({
           sessionID,
-          text: checkPromptBody(),
-          metadata: { source: 'flowguard-check-command' },
+          text: `/${NATIVE_CHECK_COMMAND}`,
+          metadata: { source: 'flowguard-command', command: NATIVE_CHECK_COMMAND },
         });
         await ctx.session.wait({ sessionID });
       } finally {
@@ -82,9 +81,4 @@ export async function executeCheckCommand(
     },
     true,
   );
-}
-
-/** The installed template body without frontmatter; the command hook owns execution. */
-function checkPromptBody(): string {
-  return CHECK_COMMAND.replace(/^---[\s\S]*?---\n+/, '');
 }

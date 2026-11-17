@@ -36,6 +36,7 @@ import { createNativeReviewerAuthority } from './plugin-native-review.js';
 import { createEventFence, startEventLoop } from './plugin-native-events.js';
 import { registerStartCommands } from './plugin-start-command.js';
 import { injectActiveMandates } from './plugin-mandates.js';
+import { injectCommandInstructions } from './plugin-command-surface.js';
 import { createPresentationStore, type PresentationStore } from './plugin-presentation.js';
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -578,8 +579,12 @@ async function registerNativeSessionHooks(
     ),
   );
   registrations.push(
-    await ctx.session.hook('context', (event) =>
-      invoke(event.sessionID, async (entry) => {
+    await ctx.session.hook('context', (event) => {
+      // Presentation-only and independent of activation: the canonical body of
+      // a short native FlowGuard command prompt travels in system context,
+      // never as a user message. Workflow authority remains with the tools.
+      injectCommandInstructions(event);
+      return invoke(event.sessionID, async (entry) => {
         if (entry.scope.sessionId !== entry.scope.root.sessionId)
           catalogue.hideProductive(event, event.agent === REVIEWER_SUBAGENT_TYPE);
         else if (!catalogue.published) {
@@ -594,8 +599,8 @@ async function registerNativeSessionHooks(
         return true;
       }).then((active) => {
         if (active !== true) catalogue.hideProductive(event);
-      }),
-    ),
+      });
+    }),
   );
   registrations.push(
     await ctx.session.hook('compaction', (event) =>

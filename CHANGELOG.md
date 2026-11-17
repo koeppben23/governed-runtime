@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Register every OpenCode FlowGuard command natively and keep the visible
+  transcript to the invoked command and its user arguments. The canonical
+  instruction body is injected into system context for the command turn;
+  attachments, mentions, skills, phase gates, review obligations and result
+  cards are unchanged. Obsolete installed command prompts are removed only when
+  byte-identical to the managed template; foreign content remains a fail-closed
+  conflict.
 - Add ADR-015 for the audit append proof and proposed segmented journal,
   including the local threat model, external-anchor boundary and downgrade
   contract. Add a standalone segment PoC plus canonical scale, independent-writer,

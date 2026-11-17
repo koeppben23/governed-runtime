@@ -113,6 +113,21 @@ Product commands are the recommended human surface. They invoke canonical FlowGu
 | `/review`           | `/review`                            | `flowguard_review`       | Run the peer review flow for a foreign target                                                                                                                                                    |
 | `/architecture`     | `/architecture`                      | `flowguard_architecture` | Create an ADR                                                                                                                                                                                    |
 
+### Command display and transport (OpenCode)
+
+Every installed FlowGuard command is registered by the native plugin instead of
+being installed as a Markdown prompt file. Invoking `/implement` or
+`/task Fix the lock` therefore keeps the visible user message to the command and
+the user's arguments; the canonical instruction body is injected as a
+system-context part for that command turn. Attachments, agent mentions and
+skills are forwarded unchanged.
+
+This is transport and presentation only. The ordinary FlowGuard tools, phase
+gates, review obligations and result cards remain the only execution authority;
+the injected body never changes admissibility, evidence or approval. A later
+ordinary prompt no longer carries the previous command body. Other supported
+hosts keep their portable command template files.
+
 Compatibility surfaces such as `/hydrate`, `/ticket`, `/validate`, `/check`,
 `/review-decision`, and `/continue` remain invocable for scripts, CI, and manual
 recovery, but they are never recommended by the runtime directive and are not
@@ -529,9 +544,10 @@ The callback requires a verified ACTIVE root session; catalogue/help eligibility
 does not grant that authority, and delegated children cannot invoke it for the root.
 
 For one explicit invocation it installs the check scope, switches to the build
-agent when needed, submits the canonical verification/review prompt, waits for
-idle, then clears scope and attempts to restore the previous agent, including on
-turn failure. Restoration errors are surfaced as warnings after scope cleanup.
+agent when needed, submits the short `/check` command (the canonical check body
+travels in system context), waits for idle, then clears scope and attempts to
+restore the previous agent, including on turn failure. Restoration errors are
+surfaced as warnings after scope cleanup.
 The individual verification/review tools retain their current phase, evidence,
 policy and independent-review guards. This is not automatic human approval.
 

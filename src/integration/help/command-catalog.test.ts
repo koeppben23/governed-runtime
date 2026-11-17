@@ -80,8 +80,8 @@ describe('command catalog', () => {
   });
 
   it('derives surfaces from template installation and native registration', () => {
-    expect(entry('/status').surfaces).toEqual(['portable']);
-    expect(entry('/task').surfaces).toEqual(['portable']);
+    expect(entry('/status').surfaces).toEqual(['portable', 'native']);
+    expect(entry('/task').surfaces).toEqual(['portable', 'native']);
     expect(entry('/start').surfaces).toEqual(['native']);
     expect(entry('/approve').surfaces).toEqual(['native']);
     expect(entry('/diagnostics').surfaces).toEqual(['native']);

@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { CliInstallError } from './errors.js';
 import { InstallError } from './install-recovery.js';
 import { parseJsonc } from './install-json.js';
-import { isManagedArtifact, PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './templates.js';
+import { COMMANDS, isManagedArtifact, PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './templates.js';
 import { NATIVE_PLUGIN_COMMANDS } from '../shared/flowguard-identifiers.js';
 import {
   FLOWGUARD_INSTRUCTION_ENTRIES,
@@ -104,21 +104,45 @@ export async function assertNoObsoleteOpenCodeInstallation(
   }
 }
 
+/** Native-only commands plus every installed template command now surfaced natively. */
+export function nativeOpenCodeCommandNames(): readonly string[] {
+  return [
+    ...NATIVE_PLUGIN_COMMANDS,
+    ...Object.keys(COMMANDS).map((file) => file.replace(/\.md$/, '')),
+  ];
+}
+
 export async function assertNativeOpenCodeInstallTarget(
   target: string,
   configDirectories: readonly string[],
 ): Promise<void> {
   await assertNoObsoleteOpenCodeInstallation(target, configDirectories);
   // The plugin registers these commands natively. An installed template of any
-  // of these names, whoever owns it, would collide with it; it is never removed
-  // or overwritten.
-  for (const command of NATIVE_PLUGIN_COMMANDS) {
+  // of these names, whoever owns it, would collide with it. The only accepted
+  // shadow is the exact current FlowGuard template: it is an upgrade left by a
+  // version that still installed command prompts, and install removes it after
+  // this preflight. Any other bytes are never removed or overwritten.
+  for (const command of nativeOpenCodeCommandNames()) {
     const shadow = join(target, 'commands', `${command}.md`);
-    if (await installationEntry(shadow))
-      throw new InstallError(
-        'MANAGED_ARTIFACT_CONFLICT',
-        `${shadow} collides with the native FlowGuard /${command} command; move or rename it, then retry. --force does not remove it.`,
-      );
+    const entry = await installationEntry(shadow);
+    if (!entry) continue;
+    const managed = COMMANDS[`${command}.md`];
+    let content: string | null = null;
+    if (managed !== undefined && entry.isFile() && !entry.isSymbolicLink()) {
+      try {
+        content = await readFile(shadow, 'utf8');
+      } catch {
+        throw new InstallError(
+          'INSTALL_OWNERSHIP_UNAVAILABLE',
+          `Cannot inspect the existing command file ${shadow}.`,
+        );
+      }
+    }
+    if (content === managed) continue;
+    throw new InstallError(
+      'MANAGED_ARTIFACT_CONFLICT',
+      `${shadow} collides with the native FlowGuard /${command} command; move or rename it, then retry. --force does not remove it.`,
+    );
   }
   const plugin = join(target, PLUGIN_RELATIVE_PATH);
   const entry = await installationEntry(plugin);

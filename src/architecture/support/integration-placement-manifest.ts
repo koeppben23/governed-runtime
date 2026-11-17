@@ -385,6 +385,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/plugin-audit.ts', owner: 'root-composition' },
   { file: 'integration/plugin-beforehooks.ts', owner: 'root-composition' },
   { file: 'integration/plugin-check-command.ts', owner: 'root-composition' },
+  { file: 'integration/plugin-command-surface.ts', owner: 'root-composition' },
   { file: 'integration/plugin-debug-export-command.ts', owner: 'root-composition' },
   { file: 'integration/plugin-diagnostics-command.ts', owner: 'root-composition' },
   { file: 'integration/plugin-compaction.ts', owner: 'root-composition' },

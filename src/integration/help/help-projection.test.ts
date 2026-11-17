@@ -224,7 +224,7 @@ describe('buildHelpResult', () => {
       visibility: 'not_verified',
     });
     expect(byInvocation.get('/status')).toMatchObject({
-      surfaces: ['portable'],
+      surfaces: ['portable', 'native'],
       availability: 'available',
       visibility: 'available',
     });

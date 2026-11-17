@@ -83,15 +83,15 @@ upgrade before managed artifacts are written.
 
 ### What Gets Updated
 
-| Component         | Updated | Notes                       |
-| ----------------- | ------- | --------------------------- |
-| **CLI binary**    | Yes     | New `flowguard` command     |
-| **Core package**  | Yes     | Via vendor tarball          |
-| **Tools**         | Yes     | Re-installed from new core  |
-| **Commands**      | Yes     | Updated prompts             |
-| **Plugin**        | Yes     | Updated audit hook          |
-| **Mandates**      | Yes     | Content-digested, versioned |
-| **Configuration** | No      | Preserved                   |
+| Component         | Updated | Notes                                                                                               |
+| ----------------- | ------- | --------------------------------------------------------------------------------------------------- |
+| **CLI binary**    | Yes     | New `flowguard` command                                                                             |
+| **Core package**  | Yes     | Via vendor tarball                                                                                  |
+| **Tools**         | Yes     | Re-installed from new core                                                                          |
+| **Commands**      | Yes     | Native registration; obsolete prompt files removed only when byte-identical to the managed template |
+| **Plugin**        | Yes     | Updated audit hook                                                                                  |
+| **Mandates**      | Yes     | Content-digested, versioned                                                                         |
+| **Configuration** | No      | Preserved                                                                                           |
 
 ### What Is Preserved
 

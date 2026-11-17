@@ -296,7 +296,8 @@ describe('native governance lifecycle commands', () => {
     expect(prompt).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionID: sessionId,
-        text: expect.stringContaining('flowguard_run_check'),
+        text: '/check',
+        metadata: { source: 'flowguard-command', command: 'check' },
       }),
     );
     expect(switchAgent).toHaveBeenNthCalledWith(1, { sessionID: sessionId, agent: 'build' });

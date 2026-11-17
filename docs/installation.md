@@ -196,9 +196,8 @@ Expected output:
 ```
   [ok] ~/.config/opencode/flowguard-mandates.md
   [ok] ~/.config/opencode/plugins/flowguard/index.ts
-  [ok] ~/.config/opencode/commands/hydrate.md
-  ... (installed command files)
-  [ok] ~/.config/opencode/commands/archive.md
+  [ok] ~/.config/opencode/commands/implement.md — provided by the native FlowGuard plugin
+  ... (every installed command is provided natively)
   [ok] ~/.config/opencode/package.json
   [warn] OpenCode V2 runtime load, INACTIVE parity, operator UI and reviewer assurance NOT_VERIFIED
   [ok] flowguard.json — config valid (defaults only)
@@ -206,11 +205,12 @@ Expected output:
   N/N checks passed
 ```
 
-`/start` is registered natively by the FlowGuard plugin and is never installed as
-a command file. Install and `doctor` refuse a target that contains
-`commands/start.md`, whoever owns it, with `MANAGED_ARTIFACT_CONFLICT`: such a
-file would collide with the native command. Move or rename it, then retry;
-`--force` does not remove it.
+Every installed FlowGuard command is registered natively by the plugin and is
+not installed as a Markdown prompt file. An installation that still contains an
+obsolete command prompt for one of those names is accepted only when its bytes
+are exactly the current managed template; install removes that file after the
+preflight. Any other content is a `MANAGED_ARTIFACT_CONFLICT`: move or rename it,
+then retry. `--force` does not remove foreign content.
 
 ## Install from Local Source Checkout
 

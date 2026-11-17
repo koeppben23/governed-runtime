@@ -46,6 +46,7 @@ import {
   recordEndAudit,
 } from './plugin-governance-lifecycle-command.js';
 import { addCheckCommand } from './plugin-check-command.js';
+import { addInstalledCommandSurface } from './plugin-command-surface.js';
 import { addDebugExportCommand } from './plugin-debug-export-command.js';
 import { addDiagnosticsCommand } from './plugin-diagnostics-command.js';
 import { getPresentation, type PresentationStore } from './plugin-presentation.js';
@@ -122,6 +123,7 @@ function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Prom
           await runStart(ctx, deps, input);
         }),
     });
+    addInstalledCommandSurface(ctx, { guard: deps.guard }, editor);
     addDecisionCommands(ctx, deps, editor);
     addGovernanceLifecycleCommands(ctx, deps, editor);
     addCheckCommand(ctx, deps, editor);

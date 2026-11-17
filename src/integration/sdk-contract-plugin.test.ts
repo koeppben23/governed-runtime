@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import type { Plugin } from '@opencode/plugin';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
+import { installedCommandSurface } from './plugin-command-surface.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import { makeState } from '../fixtures.js';
 import {
@@ -46,6 +47,7 @@ describe('native V2 plugin definition resilience', () => {
       expect(host.context.command.transform).toHaveBeenCalledOnce();
       expect([...host.commands.keys()]).toEqual([
         'start',
+        ...installedCommandSurface().map((command) => command.name),
         'review-decision',
         'approve',
         'override-approve',

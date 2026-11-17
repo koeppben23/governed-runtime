@@ -87,7 +87,6 @@ describe.skipIf(process.platform === 'win32')('packed Java demo V2 installation'
           'flowguard-mandates.md',
           'agents/flowguard-reviewer.md',
           'flowguard.json',
-          'commands/plan.md',
         ]) {
           const original = join(target, file);
           await rename(original, `${original}.held`);

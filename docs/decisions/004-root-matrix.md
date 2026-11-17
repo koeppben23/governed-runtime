@@ -10,7 +10,7 @@ The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
 (counts updated 2026-11-15):
 
-- `root-composition`: 38 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 39 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 9 named files (`gui-rpc-client-contract.ts`,
   `host-mutation-observation.ts`, `installed-commands.ts`,
   `opencode-governance-dispatch-cache.ts`, `opencode-governance-rpc.ts`,
@@ -18,7 +18,7 @@ host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
   `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 62 root production files
+- total: 63 root production files
 
 The native V2 dispatch lifecycle extraction adds
 `opencode-governance-dispatch-cache.ts` to the root host/runtime zone. It
@@ -36,6 +36,14 @@ not define a second audit schema, persistence lock or reviewer authority.
 The baseline progress display adds `plugin-presentation.ts` (bounded,
 ephemeral baseline progress store). It is not durable, audited, model-visible or authoritative;
 canonical state and Next Action remain the source of truth.
+
+The compact command UX adds `plugin-command-surface.ts` at the composition
+boundary. It registers the existing installed command identities natively,
+projects only the invoked command and user arguments as the visible prompt, and
+injects the canonical template body into system context. It adds no workflow,
+activation, approval, evidence or tool authority; the ordinary machine and tool
+gates remain the only execution authority. Composition grows by one to 39 and
+the total root matrix grows to 63.
 
 The #1196 Desktop-layer isolation adds `gui-rpc-client-contract.ts` as a
 host-runtime **type-only port** reusing the canonical Next Action, review,

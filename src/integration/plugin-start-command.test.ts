@@ -12,6 +12,7 @@ import {
 } from '../adapters/governance-activation.js';
 import type { GovernanceActivationRevision } from '../state/governance-activation.js';
 import { parseStartArguments } from './plugin-start-command.js';
+import { installedCommandSurface } from './plugin-command-surface.js';
 import * as tools from './tools/index.js';
 import * as audit from '../adapters/persistence-audit.js';
 import * as auditPipeline from './plugin-audit.js';
@@ -70,6 +71,7 @@ describe('native /start command', () => {
     expect(host.context.command.transform).toHaveBeenCalledOnce();
     expect([...host.commands.keys()]).toEqual([
       'start',
+      ...installedCommandSurface().map((command) => command.name),
       'review-decision',
       'approve',
       'override-approve',
@@ -88,6 +90,25 @@ describe('native /start command', () => {
     });
     expect((await workflow(sessionId)).status).not.toBe('resolved');
     expect(revisions()).toEqual([]);
+  });
+
+  it('submits only the native command and user arguments for installed commands', async () => {
+    await open();
+    const sessionId = randomUUID();
+    host.prompt.mockClear();
+    await host.command('implement', sessionId);
+    expect(host.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionID: sessionId,
+        text: '/implement',
+        metadata: { source: 'flowguard-command', command: 'implement' },
+      }),
+    );
+    host.prompt.mockClear();
+    await host.command('task', sessionId, 'Fix the lock');
+    expect(host.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '/task Fix the lock' }),
+    );
   });
 
   it('exposes the read-only next-action RPC over the canonical status projection', async () => {

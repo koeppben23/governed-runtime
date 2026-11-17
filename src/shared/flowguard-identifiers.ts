@@ -41,8 +41,9 @@ export const NATIVE_CATALOGUED_COMMANDS = [
 ] as const;
 
 /**
- * Every command registered natively by the plugin; installer collision authority.
- * Includes operational lifecycle commands that are not installed-command templates.
+ * Native-only commands without an installed template. Installed template
+ * commands are registered natively too; installer collision authority derives
+ * that set from the canonical template registry.
  */
 export const NATIVE_PLUGIN_COMMANDS = [
   ...NATIVE_CATALOGUED_COMMANDS,

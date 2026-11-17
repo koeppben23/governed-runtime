@@ -3,6 +3,7 @@
  * simulate those observations by wiring obsolete SDK callbacks. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FlowGuardAuditPlugin } from './plugin.js';
+import { installedCommandSurface } from './plugin-command-surface.js';
 import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
@@ -271,6 +272,7 @@ describe('single-owner native hook composition', () => {
     expect(host.context.command.transform).toHaveBeenCalledOnce();
     expect([...host.commands.keys()]).toEqual([
       'start',
+      ...installedCommandSurface().map((command) => command.name),
       'review-decision',
       'approve',
       'override-approve',

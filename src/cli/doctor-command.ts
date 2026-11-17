@@ -162,8 +162,39 @@ async function checkGuiWrapper(target: string, checks: DoctorCheck[]): Promise<v
 }
 
 async function checkCommandFiles(target: string, checks: DoctorCheck[]): Promise<void> {
-  for (const [name, expectedContent] of Object.entries(COMMANDS)) {
-    await checkWrapperFile(target, `commands/${name}`, expectedContent, checks);
+  // OpenCode registers every FlowGuard command natively; an installed command
+  // prompt is the obsolete managed shape, not a required artifact.
+  for (const [name, obsoleteContent] of Object.entries(COMMANDS)) {
+    const filePath = join(target, 'commands', name);
+    let content: string | null;
+    try {
+      content = await safeRead(filePath);
+    } catch (err: unknown) {
+      const code = typeof err === 'object' && err !== null && 'code' in err ? err.code : undefined;
+      const message = err instanceof Error ? err.message : String(err);
+      checks.push({
+        file: filePath,
+        status: 'error',
+        detail: code ? `Cannot read (${code}): ${message}` : `Cannot read: ${message}`,
+      });
+      continue;
+    }
+    if (content === null) {
+      checks.push({
+        file: filePath,
+        status: 'ok',
+        detail: 'provided by the native FlowGuard plugin',
+      });
+      continue;
+    }
+    checks.push({
+      file: filePath,
+      status: content === obsoleteContent ? 'warn' : 'modified',
+      detail:
+        content === obsoleteContent
+          ? 'obsolete FlowGuard command template shadows the native command; reinstall to remove it'
+          : 'content differs from the FlowGuard template',
+    });
   }
 }
 

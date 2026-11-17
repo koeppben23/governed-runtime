@@ -151,12 +151,12 @@ describe('integration placement authority', () => {
     const countByOwner = (owner: string) =>
       rootFiles.filter((entry) => entry.owner === owner).length;
 
-    expect(countByOwner('root-composition')).toBe(38);
+    expect(countByOwner('root-composition')).toBe(39);
     // The extracted native-dispatch cache is explicitly part of host runtime,
     // not an unchecked extra module or an owner-free budget exception.
     expect(countByOwner('root-host-runtime')).toBe(9);
     expect(countByOwner('root-authority')).toBe(15);
-    expect(rootFiles.length).toBe(62);
+    expect(rootFiles.length).toBe(63);
   });
 
   it('freezes the host/runtime boundary set exactly', () => {

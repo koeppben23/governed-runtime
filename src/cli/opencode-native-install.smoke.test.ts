@@ -144,8 +144,8 @@ describe.skipIf(!LIVE)('packed native V2 installation and lifecycle', () => {
     expect(await readFile(join(target, PLUGIN_RELATIVE_PATH), 'utf8')).toBe(PLUGIN_WRAPPER);
     expect(await readFile(join(target, TUI_PLUGIN_RELATIVE_PATH), 'utf8')).toBe(TUI_PLUGIN_WRAPPER);
     expect(await readFile(join(target, GUI_PLUGIN_RELATIVE_PATH), 'utf8')).toBe(GUI_PLUGIN_BUNDLE);
-    for (const [file, body] of Object.entries(COMMANDS)) {
-      expect(await readFile(join(target, 'commands', file), 'utf8')).toBe(body);
+    for (const file of Object.keys(COMMANDS)) {
+      expect(existsSync(join(target, 'commands', file))).toBe(false);
     }
     expect(Host.resolve({ directory: join(target, 'plugins/flowguard') }).gui).toMatch(
       /gui-experimental\.cjs$/,
@@ -237,8 +237,10 @@ export default Plugin.define({ id: 'flowguard-test-inventory', async setup(ctx) 
     };
     await assertSingleLoadedPlugin();
     const commands = await client.command.list({ location });
-    for (const name of ['plan', 'implement', 'continue'])
+    for (const file of Object.keys(COMMANDS)) {
+      const name = file.replace(/\.md$/, '');
       expect(commands.data.some((command) => command.name === name)).toBe(true);
+    }
     const inventory = await client.rpc
       .call({ location, rpcID: 'flowguard-test-inventory', method: 'tools', input: {} })
       .catch(async (error) => {

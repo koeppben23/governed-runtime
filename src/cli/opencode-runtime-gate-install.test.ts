@@ -5,7 +5,7 @@ import { readFile, writeFile, mkdir, symlink, readlink, lstat } from 'node:fs/pr
 import { join } from 'node:path';
 import { install } from './install-command.js';
 import { uninstall } from './uninstall-command.js';
-import { PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './templates.js';
+import { COMMANDS, PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './templates.js';
 import { NATIVE_PLUGIN_COMMANDS } from '../shared/flowguard-identifiers.js';
 import {
   repoArgs,
@@ -211,9 +211,11 @@ describe('native installation boundary', () => {
       expect(await readFile(old, 'utf8')).toBe('obsolete bytes');
     },
   );
-  it.each(
-    NATIVE_PLUGIN_COMMANDS.flatMap((command) => [false, true].map((force) => ({ command, force }))),
-  )(
+  const nativeCommands = [
+    ...NATIVE_PLUGIN_COMMANDS,
+    ...Object.keys(COMMANDS).map((file) => file.replace(/\.md$/, '')),
+  ];
+  it.each(nativeCommands.flatMap((command) => [false, true].map((force) => ({ command, force }))))(
     'refuses an installed commands/$command.md that collides with native /$command, force=$force',
     async ({ command, force }) => {
       const commands = join(tmpDir, '.opencode', 'commands');
@@ -237,7 +239,16 @@ describe('native installation boundary', () => {
   it('never installs a command template for a natively registered command', async () => {
     const result = await install(repoArgs({ coreTarball: await createMockTarball() }));
     expect(result.errors).toEqual([]);
-    for (const command of NATIVE_PLUGIN_COMMANDS)
+    for (const command of nativeCommands)
       expect(existsSync(join(tmpDir, '.opencode', 'commands', `${command}.md`))).toBe(false);
+  });
+  it('removes an exact managed command template left by an upgrade', async () => {
+    const commands = join(tmpDir, '.opencode', 'commands');
+    await mkdir(commands, { recursive: true });
+    const plan = join(commands, 'plan.md');
+    await writeFile(plan, COMMANDS['plan.md']!);
+    const result = await install(repoArgs({ coreTarball: await createMockTarball() }));
+    expect(result.errorDetails ?? []).toEqual([]);
+    expect(existsSync(plan)).toBe(false);
   });
 });

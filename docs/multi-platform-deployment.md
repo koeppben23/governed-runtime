@@ -41,10 +41,11 @@ npx --package ./flowguard-core-{version}.tgz flowguard install \
   --force
 ```
 
-The installer writes the OpenCode plugin, custom tools, command prompts,
-reviewer agent, and managed mandates under `~/.config/opencode/`. For a
-repo-scoped install (committed to version control) replace
-`--install-scope global` with `--install-scope repo`.
+The installer writes the OpenCode plugin, native command registrations,
+reviewer agent, and managed mandates under `~/.config/opencode/`. FlowGuard
+command prompts are not installed as Markdown files on OpenCode; the plugin
+registers them directly. For a repo-scoped install (committed to version
+control) replace `--install-scope global` with `--install-scope repo`.
 
 ### Configuration
 
@@ -65,8 +66,8 @@ Expected output (truncated):
   [ok] ~/.config/opencode/flowguard-mandates.md
   [ok] ~/.config/opencode/plugins/flowguard/index.ts
   [ok] ~/.config/opencode/agents/flowguard-reviewer.md
-  [ok] ~/.config/opencode/commands/hydrate.md
-  ... (installed command files)
+  [ok] ~/.config/opencode/commands/hydrate.md — provided by the native FlowGuard plugin
+  ... (every installed command is provided natively)
   [ok] ~/.config/opencode/package.json
   [warn] Native V2 runtime load, INACTIVE parity, operator UI and reviewer assurance NOT_VERIFIED
   [ok] flowguard.json — config valid

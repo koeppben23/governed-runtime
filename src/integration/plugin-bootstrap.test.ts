@@ -8,6 +8,7 @@ import * as os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FlowGuardAuditPlugin } from './plugin.js';
+import { installedCommandSurface } from './plugin-command-surface.js';
 import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import { hashText } from '../shared/hashing.js';
 import { createTestWorkspace, canonicalBinding, withTestEnv } from './test-helpers.js';
@@ -273,6 +274,7 @@ describe('native V2 phase and integrity gates', () => {
     expect(h.host.context.command.transform).toHaveBeenCalledOnce();
     expect([...h.host.commands.keys()]).toEqual([
       'start',
+      ...installedCommandSurface().map((command) => command.name),
       'review-decision',
       'approve',
       'override-approve',

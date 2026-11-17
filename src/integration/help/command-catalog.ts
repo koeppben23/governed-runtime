@@ -101,9 +101,10 @@ function installedDescription(definition: InstalledCommandDefinition): string {
 }
 
 function installedSurfaces(definition: InstalledCommandDefinition): readonly HostSurface[] {
-  // Installed templates are portable. Definitions without a template are only
-  // registered by the native plugin (start/check/decision commands).
-  return definition.templateFile === null ? ['native'] : ['portable'];
+  // Installed templates remain portable for other hosts and are registered
+  // natively by the OpenCode plugin. Definitions without a template are
+  // native-only (start/check/decision commands).
+  return definition.templateFile === null ? ['native'] : ['portable', 'native'];
 }
 
 const INSTALLED_CATALOG: readonly CommandCatalogEntry[] = INSTALLED_COMMANDS.map((definition) => ({

@@ -111,6 +111,13 @@ context. The injected system part is marked `source: flowguard-mandates`; a
 request that already carries that source is not duplicated. Injection reads the
 current root workflow state and fails closed if that state disappears.
 
+The same context composition also supplies the canonical instruction body for a
+native FlowGuard command whose short prompt is the latest user message. The
+visible message remains `/command` plus user arguments; the body is a system part
+marked `source: flowguard-command-instructions`. This is presentation and
+transport only: it grants no authority, and a later ordinary user message no
+longer receives the previous command body.
+
 `/check` is a native command. Its explicit callback installs the `check` scope,
 clears any rework continuation latch, switches to the `build` agent for the
 synthetic check turn (restoring the prior agent afterwards), and clears the scope

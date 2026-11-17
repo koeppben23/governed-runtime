@@ -371,7 +371,7 @@ describe('cli/install', () => {
       expect(existsSync(path.join(oc, 'tools', 'flowguard.ts'))).toBe(false);
       expect(existsSync(path.join(oc, PLUGIN_RELATIVE_PATH))).toBe(true);
       for (const name of Object.keys(COMMANDS)) {
-        expect(existsSync(path.join(oc, 'commands', name))).toBe(true);
+        expect(existsSync(path.join(oc, 'commands', name))).toBe(false);
       }
       expect(existsSync(path.join(oc, 'package.json'))).toBe(true);
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
@@ -1633,9 +1633,7 @@ describe('cli/install', () => {
     it('result ops include every written/merged file', async () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
-      const commandCount = Object.keys(COMMANDS).length;
-      const expectedOps = commandCount + 10;
-      expect(result.ops.length).toBe(expectedOps);
+      expect(result.ops.length).toBe(10);
     });
 
     it('user entries in opencode.json instructions are preserved in order', async () => {

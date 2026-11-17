@@ -40,7 +40,7 @@ The `flowguard-core-{version}.tgz` contains:
 | --------------- | --------------------------------------------------------------------- |
 | **CLI**         | `flowguard` command (install, uninstall, doctor, run, serve, inspect) |
 | **Core**        | State machine, rails, adapters, audit, config                         |
-| **Integration** | OpenCode tools, plugin, command prompts                               |
+| **Integration** | OpenCode tools, plugin, native command surface                        |
 | **Templates**   | Package.json, opencode.jsonc, mandates                                |
 
 Each tagged release on GitHub Releases additionally publishes the following
