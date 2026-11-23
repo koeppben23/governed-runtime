@@ -19,6 +19,10 @@ export interface SessionPrompt {
 }
 /** Request overrides. Typed keys are generation settings; any other key is a provider option. */
 export type SessionRequestOptions = Types.DeepMutable<GenerationOptionsFields> & Record<string, unknown>;
+/** A request message. `metadata` is the stored Session message's metadata, for reading only; it is not sent to the model. */
+export type SessionRequestMessage = Message & {
+    readonly metadata?: Record<string, unknown>;
+};
 export interface SessionRequest {
     readonly sessionID: Session.ID;
     readonly model: Model.Ref;
@@ -27,7 +31,7 @@ export interface SessionRequest {
      * not updated when a hook edits `text`. Experimental.
      */
     system: Array<SystemPart>;
-    messages: Array<Message>;
+    messages: Array<SessionRequestMessage>;
     options: SessionRequestOptions;
 }
 export interface SessionContext extends SessionRequest {
@@ -148,6 +152,10 @@ export interface SessionRetry {
  * the Session that owns the job: the idle Session itself, or a descendant such as a subagent child.
  */
 export type SessionIdleBackground = {
+    readonly kind: "codemode";
+    readonly sessionID: Session.ID;
+    readonly jobID: string;
+} | {
     readonly kind: "shell";
     readonly sessionID: Session.ID;
     readonly shellID: string;
@@ -181,6 +189,9 @@ export interface SessionIdle {
     readonly background: ReadonlyArray<SessionIdleBackground>;
 }
 export interface SessionHooks {
+    readonly fork: {
+        readonly sessionID: Session.ID;
+    };
     readonly prompt: SessionPrompt;
     readonly context: SessionContext;
     readonly compaction: SessionCompaction;

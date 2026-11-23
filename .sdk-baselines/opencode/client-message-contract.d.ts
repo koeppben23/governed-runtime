@@ -13,6 +13,7 @@ export type SessionMessageAssistant = {
     };
     time: {
         created: number;
+        firstToken?: number;
         streamed?: number;
         completed?: number;
     };

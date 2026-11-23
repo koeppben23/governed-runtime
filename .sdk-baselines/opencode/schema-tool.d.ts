@@ -5,6 +5,18 @@ import type { Agent } from "./agent.js";
 import type { Session } from "./session.js";
 import type { SessionMessage } from "./session-message.js";
 export type Metadata = Readonly<Record<string, any>>;
+/** Optional wire encoding of a tool's single required string field. Execution still receives the object. */
+export declare const Freeform: Schema.Union<readonly [Schema.Struct<{
+    readonly type: Schema.Literal<"text">;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"regex">;
+    readonly pattern: Schema.String;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"lark">;
+    readonly grammar: Schema.String;
+}>]>;
+export type Freeform = typeof Freeform.Type;
+export declare const FreeformFormat: Schema.Literals<("lark" | "regex" | "text")[]>;
 export declare const CallID: Schema.brand<Schema.String, "Tool.CallID">;
 export type CallID = typeof CallID.Type;
 export interface Context {
@@ -13,6 +25,11 @@ export interface Context {
     readonly messageID: SessionMessage.ID;
     readonly id: CallID;
     readonly progress: (update: Metadata) => Effect.Effect<void>;
+    /**
+     * Completes when the user asks the call to stop. A tool that awaits it can stop its work and fail with what it
+     * has; a tool that does not is interrupted.
+     */
+    readonly cancel?: Effect.Effect<void>;
 }
 export interface Namespace {
     readonly name: string;
@@ -71,6 +88,7 @@ export interface Result<Output extends ValueSchema<any> | undefined = ValueSchem
 export type Info<Input extends ValueSchema<any> = ValueSchema<any>, Output extends ValueSchema<any> | undefined = ValueSchema<any> | undefined> = {
     readonly name: string;
     readonly input: Input;
+    readonly freeform?: Freeform;
     readonly description: string;
     readonly execute: (input: InputValue<Input>, context: Context) => Effect.Effect<Result<Output>, Error>;
     readonly output?: Output;
