@@ -2156,6 +2156,10 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Bump `actions/dependency-review-action` from 5.0.0 to 5.0.1 while keeping
+  the workflow pin SHA-addressed. The dependency-review job remains a
+  non-blocking PR advisory; no governance authority, evidence format or
+  transition contract changes.
 - Updated native OpenCode API packages and type baselines to 2.3.2; installed Desktop/CLI support is not certified by this update.
 
 - Harden repository developer experience and security assurance: align the
