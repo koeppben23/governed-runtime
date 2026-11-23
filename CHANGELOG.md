@@ -2156,6 +2156,18 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Bump `actions/setup-java` from 6.2.0 to 6.3.0 in the CI and
+  proofgraph-live-controls workflows while keeping the pins SHA-addressed.
+  Temurin Java 21 remains pinned; no governance authority, evidence format or
+  transition contract changes.
+- Bump `actions/setup-go` from 7.0.0 to 7.1.0 while keeping the workflow pin
+  SHA-addressed. The Go toolchain remains pinned to 1.23 for golden-fixture
+  compatibility; no governance authority, evidence format or transition
+  contract changes.
+- Bump `actions/dependency-review-action` from 5.0.0 to 5.0.1 while keeping
+  the workflow pin SHA-addressed. The dependency-review job remains a
+  non-blocking PR advisory; no governance authority, evidence format or
+  transition contract changes.
 - Updated native OpenCode API packages and type baselines to 2.3.2; installed Desktop/CLI support is not certified by this update.
 
 - Harden repository developer experience and security assurance: align the
