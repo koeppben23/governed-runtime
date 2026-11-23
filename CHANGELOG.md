@@ -2156,6 +2156,10 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Bump `actions/setup-go` from 7.0.0 to 7.1.0 while keeping the workflow pin
+  SHA-addressed. The Go toolchain remains pinned to 1.23 for golden-fixture
+  compatibility; no governance authority, evidence format or transition
+  contract changes.
 - Bump `actions/dependency-review-action` from 5.0.0 to 5.0.1 while keeping
   the workflow pin SHA-addressed. The dependency-review job remains a
   non-blocking PR advisory; no governance authority, evidence format or
