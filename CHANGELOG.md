@@ -2156,6 +2156,8 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Updated native OpenCode API packages and type baselines to 2.3.2; installed Desktop/CLI support is not certified by this update.
+
 - Harden repository developer experience and security assurance: align the
   canonical debugging guide and Node onboarding with OpenCode V2, complete the
   CI job documentation, upload CodeQL SARIF to GitHub code scanning, mark the
