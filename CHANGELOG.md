@@ -2170,6 +2170,11 @@ stop`, reviewer child reported it could not complete the falsification).
   transition contract changes.
 - Updated native OpenCode API packages and type baselines to 2.3.2; installed Desktop/CLI support is not certified by this update.
 
+- Bump the production dependency group: `asn1js` 4.0.0 → 4.1.0 and `jose`
+  6.2.17 → 6.2.18. Minor/patch update of ASN.1 and JWT verification
+  dependencies; no governance authority, evidence format or transition contract
+  changes.
+
 - Harden repository developer experience and security assurance: align the
   canonical debugging guide and Node onboarding with OpenCode V2, complete the
   CI job documentation, upload CodeQL SARIF to GitHub code scanning, mark the
