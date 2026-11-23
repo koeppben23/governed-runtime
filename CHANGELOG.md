@@ -2170,6 +2170,10 @@ stop`, reviewer child reported it could not complete the falsification).
   transition contract changes.
 - Updated native OpenCode API packages and type baselines to 2.3.2; installed Desktop/CLI support is not certified by this update.
 
+- Bump the production dependency group: `asn1js` 4.0.0 → 4.1.0 and `jose`
+  6.2.17 → 6.2.18. Minor/patch update of ASN.1 and JWT verification
+  dependencies; no governance authority, evidence format or transition contract
+  changes.
 - Bump the development dependency group: `@vitest/coverage-v8` 5.1.0 → 5.1.1,
   `eslint` 10.14.0 → 10.15.0, `fast-check` 4.10.2 → 4.10.3, `knip`
   6.45.1 → 6.46.1, and `typescript-eslint` 8.72.2 → 8.73.0. Toolchain-only
