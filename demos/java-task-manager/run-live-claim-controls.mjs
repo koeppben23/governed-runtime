@@ -441,6 +441,8 @@ async function main() {
       'repo',
       '--tarball',
       tarball,
+      '--demo',
+      'main',
       path.join(options.root, 'workspaces'),
     ],
     {
