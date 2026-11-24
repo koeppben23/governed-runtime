@@ -91,6 +91,20 @@ authenticity.
 | Plan approval certificate | `d29e4453-7630-4571-8d29-1744ea9ff4e8`                                                           |
 | Implementation digest     | `0e4dfcfa62c5cb695715082e1974a3072d437c386e209577d543f3e4c2417663`                               |
 
+### Harness identity
+
+The product tarball and host are pinned, but the positive run used a **modified
+local demo harness worktree**. Its base commit is
+`7a01f4c209b6875aad3fc65947ac6b7b78a7dc9d`; the exact local patch was not
+preserved as a commit, so `patchDigest` is `null` and the harness identity is
+`NOT_VERIFIED`. Later harness-hardening commits (`51d0674a`, `8c6ffce4`,
+`ca07e127`) were removed from this documentation PR and require separate
+acceptance.
+
+The red-green and integrity controls used the base-commit Maven wrapper and
+verifier. The positive control must be repeated on the separately accepted
+harness before this reference is considered complete.
+
 ## Evidence files
 
 - [reference-evidence.json](./java-governed-delivery/evidence/reference-evidence.json)

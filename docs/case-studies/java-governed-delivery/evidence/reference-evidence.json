@@ -19,6 +19,23 @@
     "maven": "3.9.5",
     "os": "macOS 27.2.1 arm64"
   },
+  "harness": {
+    "status": "NOT_VERIFIED",
+    "baseCommit": "7a01f4c209b6875aad3fc65947ac6b7b78a7dc9d",
+    "worktree": "modified_local_harness",
+    "knownHardeningCommitsRemovedFromThisPr": [
+      "51d0674ad777dbc8938aca2990be2d43732c4ae9",
+      "8c6ffce4d8be8cec925839c669b875d6fdeb5325",
+      "ca07e127b217f6e6a2c41f772efcbb95986f8bd6"
+    ],
+    "patchDigest": null,
+    "limitation": "The exact local harness patch used for the observed positive run was not committed. The positive run must be repeated on the separately accepted harness before the reference is considered complete.",
+    "verifier": {
+      "script": "demos/java-task-manager/verify-evidence-package.mjs",
+      "commit": "7a01f4c209b6875aad3fc65947ac6b7b78a7dc9d",
+      "exitCode": 0
+    }
+  },
   "policy": {
     "mode": "team",
     "effectiveGateBehavior": "human_gated",
@@ -64,7 +81,7 @@
     "result": "BLOCKED",
     "reason": "The claim-negative live plan did not finish within 40 minutes and the run was stopped. No PROOFGRAPH_CRITICAL_FACTS_UNPROVEN denial was observed in this reference run.",
     "status": "NOT_VERIFIED",
-    "priorRelatedEvidence": "../../../demos/java-task-manager/PROOFGRAPH_LIVE_CONTROLS.md"
+    "priorRelatedEvidence": "../../../../demos/java-task-manager/PROOFGRAPH_LIVE_CONTROLS.md"
   },
   "publication": {
     "status": "withheld_pending_explicit_owner_approval",

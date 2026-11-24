@@ -24,14 +24,15 @@ describe('Java reference evidence contract', () => {
     expect(study).toMatch(/must not be presented\s+as a completed three-control reference/);
   });
 
-  it('binds the positive evidence to the actual export package', () => {
+  it('binds the positive evidence to the withheld package manifest', () => {
     const evidence = json(join(EVIDENCE_DIR, 'reference-evidence.json')) as {
       positiveControl?: {
         exportPackageSha256?: string;
         livePhase?: string;
         archivedPhase?: string;
       };
-      negativeControl?: { result?: string; status?: string };
+      negativeControl?: { result?: string; status?: string; priorRelatedEvidence?: string };
+      harness?: { status?: string; patchDigest?: string | null };
     };
     expect(evidence.positiveControl).toMatchObject({
       livePhase: 'COMPLETE',
@@ -41,7 +42,16 @@ describe('Java reference evidence contract', () => {
       result: 'BLOCKED',
       status: 'NOT_VERIFIED',
     });
+    expect(evidence.harness).toMatchObject({
+      status: 'NOT_VERIFIED',
+      patchDigest: null,
+    });
+    expect(
+      existsSync(join(EVIDENCE_DIR, evidence.negativeControl?.priorRelatedEvidence ?? 'missing')),
+    ).toBe(true);
 
+    // The raw package is withheld in this draft. After publication approval,
+    // restore the byte-level SHA-256 check against the package file here.
     const manifest = json(join(EVIDENCE_DIR, 'package-manifest.json')) as {
       package?: { sha256?: string; file?: string };
       publication?: { status?: string };

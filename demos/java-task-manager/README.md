@@ -236,7 +236,7 @@ toolchain pins from the canonical repository files (`.sdk-baselines/opencode/cli
 and `.node-version`), verifies the tarball against its `checksums.sha256`
 sidecar before installing, prepares fresh workspaces, opts the repository
 config into raw auditor archives next to the isolated global grant, runs every
-step through real headless `opencode run` processes from an explicit working directory,
+step through real headless `opencode run` processes with an explicit `--dir`,
 verifies the persisted host/worktree binding and each package, exports the
 parent and reviewer-child host transcripts directly to files, validates JSON,
 session/worktree/parent identity and message/part structure before registering
