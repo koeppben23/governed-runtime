@@ -9,10 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add a prominent "Explore the Java demo" entry point to the root README,
-  linking the demo overview, walkthrough, and evidence-verification guide as a
-  read-only introduction. No executable quick start, runtime behavior, or
-  license term changes.
+- Rework the root README for product positioning and discoverability: lead with
+  the governance problem, add a read-only "Explore the Java demo" entry, group
+  capabilities into deterministic governance, independent review, evidence and
+  ProofGraph, and verifiable auditability, and move the existing lifecycle
+  diagram and release boundaries into the primary narrative. Preserve the
+  technical-preview, host-enforcement, licensing, and installed-acceptance
+  limits; no runtime behavior or license terms change.
 - Add ADR-015 for the audit append proof and proposed segmented journal,
   including the local threat model, external-anchor boundary and downgrade
   contract. Add a standalone segment PoC plus canonical scale, independent-writer,

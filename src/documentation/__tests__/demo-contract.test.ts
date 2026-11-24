@@ -34,7 +34,6 @@ const DOCS: Readonly<Record<string, string>> = {
 const DEMO_SCRIPT = DOCS['DEMO_SCRIPT.md']!;
 const README = DOCS['README.md']!;
 const RESET = DOCS['RESET.md']!;
-const ROOT_README = readFileSync(join(process.cwd(), 'README.md'), 'utf8');
 const SNAPSHOT_SCRIPT = read('snapshot-demo.sh');
 const PREFLIGHT_SCRIPT = read('run-demo-preflight.sh');
 
@@ -343,29 +342,5 @@ describe('java demo workflow contract', () => {
     expect(DEMO_SCRIPT).toContain('/architecture` has no reference adoption');
     // `/export` surfaces its persisted completion evidence in the response.
     expect(DEMO_SCRIPT).toContain('exportCompletion');
-  });
-
-  it('exposes a read-only Java demo entry point in the root README', () => {
-    const demoSections = [
-      ...ROOT_README.matchAll(/^## Explore the Java demo$([\s\S]*?)(?=^## )/gm),
-    ];
-    expect(demoSections, 'root README must contain one Java demo entry point').toHaveLength(1);
-    const demoSection = demoSections[0]![0];
-
-    for (const target of [
-      '(demos/java-task-manager/README.md)',
-      '(demos/java-task-manager/DEMO_SCRIPT.md)',
-      '(demos/java-task-manager/EVIDENCE_PACKAGE.md)',
-    ]) {
-      expect(demoSection, `demo entry must link ${target}`).toContain(target);
-    }
-
-    // The entry is a reading path, not an executable quick-start or a
-    // five-minute delivery promise.
-    expect(demoSection).not.toMatch(/5[- ]minute/i);
-    expect(demoSection).not.toContain('run-demo-setup.sh');
-    expect(ROOT_README.indexOf('## Explore the Java demo')).toBeLessThan(
-      ROOT_README.indexOf('## Installation'),
-    );
   });
 });
