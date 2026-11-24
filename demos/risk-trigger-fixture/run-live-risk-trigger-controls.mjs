@@ -207,7 +207,7 @@ async function runCase(runner, name, workspace, covered, context) {
   const record = { name, covered, workspace, result: RESULT.FAILED };
   const session = { workspace, terminal: 'COMPLETE' };
   try {
-    await runner.turn(session, `${name}-01-start`, '/start');
+    await runner.turn(session, `${name}-01-start`, undefined, { command: 'start' });
     assertInstalledBuildIdentity(
       runner.installedBuild(workspace),
       context.checkoutHead,

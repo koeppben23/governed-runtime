@@ -343,6 +343,22 @@ export const RECOVERABLE_DENIAL_CODES = new Set(DENIAL_BASELINE.recoverable);
 export const NEXT_STEP_RECOVERY_CODES = new Set(['CONTINUE_AMBIGUOUS']);
 
 /**
+ * Plan preflight blocks are correctable in the same planning turn. They are
+ * not failures: the accepted, independently reviewed plan is the proof. The
+ * runner records the codes as observations and lets the plan gate decide.
+ */
+export const PLAN_PREFLIGHT_RECOVERY_CODES = new Set([
+  'PLAN_EVIDENCE_DESIGN_REQUIRED',
+  'PLAN_EVIDENCE_DESIGN_INVALID',
+  'PLAN_FINDING_RESOLUTION_REQUIRED',
+  'PLAN_FINDING_RESOLUTION_INVALID',
+  'PLAN_CLAIM_LINEAGE_REQUIRED',
+  'PLAN_CLAIM_LINEAGE_INVALID',
+  'REVIEW_SUBJECT_CHANGED_WHILE_PENDING',
+  'PLAN_CLAIM_SUBMISSION_REJECTED',
+]);
+
+/**
  * A plan submission during an ACTIVE review loop is corrected by resuming the
  * bound review in the same turn. The correction is never accepted as a bare
  * retry: the same-turn proof here is paired with the persisted gate proof
@@ -1152,7 +1168,7 @@ export class Runner {
       );
     }
     if (options.command && !HOST_TRANSPORT_COMMANDS.has(options.command)) {
-      prompt = `/${options.command}${prompt ? `\n${prompt}` : ''}`;
+      prompt = `/${options.command}${prompt ? ` ${prompt}` : ''}`;
       options = { ...options, command: undefined };
     }
     const phaseBefore = this.currentPhase(session);
@@ -1345,7 +1361,23 @@ export class Runner {
         `${label}: recovered via same-turn wait-state progress [${[...waitStateProgress].join(', ')}]`,
       );
     }
-    const resolvedLaterSuccess = laterSuccessOnly.filter((code) => !waitStateProgress.has(code));
+    const resolvedLaterSuccess = laterSuccessOnly.filter(
+      (code) => !waitStateProgress.has(code) && !PLAN_PREFLIGHT_RECOVERY_CODES.has(code),
+    );
+    const planPreflightCodes = recoverable.filter((code) =>
+      PLAN_PREFLIGHT_RECOVERY_CODES.has(code),
+    );
+    if (planPreflightCodes.length > 0) {
+      session.recoveryObservations.push({
+        status: 'proven',
+        step: label,
+        codes: planPreflightCodes,
+        evidence: 'same_turn_plan_preflight_correction',
+      });
+      this.log(
+        `${label}: plan preflight correction(s) [${planPreflightCodes.join(', ')}] observed; the accepted plan gate is the proof`,
+      );
+    }
     if (operationRecovered.length > 0) {
       session.recoveredDenials.push({
         status: 'proven',

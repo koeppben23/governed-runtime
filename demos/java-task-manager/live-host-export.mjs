@@ -44,14 +44,31 @@ function reserveCaptureTarget(evidenceDir, label, sessionId) {
   }
 }
 
+const CONTROL_MESSAGE_TYPES = new Set([
+  'model-switched',
+  'model-selected',
+  'agent-selected',
+  'location-switched',
+  'synthetic',
+  'system',
+  'skill',
+  'shell',
+  'compaction',
+]);
+
+function isReviewMessage(message) {
+  return message.type === 'user' || message.type === 'assistant';
+}
+
 /**
  * Validate structural completeness and identity of an exported transcript.
  *
  * This proves ordered messages, unique identities, the expected
  * session/worktree/parent, and a completed final assistant answer with text.
- * It does not by itself prove which review obligation an exchange served;
- * the runner records that binding from persisted reviewer provenance, and
- * validated ReviewFindings remain the review-completion authority.
+ * Control messages are ignored for the review exchange. It does not by itself
+ * prove which review obligation an exchange served; the runner records that
+ * binding from persisted reviewer provenance, and validated ReviewFindings
+ * remain the review-completion authority.
  */
 export function validateHostTranscript(content, { sessionId, workspace, parentSessionId }) {
   let exported;
@@ -93,13 +110,15 @@ export function validateHostTranscript(content, { sessionId, workspace, parentSe
       !Number.isSafeInteger(message.time?.created) ||
       message.time.created < 0 ||
       message.time.created < previousCreated ||
-      !['user', 'assistant', 'idle'].includes(message.type)
+      (!isReviewMessage(message) &&
+        message.type !== 'idle' &&
+        !CONTROL_MESSAGE_TYPES.has(message.type))
     ) {
       throw new TranscriptCaptureError(`invalid host transcript message for ${sessionId}`);
     }
     messageIds.add(message.id);
     previousCreated = message.time.created;
-    if (message.type === 'idle') continue;
+    if (message.type === 'idle' || CONTROL_MESSAGE_TYPES.has(message.type)) continue;
     firstNonIdleType ??= message.type;
     lastNonIdleType = message.type;
     if (message.type === 'user') {

@@ -549,6 +549,59 @@ describe('Java Task Manager demo contract', () => {
     },
   );
 
+  it('records correctable plan preflight blocks without stopping an accepted plan turn', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-plan-preflight-'));
+    const toolLine = (code: string, success: boolean) =>
+      JSON.stringify({
+        type: 'tool_use',
+        part: {
+          tool: 'flowguard_plan',
+          state: {
+            output: JSON.stringify(
+              success
+                ? { phase: 'PLAN', status: 'Plan submitted', planDigest: 'a'.repeat(64) }
+                : { error: true, code },
+            ),
+          },
+        },
+      });
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${toolLine('PLAN_EVIDENCE_DESIGN_REQUIRED', false)}\n${toolLine('', true)}\n`,
+      });
+      runner.requireBoundState = () => ({
+        state: {
+          phase: 'PLAN_REVIEW',
+          plan: { reviewCompletion: 'reviewer_accepted' },
+          selfReview: { iteration: 1 },
+        },
+        sessionDir: root,
+      });
+      const session: {
+        workspace: string;
+        recoveryObservations?: Array<Record<string, unknown>>;
+        awaitingRecovery?: unknown;
+      } = { workspace: root };
+      await runner.turn(session, 'plan-preflight', 'x');
+      expect(session.awaitingRecovery).toBeUndefined();
+      expect(session.recoveryObservations).toContainEqual({
+        status: 'proven',
+        step: 'plan-preflight',
+        codes: ['PLAN_EVIDENCE_DESIGN_REQUIRED'],
+        evidence: 'same_turn_plan_preflight_correction',
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('requires a proven in-session retry before a recoverable denial counts as recovered', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-same-turn-'));
     try {

@@ -2188,6 +2188,12 @@ stop`, reviewer child reported it could not complete the falsification).
   starts and verifies its own authenticated child instead. Drive native
   `/start` and `/check` through the generated session's host command API; the
   headless CLI is reserved for prompt templates.
+- Treat current plan-preflight edits (evidence design, finding resolutions,
+  claim lineage, claim submission, pending-subject guard) as correctable
+  observations whose proof is the accepted, independently reviewed plan gate.
+  Ignore host control messages such as `model-switched` when validating the
+  structural review exchange, and bind `/task` to the repository ticket file
+  instead of passing its body as planning context.
 - Align public documentation with current behavior: refine README demo copy and
   lifecycle alt text, retain the peer-review host preconditions, update the
   Product One Pager to the OpenCode V2-scoped native reviewer mechanism and the

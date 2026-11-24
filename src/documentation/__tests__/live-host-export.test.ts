@@ -257,7 +257,7 @@ describe('live host transcript export', () => {
       { ...value, info: { ...value.info, parentID: 'ses_foreign_parent' } },
       { ...value, messages: {} },
       { ...value, messages: [] },
-      { ...value, messages: [{ id: 'msg_1', type: 'system', text: 'x' }] },
+      { ...value, messages: [{ id: 'msg_1', type: 'unknown-control', text: 'x' }] },
       { ...value, messages: [{ id: 'msg_1', type: 'user' }] },
       { ...value, messages: [{ id: 'msg_1', type: 'assistant' }] },
       { ...value, messages: [{ id: 'msg_1', type: 'assistant', content: [] }] },
@@ -296,6 +296,24 @@ describe('live host transcript export', () => {
     ];
     for (const malformed of invalid)
       expect(() => validateHostTranscript(JSON.stringify(malformed), options)).toThrow();
+  });
+
+  it('ignores host control messages around a complete review exchange', () => {
+    const value = transcript();
+    const messages = [
+      { id: 'msg_ctrl_0', type: 'model-switched', time: { created: 0 } },
+      value.messages[0],
+      { id: 'msg_ctrl_1', type: 'system', time: { created: 2 } },
+      { ...value.messages[1], time: { created: 3, completed: 4 } },
+      { id: 'msg_idle', type: 'idle', time: { created: 5 } },
+    ];
+    expect(() =>
+      validateHostTranscript(JSON.stringify({ ...value, messages }), {
+        sessionId: 'ses_parent',
+        workspace: root,
+        parentSessionId: undefined,
+      }),
+    ).not.toThrow();
   });
 
   it('rejects a foreign worktree even when the session identity matches', async () => {

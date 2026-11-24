@@ -242,7 +242,7 @@ async function runCase(runner, name, workspace, negative) {
   const record = { name, negative, workspace, result: RESULT.FAILED };
   const session = { workspace, terminal: 'COMPLETE' };
   try {
-    await runner.turn(session, `${name}-01-start`, '/start');
+    await runner.turn(session, `${name}-01-start`, undefined, { command: 'start' });
     const installed = runner.installedBuild(workspace);
     record.installedBuild = installed;
     if (runner.options.productSha !== undefined && installed.gitSha !== runner.options.productSha) {
@@ -250,13 +250,23 @@ async function runCase(runner, name, workspace, negative) {
         `installed artifact gitSha ${String(installed.gitSha)} != declared product ${runner.options.productSha}`,
       );
     }
-    // Submit the ticket through the headless CLI's /task prompt template.
-    const ticketText = fs.readFileSync(path.join(workspace, TICKET_FILE), 'utf8');
-    await runner.turn(session, `${name}-02-task`, ticketText, { command: 'task' });
-    // If /task reached an already-reviewed plan, do not resubmit it.
+    // Submit the ticket source through the /task prompt template. The command
+    // adopts the repository file itself, so the model never receives the ticket
+    // body as planning context.
+    await runner.turn(session, `${name}-02-task`, `--file ${TICKET_FILE}`, { command: 'task' });
+    // If /task reached an already-reviewed plan, do not resubmit it unless the
+    // retained claim was changed. A claim-changing /task spill must be replaced
+    // by the exact declared claim before the control can proceed.
     const afterTask = runner.requireBoundState(session).state;
-    const plannedAlready =
+    let plannedAlready =
       afterTask.phase === 'PLAN_REVIEW' && afterTask.plan?.reviewCompletion === 'reviewer_accepted';
+    if (plannedAlready) {
+      try {
+        assertRetainedCriticalClaim(afterTask);
+      } catch {
+        plannedAlready = false;
+      }
+    }
     if (!plannedAlready) {
       await runner.turn(session, `${name}-03-plan`, PLAN_PROMPT([criticalClaimDeclaration()]), {
         command: 'plan',
