@@ -5,6 +5,21 @@ This document records the forensic review of the live-demo harness beginning on
 The product ProofGraph/gate semantics are untouched. The v2 follow-up also fixes
 reviewer prompt context and installed Task-return guidance.
 
+## Isolated host and decision witnesses (harness v6)
+
+- The Java and risk runners use an authenticated OpenCode child on
+  `127.0.0.1:49375`. A port
+  collision fails closed. Supply provider credentials in the environment;
+  shared host storage is not reused. Claim controls bind the assertion skip to
+  the child at startup, not to a later CLI client.
+- Native approval requires a successful decision call, a receipt matched to
+  the dispatch rationale and verdict, and a persisted transition to the
+  expected phase. A refusal requires a unique current call, a closing typed
+  error, a continuous unchanged audit prefix, and no persisted mutation. No
+  HTTP response body becomes evidence. An unknown outcome is never retried.
+- Keep v5 and earlier measurements separate. No existing observation is
+  promoted to a v6 reference run.
+
 ## Re-arm lifecycle telemetry (harness v5)
 
 - A structured re-arm is authorized exactly once per freshly minted
@@ -43,7 +58,7 @@ reviewer prompt context and installed Task-return guidance.
   workflow gates retain their canonical authority. The regression tests exercise
   real audit files through `Runner.turn` with a mocked host process; they do not
   constitute a new provider-backed live validation.
-- New measurements record `demo-harness.v5`. Keep v4 and earlier measurements
+- v5 measurements record `demo-harness.v5`. Keep v4 and earlier measurements
   separate and preserve their original evidence roots. After installing this
   harness, re-run affected flows in a fresh root; do not relabel old results.
 

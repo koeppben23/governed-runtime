@@ -226,15 +226,6 @@ describe('critical claim live-control oracles', () => {
 
 describe('live claim control host integration', () => {
   it('uses the host command boundary and the exact ProofGraph denial oracle', async () => {
-    const runner = await fs.readFile(
-      new URL('../../../demos/java-task-manager/run-live-matrix.mjs', import.meta.url),
-      'utf8',
-    );
-    expect(runner).toContain('/api/session/');
-    expect(runner).toContain('readAuditEventsSince');
-    expect(runner).toContain('allowNon204');
-    expect(runner).toContain('HOST_DECISION_COMMANDS');
-
     const controls = await fs.readFile(
       new URL('../../../demos/java-task-manager/run-live-claim-controls.mjs', import.meta.url),
       'utf8',
@@ -256,6 +247,8 @@ describe('live claim control host integration', () => {
       process.env.FLOWGUARD_CLAIM_CASES = '';
       expect(() => selectedClaimCases()).toThrow(/must explicitly select exactly one/);
       process.env.FLOWGUARD_CLAIM_CASES = 'claim-positive,claim-negative';
+      expect(() => selectedClaimCases()).toThrow(/must select exactly one/);
+      process.env.FLOWGUARD_CLAIM_CASES = 'claim-positive,';
       expect(() => selectedClaimCases()).toThrow(/must select exactly one/);
       process.env.FLOWGUARD_CLAIM_CASES = 'claim-negative';
       expect(selectedClaimCases()).toEqual(['claim-negative']);

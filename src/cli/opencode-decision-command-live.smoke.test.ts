@@ -14,6 +14,8 @@ import { freezePolicySnapshot } from '../config/policy-snapshot.js';
 import { hashText } from '../shared/hashing.js';
 import { REVIEWER_AGENT } from '../templates/mandates.js';
 import { execFileSync } from 'node:child_process';
+import { assertNativeDecisionWitness } from '../../demos/java-task-manager/live-decision-witness.mjs';
+import { validateHostTranscript } from '../../demos/java-task-manager/live-host-export.mjs';
 import {
   FlowGuardGovernance,
   type PresentationResult,
@@ -310,8 +312,22 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       expect(invocation.capturedVerdict).toBe(
         command === 'approve' ? 'accept' : 'changes_requested',
       );
+      const child = invocation.childSessionId;
+      for (const [sessionId, parentSessionId] of [
+        [root.id, undefined],
+        [child, root.id],
+      ] as const) {
+        const exported = await p.client.session.export({ sessionID: sessionId });
+        validateHostTranscript(JSON.stringify(exported), {
+          sessionId,
+          parentSessionId,
+          workspace: p.project,
+        });
+      }
       if (command === 'override-approve') {
         expect(reviewed.state.plan!.reviewCompletion).toBe('review_exhausted');
+        const auditBefore = await readAuditTrail(reviewed.sessDir);
+        const startedAt = Date.now();
         await expect(
           p.client.session.command({
             sessionID: root.id,
@@ -319,8 +335,26 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
             text: 'Must not silently override.',
           }),
         ).rejects.toThrow();
+        const completedAt = Date.now();
+        assertNativeDecisionWitness({
+          before: reviewed.state,
+          after: (await workflow(p, root.id)).state,
+          auditBefore,
+          events: await readAuditTrail(reviewed.sessDir),
+          sessionId: root.id,
+          startedAt,
+          completedAt,
+          verdict: 'approve',
+          rationale: 'Must not silently override.',
+          expectedDenial: 'GOVERNANCE_OVERRIDE_REQUIRED',
+          expectedDenialTool: 'flowguard_decision',
+          expectedTargetPhase: undefined,
+        });
       }
       const requestsBeforeApproval = p.requests.length;
+      const auditBeforeApproval = await readAuditTrail(reviewed.sessDir);
+      const approvalRationale =
+        'Accept the independently reviewed README plan with the stated residual documentation risk.';
       const snapshots: PresentationResult[] = [];
       const reads: Promise<void>[] = [];
       const rpc = p.client.rpc(FlowGuardGovernance);
@@ -334,12 +368,15 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
         reads.push(reading);
         return reading;
       });
+      const startedAt = Date.now();
+      let completedAt: number;
       try {
         await p.client.session.command({
           sessionID: root.id,
           name: command,
-          text: 'Accept the independently reviewed README plan with the stated residual documentation risk.',
+          text: approvalRationale,
         });
+        completedAt = Date.now();
         await p.client.session.wait(
           { sessionID: root.id },
           { signal: AbortSignal.timeout(120_000) },
@@ -348,6 +385,20 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
         unsubscribe();
         await Promise.all(reads);
       }
+      assertNativeDecisionWitness({
+        before: reviewed.state,
+        after: (await workflow(p, root.id)).state,
+        auditBefore: auditBeforeApproval,
+        events: await readAuditTrail(reviewed.sessDir),
+        sessionId: root.id,
+        startedAt,
+        completedAt,
+        verdict: command === 'approve' ? 'approve' : 'approve_with_governance_override',
+        rationale: approvalRationale,
+        expectedDenial: undefined,
+        expectedDenialTool: undefined,
+        expectedTargetPhase: 'IMPLEMENTATION',
+      });
       // Only baseline progress is model-free. The original final chat report
       // still carries check results and the /implement recommendation.
       const approvalRequests = p.requests.slice(requestsBeforeApproval);

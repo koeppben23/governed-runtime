@@ -49,5 +49,8 @@ The live runner accepts `--evidence-out <file>` and emits build/pin/model identi
 per-turn durations, denial counts and the machine-readable denial baseline from
 `expected-denials.json`. Required negative-control denials must be observed;
 allowed recoverable codes still need the existing occurrence-bound recovery proof.
+Use a fresh evidence root, an unused `127.0.0.1:49375` and provider credentials
+in the environment. Neither risk-trigger case enables the assertion skip; these
+cases isolate coverage, not assertion execution.
 The manually dispatched `ProofGraph live controls` workflow retains this result
 and transcripts as an artifact. A local toolchain check is not live evidence.

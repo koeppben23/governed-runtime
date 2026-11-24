@@ -41,6 +41,15 @@ node demos/java-task-manager/run-live-claim-controls.mjs \
   --root /tmp/flowguard-claim-negative --model deepseek/deepseek-flash
 ```
 
+Run these commands sequentially; the dedicated service requires an unused
+`127.0.0.1:49375`. Supply provider credentials in the environment. The runner
+sets the JUnit skip in the negative case's actual service process and removes
+any inherited skip from the positive case. It will not reuse a running service.
+The negative approval is accepted only with a unique audit refusal and its
+closing error record, a complete session-bound audit window, and unchanged
+persisted state. A transport failure or an unanswered final transcript turn is
+not a passing control.
+
 Before `/start`, each case receives the same committed fixtures: a documentation
 ticket and two JUnit classes — a positive assertion
 (`UsageNotesHintTest#documentsTestCommand`) and an adversarial falsification probe

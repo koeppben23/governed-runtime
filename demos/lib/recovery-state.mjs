@@ -65,27 +65,20 @@ export function readAuditEvents(sessionDir) {
  * mutation is a contract failure, including when the session is now terminal.
  * This checks an external projection, not the product's cryptographic chain.
  */
-export function assertHumanDecisionRefusalUnchanged(state, call, auditSequenceFloor, events) {
+export function assertCompleteAuditWindow(state, auditSequenceFloor, events) {
   const actor = identity(state);
   if (
     typeof actor.flowguardSessionId !== 'string' ||
     actor.flowguardSessionId.length === 0 ||
     typeof actor.hostSessionId !== 'string' ||
     actor.hostSessionId.length === 0 ||
-    call?.tool !== 'flowguard_decision' ||
-    typeof call.callId !== 'string' ||
-    call.callId.length === 0 ||
-    !Number.isFinite(call.startedAt) ||
-    !Number.isFinite(call.at) ||
-    call.startedAt < 0 ||
-    call.at < call.startedAt ||
     !Number.isSafeInteger(auditSequenceFloor) ||
     auditSequenceFloor < 0
   ) {
-    throw new DemoNotVerifiedError('HUMAN_DECISION_REQUIRED has no bound decision-call interval');
+    throw new DemoNotVerifiedError('decision has no bound decision-call interval');
   }
   if (
-    events.length === 0 ||
+    !Array.isArray(events) ||
     events.length <= auditSequenceFloor ||
     events.some(
       (event, index) =>
@@ -100,45 +93,66 @@ export function assertHumanDecisionRefusalUnchanged(state, call, auditSequenceFl
         Array.isArray(event.detail),
     )
   ) {
-    throw new DemoNotVerifiedError(
-      'HUMAN_DECISION_REQUIRED has no complete session-bound audit window',
-    );
+    throw new DemoNotVerifiedError('decision has no complete session-bound audit window');
   }
-  const matches = events.filter(
+  return events.slice(auditSequenceFloor);
+}
+
+export function assertHumanDecisionRefusalUnchanged(
+  state,
+  call,
+  auditSequenceFloor,
+  events,
+  expectedCode = 'HUMAN_DECISION_REQUIRED',
+  native = false,
+) {
+  const actor = identity(state);
+  if (
+    call?.tool !== 'flowguard_decision' ||
+    typeof call.callId !== 'string' ||
+    call.callId.length === 0 ||
+    !Number.isFinite(call.startedAt) ||
+    !Number.isFinite(call.at) ||
+    call.startedAt < 0 ||
+    call.at < call.startedAt
+  ) {
+    throw new DemoNotVerifiedError(`${expectedCode} has no bound decision-call interval`);
+  }
+  const window = assertCompleteAuditWindow(state, auditSequenceFloor, events);
+  const matches = window.filter(
     (event) =>
-      event.auditSequence > auditSequenceFloor &&
       event.event === 'tool_call:flowguard_decision' &&
       event.hostSessionId === actor.hostSessionId &&
       event.detail.tool === call.tool &&
       event.detail.argsSummary?.sessionID === actor.hostSessionId &&
       event.detail.argsSummary?.callID === call.callId &&
       event.detail.success === false &&
-      event.detail.errorCode === 'HUMAN_DECISION_REQUIRED' &&
+      event.detail.errorCode === expectedCode &&
       event.detail.transitionCount === 0 &&
       Date.parse(event.occurredAt) >= call.startedAt &&
       Date.parse(event.occurredAt) <= call.at,
   );
   if (matches.length !== 1) {
-    throw new DemoNotVerifiedError(
-      'HUMAN_DECISION_REQUIRED has no unique current-call audit refusal',
-    );
+    throw new DemoNotVerifiedError(`${expectedCode} has no unique current-call audit refusal`);
   }
   if (
-    events.some(
+    window.some(
       (event) =>
-        event.auditSequence > auditSequenceFloor &&
-        (Date.parse(event.occurredAt) >= call.startedAt ||
+        (native ||
+          Date.parse(event.occurredAt) >= call.startedAt ||
           event.auditSequence > matches[0].auditSequence) &&
-        (event.event === 'state_write' || event.event.startsWith('transition:')),
+        (event.event === 'state_write' ||
+          event.event.startsWith('transition:') ||
+          (native && event.event.startsWith('decision:'))),
     )
   ) {
-    throw new RefusedDecisionMutationError();
+    throw new RefusedDecisionMutationError(expectedCode);
   }
 }
 
 class RefusedDecisionMutationError extends Error {
-  constructor() {
-    super('HUMAN_DECISION_REQUIRED audit window contains a persisted mutation');
+  constructor(expectedCode) {
+    super(`${expectedCode} audit window contains a persisted mutation`);
     this.name = 'RefusedDecisionMutationError';
     this.code = 'DEMO_REFUSED_DECISION_MUTATION';
   }

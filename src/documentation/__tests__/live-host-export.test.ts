@@ -29,11 +29,14 @@ function transcript(sessionId = 'ses_parent', parentSessionId?: string) {
         id: 'msg_1',
         type: 'user',
         text: 'review',
+        time: { created: 1 },
       },
       {
         id: 'msg_2',
         type: 'assistant',
         content: [{ id: 'prt_1', type: 'text', text: 'ok' }],
+        time: { created: 2, completed: 3 },
+        finish: 'stop',
       },
     ],
   };
@@ -118,6 +121,8 @@ describe('live host transcript export', () => {
       id: 'msg_3',
       type: 'assistant',
       content: [{ id: 'prt_2', type: 'text', text: 'continued host session' }],
+      time: { created: 4, completed: 5 },
+      finish: 'stop',
     });
     await fs.writeFile(payload, JSON.stringify(continued));
     const second = await capture();
@@ -190,6 +195,43 @@ describe('live host transcript export', () => {
     await expect(capture('ses_parent', undefined, 1)).rejects.toThrow(/exit=1/);
   });
 
+  it('rejects an unanswered new user request even with an older answer and trailing idle', async () => {
+    const value = transcript();
+    const messages = [
+      ...value.messages,
+      { id: 'msg_3', type: 'user', text: 'Review the new plan', time: { created: 4 } },
+      { id: 'msg_4', type: 'idle', time: { created: 5 } },
+    ];
+    await fs.writeFile(payload, JSON.stringify({ ...value, messages }));
+    await expect(capture()).rejects.toThrow(/complete ordered user\/assistant/);
+  });
+
+  it.each(['length', 'error', 'tool-calls', undefined])(
+    'does not publish a final assistant answer with finish=%s',
+    async (finish) => {
+      const value = transcript();
+      Object.assign(value.messages[1]!, { finish });
+      await fs.writeFile(payload, JSON.stringify(value));
+      await expect(capture()).rejects.toThrow(/complete ordered user\/assistant/);
+    },
+  );
+
+  it('rejects an old assistant response moved after a newer user request', async () => {
+    const value = transcript();
+    Object.assign(value.messages[0]!, { time: { created: 4 } });
+    await fs.writeFile(payload, JSON.stringify(value));
+    await expect(capture()).rejects.toThrow(/invalid host transcript message/);
+  });
+
+  it('reserves distinct transcript/receipt pairs during concurrent capture', async () => {
+    await fs.writeFile(payload, JSON.stringify(transcript()));
+    const files = await Promise.all([capture(), capture()]);
+    expect(new Set(files).size).toBe(2);
+    for (const file of files) {
+      await expect(fs.readFile(`${file}.receipt.json`, 'utf8')).resolves.toContain('"sha256"');
+    }
+  });
+
   it('surfaces host startup failure without accepting an empty artifact', async () => {
     await expect(
       exportHostTranscript({
@@ -220,6 +262,17 @@ describe('live host transcript export', () => {
       { ...value, messages: [{ id: 'msg_1', type: 'assistant' }] },
       { ...value, messages: [{ id: 'msg_1', type: 'assistant', content: [] }] },
       { ...value, messages: [{ id: 'msg_1', type: 'assistant', content: [{ type: 'tool' }] }] },
+      {
+        ...value,
+        messages: [value.messages[1], value.messages[0]],
+      },
+      {
+        ...value,
+        messages: [
+          value.messages[0],
+          { id: 'msg_2', type: 'assistant', content: [{ type: 'tool' }] },
+        ],
+      },
       { ...value, messages: [{ id: 'msg_1', type: 'idle' }] },
       { ...value, messages: [{ id: 'msg_1', type: 'user', text: 'x' }] },
       { ...value, messages: [value.messages[0], value.messages[0]] },

@@ -118,6 +118,18 @@ describe('isolated host config for the live demo runners', () => {
     expect(() => writeIsolatedHostConfig(configDir)).toThrow(/refusing to override/);
   });
 
+  it.each([{}, { port: null }, { port: String(HOST_SERVICE_PORT) }])(
+    'refuses a missing or invalid port without writing the host configuration (%j)',
+    (value) => {
+      const configDir = tempConfigDir();
+      const serviceFile = path.join(configDir, HOST_SERVICE_FILE);
+      fs.writeFileSync(serviceFile, JSON.stringify(value));
+      expect(() => writeIsolatedHostConfig(configDir)).toThrow(/invalid port/);
+      expect(fs.existsSync(path.join(configDir, HOST_CONFIG_FILE))).toBe(false);
+      expect(fs.readFileSync(serviceFile, 'utf8')).toBe(JSON.stringify(value));
+    },
+  );
+
   it('is byte-deterministic across repeated initialization', () => {
     const configDir = tempConfigDir();
     writeIsolatedHostConfig(configDir);

@@ -2166,12 +2166,14 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
-- Harden the live Java demo harness: split prompt-template commands from native
-  decision commands, run every explicit command through a supported transport,
-  bind expected denials to typed new audit events, propagate the adversarial
-  skip environment before service startup, add bounded HTTP waits, require
-  complete review transcripts, isolate the demo service port, and use exclusive
-  evidence-file writes. No runtime or governance-authority changes.
+- Harden the live Java demo harness (`demo-harness.v6`): run prompt templates
+  through headless OpenCode and native decisions through a dedicated,
+  authenticated loopback service. Bind approvals and refusals to the current
+  persisted audit and state, stop without replay on unknown transport outcomes,
+  and keep raw HTTP response bodies out of evidence and diagnostics. Bind the
+  negative assertion skip at service startup and require a completed final
+  transcript response and exclusive evidence writes. No runtime or
+  governance-authority changes.
 - Align public documentation with current behavior: refine README demo copy and
   lifecycle alt text, retain the peer-review host preconditions, update the
   Product One Pager to the OpenCode V2-scoped native reviewer mechanism and the

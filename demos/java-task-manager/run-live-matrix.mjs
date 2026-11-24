@@ -46,11 +46,12 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exportHostTranscript } from './live-host-export.mjs';
+import { assertNativeDecisionWitness } from './live-decision-witness.mjs';
 import {
   assertExpectedDenial,
   authorizedRetryEvents,
@@ -73,6 +74,7 @@ import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '..
 import {
   expectRecovery,
   assertHumanDecisionRefusalUnchanged,
+  assertCompleteAuditWindow,
   implementationReviewAcceptanceProven,
   readAuditEvents,
   recoveryPersisted,
@@ -82,6 +84,8 @@ import {
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { HARNESS_VERSION } from '../lib/harness-version.mjs';
 import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
+import { HostTransportError } from '../lib/host-http.mjs';
+import { withIsolatedService } from '../lib/service-lifecycle.mjs';
 import { PLAN_GATE, classifyPlanGate } from '../lib/review-continuation.mjs';
 import { readPins, assertToolchain } from '../lib/toolchain.mjs';
 
@@ -285,11 +289,11 @@ export function sha256(file) {
 }
 
 function run(command, args, options = {}) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const started = Date.now();
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: { ...process.env, ...options.env, PWD: options.cwd },
+      env: { ...(options.env ?? process.env), PWD: options.cwd },
       stdio: ['ignore', options.stdout ?? 'pipe', options.stderr ?? 'pipe'],
     });
     let stdout = '';
@@ -305,6 +309,10 @@ function run(command, args, options = {}) {
     );
     child.stdout?.on('data', (chunk) => (stdout += chunk));
     child.stderr?.on('data', (chunk) => (stderr += chunk));
+    child.once('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
     child.on('close', (code) => {
       clearTimeout(timer);
       resolve({ code, stdout, stderr, timedOut, durationMs: Date.now() - started });
@@ -702,29 +710,6 @@ function assertHostCallOk(result, label) {
   if (hostErrors.length > 0) throw new Error(`${label}: host error event observed`);
 }
 
-async function fetchWithTimeout(url, options, timeoutMs, label, consume) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    return await consume(response);
-  } catch (error) {
-    if (controller.signal.aborted) {
-      const timeout = new Error(`${label}: timed out after ${timeoutMs}ms`);
-      timeout.code = 'HOST_TIMEOUT';
-      throw timeout;
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/**
- * Commands whose authority is the native host command callback. Prompt-template
- * commands use the headless CLI with an explicit slash-command message; a
- * decision command must never be downgraded to model-prompt text.
- */
 function typedAuditEvidence(events, session, flowguardSessionId) {
   const evidence = [];
   for (const event of events) {
@@ -743,8 +728,6 @@ function typedAuditEvidence(events, session, flowguardSessionId) {
       tool: event.detail.tool,
       success: typeof event.detail.success === 'boolean' ? event.detail.success : null,
       errorCode: typeof event.detail.errorCode === 'string' ? event.detail.errorCode : null,
-      errorMessage:
-        typeof event.detail.errorMessage === 'string' ? event.detail.errorMessage : null,
       auditSequence: event.auditSequence,
       occurredAt: typeof event.occurredAt === 'string' ? event.occurredAt : null,
     });
@@ -752,27 +735,12 @@ function typedAuditEvidence(events, session, flowguardSessionId) {
   return evidence;
 }
 
-export function assertTypedAuditDenial(events, expectedCode, expectedTool) {
-  const denial = events.find(
-    (event) =>
-      event.success === false &&
-      event.errorCode === expectedCode &&
-      (expectedTool === undefined || event.tool === expectedTool),
-  );
-  if (!denial) {
-    throw new Error(`expected typed denial ${expectedCode} was not observed in new audit events`);
-  }
-  const unexpected = [
-    ...new Set(
-      events
-        .filter((event) => event.success === false && event.errorCode !== expectedCode)
-        .map((event) => event.errorCode)
-        .filter(Boolean),
-    ),
-  ];
-  if (unexpected.length > 0) {
-    throw new Error(`unexpected denial(s) alongside ${expectedCode}: ${unexpected.join(', ')}`);
-  }
+function expectedDecisionVerdict(command) {
+  if (command === 'approve') return 'approve';
+  if (command === 'override-approve') return 'approve_with_governance_override';
+  if (command === 'request-changes') return 'changes_requested';
+  if (command === 'reject') return 'reject';
+  return undefined;
 }
 
 const HOST_DECISION_COMMANDS = new Set([
@@ -782,6 +750,28 @@ const HOST_DECISION_COMMANDS = new Set([
   'reject',
   'review-decision',
 ]);
+
+function unknownHostOutcome(label) {
+  return new HostTransportError(
+    'HOST_COMMAND_UNKNOWN_OUTCOME',
+    `${label}: native command outcome is unknown; do not retry`,
+  );
+}
+
+function openEvidence(dir, label, extension) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(label)) {
+    throw new HostTransportError('HOST_EVIDENCE_INVALID_LABEL', 'invalid evidence filename label');
+  }
+  try {
+    return fs.openSync(path.join(dir, `${label}.${extension}`), 'wx', 0o600);
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    throw new HostTransportError(
+      'HOST_EVIDENCE_EXISTS',
+      `evidence file already exists for ${label}; use a fresh --root`,
+    );
+  }
+}
 
 export class Runner {
   constructor(root, options, configDir) {
@@ -801,104 +791,75 @@ export class Runner {
     fs.appendFileSync(this.logFile, `${line}\n`);
   }
 
-  async hostCommand(session, label, name, { allowNon204 = false, text = '' } = {}) {
-    if (!session.sessionId) throw new Error(`${label}: host command requires a session`);
-    const serviceFile = path.join(this.configDir, 'service.json');
-    const service = JSON.parse(fs.readFileSync(serviceFile, 'utf8'));
-    if (!Number.isInteger(service.port) || service.port < 1 || service.port > 65535) {
-      throw new Error(`${label}: isolated service config has an invalid port`);
-    }
-    const evidenceFile = path.join(this.evidenceDir, `${label}.jsonl`);
-    const auth =
-      typeof service.password === 'string'
-        ? `Basic ${Buffer.from(`opencode:${service.password}`).toString('base64')}`
-        : undefined;
-    let evidenceFd;
-    try {
-      evidenceFd = fs.openSync(evidenceFile, 'wx');
-    } catch (error) {
-      if (error?.code === 'EEXIST') {
-        throw new Error(`evidence file already exists for ${label}; use a fresh --root`);
+  async withHost(use, { skipAssertion = false } = {}) {
+    return withIsolatedService({ configDir: this.configDir, skipAssertion }, async (host) => {
+      this.host = host;
+      try {
+        return await use();
+      } finally {
+        this.host = undefined;
       }
-      throw error;
-    }
-    const writeEvidence = (value) => fs.writeSync(evidenceFd, `${JSON.stringify(value)}\n`);
-    writeEvidence({
-      type: 'host_command_started',
-      timestamp: Date.now(),
-      sessionID: session.sessionId,
-      workspace: session.workspace,
-      command: name,
     });
-    let result;
-    try {
-      result = await fetchWithTimeout(
-        `http://localhost:${service.port}/api/session/${encodeURIComponent(session.sessionId)}/command`,
-        {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-opencode-directory': session.workspace,
-            ...(auth ? { authorization: auth } : {}),
-          },
-          body: JSON.stringify({ name, text }),
-        },
-        this.options.hostCommandTimeoutMs ?? 120_000,
-        `${label}: host command ${name}`,
-        async (response) => ({
-          status: response.status,
-          body: response.status === 204 ? '' : await response.text(),
-        }),
+  }
+
+  requireHost() {
+    if (!this.host) {
+      throw new HostTransportError(
+        'HOST_SERVICE_UNOWNED',
+        'no isolated OpenCode child is owned by this run',
       );
-      writeEvidence({
-        type: 'host_command_result',
-        timestamp: Date.now(),
-        status: result.status,
-        bodyLength: Buffer.byteLength(result.body),
-        bodySha256: createHash('sha256').update(result.body).digest('hex'),
-      });
+    }
+    return this.host;
+  }
+
+  async hostCommand(session, label, name, text) {
+    const host = this.requireHost();
+    if (
+      !HOST_DECISION_COMMANDS.has(name) ||
+      !/^ses_[a-zA-Z0-9_-]+$/.test(session.sessionId ?? '')
+    ) {
+      throw new HostTransportError(
+        'HOST_COMMAND_INVALID',
+        'invalid native decision command or session identity',
+      );
+    }
+    const route = `/api/session/${session.sessionId}/command`;
+    const body = JSON.stringify({ name, text });
+    const evidenceFd = openEvidence(this.evidenceDir, label, 'jsonl');
+    const record = (type, fields = {}) =>
+      fs.writeSync(evidenceFd, `${JSON.stringify({ type, ...fields })}\n`);
+    let dispatched = false;
+    try {
+      try {
+        const startedAt = Date.now();
+        record('host_command_started', {
+          timestamp: startedAt,
+          sessionID: session.sessionId,
+          command: name,
+        });
+        dispatched = true;
+        let response;
+        try {
+          response = await host.request(
+            route,
+            { method: 'POST', body },
+            this.options.hostCommandTimeoutMs ?? 120_000,
+          );
+        } catch {
+          record('host_command_error', { code: 'HOST_COMMAND_UNKNOWN_OUTCOME' });
+          throw unknownHostOutcome(label);
+        }
+        const completedAt = Date.now();
+        // The durable outcome comes from audit. No HTTP-derived disk writes.
+        record('host_command_response_received', { timestamp: completedAt });
+        return { ...response, startedAt, completedAt };
+      } finally {
+        fs.closeSync(evidenceFd);
+      }
     } catch (error) {
-      writeEvidence({
-        type: 'host_command_error',
-        timestamp: Date.now(),
-        code: error?.code ?? 'HOST_COMMAND_FAILED',
-        message: error instanceof Error ? error.message : String(error),
-      });
-      if (error?.code === 'HOST_TIMEOUT') {
-        const unknown = new Error(
-          `${label}: host command ${name} timed out after dispatch; outcome is unknown`,
-        );
-        unknown.code = 'HOST_COMMAND_UNKNOWN_OUTCOME';
-        throw unknown;
-      }
+      if (dispatched) throw unknownHostOutcome(label);
       throw error;
-    } finally {
-      fs.closeSync(evidenceFd);
     }
-    const { status, body } = result;
-    if (status !== 204) {
-      if (!allowNon204) {
-        throw new Error(`${label}: host command ${name} failed (${status}): ${body}`);
-      }
-      this.log(`${label}: host command ${name} returned ${status}`);
-      this.turnObservations.push({
-        label,
-        exitCode: status,
-        durationMs: 0,
-        denialCodes: [],
-        denialOccurrences: [],
-      });
-      return { status: status, body };
-    }
-    this.log(`${label}: host command ${name} accepted`);
-    this.turnObservations.push({
-      label,
-      exitCode: 0,
-      durationMs: 0,
-      denialCodes: [],
-      denialOccurrences: [],
-    });
-    return { status: status, body };
   }
 
   readAudit(session) {
@@ -907,103 +868,115 @@ export class Runner {
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
   }
 
-  readAuditEventsSince(session, floor) {
-    return this.readAudit(session)
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => JSON.parse(line))
-      .filter((event) => Number(event.auditSequence) > floor);
-  }
-
-  async waitForSessionIdle(session, label = 'session wait') {
-    const service = JSON.parse(fs.readFileSync(path.join(this.configDir, 'service.json'), 'utf8'));
-    if (
-      !Number.isInteger(service.port) ||
-      service.port < 1 ||
-      service.port > 65535 ||
-      !session.sessionId
-    ) {
-      throw new Error('isolated service or session is unavailable');
-    }
-    const auth =
-      typeof service.password === 'string'
-        ? `Basic ${Buffer.from(`opencode:${service.password}`).toString('base64')}`
-        : undefined;
-    const result = await fetchWithTimeout(
-      `http://localhost:${service.port}/api/experimental/session/${encodeURIComponent(session.sessionId)}/wait`,
-      {
-        method: 'POST',
-        headers: {
-          'x-opencode-directory': session.workspace,
-          ...(auth ? { authorization: auth } : {}),
-        },
-      },
+  async waitForSessionIdle(session) {
+    const result = await this.requireHost().request(
+      `/api/experimental/session/${session.sessionId}/wait`,
+      { method: 'POST' },
       this.options.sessionWaitTimeoutMs ?? 15 * 60_000,
-      `${label}: session wait`,
-      async (response) => ({
-        status: response.status,
-        body: response.status === 204 ? '' : await response.text(),
-      }),
     );
     if (result.status !== 204) {
-      throw new Error(`session wait failed (${result.status}): ${result.body}`);
+      throw new HostTransportError(
+        'HOST_SESSION_WAIT_FAILED',
+        'isolated host session did not confirm it was idle',
+      );
     }
   }
 
-  async hostCommandTransport(session, label, command, prompt, auditFloor, options = {}) {
-    if (!session.sessionId) {
-      throw new Error(`${label}: command ${command} requires an existing session`);
-    }
-    const response = await this.hostCommand(session, label, command, {
-      allowNon204: true,
-      text: prompt ?? '',
-    });
-    await this.waitForSessionIdle(session, `${label}: host command ${command}`);
-    if (response.status !== 204 && !options.expectedDenial) {
-      throw new Error(
-        `${label}: host command ${command} failed (${response.status}): ${response.body}`,
+  async hostCommandTransport(session, label, command, options) {
+    // Read the full prefix, not just the largest sequence number. Replaced
+    // history or a partial tail must not prove a later decision.
+    const before = this.requireBoundState(session);
+    const auditBefore = readAuditEvents(before.sessionDir);
+    assertCompleteAuditWindow(before.state, 0, auditBefore);
+    const verdict = expectedDecisionVerdict(command) ?? options.decisionVerdict;
+    if (
+      !['approve', 'approve_with_governance_override', 'changes_requested', 'reject'].includes(
+        verdict,
+      ) ||
+      (!options.expectedDenial && !options.expectedTargetPhase)
+    ) {
+      throw new HostTransportError(
+        'HOST_COMMAND_INVALID',
+        'native decision needs a verdict and an expected outcome',
       );
     }
-    const state = this.requireBoundState(session).state;
-    const auditEvidence = typedAuditEvidence(
-      this.readAuditEventsSince(session, auditFloor),
-      session,
-      state.flowguardSessionId,
-    );
+    const rationale = `Demo dispatch ${randomUUID()}. ${options.decisionRationale ?? ''}`.trim();
+    const text = command === 'review-decision' ? `${verdict} ${rationale}` : rationale;
+    const response = await this.hostCommand(session, label, command, text);
+    if (response.status !== 204 && (!options.expectedDenial || response.status < 400)) {
+      throw unknownHostOutcome(label);
+    }
+    try {
+      await this.waitForSessionIdle(session);
+    } catch {
+      throw unknownHostOutcome(label);
+    }
+    const after = this.requireBoundState(session);
+    const events = readAuditEvents(after.sessionDir);
+    const window = assertNativeDecisionWitness({
+      before: before.state,
+      after: after.state,
+      auditBefore,
+      events,
+      sessionId: session.sessionId,
+      startedAt: response.startedAt,
+      completedAt: response.completedAt,
+      verdict,
+      rationale,
+      expectedDenial: options.expectedDenial,
+      expectedDenialTool: options.expectedDenialTool,
+      expectedTargetPhase: options.expectedTargetPhase,
+    });
+    const auditEvidence = typedAuditEvidence(window, session, after.state.flowguardSessionId);
+    const denials = auditEvidence.filter((event) => event.success === false && event.errorCode);
+    const durationMs = response.completedAt - response.startedAt;
+    this.turnObservations.push({
+      label,
+      exitCode: 0,
+      durationMs,
+      denialCodes: [...new Set(denials.map((event) => event.errorCode))],
+      denialOccurrences: denials.map((event) => event.errorCode),
+    });
     return {
-      code: response.status === 204 || options.expectedDenial ? 0 : 1,
+      code: 0,
       stdout: '',
       stderr: '',
       timedOut: false,
-      durationMs: 0,
+      durationMs,
       sessionIds: [session.sessionId],
-      hostCommandTransport: true,
       auditEvidence,
     };
   }
 
   async hostStep(label, workspace, args, timeoutMs = 30 * 60_000) {
+    const host = this.requireHost();
     const stdoutPath = path.join(this.evidenceDir, `${label}.jsonl`);
-    const stderrPath = path.join(this.evidenceDir, `${label}.err`);
-    if (fs.existsSync(stdoutPath) || fs.existsSync(stderrPath)) {
-      throw new Error(`evidence file already exists for ${label}; use a fresh --root`);
+    const stdoutFd = openEvidence(this.evidenceDir, label, 'jsonl');
+    let stderrFd;
+    try {
+      stderrFd = openEvidence(this.evidenceDir, label, 'err');
+    } catch (error) {
+      fs.closeSync(stdoutFd);
+      throw error;
     }
-    const stdoutFd = fs.openSync(stdoutPath, 'w');
-    const stderrFd = fs.openSync(stderrPath, 'w');
-    const result = await run('opencode', args, {
-      cwd: workspace,
-      env: {
-        ...process.env,
-        OPENCODE_CONFIG_DIR: this.configDir,
-        OPENCODE_DISABLE_AUTOUPDATE: '1',
-      },
-      stdout: stdoutFd,
-      stderr: stderrFd,
-      timeoutMs,
-    });
-    fs.closeSync(stdoutFd);
-    fs.closeSync(stderrFd);
-    const output = fs.readFileSync(stdoutPath, 'utf8');
+    let result;
+    let output;
+    try {
+      result = await run('opencode', [args[0], '--server', host.url, ...args.slice(1)], {
+        cwd: workspace,
+        env: host.envFor(workspace),
+        stdout: stdoutFd,
+        stderr: stderrFd,
+        timeoutMs,
+      });
+      output = fs.readFileSync(stdoutPath, 'utf8');
+    } finally {
+      try {
+        fs.closeSync(stdoutFd);
+      } finally {
+        fs.closeSync(stderrFd);
+      }
+    }
     this.turnObservations.push({
       label,
       exitCode: result.code,
@@ -1023,6 +996,13 @@ export class Runner {
   }
 
   async turn(session, label, prompt, options = {}) {
+    const slash = /^\/([a-z-]+)(?:\s|$)/.exec(prompt ?? '')?.[1];
+    if (HOST_DECISION_COMMANDS.has(slash) && !HOST_DECISION_COMMANDS.has(options.command)) {
+      throw new HostTransportError(
+        'HOST_COMMAND_INVALID',
+        'native decision must use the explicit command boundary',
+      );
+    }
     if (options.command && !HOST_DECISION_COMMANDS.has(options.command)) {
       prompt = `/${options.command}${prompt ? `\n${prompt}` : ''}`;
       options = { ...options, command: undefined };
@@ -1032,22 +1012,18 @@ export class Runner {
     const reviewProgressBefore = session.sessionId ? this.reviewProgress(session) : null;
     // Recovery witnesses must be bound to events appended by THIS turn; a
     // historical sequence may never confirm a later operation.
-    const auditFloorBefore = session.sessionId
-      ? lastAuditSequence(this.configDir, session.sessionId)
-      : 0;
+    const auditFloorBefore =
+      session.sessionId && !options.command
+        ? lastAuditSequence(this.configDir, session.sessionId)
+        : 0;
     let result;
     if (options.command) {
-      result = await this.hostCommandTransport(
-        session,
-        label,
-        options.command,
-        prompt,
-        auditFloorBefore,
-        options,
-      );
+      result = await this.hostCommandTransport(session, label, options.command, options);
     } else {
-      const args = ['run', '-m', this.options.model, '--format', 'json'];
-      if (this.options.variant) args.push('--variant', this.options.variant);
+      const model = this.options.variant
+        ? `${this.options.model}#${this.options.variant}`
+        : this.options.model;
+      const args = ['run', '-m', model, '--format', 'json'];
       if (session.sessionId) args.push('--session', session.sessionId);
       if (prompt) args.push(prompt);
       result = await this.hostStep(label, session.workspace, args);
@@ -1074,13 +1050,7 @@ export class Runner {
     if (result.auditEvidence) {
       const command = options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1];
       this.settleAwaitingRecovery(session, label, command);
-      if (options.expectedDenial) {
-        assertTypedAuditDenial(
-          result.auditEvidence,
-          options.expectedDenial,
-          options.expectedDenialTool,
-        );
-      } else {
+      if (!options.expectedDenial) {
         const denials = result.auditEvidence.filter(
           (event) => event.success === false && event.errorCode,
         );
@@ -1114,9 +1084,7 @@ export class Runner {
       return result;
     }
 
-    const trust = result.hostCommandTransport
-      ? { readable: true, framingLosses: [], unreadable: [] }
-      : transcriptTrust(result.stdout);
+    const trust = transcriptTrust(result.stdout);
     if (!trust.readable) {
       session.transcriptWarnings = session.transcriptWarnings ?? [];
       session.transcriptWarnings.push({ step: label, ...trust });
@@ -1731,6 +1699,7 @@ export class Runner {
   }
 
   async exportTranscript(label, sessionId, workspace, parentSessionId) {
+    const host = this.requireHost();
     const file = await exportHostTranscript({
       label,
       sessionId,
@@ -1738,6 +1707,8 @@ export class Runner {
       parentSessionId,
       evidenceDir: this.evidenceDir,
       configDir: this.configDir,
+      serverUrl: host.url,
+      env: host.envFor(workspace),
     });
     return { sessionId, file: path.relative(this.evidenceDir, file), sha256: sha256(file) };
   }
@@ -1961,15 +1932,11 @@ export async function runFlows(runner) {
           // approvable by a plain /approve, and the refusal must not mutate
           // the gate. A successful recovery to ARCH_COMPLETE is a different
           // proof and stays on the converged branch below.
-          await runner.turn(
-            session,
-            'architecture-negative-04-approve',
-            'Demo approval through the real command boundary.',
-            {
-              command: 'approve',
-              expectedDenial: CONTROLLED_NEGATIVE_STEPS.get('architecture-negative-04-approve'),
-            },
-          );
+          await runner.turn(session, 'architecture-negative-04-approve', undefined, {
+            command: 'approve',
+            expectedDenial: CONTROLLED_NEGATIVE_STEPS.get('architecture-negative-04-approve'),
+            expectedDenialTool: 'flowguard_decision',
+          });
           const refused = runner.requireBoundState(session);
           if (
             refused.state.phase !== 'ARCH_REVIEW' ||
@@ -2012,6 +1979,7 @@ export async function withRawExportGrant(configDir, task) {
   fs.writeFileSync(
     globalConfig,
     JSON.stringify({ schemaVersion: 'v1', archive: { redaction: { allowRawExport: true } } }),
+    { flag: 'wx', mode: 0o600 },
   );
   try {
     return await task();
@@ -2033,7 +2001,8 @@ async function main() {
   const evidenceDir = path.join(options.root, 'evidence');
   const configDir = path.join(options.root, 'config');
   const workspaces = path.join(options.root, 'workspaces');
-  fs.mkdirSync(evidenceDir, { recursive: true });
+  fs.mkdirSync(options.root, { recursive: true });
+  fs.mkdirSync(evidenceDir, { mode: 0o700 });
   fs.mkdirSync(configDir, { recursive: true });
   writeIsolatedHostConfig(configDir);
 
@@ -2061,6 +2030,7 @@ async function main() {
       null,
       2,
     ),
+    { flag: 'wx' },
   );
 
   execFileSync(
@@ -2086,7 +2056,7 @@ async function main() {
   }
 
   const runner = new Runner(options.root, options, configDir);
-  const exitCode = await withRawExportGrant(configDir, async () => {
+  const runMatrix = async () => {
     const flows = await runFlows(runner);
     for (const name of options.flows) {
       const flow = flows[name];
@@ -2167,38 +2137,39 @@ async function main() {
           record.error = String(error);
           runner.log(`BLOCKED ${name}: ${error}`);
         }
+        if (error?.code === 'HOST_COMMAND_UNKNOWN_OUTCOME') {
+          record.errorCode = error.code;
+          break;
+        }
         // Evidence capture must survive the failure path: a failed or
         // discarded reviewer child is exactly what a forensic pass needs.
         await captureFailureProvenance(record, session, runner);
       }
-      fs.writeFileSync(path.join(evidenceDir, 'flows.json'), JSON.stringify(runner.flows, null, 2));
-      fs.writeFileSync(
-        path.join(evidenceDir, 'host-sessions.json'),
-        JSON.stringify(
-          runner.flows.map(
-            ({
-              name,
-              hostSessionId,
-              flowguardSessionId,
-              transcripts,
-              packages,
-              installedBuild,
-            }) => ({
-              flow: name,
-              hostSessionId: hostSessionId ?? null,
-              flowguardSessionId: flowguardSessionId ?? null,
-              transcripts: transcripts ?? null,
-              packages: packages ?? [],
-              installedBuild: installedBuild ?? null,
-            }),
-          ),
-          null,
-          2,
-        ),
-      );
     }
+    fs.writeFileSync(path.join(evidenceDir, 'flows.json'), JSON.stringify(runner.flows, null, 2), {
+      flag: 'wx',
+    });
+    fs.writeFileSync(
+      path.join(evidenceDir, 'host-sessions.json'),
+      JSON.stringify(
+        runner.flows.map(
+          ({ name, hostSessionId, flowguardSessionId, transcripts, packages, installedBuild }) => ({
+            flow: name,
+            hostSessionId: hostSessionId ?? null,
+            flowguardSessionId: flowguardSessionId ?? null,
+            transcripts: transcripts ?? null,
+            packages: packages ?? [],
+            installedBuild: installedBuild ?? null,
+          }),
+        ),
+        null,
+        2,
+      ),
+      { flag: 'wx' },
+    );
     return matrixExitCode(runner.flows);
-  });
+  };
+  const exitCode = await withRawExportGrant(configDir, () => runner.withHost(runMatrix));
 
   runner.log('raw-export grant removed from the isolated config dir');
   runner.log(resultLine(runner.flows, 'MATRIX RESULT'));

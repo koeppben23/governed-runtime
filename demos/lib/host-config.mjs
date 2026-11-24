@@ -63,8 +63,6 @@ export function writeIsolatedHostConfig(configDir) {
     ...preserved,
     tool_output: { ...(existing.tool_output ?? {}), max_bytes: HOST_TOOL_OUTPUT_MAX_BYTES },
   };
-  fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
-
   const serviceFile = path.join(configDir, HOST_SERVICE_FILE);
   try {
     fs.writeFileSync(serviceFile, `${JSON.stringify({ port: HOST_SERVICE_PORT }, null, 2)}\n`, {
@@ -73,12 +71,13 @@ export function writeIsolatedHostConfig(configDir) {
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error;
     const service = JSON.parse(fs.readFileSync(serviceFile, 'utf8'));
-    if (service?.port !== undefined && service.port !== HOST_SERVICE_PORT) {
+    if (service?.port !== HOST_SERVICE_PORT) {
       throw new Error(
-        `isolated service config already sets port=${String(service.port)}; ` +
-          'refusing to override it',
+        `isolated service config has invalid port=${String(service?.port)}; ` +
+          `expected ${HOST_SERVICE_PORT}; refusing to override it`,
       );
     }
   }
+  fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
   return file;
 }

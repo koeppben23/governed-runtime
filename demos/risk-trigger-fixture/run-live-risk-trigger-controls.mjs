@@ -51,7 +51,6 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
 const SEED = path.join(REPO, 'demos', 'java-task-manager', 'seed');
 const FIXTURE = SCRIPT_DIR;
-const SKIP_ASSERTION_ENV = 'FLOWGUARD_LIVE_SKIP_ASSERTION';
 const INVARIANT = 'The module must reject any write that omits the ownership field.';
 /**
  * Retained critical claim statement: runtime rejection behavior only. Retention
@@ -207,7 +206,6 @@ export function assertInstalledBuildIdentity(
 async function runCase(runner, name, workspace, covered, context) {
   const record = { name, covered, workspace, result: RESULT.FAILED };
   const session = { workspace, terminal: 'COMPLETE' };
-  const savedSkip = process.env[SKIP_ASSERTION_ENV];
   try {
     await runner.turn(session, `${name}-01-start`, '/start');
     assertInstalledBuildIdentity(
@@ -230,7 +228,6 @@ async function runCase(runner, name, workspace, covered, context) {
     await runner.approve(session, `${name}-04-approve-plan`, 'PLAN_REVIEW');
     assertRetainedClaim(runner.requireBoundState(session).state, covered);
 
-    delete process.env[SKIP_ASSERTION_ENV];
     await driveImplementation(runner, session, name);
     const state = runner.requireBoundState(session).state;
     const assessment = assertStateIntegrityTrigger(state);
@@ -245,18 +242,13 @@ async function runCase(runner, name, workspace, covered, context) {
 
     if (!covered) {
       const before = state;
-      await runner.turn(
-        session,
-        `${name}-06-approve`,
-        'Demo approval through the real command boundary.',
-        {
-          command: 'approve',
-          expectedDenial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
-          // The negative control is only proven by the evidence-approval
-          // decision tool; the same code from any other tool is not a control.
-          expectedDenialTool: 'flowguard_decision',
-        },
-      );
+      await runner.turn(session, `${name}-06-approve`, undefined, {
+        command: 'approve',
+        expectedDenial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+        // The negative control is only proven by the evidence-approval
+        // decision tool; the same code from any other tool is not a control.
+        expectedDenialTool: 'flowguard_decision',
+      });
       const after = runner.requireBoundState(session).state;
       if (after.phase !== 'EVIDENCE_REVIEW') throw new Error(`phase changed to ${after.phase}`);
       assertRetainedClaim(after, covered);
@@ -317,12 +309,12 @@ async function runCase(runner, name, workspace, covered, context) {
       record.result = RESULT.FAILED;
       record.error = String(error);
     }
-    // Capture provenance even on the failure path WITHOUT touching the result:
-    // a failed run must never become a passed control.
-    await captureFailureProvenance(record, session, runner);
-  } finally {
-    if (savedSkip === undefined) delete process.env[SKIP_ASSERTION_ENV];
-    else process.env[SKIP_ASSERTION_ENV] = savedSkip;
+    if (error?.code === 'HOST_COMMAND_UNKNOWN_OUTCOME') {
+      record.errorCode = error.code;
+    } else {
+      // Capture failure provenance only when the host is safe to query.
+      await captureFailureProvenance(record, session, runner);
+    }
   }
   record.turns = runner.turnObservations.filter((turn) => turn.label.startsWith(`${name}-`));
   // OCCURRENCE-level counts: a code denied twice in one turn counts twice.
@@ -454,7 +446,8 @@ async function main() {
   }
   const evidenceDir = path.join(options.root, 'evidence');
   const configDir = path.join(options.root, 'config');
-  fs.mkdirSync(evidenceDir, { recursive: true });
+  fs.mkdirSync(options.root, { recursive: true });
+  fs.mkdirSync(evidenceDir, { mode: 0o700 });
   fs.mkdirSync(configDir, { recursive: true });
   writeIsolatedHostConfig(configDir);
 
@@ -496,6 +489,7 @@ async function main() {
       null,
       2,
     ),
+    { flag: 'wx' },
   );
 
   const cases = [
@@ -514,37 +508,42 @@ async function main() {
 
   const runner = new Runner(options.root, options, configDir);
   const records = [];
-  for (const item of cases) {
-    runner.log(`START ${item.name}`);
-    const record = await runCase(runner, item.name, item.workspace, item.covered, {
-      checkoutHead,
-      builtFromCheckout,
-      expectedProductSha: options.productSha,
-    });
-    records.push(record);
-    runner.log(`${record.result} ${item.name}${record.error ? `: ${record.error}` : ''}`);
-    fs.writeFileSync(
-      path.join(evidenceDir, 'risk-trigger-controls.json'),
-      JSON.stringify(records, null, 2),
-    );
-    if (options.evidenceOut) {
-      fs.mkdirSync(path.dirname(options.evidenceOut), { recursive: true });
-      fs.writeFileSync(
-        options.evidenceOut,
-        JSON.stringify(
-          {
-            version: 1,
-            checkoutHead,
-            pins,
-            model: options.model,
-            denialBaseline: DENIAL_BASELINE,
-            records,
-          },
-          null,
-          2,
-        ),
-      );
+  await runner.withHost(async () => {
+    for (const item of cases) {
+      runner.log(`START ${item.name}`);
+      const record = await runCase(runner, item.name, item.workspace, item.covered, {
+        checkoutHead,
+        builtFromCheckout,
+        expectedProductSha: options.productSha,
+      });
+      records.push(record);
+      runner.log(`${record.result} ${item.name}${record.error ? `: ${record.error}` : ''}`);
+      if (record.errorCode === 'HOST_COMMAND_UNKNOWN_OUTCOME') break;
     }
+  });
+  fs.writeFileSync(
+    path.join(evidenceDir, 'risk-trigger-controls.json'),
+    JSON.stringify(records, null, 2),
+    { flag: 'wx' },
+  );
+  if (options.evidenceOut) {
+    fs.mkdirSync(path.dirname(options.evidenceOut), { recursive: true });
+    fs.writeFileSync(
+      options.evidenceOut,
+      JSON.stringify(
+        {
+          version: 1,
+          checkoutHead,
+          pins,
+          model: options.model,
+          denialBaseline: DENIAL_BASELINE,
+          records,
+        },
+        null,
+        2,
+      ),
+      { flag: 'wx' },
+    );
   }
   runner.log(resultLine(records, 'RISK TRIGGER CONTROLS'));
   process.exitCode = exitCodeForResults(records);

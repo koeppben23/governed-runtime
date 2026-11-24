@@ -230,17 +230,26 @@ between flows.
 toolchain pins from the canonical repository files (`.sdk-baselines/opencode/cli-candidate.json`
 and `.node-version`), verifies the tarball against its `checksums.sha256`
 sidecar before installing, prepares fresh workspaces, opts the repository
-config into raw auditor archives next to the isolated global grant, runs every
-runs prompt-template steps through real headless `opencode run` processes from an
-explicit working directory, runs native decision commands through the host
-command API, verifies the persisted host/worktree binding and each package, exports the
-parent and reviewer-child host transcripts directly to files, validates JSON,
-session/worktree/parent identity and message/part structure before registering
-their hashes, records the installed
+config into raw auditor archives next to the isolated global grant, runs
+prompt-template steps through headless `opencode run` from an explicit working
+directory, and sends native decisions directly through the host command API.
+It verifies the worktree binding and packages and exports the parent and
+reviewer-child transcripts to exclusive files. Each export must match its
+session, worktree and parent and end in a completed assistant response with
+text after the final user request. The matrix records the installed
 build identity, records recovered typed denials and successful reviewer re-arms while
 stopping on any non-recoverable block, removes the isolated raw-export grant on exit, and exits
 non-zero when any requested flow did not complete. It performs no governance
 work itself.
+
+Use a fresh root and a free `127.0.0.1:49375`. The runner starts and authenticates
+its own OpenCode child, with separate configuration and storage, and stops only
+that child on exit. It never attaches to an existing listener. Supply model
+credentials through the provider environment; the runner does not reuse the
+shared host's credential store. Native decisions require current, session-bound
+audit evidence, not just HTTP success. An ambiguous transport outcome stops the
+run without resubmitting the decision. Native HTTP response bodies are not
+written to evidence or logs.
 
 The active preflight requires the exact V2 CLI candidate's `opencode v<version>`
 output. It does not use or rewrite historical V1 comparison pins. Passing

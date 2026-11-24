@@ -685,15 +685,7 @@ describe('Java Task Manager demo contract', () => {
       // With a real state change the independent proof resolves it.
       persisted = approvedPlan();
       await fs.writeFile(statePath, JSON.stringify(persisted));
-      runner.hostStep = async () => ({
-        code: 0,
-        stderr: '',
-        timedOut: false,
-        durationMs: 0,
-        sessionIds: ['ses_parent'],
-        stdout: `${success}\n`,
-      });
-      await runner.turn(session, 'plan-c-retry', '/approve');
+      runner.settleAwaitingRecovery(session, 'plan-c-retry', 'approve');
       expect(session.recoveredDenials).toContainEqual(
         expect.objectContaining({
           step: 'plan-c',

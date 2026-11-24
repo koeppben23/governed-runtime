@@ -21,13 +21,25 @@ function transcriptDigest(content) {
  * correctly bound and still stale because the host session may have continued
  * after it was written, so it is never reused as the current export.
  */
-function nextCaptureTarget(evidenceDir, label, sessionId) {
+function reserveCaptureTarget(evidenceDir, label, sessionId) {
   for (let attempt = 1; ; attempt += 1) {
     const prefix = attempt === 1 ? label : `${label}-attempt-${attempt}`;
     const file = path.join(evidenceDir, `${prefix}-host-${sessionId}.json`);
     const receiptFile = `${file}.receipt.json`;
-    if (!fs.existsSync(file) && !fs.existsSync(receiptFile)) {
-      return { file, receiptFile, attempt };
+    let receiptFd;
+    try {
+      receiptFd = fs.openSync(receiptFile, 'wx', 0o600);
+    } catch (error) {
+      if (error?.code === 'EEXIST') continue;
+      throw error;
+    }
+    try {
+      const stdoutFd = fs.openSync(file, 'wx', 0o600);
+      return { file, receiptFile, attempt, stdoutFd, receiptFd };
+    } catch (error) {
+      fs.closeSync(receiptFd);
+      fs.unlinkSync(receiptFile);
+      if (error?.code !== 'EEXIST') throw error;
     }
   }
 }
@@ -37,10 +49,8 @@ export function validateHostTranscript(content, { sessionId, workspace, parentSe
   let exported;
   try {
     exported = JSON.parse(content);
-  } catch (error) {
-    throw new TranscriptCaptureError(
-      `invalid host transcript JSON for ${sessionId}: ${error.message}`,
-    );
+  } catch {
+    throw new TranscriptCaptureError(`invalid host transcript JSON for ${sessionId}`);
   }
   if (!isObject(exported) || !isObject(exported.info) || exported.info.id !== sessionId) {
     throw new TranscriptCaptureError(`host transcript session identity mismatch for ${sessionId}`);
@@ -62,38 +72,45 @@ export function validateHostTranscript(content, { sessionId, workspace, parentSe
   }
   const messageIds = new Set();
   const partIds = new Set();
-  let hasUser = false;
-  let hasAssistant = false;
-  let hasAssistantText = false;
+  let firstNonIdleType = null;
+  let lastNonIdleType = null;
+  let lastAssistantComplete = false;
+  let previousCreated = -1;
   for (const message of exported.messages) {
     if (
       !isObject(message) ||
       typeof message.id !== 'string' ||
       message.id.length === 0 ||
       messageIds.has(message.id) ||
+      !Number.isSafeInteger(message.time?.created) ||
+      message.time.created < 0 ||
+      message.time.created < previousCreated ||
       !['user', 'assistant', 'idle'].includes(message.type)
     ) {
       throw new TranscriptCaptureError(`invalid host transcript message for ${sessionId}`);
     }
     messageIds.add(message.id);
+    previousCreated = message.time.created;
     if (message.type === 'idle') continue;
+    firstNonIdleType ??= message.type;
+    lastNonIdleType = message.type;
     if (message.type === 'user') {
       if (typeof message.text !== 'string' || message.text.trim().length === 0) {
         throw new TranscriptCaptureError(`invalid host transcript message for ${sessionId}`);
       }
-      hasUser = true;
+      lastAssistantComplete = false;
       continue;
     }
     if (!Array.isArray(message.content) || message.content.length === 0) {
       throw new TranscriptCaptureError(`invalid host transcript message for ${sessionId}`);
     }
-    hasAssistant = true;
+    let assistantText = false;
     for (const part of message.content) {
       if (!isObject(part) || typeof part.type !== 'string' || part.type.length === 0) {
         throw new TranscriptCaptureError(`invalid host transcript part for ${sessionId}`);
       }
       if (part.type === 'text' && typeof part.text === 'string' && part.text.trim().length > 0) {
-        hasAssistantText = true;
+        assistantText = true;
       }
       if (part.id !== undefined) {
         if (typeof part.id !== 'string' || part.id.length === 0 || partIds.has(part.id)) {
@@ -102,10 +119,16 @@ export function validateHostTranscript(content, { sessionId, workspace, parentSe
         partIds.add(part.id);
       }
     }
+    lastAssistantComplete =
+      assistantText &&
+      message.finish === 'stop' &&
+      message.error === undefined &&
+      Number.isSafeInteger(message.time.completed) &&
+      message.time.completed >= message.time.created;
   }
-  if (!hasUser || !hasAssistant || !hasAssistantText) {
+  if (firstNonIdleType !== 'user' || lastNonIdleType !== 'assistant' || !lastAssistantComplete) {
     throw new TranscriptCaptureError(
-      `host transcript lacks a complete reviewed user/assistant exchange for ${sessionId}`,
+      `host transcript lacks a complete ordered user/assistant review exchange for ${sessionId}`,
     );
   }
 }
@@ -117,23 +140,20 @@ function executeExport(command, args, { workspace, env, stdoutFd, timeoutMs }) {
       env,
       stdio: ['ignore', stdoutFd, 'pipe'],
     });
-    let stderr = '';
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');
       setTimeout(() => child.kill('SIGKILL'), 10_000).unref();
     }, timeoutMs);
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-    });
+    child.stderr.resume();
     child.on('error', (error) => {
       clearTimeout(timer);
       reject(error);
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      resolve({ code, timedOut, stderr });
+      resolve({ code, timedOut });
     });
   });
 }
@@ -153,6 +173,8 @@ export async function exportHostTranscript({
   evidenceDir,
   configDir,
   parentSessionId,
+  serverUrl = undefined,
+  env = undefined,
   command = 'opencode',
   argsPrefix = /** @type {string[]} */ ([]),
   timeoutMs = 5 * 60_000,
@@ -166,42 +188,58 @@ export async function exportHostTranscript({
       'host transcript label and session ID must be safe filename components',
     );
   }
-  const { file, receiptFile, attempt } = nextCaptureTarget(evidenceDir, label, sessionId);
-  const stdoutFd = fs.openSync(file, 'wx');
-  let result;
+  const { file, receiptFile, attempt, stdoutFd, receiptFd } = reserveCaptureTarget(
+    evidenceDir,
+    label,
+    sessionId,
+  );
+  let captured = false;
   try {
-    result = await executeExport(command, [...argsPrefix, 'session', 'export', sessionId], {
+    const args = [
+      ...argsPrefix,
+      'session',
+      'export',
+      ...(serverUrl ? ['--server', serverUrl] : []),
+      sessionId,
+    ];
+    const result = await executeExport(command, args, {
       workspace,
       stdoutFd,
       timeoutMs,
-      env: {
+      env: env ?? {
         ...process.env,
         OPENCODE_CONFIG_DIR: configDir,
         OPENCODE_DISABLE_AUTOUPDATE: '1',
         PWD: workspace,
       },
     });
-  } finally {
-    fs.closeSync(stdoutFd);
-  }
-  if (result.timedOut || result.code !== 0) {
-    throw new TranscriptCaptureError(
-      `${label}: host transcript export failed for ${sessionId} (exit=${result.code}, timedOut=${result.timedOut}): ${result.stderr}`,
+    if (result.timedOut || result.code !== 0) {
+      throw new TranscriptCaptureError(
+        `${label}: host transcript export failed for ${sessionId} (exit=${result.code}, timedOut=${result.timedOut})`,
+      );
+    }
+    const content = fs.readFileSync(file);
+    validateHostTranscript(content.toString('utf8'), { sessionId, workspace, parentSessionId });
+    fs.writeFileSync(
+      receiptFd,
+      JSON.stringify(
+        {
+          version: 'host-transcript.v1',
+          attempt,
+          sha256: transcriptDigest(content),
+        },
+        null,
+        2,
+      ),
     );
+    captured = true;
+    return file;
+  } finally {
+    try {
+      fs.closeSync(stdoutFd);
+    } finally {
+      fs.closeSync(receiptFd);
+      if (!captured) fs.unlinkSync(receiptFile);
+    }
   }
-  validateHostTranscript(fs.readFileSync(file, 'utf8'), { sessionId, workspace, parentSessionId });
-  fs.writeFileSync(
-    receiptFile,
-    JSON.stringify(
-      {
-        version: 'host-transcript.v1',
-        attempt,
-        sha256: transcriptDigest(fs.readFileSync(file)),
-      },
-      null,
-      2,
-    ),
-    { flag: 'wx' },
-  );
-  return file;
 }
