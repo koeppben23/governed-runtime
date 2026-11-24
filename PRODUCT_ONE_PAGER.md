@@ -1,10 +1,16 @@
 # FlowGuard — AI Engineering Governance Platform
 
+**Technical Preview** — host-aware governance runtime for AI-assisted software delivery.
+
 **AI-assisted engineering with deterministic workflow control, fail-closed enforcement, and audit evidence.**
 
 FlowGuard is a host-aware governance runtime. OpenCode currently provides the
 strongest synchronous enforcement path; Claude Code and Codex are supported via
 MCP, hooks, and native packaging with hook-gated, platform-limited guarantees.
+This is a technical preview, not a GA release.
+
+**Four product pillars:** Deterministic Governance · Independent Review ·
+Evidence & ProofGraph · Verifiable Auditability.
 
 ---
 
@@ -24,35 +30,24 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 
 ## Key Capabilities
 
-### Deterministic Workflows
+### Deterministic Governance
 
 - Three independent flows: Ticket (full dev lifecycle), Architecture (ADR creation, ARCH_REVIEW → ARCH_COMPLETE), Review (content-aware, obligation-bound)
 - 18 explicit phases with computed next actions
 - Explicit `/status` orientation surface (compact + focused detail views)
 - Phase gates require evidence before progression
 - Fail-closed enforcement: execution blocks when evidence or state is invalid. Enforcement strength is host-dependent: synchronous (in-process block) on OpenCode; best-effort fail-closed on hook-gated hosts (Claude Code, Codex).
+- Four policy modes: Solo (local development), Team (human gates), Team-CI (CI-aware), Regulated (four-eyes enforcement)
+- Central policy minimum — optional explicit governance baseline
+- Tech-stack-aware profiles with auto-detection
 - External references for `/ticket` and `/review`: link Jira, ADO, GitHub Issues, PRs, branches, commits, and Confluence docs with full audit provenance (type, source, extractedAt)
 - Product command facade (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/why`) for intuitive daily use; canonical commands remain fully supported. Native `/check` is a scoped verification/review turn, not a VALIDATE alias; `/continue` reports guidance read-only. `/export` materializes the required verifiable export and completes the ticket flow
 - Review Cards: structured markdown cards (Plan Review Card, Architecture Review Card, Review Report Card) injected at review gates. Cards are derived presentation artifacts — `session-state.json` remains SSOT
 
-### Policy Enforcement
-
-- Four policy modes: Solo (local development), Team (human gates), Team-CI (CI-aware), Regulated (four-eyes enforcement)
-- Central policy minimum — optional explicit governance baseline
-- Tech-stack-aware profiles with auto-detection
-
-### Audit & Evidence
-
-- Hash-chained audit trail (SHA-256, tamper-evident, JSONL append-only)
-- Decision receipts for every approval
-- Policy snapshots frozen at session creation
-- Session archives with redaction support
-- Mutation testing on security-critical paths (StrykerJS, blocking 80% break threshold; see `stryker.conf.json`)
-
-### Four-Eyes Governance
+### Independent Review
 
 - Regulated mode enforces initiator/reviewer separation
-- Strict independent review uses a hidden `flowguard-reviewer` subagent, SDK `json_schema` structured output, mandate-bound attestation, and fail-closed orchestration in strict mode
+- On OpenCode V2, independent review uses a visible native `flowguard-reviewer` child session with obligation-bound authorization and a same-child JSON serialization window. It requires no `format` or forced tool. Other supported hosts have platform-specific transport and enforcement boundaries. See [Independent Review](./docs/independent-review.md) for current guarantees, known limitations, and installed acceptance
 - Independent review is wired for **all three** review-loop tools — `/plan`, `/architecture`, and `/implement` — sharing one orchestration pipeline, one ReviewFindings schema, and one fail-closed strict-enforcement model
 - Standalone `/review` creates obligation-bound content-review evidence with `review` obligations, strict attestation validation, and explicit host-orchestrated vs agent-submitted evidence source marking
 - Reviewer's `unable_to_review` third verdict consumes the obligation and BLOCKS via `SUBAGENT_UNABLE_TO_REVIEW` instead of fabricating an `approve` or `changes_requested`
@@ -62,6 +57,22 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 - `identityProviderMode: required` blocks fail-closed; `identityProviderMode: optional` degrades only for typed IdP errors
 - OIDC discovery and stale/last-known-good JWKS fallback are not implemented
 - Team and Regulated modes require explicit human decisions at gates
+
+### Evidence & ProofGraph
+
+- ProofGraph keeps claims, evidence, verification, independent review, and approval distinct
+- Critical plan-certified `fact` claims cannot reach evidence approval while required revision-bound positive and adversarial evidence is missing
+- `PROVEN` means the policy-required evidence succeeded; it does not mean the change is free of defects. Residual uncertainty remains explicit as `UNPROVEN`, `CONTRADICTED`, `STALE`, `BLOCKED`, or `NOT_VERIFIED`
+- Evidence completeness verification runs before phase transitions
+- Derived evidence artifacts carry content digests and `sourceStateHash` provenance
+
+### Verifiable Auditability
+
+- Hash-chained audit trail (SHA-256, tamper-evident, JSONL append-only)
+- Decision receipts linked to the audit trail and policy provenance
+- Policy snapshots frozen at session creation
+- Session archives with redaction support; sharing archives remain structurally checkable but are not fully verifiable raw evidence
+- Mutation testing on security-critical paths (StrykerJS, blocking 80% break threshold; see `stryker.conf.json`)
 
 ### Headless Fail-Closed Behavior
 
@@ -84,8 +95,9 @@ Existing tool combinations generate output but do not provide:
 
 - Deterministic phase gates and admissibility checks
 - Policy-bound workflow enforcement
-- Immutable decision receipts linked to audit trail
+- Decision receipts linked to the audit trail and policy provenance
 - Evidence completeness verification before phase transitions
+- ProofGraph visibility into claims, evidence, and residual uncertainty
 - Session-level archive export that supports audit and evidence review
 - Explicit governance evidence that supports risk assessments
 
@@ -99,5 +111,12 @@ FlowGuard is a host-aware governance runtime. It runs locally within the selecte
 
 For technical evaluation or pilot discussions, contact the FlowGuard project owner.
 
-**Current snapshot: 2.0.0-tp.2**
+**Released Technical Preview:** [2.0.0-tp.2](https://github.com/koeppben23/governed-runtime/releases/tag/v2.0.0-tp.2) (2026-10-04)
+
+**Current snapshot: 2.0.0-tp.2** — `develop` may contain changes after the released artifact.
+
+**Installed host acceptance:** version-bound; tracked in #1196.
+
+**Production readiness:** not complete; no GA claim.
+
 **API Reference:** [TypeDoc-generated](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)

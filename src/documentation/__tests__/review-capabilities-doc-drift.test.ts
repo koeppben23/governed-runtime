@@ -170,6 +170,26 @@ describe('documentation/review-capabilities-doc-drift', () => {
       expect(op).toMatch(/derived/i);
     });
 
+    it('one-pager scopes the current native reviewer mechanism to OpenCode V2', () => {
+      const op = readDoc('PRODUCT_ONE_PAGER.md');
+      expect(op).toContain('On OpenCode V2');
+      expect(op).toContain('visible native `flowguard-reviewer` child session');
+      expect(op).toContain('same-child JSON serialization');
+      expect(op).toContain('`format`');
+      expect(op).toContain('forced tool');
+      expect(op).toContain('Other supported hosts have platform-specific transport');
+      expect(op).toContain('[Independent Review](./docs/independent-review.md)');
+      expect(op).not.toMatch(/hidden\s+`?flowguard-reviewer/i);
+      expect(op).not.toContain('json_schema');
+    });
+
+    it('one-pager positions ProofGraph as a distinct capability', () => {
+      const op = readDoc('PRODUCT_ONE_PAGER.md');
+      expect(op).toContain('Evidence & ProofGraph');
+      expect(op).toContain('`PROVEN`');
+      expect(op).not.toContain('Immutable decision receipts');
+    });
+
     it('product-identity states session-state.json is SSOT', () => {
       const pi = readDoc('PRODUCT_IDENTITY.md');
       expect(pi).toContain('session-state.json');

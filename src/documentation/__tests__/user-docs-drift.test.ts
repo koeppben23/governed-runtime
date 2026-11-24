@@ -67,6 +67,19 @@ describe('bounded OpenCode V2 acceptance claims', () => {
     expect(enforcement).not.toContain('security requirement remains BLOCKED');
     expect(enforcement).toContain('unobservable');
   });
+
+  it('binds the quick start to a development build rather than a published artifact', () => {
+    const content = readDoc('docs/quick-start.md');
+    const introduction = content.split('## Prerequisites')[0]!;
+    expect(introduction).toContain('`develop` command surface');
+    expect(introduction).toContain('not to the published');
+    expect(introduction).toContain('matching commit');
+
+    const installation = content.split('## Start a Session')[0]!;
+    expect(installation).toContain('matching build');
+    expect(installation).toContain('version-bound');
+    expect(installation).not.toMatch(/latest release/i);
+  });
 });
 
 function slash(name: string): string {

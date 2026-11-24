@@ -1,8 +1,12 @@
 # Quick Start (OpenCode)
 
-This Quick Start applies to OpenCode, the primary V2 host, on the `develop`
-command surface. The V2 port and the native Desktop Workbench (#1207) are
-merged; remaining product/accessibility acceptance is tracked in #1196. Desktop
+This Quick Start documents the `develop` command surface for OpenCode, the
+primary V2 host. It is bound to a development build, not to the published
+Technical Preview artifact. Authorized evaluators must use a FlowGuard build
+from the matching commit; for a published artifact, use the version-bound
+installation and compatibility documentation at that release tag. The V2 port
+and the native Desktop Workbench (#1207) are merged; remaining
+product/accessibility acceptance is tracked in #1196. Desktop
 commands and the read-only ComposerPill are documented in the
 [Desktop GUI Companion](./desktop.md); GUI evidence remains bound to its
 installed bundle hash. The bounded OpenCode 2.2.4 CLI/server parity matrix
@@ -22,8 +26,16 @@ as a GA release claim.
 
 ## Installation
 
-1. Download the latest release from [GitHub Releases](https://github.com/koeppben23/governed-runtime/releases)
-2. Follow the [Installation Guide](./installation.md)
+This guide targets the `develop` build, not the published Technical Preview
+artifact. Authorized evaluators must use a FlowGuard tarball and
+`checksums.sha256` from the matching build.
+
+1. Obtain the FlowGuard tarball and `checksums.sha256` for that build.
+2. Follow the [Installation Guide](./installation.md) from the same commit.
+3. For a published release, use the installation and compatibility
+   documentation at that release tag on
+   [GitHub Releases](https://github.com/koeppben23/governed-runtime/releases);
+   later `develop` documentation does not describe the published artifact.
 
 ## Start a Session
 
