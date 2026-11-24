@@ -15,6 +15,7 @@ import {
   assertRetainedCriticalClaim,
   criticalClaimDeclaration,
   prepareClaimWorkspace,
+  selectedClaimCases,
 } from '../../../demos/java-task-manager/run-live-claim-controls.mjs';
 import { finalizeControlRecord } from '../../../demos/java-task-manager/run-live-matrix.mjs';
 import { RESULT } from '../../../demos/lib/results.mjs';
@@ -220,6 +221,42 @@ describe('critical claim live-control oracles', () => {
       );
       expect(status.trim()).toBe('');
     });
+  });
+});
+
+describe('live claim control host integration', () => {
+  it('uses the host command boundary and the exact ProofGraph denial oracle', async () => {
+    const runner = await fs.readFile(
+      new URL('../../../demos/java-task-manager/run-live-matrix.mjs', import.meta.url),
+      'utf8',
+    );
+    expect(runner).toContain('/api/session/');
+    expect(runner).toContain('readAuditEventsSince');
+    expect(runner).toContain('allowNon204');
+    expect(runner).toContain('HOST_DECISION_COMMANDS');
+
+    const controls = await fs.readFile(
+      new URL('../../../demos/java-task-manager/run-live-claim-controls.mjs', import.meta.url),
+      'utf8',
+    );
+    expect(controls).toContain("command: 'export'");
+    expect(controls).toContain('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
+    expect(controls).toContain('FLOWGUARD_CLAIM_CASES');
+    expect(controls).toContain("'--demo'");
+    expect(controls).toContain("expectedDenialTool: 'flowguard_decision'");
+    expect(controls).not.toContain('denialText');
+    expect(controls).not.toContain("'--command'");
+  });
+
+  it('rejects an empty claim-control selection', () => {
+    const previous = process.env.FLOWGUARD_CLAIM_CASES;
+    try {
+      process.env.FLOWGUARD_CLAIM_CASES = '';
+      expect(() => selectedClaimCases()).toThrow(/at least one claim control/);
+    } finally {
+      if (previous === undefined) delete process.env.FLOWGUARD_CLAIM_CASES;
+      else process.env.FLOWGUARD_CLAIM_CASES = previous;
+    }
   });
 });
 

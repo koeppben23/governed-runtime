@@ -241,6 +241,8 @@ async function runCase(runner, name, workspace, negative) {
   const record = { name, negative, workspace, result: RESULT.FAILED };
   const session = { workspace, terminal: 'COMPLETE' };
   const savedSkip = process.env[SKIP_ASSERTION_ENV];
+  if (negative) process.env[SKIP_ASSERTION_ENV] = '1';
+  else delete process.env[SKIP_ASSERTION_ENV];
   try {
     await runner.turn(session, `${name}-01-start`, '/start');
     const installed = runner.installedBuild(workspace);
@@ -275,8 +277,6 @@ async function runCase(runner, name, workspace, negative) {
     await runner.approve(session, `${name}-04-approve-plan`, 'PLAN_REVIEW');
     assertRetainedCriticalClaim(runner.requireBoundState(session).state);
 
-    delete process.env[SKIP_ASSERTION_ENV];
-    if (negative) process.env[SKIP_ASSERTION_ENV] = '1';
     await runner.turn(
       session,
       `${name}-05-implement`,
@@ -297,10 +297,14 @@ async function runCase(runner, name, workspace, negative) {
         {
           command: 'approve',
           expectedDenial: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
+          expectedDenialTool: 'flowguard_decision',
         },
       );
       const after = runner.requireBoundState(session).state;
       assertClaimEvidence(after, { negative: true });
+      if (after.phase !== 'EVIDENCE_REVIEW') {
+        throw new Error(`the blocked approval left EVIDENCE_REVIEW: ${String(after.phase)}`);
+      }
       if (
         JSON.stringify(after.reviewDecision ?? null) !==
         JSON.stringify(before.reviewDecision ?? null)
@@ -352,6 +356,26 @@ async function runCase(runner, name, workspace, negative) {
   return record;
 }
 
+export function selectedClaimCases() {
+  const requested = (process.env.FLOWGUARD_CLAIM_CASES ?? 'claim-positive,claim-negative')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const known = new Set(['claim-positive', 'claim-negative']);
+  if (requested.length === 0) {
+    throw new Error('FLOWGUARD_CLAIM_CASES must select at least one claim control');
+  }
+  if (requested.length > 1) {
+    throw new Error(
+      'FLOWGUARD_CLAIM_CASES must select one claim control per invocation so the service environment is bound before startup',
+    );
+  }
+  for (const value of requested) {
+    if (!known.has(value)) throw new Error(`unknown FLOWGUARD_CLAIM_CASES value: ${value}`);
+  }
+  return requested;
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const pins = readPins();
@@ -396,7 +420,7 @@ async function main() {
         tarball,
         tarballSha256: sha256(tarball),
         productSha: options.productSha ?? null,
-        flows: ['claim-positive', 'claim-negative'],
+        flows: selectedClaimCases(),
         claim: criticalClaimDeclaration(),
         positiveAssertion: POSITIVE_ASSERTION,
         adversarialAssertion: ADVERSARIAL_ASSERTION,
@@ -415,6 +439,8 @@ async function main() {
       'repo',
       '--tarball',
       tarball,
+      '--demo',
+      'main',
       path.join(options.root, 'workspaces'),
     ],
     {
@@ -422,6 +448,7 @@ async function main() {
       stdio: 'inherit',
     },
   );
+  const selected = selectedClaimCases();
   const cases = [
     {
       name: 'claim-positive',
@@ -433,7 +460,7 @@ async function main() {
       negative: true,
       workspace: path.join(options.root, 'workspaces', 'claim-negative'),
     },
-  ];
+  ].filter((item) => selected.includes(item.name));
   for (const item of cases) {
     fs.cpSync(path.join(options.root, 'workspaces', 'java-task-manager'), item.workspace, {
       recursive: true,

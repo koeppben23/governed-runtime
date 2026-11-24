@@ -29,10 +29,19 @@ export const HOST_TOOL_OUTPUT_MAX_BYTES = 131072;
 export const HOST_CONFIG_FILE = 'opencode.json';
 
 /**
- * Write the isolated host config into `configDir`. Creates the file when
- * absent; when present, every existing key is preserved and only
+ * Isolated service configuration. The demo must not share the default managed
+ * service port (49374) with a Desktop or background host; the runners execute
+ * in a separate config root and start their own service on this port.
+ */
+export const HOST_SERVICE_FILE = 'service.json';
+export const HOST_SERVICE_PORT = 49375;
+
+/**
+ * Write the isolated host config into `configDir`. Creates the files when
+ * absent; when present, every existing config key is preserved and only
  * `tool_output.max_bytes` is enforced. A conflicting pre-existing
- * `tool_output.max_bytes` fails loudly instead of being overridden.
+ * `tool_output.max_bytes` or service port fails loudly instead of being
+ * overridden.
  */
 export function writeIsolatedHostConfig(configDir) {
   const file = path.join(configDir, HOST_CONFIG_FILE);
@@ -55,5 +64,21 @@ export function writeIsolatedHostConfig(configDir) {
     tool_output: { ...(existing.tool_output ?? {}), max_bytes: HOST_TOOL_OUTPUT_MAX_BYTES },
   };
   fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+
+  const serviceFile = path.join(configDir, HOST_SERVICE_FILE);
+  try {
+    fs.writeFileSync(serviceFile, `${JSON.stringify({ port: HOST_SERVICE_PORT }, null, 2)}\n`, {
+      flag: 'wx',
+    });
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    const service = JSON.parse(fs.readFileSync(serviceFile, 'utf8'));
+    if (service?.port !== undefined && service.port !== HOST_SERVICE_PORT) {
+      throw new Error(
+        `isolated service config already sets port=${String(service.port)}; ` +
+          'refusing to override it',
+      );
+    }
+  }
   return file;
 }
