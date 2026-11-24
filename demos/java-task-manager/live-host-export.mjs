@@ -64,6 +64,7 @@ export function validateHostTranscript(content, { sessionId, workspace, parentSe
   const partIds = new Set();
   let hasUser = false;
   let hasAssistant = false;
+  let hasAssistantText = false;
   for (const message of exported.messages) {
     if (
       !isObject(message) ||
@@ -91,6 +92,9 @@ export function validateHostTranscript(content, { sessionId, workspace, parentSe
       if (!isObject(part) || typeof part.type !== 'string' || part.type.length === 0) {
         throw new TranscriptCaptureError(`invalid host transcript part for ${sessionId}`);
       }
+      if (part.type === 'text' && typeof part.text === 'string' && part.text.trim().length > 0) {
+        hasAssistantText = true;
+      }
       if (part.id !== undefined) {
         if (typeof part.id !== 'string' || part.id.length === 0 || partIds.has(part.id)) {
           throw new TranscriptCaptureError(`invalid host transcript part for ${sessionId}`);
@@ -99,9 +103,9 @@ export function validateHostTranscript(content, { sessionId, workspace, parentSe
       }
     }
   }
-  if (!hasUser || !hasAssistant) {
+  if (!hasUser || !hasAssistant || !hasAssistantText) {
     throw new TranscriptCaptureError(
-      `host transcript lacks a complete user/assistant exchange for ${sessionId}`,
+      `host transcript lacks a complete reviewed user/assistant exchange for ${sessionId}`,
     );
   }
 }

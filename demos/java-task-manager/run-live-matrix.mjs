@@ -702,6 +702,21 @@ function assertHostCallOk(result, label) {
   if (hostErrors.length > 0) throw new Error(`${label}: host error event observed`);
 }
 
+async function fetchWithTimeout(url, options, timeoutMs, label) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`${label}: timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class Runner {
   constructor(root, options, configDir) {
     this.root = root;
@@ -744,7 +759,7 @@ export class Runner {
       typeof service.password === 'string'
         ? `Basic ${Buffer.from(`opencode:${service.password}`).toString('base64')}`
         : undefined;
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `http://localhost:${service.port}/api/session/${encodeURIComponent(session.sessionId)}/command`,
       {
         method: 'POST',
@@ -755,6 +770,8 @@ export class Runner {
         },
         body: JSON.stringify({ name, text }),
       },
+      this.options.hostCommandTimeoutMs ?? 120_000,
+      `${label}: host command ${name}`,
     );
     const body = response.status === 204 ? '' : await response.text();
     fs.writeFileSync(
@@ -814,7 +831,7 @@ export class Runner {
       .filter((event) => Number(event.auditSequence) > floor);
   }
 
-  async waitForSessionIdle(session) {
+  async waitForSessionIdle(session, label = 'session wait') {
     const service = JSON.parse(fs.readFileSync(path.join(this.configDir, 'service.json'), 'utf8'));
     if (!Number.isInteger(service.port) || !session.sessionId) {
       throw new Error('isolated service or session is unavailable');
@@ -823,7 +840,7 @@ export class Runner {
       typeof service.password === 'string'
         ? `Basic ${Buffer.from(`opencode:${service.password}`).toString('base64')}`
         : undefined;
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `http://localhost:${service.port}/api/experimental/session/${encodeURIComponent(session.sessionId)}/wait`,
       {
         method: 'POST',
@@ -832,60 +849,59 @@ export class Runner {
           ...(auth ? { authorization: auth } : {}),
         },
       },
+      this.options.sessionWaitTimeoutMs ?? 15 * 60_000,
+      `${label}: session wait`,
     );
     if (response.status !== 204) {
       throw new Error(`session wait failed (${response.status}): ${await response.text()}`);
     }
   }
 
-  async hostCommandTurn(session, label, command, prompt, options = {}) {
+  async hostCommandTransport(session, label, command, prompt, auditFloor, options = {}) {
     if (!session.sessionId) {
       throw new Error(`${label}: command ${command} requires an existing session`);
     }
-    const auditFloor = lastAuditSequence(this.configDir, session.sessionId);
-    const before = this.currentPhase(session);
-    const response = await this.hostCommand(session, label, command, before, {
+    const response = await this.hostCommand(session, label, command, undefined, {
       allowNon204: true,
       expectPhaseChange: false,
       text: prompt ?? '',
     });
-    await this.waitForSessionIdle(session);
-    const after = this.currentPhase(session);
+    await this.waitForSessionIdle(session, `${label}: host command ${command}`);
     if (response.status !== 204 && !options.expectedDenial) {
       throw new Error(
         `${label}: host command ${command} failed (${response.status}): ${response.body}`,
       );
     }
-    if (options.expectedDenial) {
-      const events = this.readAuditEventsSince(session, auditFloor);
-      const denial = events.find((event) => {
-        const serialized = JSON.stringify(event);
-        if (!serialized.includes(options.expectedDenial)) return false;
-        return (
-          options.expectedDenialTool === undefined ||
-          event.event === `tool_call:${options.expectedDenialTool}`
-        );
-      });
-      if (!denial) {
-        throw new Error(
-          `${label}: expected denial ${options.expectedDenial} was not observed in new audit events`,
-        );
-      }
-    }
-    session.lastTurn = {
-      label,
-      toolCalls: 0,
-      stateObserved: true,
-      stateChanged: before !== after,
-      phaseAfter: after,
-    };
+    const events = this.readAuditEventsSince(session, auditFloor).filter(
+      (event) => event.event?.startsWith('tool_call:') || event.detail?.kind === 'tool_call',
+    );
+    const stdout = events
+      .map((event) =>
+        JSON.stringify({
+          type: 'tool_use',
+          part: {
+            tool: event.detail?.tool ?? String(event.event).replace(/^tool_call:/, ''),
+            sessionID: session.sessionId,
+            state: {
+              status: 'completed',
+              output: JSON.stringify({
+                error: event.detail?.success === false,
+                code: event.detail?.errorCode,
+                message: event.detail?.errorMessage,
+              }),
+            },
+          },
+        }),
+      )
+      .join('\n');
     return {
-      code: response.status === 204 ? 0 : 1,
-      stdout: '',
+      code: response.status === 204 || options.expectedDenial ? 0 : 1,
+      stdout,
       stderr: '',
       timedOut: false,
       durationMs: 0,
       sessionIds: [session.sessionId],
+      hostCommandTransport: true,
     };
   }
 
@@ -930,9 +946,6 @@ export class Runner {
   }
 
   async turn(session, label, prompt, options = {}) {
-    if (options.command && options.command !== 'start') {
-      return this.hostCommandTurn(session, label, options.command, prompt, options);
-    }
     if (options.command === 'start') {
       prompt = '/start';
       options = { ...options, command: undefined };
@@ -945,11 +958,23 @@ export class Runner {
     const auditFloorBefore = session.sessionId
       ? lastAuditSequence(this.configDir, session.sessionId)
       : 0;
-    const args = ['run', '-m', this.options.model, '--format', 'json'];
-    if (this.options.variant) args.push('--variant', this.options.variant);
-    if (session.sessionId) args.push('--session', session.sessionId);
-    if (prompt) args.push(prompt);
-    const result = await this.hostStep(label, session.workspace, args);
+    let result;
+    if (options.command) {
+      result = await this.hostCommandTransport(
+        session,
+        label,
+        options.command,
+        prompt,
+        auditFloorBefore,
+        options,
+      );
+    } else {
+      const args = ['run', '-m', this.options.model, '--format', 'json'];
+      if (this.options.variant) args.push('--variant', this.options.variant);
+      if (session.sessionId) args.push('--session', session.sessionId);
+      if (prompt) args.push(prompt);
+      result = await this.hostStep(label, session.workspace, args);
+    }
     assertHostCallOk(result, label);
     const observed = result.sessionIds.at(-1);
     if (session.sessionId && observed && observed !== session.sessionId) {
@@ -977,7 +1002,9 @@ export class Runner {
       return result;
     }
 
-    const trust = transcriptTrust(result.stdout);
+    const trust = result.hostCommandTransport
+      ? { readable: true, framingLosses: [], unreadable: [] }
+      : transcriptTrust(result.stdout);
     if (!trust.readable) {
       session.transcriptWarnings = session.transcriptWarnings ?? [];
       session.transcriptWarnings.push({ step: label, ...trust });

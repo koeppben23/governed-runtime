@@ -1298,29 +1298,43 @@ describe('Java Task Manager demo contract', () => {
       runner.readAuditEventsSince = () => [
         {
           event: 'tool_call:flowguard_plan',
-          code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+          hostSessionId: 'ses_parent',
+          detail: {
+            tool: 'flowguard_plan',
+            success: false,
+            errorCode: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+          },
         },
       ];
       const session = { workspace: root, terminal: 'COMPLETE', sessionId: 'ses_parent' };
-      await expect(
-        runner.hostCommandTurn(session, 'approve', 'approve', 'x', {
-          expectedDenial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
-          expectedDenialTool: 'flowguard_decision',
-        }),
-      ).rejects.toThrow(/expected denial/);
+      const wrong = await runner.hostCommandTransport(session, 'approve', 'approve', 'x', 0);
+      expect(() =>
+        assertExpectedDenial(
+          wrong.stdout,
+          'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+          'flowguard_decision',
+        ),
+      ).toThrow(/observed tool flowguard_plan/);
 
       runner.readAuditEventsSince = () => [
         {
           event: 'tool_call:flowguard_decision',
-          code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+          hostSessionId: 'ses_parent',
+          detail: {
+            tool: 'flowguard_decision',
+            success: false,
+            errorCode: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+          },
         },
       ];
-      await expect(
-        runner.hostCommandTurn(session, 'approve', 'approve', 'x', {
-          expectedDenial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
-          expectedDenialTool: 'flowguard_decision',
-        }),
-      ).resolves.toMatchObject({ code: 0 });
+      const right = await runner.hostCommandTransport(session, 'approve', 'approve', 'x', 0);
+      expect(() =>
+        assertExpectedDenial(
+          right.stdout,
+          'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+          'flowguard_decision',
+        ),
+      ).not.toThrow();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

@@ -241,8 +241,7 @@ describe('live claim control host integration', () => {
     expect(controls).toContain("hostCommand(session, `${name}-07-export`, 'export'");
     expect(controls).toContain('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
     expect(controls).toContain('FLOWGUARD_CLAIM_CASES');
-    expect(controls).toContain('lastAuditSequence');
-    expect(controls).toContain('readAuditEventsSince');
+    expect(controls).toContain("expectedDenialTool: 'flowguard_decision'");
     expect(controls).not.toContain('denialText');
     expect(controls).not.toContain("'--command'");
   });

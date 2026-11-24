@@ -30,7 +30,6 @@ import {
   Runner,
   enableRawArchiveInRepoConfig,
   finalizeControlRecord,
-  lastAuditSequence,
   parseArgs,
   sha256,
   verifyChecksumSidecar,
@@ -242,6 +241,8 @@ async function runCase(runner, name, workspace, negative) {
   const record = { name, negative, workspace, result: RESULT.FAILED };
   const session = { workspace, terminal: 'COMPLETE' };
   const savedSkip = process.env[SKIP_ASSERTION_ENV];
+  if (negative) process.env[SKIP_ASSERTION_ENV] = '1';
+  else delete process.env[SKIP_ASSERTION_ENV];
   try {
     await runner.turn(session, `${name}-01-start`, '/start');
     const installed = runner.installedBuild(workspace);
@@ -276,8 +277,6 @@ async function runCase(runner, name, workspace, negative) {
     await runner.approve(session, `${name}-04-approve-plan`, 'PLAN_REVIEW');
     assertRetainedCriticalClaim(runner.requireBoundState(session).state);
 
-    delete process.env[SKIP_ASSERTION_ENV];
-    if (negative) process.env[SKIP_ASSERTION_ENV] = '1';
     await runner.turn(
       session,
       `${name}-05-implement`,
@@ -291,11 +290,16 @@ async function runCase(runner, name, workspace, negative) {
 
     if (negative) {
       const before = runner.requireBoundState(session).state;
-      const auditFloor = lastAuditSequence(runner.configDir, session.sessionId);
-      await runner.hostCommand(session, `${name}-06-approve`, 'approve', 'EVIDENCE_REVIEW', {
-        allowNon204: true,
-        expectPhaseChange: false,
-      });
+      await runner.turn(
+        session,
+        `${name}-06-approve`,
+        'Demo approval through the real command boundary.',
+        {
+          command: 'approve',
+          expectedDenial: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
+          expectedDenialTool: 'flowguard_decision',
+        },
+      );
       const after = runner.requireBoundState(session).state;
       assertClaimEvidence(after, { negative: true });
       if (after.phase !== 'EVIDENCE_REVIEW') {
@@ -306,18 +310,6 @@ async function runCase(runner, name, workspace, negative) {
         JSON.stringify(before.reviewDecision ?? null)
       ) {
         throw new Error('the blocked approval changed the persisted review decision');
-      }
-      const denial = runner
-        .readAuditEventsSince(session, auditFloor)
-        .some(
-          (event) =>
-            event.event === 'tool_call:flowguard_decision' &&
-            JSON.stringify(event).includes('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN'),
-        );
-      if (!denial) {
-        throw new Error(
-          'the current approval attempt did not record PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
-        );
       }
       const absence = assertNoCompletionPackage(runner, session);
       Object.assign(record, evidence, {
@@ -374,6 +366,11 @@ export function selectedClaimCases() {
   const known = new Set(['claim-positive', 'claim-negative']);
   if (requested.length === 0) {
     throw new Error('FLOWGUARD_CLAIM_CASES must select at least one claim control');
+  }
+  if (requested.length > 1) {
+    throw new Error(
+      'FLOWGUARD_CLAIM_CASES must select one claim control per invocation so the service environment is bound before startup',
+    );
   }
   for (const value of requested) {
     if (!known.has(value)) throw new Error(`unknown FLOWGUARD_CLAIM_CASES value: ${value}`);
