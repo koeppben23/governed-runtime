@@ -170,6 +170,22 @@ describe('documentation/review-capabilities-doc-drift', () => {
       expect(op).toMatch(/derived/i);
     });
 
+    it('one-pager uses the current native reviewer mechanism', () => {
+      const op = readDoc('PRODUCT_ONE_PAGER.md');
+      expect(op).toContain('visible native `flowguard-reviewer` child session');
+      expect(op).toContain('same-child JSON serialization window');
+      expect(op).toContain('no `format` or forced tool is required');
+      expect(op).not.toMatch(/hidden\s+`?flowguard-reviewer/i);
+      expect(op).not.toContain('json_schema');
+    });
+
+    it('one-pager positions ProofGraph as a distinct capability', () => {
+      const op = readDoc('PRODUCT_ONE_PAGER.md');
+      expect(op).toContain('Evidence & ProofGraph');
+      expect(op).toContain('`PROVEN`');
+      expect(op).not.toContain('Immutable decision receipts');
+    });
+
     it('product-identity states session-state.json is SSOT', () => {
       const pi = readDoc('PRODUCT_IDENTITY.md');
       expect(pi).toContain('session-state.json');

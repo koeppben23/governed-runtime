@@ -14,7 +14,7 @@ Learn how to install and configure FlowGuard.
 
 ### [Quick Start](./quick-start.md)
 
-Get up and running in 5 minutes.
+Follow the first governed OpenCode session walkthrough.
 
 ## User Guide
 

@@ -24,8 +24,8 @@ peer review.
 [Demo walkthrough](demos/java-task-manager/DEMO_SCRIPT.md) ·
 [Evidence verification](demos/java-task-manager/EVIDENCE_PACKAGE.md)
 
-This is a reading path through the demo documentation. It is not an executable
-quick start or a claim that every installed Desktop acceptance gate is complete.
+This is a reading path through the demo documentation, not an executable quick
+start.
 
 ## Core Capabilities
 
@@ -129,7 +129,7 @@ evidence. It is not completed V2 acceptance. Installed Desktop acceptance is
 tracked separately. Three governed flows are available after `/start`;
 policy-authorized autonomy and reduced ceremony are separate paths.
 
-![FlowGuard's intended human-gated ticket lifecycle: independently reviewed plan, approval, baseline validation, implementation, fresh verification, independent review, evidence approval and persisted export. Installed Desktop product acceptance is tracked separately; R4 is a documented NOT_SUPPORTED trusted-plugin limitation.](./docs/assets/development-lifecycle.svg)
+![FlowGuard's intended human-gated ticket lifecycle: independent plan review, approval, baseline validation, implementation, fresh verification, independent implementation review, evidence approval and persisted export.](./docs/assets/development-lifecycle.svg)
 
 ### Ticket flow
 
@@ -155,12 +155,11 @@ policy-authorized autonomy and reduced ceremony are separate paths.
 2. `/review` — plain peer review report (no external content)
    OR `/review prNumber=42` / `branch=feature` / `url=https://...` /
    `text="diff"` → blocked with `requiredReviewAttestation` (obligation UUID)
-3. When plugin orchestration is active on a host with a verified native review
-   transport, FlowGuard authorizes the reviewer subagent and binds structured
-   findings to the obligation. OpenCode V2 connects reviewer dispatch and
-   independent-Child authority; current native completion/capture acceptance is
-   tracked in the host-probe records, so free-form reviewer text is never
-   accepted as a verdict.
+3. With active plugin orchestration and verified native review transport,
+   FlowGuard authorizes an independent reviewer and binds its structured findings
+   to the review obligation. Free-form reviewer text is never accepted as a
+   verdict. See [Independent Review](./docs/independent-review.md) for
+   host-specific guarantees and acceptance status.
 4. `/review prNumber=42 reviewFindings=<complete object>` →
    PEER_REVIEW_COMPLETE, receives structured `reviewCard`
 
@@ -193,6 +192,13 @@ subagent attestation, and the `/review` evidence model.
 ## Current Release Status
 
 > **Version:** 2.0.0-tp.2 | TypeScript | Host-aware | OpenCode synchronous enforcement path
+
+| Status                           | Meaning                                                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Released Technical Preview**   | `2.0.0-tp.2`, published 2026-10-04 as a GitHub Release artifact. Later `develop` changes are not part of that artifact.               |
+| **Current Development Snapshot** | The `develop` branch contains changes after the published artifact and is not a new release.                                          |
+| **Installed Host Acceptance**    | Version- and host-bound capabilities only; tracked in #1196 and the host-probe records. Command availability alone is not acceptance. |
+| **Production Readiness**         | Not complete. The published artifact is a technical preview, not a GA release.                                                        |
 
 > **OpenCode V2 status:** the V2-only port (#1169/#1190) and the native Desktop
 > Workbench (#1207) are merged on `develop`. Remaining #1196 product and

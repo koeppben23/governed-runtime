@@ -130,6 +130,21 @@ describe('README positioning contract', () => {
     expect(how).toMatch(/persisted export/i);
     expect(how).toMatch(/not completed V2\s+acceptance/i);
     expect(how).toMatch(/Installed Desktop acceptance is\s+tracked separately/i);
+
+    const altText = README.split('\n').find(
+      (line) => line.startsWith('![') && line.includes('development-lifecycle.svg'),
+    );
+    expect(altText, 'lifecycle image must keep descriptive alt text').toBeTruthy();
+    expect(altText).toContain('intended');
+    expect(altText).toContain('independent implementation review');
+    expect(altText).toContain('persisted export');
+  });
+
+  it('keeps the peer-review host preconditions and canonical reference', () => {
+    const how = section('How FlowGuard Works');
+    expect(how).toMatch(/plugin orchestration/i);
+    expect(how).toMatch(/verified native review transport/i);
+    expect(how).toContain('[Independent Review](./docs/independent-review.md)');
   });
 
   it('preserves release, host, and policy boundaries', () => {
@@ -149,6 +164,10 @@ describe('README positioning contract', () => {
       'opencode run',
       'offline-capable',
       'jwksUri',
+      'Released Technical Preview',
+      'Current Development Snapshot',
+      'Installed Host Acceptance',
+      'Production Readiness',
       `**Version:** ${VERSION}`,
     ]) {
       expect(status, `Current Release Status must retain ${marker}`).toContain(marker);
@@ -167,5 +186,10 @@ describe('README positioning contract', () => {
     expect(install).toContain('checksums.sha256');
     expect(install).toMatch(/same directory/i);
     expect(install).toMatch(/checksum evidence blocks installation/i);
+  });
+
+  it('does not publish unmeasured onboarding time promises', () => {
+    const docsIndex = readFileSync(join(REPO_ROOT, 'docs/index.md'), 'utf8');
+    expect(`${README}\n${docsIndex}`).not.toMatch(/5[- ]minute/i);
   });
 });
