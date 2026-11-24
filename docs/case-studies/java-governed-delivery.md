@@ -98,12 +98,15 @@ authenticity.
 - [integrity-controls.json](./java-governed-delivery/evidence/integrity-controls.json)
 - [package-manifest.json](./java-governed-delivery/evidence/package-manifest.json)
 
-The synthetic raw package is **withheld from this draft** pending explicit
-owner approval after a recorded sensitivity review. The manifest records its
-SHA-256 (`2b52c7690f7591e8cf39dbce38c3a88a8b29a843f1a5cc61669d00aceae9d259`)
-and the sidecar hash. The integrity controls were executed against a local copy;
-publication is a separate approval decision. Offline verification proves
-internal consistency, not origin or a trusted external anchor.
+The synthetic raw package is **withheld from the current draft tree** pending
+explicit owner approval after a recorded sensitivity review. The manifest
+records its SHA-256
+(`2b52c7690f7591e8cf39dbce38c3a88a8b29a843f1a5cc61669d00aceae9d259`), the
+sidecar hash, and the earlier public draft commit that contained it. Withholding
+now is not a confidentiality guarantee for that earlier commit. The integrity
+controls were executed against a local copy; publication is a separate approval
+decision. Offline verification proves internal consistency, not origin or a
+trusted external anchor.
 
 ## Reproduction
 

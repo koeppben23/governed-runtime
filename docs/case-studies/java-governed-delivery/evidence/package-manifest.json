@@ -11,5 +11,10 @@
   "publication": {
     "status": "withheld_pending_explicit_owner_approval",
     "reason": "The synthetic raw package is not published in this draft. Publication requires an explicit owner approval after the recorded sensitivity review."
+  },
+  "history": {
+    "previouslyPresentInDraftCommit": "c545d4eb6596042d2dd85fcaf4945375d7c12e18",
+    "removedInCommit": "30e725eb5c8f081275db6808342a02023c9b8b56",
+    "note": "The package was publicly visible in the earlier draft commit. Withholding in the current tree is not a confidentiality guarantee for that earlier commit."
   }
 }
