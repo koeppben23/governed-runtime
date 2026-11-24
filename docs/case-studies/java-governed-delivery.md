@@ -6,14 +6,14 @@ not.
 
 ## Status
 
-| Control                                        | Result                     | Evidence                                                                             |
-| ---------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------ |
-| Red-green bug reproduction                     | **PASS**                   | [red-green.txt](./java-governed-delivery/evidence/red-green.txt)                     |
-| Positive control — governed delivery           | **PASS**                   | [reference-evidence.json](./java-governed-delivery/evidence/reference-evidence.json) |
-| Negative control — missing evidence            | **BLOCKED / NOT_VERIFIED** | Live plan did not finish; no exact denial was observed                               |
-| Integrity control A — package checksum         | **PASS**                   | [integrity-controls.json](./java-governed-delivery/evidence/integrity-controls.json) |
-| Integrity control B — internal artifact digest | **PASS**                   | [integrity-controls.json](./java-governed-delivery/evidence/integrity-controls.json) |
-| Original package re-verification               | **PASS**                   | `exit 0`, `verified: true`                                                           |
+| Control                                        | Observed result            | Final acceptance                                       | Evidence                                                                             |
+| ---------------------------------------------- | -------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Red-green bug reproduction                     | **PASS**                   | Existing evidence                                      | [red-green.txt](./java-governed-delivery/evidence/red-green.txt)                     |
+| Positive control — governed delivery           | **PASS**                   | **Repeat required** on the separately accepted harness | [reference-evidence.json](./java-governed-delivery/evidence/reference-evidence.json) |
+| Negative control — missing evidence            | **BLOCKED / NOT_VERIFIED** | Open                                                   | Live plan did not finish; no exact denial was observed                               |
+| Integrity control A — package checksum         | **PASS**                   | Historical package; repeat on any new export           | [integrity-controls.json](./java-governed-delivery/evidence/integrity-controls.json) |
+| Integrity control B — internal artifact digest | **PASS**                   | Historical package; repeat on any new export           | [integrity-controls.json](./java-governed-delivery/evidence/integrity-controls.json) |
+| Original package re-verification               | **PASS**                   | Historical package; repeat on any new export           | `exit 0`, `verified: true`                                                           |
 
 **Overall: PARTIAL.** The positive and integrity controls are demonstrated. The
 negative control remains `NOT_VERIFIED` and the case study must not be presented
