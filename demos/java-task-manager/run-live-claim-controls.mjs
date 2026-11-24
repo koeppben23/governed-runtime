@@ -290,22 +290,27 @@ async function runCase(runner, name, workspace, negative) {
 
     if (negative) {
       const before = runner.requireBoundState(session).state;
-      await runner.turn(
+      const approval = await runner.hostCommand(
         session,
         `${name}-06-approve`,
-        'Demo approval through the real command boundary.',
-        {
-          command: 'approve',
-          expectedDenial: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
-        },
+        'approve',
+        'EVIDENCE_REVIEW',
+        { allowNon204: true, expectPhaseChange: false },
       );
       const after = runner.requireBoundState(session).state;
       assertClaimEvidence(after, { negative: true });
+      if (after.phase !== 'EVIDENCE_REVIEW') {
+        throw new Error(`the blocked approval left EVIDENCE_REVIEW: ${String(after.phase)}`);
+      }
       if (
         JSON.stringify(after.reviewDecision ?? null) !==
         JSON.stringify(before.reviewDecision ?? null)
       ) {
         throw new Error('the blocked approval changed the persisted review decision');
+      }
+      const denialText = `${approval.body}\n${runner.readAudit(session)}`;
+      if (!denialText.includes('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN')) {
+        throw new Error('the blocked approval did not record PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
       }
       const absence = assertNoCompletionPackage(runner, session);
       Object.assign(record, evidence, {
@@ -317,7 +322,7 @@ async function runCase(runner, name, workspace, negative) {
       });
     } else {
       await runner.approve(session, `${name}-06-approve`, 'EVIDENCE_REVIEW');
-      await runner.turn(session, `${name}-07-export`, undefined, { command: 'export' });
+      await runner.hostCommand(session, `${name}-07-export`, 'export', 'EXPORT_READY');
       const final = runner.requireBoundState(session).state;
       if (final.phase !== 'COMPLETE') throw new Error(`expected COMPLETE, observed ${final.phase}`);
       assertRetainedCriticalClaim(final);
@@ -350,6 +355,18 @@ async function runCase(runner, name, workspace, negative) {
     else process.env[SKIP_ASSERTION_ENV] = savedSkip;
   }
   return record;
+}
+
+function selectedClaimCases() {
+  const requested = (process.env.FLOWGUARD_CLAIM_CASES ?? 'claim-positive,claim-negative')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const known = new Set(['claim-positive', 'claim-negative']);
+  for (const value of requested) {
+    if (!known.has(value)) throw new Error(`unknown FLOWGUARD_CLAIM_CASES value: ${value}`);
+  }
+  return requested;
 }
 
 async function main() {
@@ -396,7 +413,7 @@ async function main() {
         tarball,
         tarballSha256: sha256(tarball),
         productSha: options.productSha ?? null,
-        flows: ['claim-positive', 'claim-negative'],
+        flows: selectedClaimCases(),
         claim: criticalClaimDeclaration(),
         positiveAssertion: POSITIVE_ASSERTION,
         adversarialAssertion: ADVERSARIAL_ASSERTION,
@@ -422,6 +439,7 @@ async function main() {
       stdio: 'inherit',
     },
   );
+  const selected = selectedClaimCases();
   const cases = [
     {
       name: 'claim-positive',
@@ -433,7 +451,7 @@ async function main() {
       negative: true,
       workspace: path.join(options.root, 'workspaces', 'claim-negative'),
     },
-  ];
+  ].filter((item) => selected.includes(item.name));
   for (const item of cases) {
     fs.cpSync(path.join(options.root, 'workspaces', 'java-task-manager'), item.workspace, {
       recursive: true,

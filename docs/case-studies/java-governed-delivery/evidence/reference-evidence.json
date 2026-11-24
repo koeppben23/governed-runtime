@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "java-reference-evidence.v1",
+  "generatedAt": "2026-11-24T19:45:00.000Z",
+  "product": {
+    "commit": "7a01f4c209b6875aad3fc65947ac6b7b78a7dc9d",
+    "version": "2.0.0-tp.2",
+    "tarballSha256": "49c178ed7e84f2f4e7a9c4bcbbe8d07e67d754438fef4d9b4b75495ad44fa77f",
+    "tarballBuiltAt": "2026-11-24T14:41:09.075Z",
+    "buildShaSource": "git"
+  },
+  "environment": {
+    "host": "OpenCode CLI 2.2.5",
+    "model": "deepseek/deepseek-flash",
+    "thinking": "disabled",
+    "reasoningEffort": "none",
+    "node": "22.22.2",
+    "npm": "10.9.11",
+    "java": "21.0.13.1",
+    "maven": "3.9.5",
+    "os": "macOS 27.2.1 arm64"
+  },
+  "policy": {
+    "mode": "team",
+    "effectiveGateBehavior": "human_gated",
+    "hash": "ebe10c074fe6b1d359e76bb63b8ed08a501fc40426f04b6bc664660953b8a4ce",
+    "hashVersion": "policy-digest.v4"
+  },
+  "positiveControl": {
+    "result": "PASS",
+    "livePhase": "COMPLETE",
+    "archivedPhase": "EXPORT_READY",
+    "hostSessionId": "ses_df179688dffektuwvOOVINJBIc",
+    "flowguardSessionId": "a6cbcf1d-864c-4061-968e-f6aa94be5983",
+    "reviewerSessionIds": ["ses_df1769946ffeIgZPp6JLKs1fax", "ses_df1745c41ffeYlNCsZzy3FYweP"],
+    "planApprovalCertificateId": "d29e4453-7630-4571-8d29-1744ea9ff4e8",
+    "planDigest": "af5feb15f5a7ec1af0eb036093701817588093ac15729c1571c759df6397a468",
+    "implementationDigest": "0e4dfcfa62c5cb695715082e1974a3072d437c386e209577d543f3e4c2417663",
+    "implementationDiffDigest": "d48ea049e1cd6a67de3f6f1b161a11428bf534cbb87f9ab6ebea2063b29061bd",
+    "exportPackageSha256": "2b52c7690f7591e8cf39dbce38c3a88a8b29a843f1a5cc61669d00aceae9d259",
+    "offlineVerifierExitCode": 0,
+    "verifierResult": "verified"
+  },
+  "redGreen": {
+    "result": "PASS",
+    "baseline": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    },
+    "red": {
+      "testExitCode": 1,
+      "failure": "NullPointerException: existing is null",
+      "httpStatus": 500
+    },
+    "green": {
+      "boundValidationTestsPassed": 16,
+      "failed": 0,
+      "errored": 0,
+      "skipped": 0
+    }
+  },
+  "negativeControl": {
+    "result": "BLOCKED",
+    "reason": "The claim-negative live plan did not finish within 40 minutes and the run was stopped. No PROOFGRAPH_CRITICAL_FACTS_UNPROVEN denial was observed in this reference run.",
+    "status": "NOT_VERIFIED",
+    "priorRelatedEvidence": "../../../demos/java-task-manager/PROOFGRAPH_LIVE_CONTROLS.md"
+  },
+  "integrityControls": {
+    "result": "PASS",
+    "original": {
+      "verified": true,
+      "exitCode": 0
+    },
+    "manipulationA": {
+      "finding": "archive_checksum_mismatch",
+      "exitCode": 1
+    },
+    "manipulationB": {
+      "finding": "file_digest_mismatch",
+      "exitCode": 1
+    },
+    "originalAfterManipulations": {
+      "verified": true,
+      "exitCode": 0
+    }
+  },
+  "limits": [
+    "The negative control is NOT_VERIFIED in this reference run.",
+    "Offline verification establishes internal consistency, not origin authenticity or external publication binding.",
+    "The included package is a raw synthetic export; it is not a redacted sharing archive.",
+    "The runs were executed with an isolated HOME and service port to avoid the running Desktop host."
+  ]
+}

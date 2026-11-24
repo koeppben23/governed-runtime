@@ -223,6 +223,27 @@ describe('critical claim live-control oracles', () => {
   });
 });
 
+describe('live claim control host integration', () => {
+  it('uses the host command boundary and the exact ProofGraph denial oracle', async () => {
+    const runner = await fs.readFile(
+      new URL('../../../demos/java-task-manager/run-live-matrix.mjs', import.meta.url),
+      'utf8',
+    );
+    expect(runner).toContain('/api/session/');
+    expect(runner).toContain('readAudit(session)');
+    expect(runner).toContain('allowNon204');
+
+    const controls = await fs.readFile(
+      new URL('../../../demos/java-task-manager/run-live-claim-controls.mjs', import.meta.url),
+      'utf8',
+    );
+    expect(controls).toContain("hostCommand(session, `${name}-07-export`, 'export'");
+    expect(controls).toContain('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
+    expect(controls).toContain('FLOWGUARD_CLAIM_CASES');
+    expect(controls).not.toContain("'--command'");
+  });
+});
+
 describe('live claim control PASS contract', () => {
   const session = { sessionId: 'ses_live_claim_01', workspace: '/tmp/live-claim' };
 

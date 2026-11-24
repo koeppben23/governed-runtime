@@ -119,7 +119,7 @@ describe('Java Task Manager demo contract', () => {
     });
 
     // Explicit host context and the isolated config environment.
-    expect(runner).toContain("'--dir'");
+    expect(runner).toContain('cwd: workspace');
     expect(runner).toContain('OPENCODE_CONFIG_DIR');
 
     // The README points operators at the runner instead of ad-hoc drivers.
@@ -939,6 +939,7 @@ describe('Java Task Manager demo contract', () => {
         durationMs: 0,
         sessionIds: [],
       });
+      runner.hostCommand = async () => ({ status: 204, body: '' });
       runner.requireBoundState = () => ({
         state: {
           phase: 'PLAN_REVIEW',
@@ -1071,6 +1072,7 @@ describe('Java Task Manager demo contract', () => {
         durationMs: 0,
         sessionIds: [],
       });
+      runner.hostCommand = async () => ({ status: 204, body: '' });
       runner.requireBoundState = () => ({
         state: {
           phase: 'PLAN_REVIEW',

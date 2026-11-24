@@ -5,6 +5,11 @@ presentation and repeatability scenario. The demo **contract** is enforced in
 the unit suite by `src/documentation/__tests__/demo-contract.test.ts`, which
 runs with the unit test suite (`npm run test:unit`).
 
+See the
+[Java reference evidence case study](../../docs/case-studies/java-governed-delivery.md)
+for the observed red-green, positive, and integrity controls and the explicitly
+blocked negative control.
+
 ## What This Demo Proves
 
 The Java bug is deliberately small. This demo does **not** prove that an LLM
@@ -231,7 +236,7 @@ toolchain pins from the canonical repository files (`.sdk-baselines/opencode/cli
 and `.node-version`), verifies the tarball against its `checksums.sha256`
 sidecar before installing, prepares fresh workspaces, opts the repository
 config into raw auditor archives next to the isolated global grant, runs every
-step through real headless `opencode run` processes with an explicit `--dir`,
+step through real headless `opencode run` processes from an explicit working directory,
 verifies the persisted host/worktree binding and each package, exports the
 parent and reviewer-child host transcripts directly to files, validates JSON,
 session/worktree/parent identity and message/part structure before registering

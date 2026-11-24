@@ -10,7 +10,7 @@
  * - toolchain pins are READ from the canonical repository files
  *   (`.sdk-baselines/opencode/cli-candidate.json` and `.node-version`); no version is
  *   hardcoded here;
- * - every command runs with an explicit `--dir` and a matching `PWD`; the
+ * - every command runs with an explicit working directory and matching `PWD`; the
  *   persisted host-session and worktree binding are verified before a flow is
  *   accepted;
  * - a flow stops at the first unexpected host failure, tool-level block,
@@ -720,6 +720,89 @@ export class Runner {
     fs.appendFileSync(this.logFile, `${line}\n`);
   }
 
+  async hostCommand(
+    session,
+    label,
+    name,
+    fromPhase,
+    { allowNon204 = false, expectPhaseChange = true } = {},
+  ) {
+    if (!session.sessionId) throw new Error(`${label}: host command requires a session`);
+    const serviceFile = path.join(this.configDir, 'service.json');
+    const service = JSON.parse(fs.readFileSync(serviceFile, 'utf8'));
+    if (!Number.isInteger(service.port)) {
+      throw new Error(`${label}: isolated service config has no port`);
+    }
+    const evidenceFile = path.join(this.evidenceDir, `${label}.jsonl`);
+    if (fs.existsSync(evidenceFile)) {
+      throw new Error(`evidence file already exists for ${label}; use a fresh --root`);
+    }
+    const auth =
+      typeof service.password === 'string'
+        ? `Basic ${Buffer.from(`opencode:${service.password}`).toString('base64')}`
+        : undefined;
+    const response = await fetch(
+      `http://localhost:${service.port}/api/session/${encodeURIComponent(session.sessionId)}/command`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-opencode-directory': session.workspace,
+          ...(auth ? { authorization: auth } : {}),
+        },
+        body: JSON.stringify({ name, text: '' }),
+      },
+    );
+    const body = response.status === 204 ? '' : await response.text();
+    fs.writeFileSync(
+      evidenceFile,
+      `${JSON.stringify({
+        type: 'host_command',
+        timestamp: Date.now(),
+        sessionID: session.sessionId,
+        workspace: session.workspace,
+        command: name,
+        status: response.status,
+        body,
+      })}\n`,
+    );
+    if (response.status !== 204) {
+      if (!allowNon204) {
+        throw new Error(`${label}: host command ${name} failed (${response.status}): ${body}`);
+      }
+      this.log(`${label}: host command ${name} returned ${response.status}`);
+      this.turnObservations.push({
+        label,
+        exitCode: response.status,
+        durationMs: 0,
+        denialCodes: [],
+        denialOccurrences: [],
+      });
+      return { status: response.status, body };
+    }
+    this.log(`${label}: host command ${name} accepted`);
+    this.turnObservations.push({
+      label,
+      exitCode: 0,
+      durationMs: 0,
+      denialCodes: [],
+      denialOccurrences: [],
+    });
+    if (!expectPhaseChange) return { status: response.status, body };
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      if (this.currentPhase(session) !== fromPhase) return { status: response.status, body };
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error(`${label}: host command ${name} did not leave ${fromPhase}`);
+  }
+
+  readAudit(session) {
+    const { sessionDir } = this.requireBoundState(session);
+    const file = path.join(sessionDir, 'audit.jsonl');
+    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  }
+
   async hostStep(label, workspace, args, timeoutMs = 30 * 60_000) {
     const stdoutPath = path.join(this.evidenceDir, `${label}.jsonl`);
     const stderrPath = path.join(this.evidenceDir, `${label}.err`);
@@ -730,7 +813,11 @@ export class Runner {
     const stderrFd = fs.openSync(stderrPath, 'w');
     const result = await run('opencode', args, {
       cwd: workspace,
-      env: { OPENCODE_CONFIG_DIR: this.configDir, OPENCODE_DISABLE_AUTOUPDATE: '1' },
+      env: {
+        ...process.env,
+        OPENCODE_CONFIG_DIR: this.configDir,
+        OPENCODE_DISABLE_AUTOUPDATE: '1',
+      },
       stdout: stdoutFd,
       stderr: stderrFd,
       timeoutMs,
@@ -765,10 +852,9 @@ export class Runner {
     const auditFloorBefore = session.sessionId
       ? lastAuditSequence(this.configDir, session.sessionId)
       : 0;
-    const args = ['run', '--dir', session.workspace, '-m', this.options.model, '--format', 'json'];
+    const args = ['run', '-m', this.options.model, '--format', 'json'];
     if (this.options.variant) args.push('--variant', this.options.variant);
     if (session.sessionId) args.push('--session', session.sessionId);
-    if (options.command) args.push('--command', options.command);
     if (prompt) args.push(prompt);
     const result = await this.hostStep(label, session.workspace, args);
     assertHostCallOk(result, label);
@@ -1298,9 +1384,7 @@ export class Runner {
       );
       session.pendingPlanReviewCorrection = null;
     }
-    await this.turn(session, label, 'Demo approval through the real command boundary.', {
-      command: 'approve',
-    });
+    await this.hostCommand(session, label, 'approve', expectedPhase);
   }
 
   /**

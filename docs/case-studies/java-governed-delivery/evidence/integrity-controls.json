@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "java-reference-integrity-controls.v1",
+  "package": {
+    "file": "export-ses_df179688dffektuwvOOVINJBIc.tar.gz",
+    "sha256": "2b52c7690f7591e8cf39dbce38c3a88a8b29a843f1a5cc61669d00aceae9d259",
+    "sessionId": "ses_df179688dffektuwvOOVINJBIc",
+    "flow": "development",
+    "archivedPhase": "EXPORT_READY"
+  },
+  "original": {
+    "verified": true,
+    "exitCode": 0,
+    "findings": []
+  },
+  "manipulationA": {
+    "description": "Package bytes changed while the original sidecar digest was retained.",
+    "sha256": "e92e4c59f375ad75180ddac9cb1ebf3feca64729a9f8276431640eb1958a3361",
+    "verified": false,
+    "exitCode": 1,
+    "findings": ["archive_checksum_mismatch"]
+  },
+  "manipulationB": {
+    "description": "state/session-state.json changed, the package was repacked, and only the outer checksum sidecar was recomputed; the manifest was left unchanged.",
+    "sha256": "1e976552eefc46459690808630d8a6d821ac97bc418dc809ea1630337da41697",
+    "verified": false,
+    "exitCode": 1,
+    "findings": ["file_digest_mismatch"]
+  },
+  "originalAfterManipulations": {
+    "verified": true,
+    "exitCode": 0,
+    "findings": []
+  },
+  "limits": [
+    "This demonstrates detection of the two specified manipulations.",
+    "It does not demonstrate protection against an attacker who can rewrite the package, manifest, and every checksum consistently.",
+    "Offline verification establishes internal consistency of the package, not origin authenticity or external publication binding."
+  ]
+}

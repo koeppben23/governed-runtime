@@ -22,7 +22,8 @@ peer review.
 
 [Demo overview](demos/java-task-manager/README.md) ·
 [Demo walkthrough](demos/java-task-manager/DEMO_SCRIPT.md) ·
-[Evidence verification](demos/java-task-manager/EVIDENCE_PACKAGE.md)
+[Evidence verification](demos/java-task-manager/EVIDENCE_PACKAGE.md) ·
+[Reference evidence](docs/case-studies/java-governed-delivery.md)
 
 This is a reading path through the demo documentation, not an executable quick
 start.
