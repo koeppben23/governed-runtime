@@ -3,7 +3,8 @@
  * @description Structural guards for public README positioning and discoverability.
  *
  * These tests protect the information architecture, verifiable links, and
- * technical boundaries. They intentionally do not freeze marketing prose.
+ * security-relevant guardrails. They are not a semantic proof of every
+ * statement and intentionally avoid freezing editorial prose.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -68,11 +69,54 @@ describe('README positioning contract', () => {
     }
 
     expect(capabilities).toContain('`PROVEN`');
-    expect(capabilities).toMatch(/does not mean the change is\s+free of defects/i);
-    expect(capabilities).toMatch(
-      /Integrity\s+verification is distinct from cryptographic identity attestation/i,
-    );
-    expect(capabilities).toMatch(/Human approval remains a separate, policy-bound control/i);
+    for (const uncertainty of [
+      '`UNPROVEN`',
+      '`CONTRADICTED`',
+      '`STALE`',
+      '`BLOCKED`',
+      '`NOT_VERIFIED`',
+    ]) {
+      expect(capabilities).toContain(uncertainty);
+    }
+    expect(capabilities.toLowerCase()).toContain('integrity');
+    expect(capabilities.toLowerCase()).toContain('identity attestation');
+    expect(capabilities.toLowerCase()).toContain('human approval');
+  });
+
+  it('keeps audit claims inside the documented trust model', () => {
+    const capabilities = section('Core Capabilities');
+    expect(capabilities.toLowerCase()).toContain('tamper detection');
+    expect(capabilities.toLowerCase()).toContain('trust model');
+    expect(capabilities).not.toMatch(/immutable\s+`?decision:/i);
+    expect(README).not.toContain('Immutable audit');
+    expect(README).toContain('Tamper-evident audit');
+  });
+
+  it('documents supported engineering environments and archive provenance', () => {
+    const capabilities = section('Core Capabilities');
+    expect(capabilities).toContain('Supported engineering environments');
+
+    for (const marker of [
+      'TypeScript',
+      'Java',
+      'Angular',
+      'Python',
+      'Rust',
+      'Go',
+      'PostgreSQL',
+      'MySQL',
+      'MariaDB',
+      'MongoDB',
+      'Redis',
+      'H2',
+      'SQLite',
+      'Oracle',
+      'SQL Server',
+      'sourceStateHash',
+      'redacted',
+    ]) {
+      expect(capabilities, `Core Capabilities must retain ${marker}`).toContain(marker);
+    }
   });
 
   it('keeps exactly one lifecycle diagram with its assurance caveat', () => {
@@ -97,6 +141,8 @@ describe('README positioning contract', () => {
       'platform-limited',
       '#1196',
       '`NOT_SUPPORTED`',
+      'tool-result bytes',
+      '[Platform Limitations](./docs/platform-limitations.md)',
       'trusted-plugin',
       '/hydrate',
       'flowguard run',
@@ -113,5 +159,13 @@ describe('README positioning contract', () => {
     }
     expect(README).toContain('Four policy modes');
     expect(README).toContain('Three governed flows');
+    expect(existsSync(join(REPO_ROOT, 'docs/platform-limitations.md'))).toBe(true);
+  });
+
+  it('requires the release checksum evidence next to the install tarball', () => {
+    const install = section('Installation & Licensing');
+    expect(install).toContain('checksums.sha256');
+    expect(install).toMatch(/same directory/i);
+    expect(install).toMatch(/checksum evidence blocks installation/i);
   });
 });

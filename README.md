@@ -100,15 +100,25 @@ free of defects. Residual uncertainty remains visible as `UNPROVEN`,
 **Problem:** Mutable logs and detached summaries cannot show which policy
 governed a session, what was decided, or whether records changed afterwards.
 
-**Mechanism:** Hash-chained, append-only audit events, immutable
-`decision:DEC-xxx` receipts, policy provenance, derived evidence artifacts with
-content digests, and offline-verifiable evidence packages. Integrity
-verification is distinct from cryptographic identity attestation; actor
-assurance is policy-bound.
+**Mechanism:** Hash-chained, append-only audit events, decision receipts,
+policy provenance, content-digested evidence artifacts, and offline-verifiable
+evidence packages. Tamper detection operates within the documented trust model;
+integrity verification is distinct from cryptographic identity attestation.
+Actor assurance is policy-bound.
 
 **Reference:** [Archive](./docs/archive.md),
 [Enterprise Readiness](./docs/enterprise-readiness.md), and
 [ProofGraph](./docs/proofgraph.md).
+
+### Supported engineering environments
+
+Profiles auto-detect TypeScript, Java, and Angular projects, and recognize
+root-level Python, Rust, and Go ecosystem signals plus database engines
+(PostgreSQL, MySQL, MariaDB, MongoDB, Redis, H2, SQLite, Oracle, SQL Server).
+Bounded code-surface analysis detects endpoints, authentication, data, and
+integration touchpoints. Archive exports are redacted by default, and derived
+evidence artifacts preserve `sourceStateHash` provenance. See
+[Profiles](./docs/profiles.md) and [Archive](./docs/archive.md).
 
 ## How FlowGuard Works
 
@@ -208,9 +218,12 @@ Codex are technical previews.
 
 - Installed Desktop product and accessibility acceptance is tracked in #1196;
   command availability alone is not acceptance.
-- R4 is a documented `NOT_SUPPORTED` host limitation under the trusted-plugin
-  model. Untrusted co-installed plugins are outside the supported boundary, and
-  a native command alone does not prove human identity.
+- OpenCode's public APIs do not currently guarantee the integrity of the final
+  tool-result bytes consumed by the reviewer (R4, `NOT_SUPPORTED`). See
+  [Platform Limitations](./docs/platform-limitations.md) for the trusted-plugin
+  boundary and host-specific guarantees. Untrusted co-installed plugins are
+  outside the supported boundary, and a native command alone does not prove
+  human identity.
 - `/start` activates governance; `/hydrate` does not.
 - The standalone CLI wrappers (`flowguard run`, `flowguard serve`) are
   experimental. For production headless workflows, use OpenCode directly
@@ -228,7 +241,7 @@ Codex are technical previews.
 
 FlowGuard is distributed as a pre-built proprietary release artifact via GitHub Releases.
 
-1. Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
+1. Download `flowguard-core-{version}.tgz` and `checksums.sha256` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases) and keep both files in the same directory. Missing or mismatched checksum evidence blocks installation before any artifacts are written.
 2. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
 3. OpenCode V2 watches plugin/config changes; its native reload action forces rediscovery. Installation does not activate governance. Verify the installed host with `flowguard doctor`; remaining installed Desktop/product and accessibility acceptance is tracked in #1196.
 4. Verify: `npx --package ./flowguard-core-{version}.tgz flowguard doctor`
@@ -294,7 +307,7 @@ support terms are documented in
 4. **Evidence-first** — every phase produces verifiable artifacts
 5. **LLM-agnostic** — works with any model
 6. **Zero-bridge** — same process, no subprocess shell-out
-7. **Immutable audit** — hash-chained, append-only, tamper-evident
+7. **Tamper-evident audit** — hash-chained, append-only, within the documented trust boundary
 8. **Policy-bound** — every decision traced to a policy version
 
 ### Canonical Import Paths
