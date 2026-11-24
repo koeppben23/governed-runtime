@@ -2173,7 +2173,9 @@ stop`, reviewer child reported it could not complete the falsification).
   and keep raw HTTP response bodies out of evidence and diagnostics. Bind the
   negative assertion skip at service startup and require a completed final
   transcript response and exclusive evidence writes. No runtime or
-  governance-authority changes.
+  governance-authority changes. Remove the obsolete V2
+  `FLOWGUARD_REVIEWER_EFFORT` export from the demo scripts and live-control
+  instructions; V2 selects the native model variant instead.
 - Align public documentation with current behavior: refine README demo copy and
   lifecycle alt text, retain the peer-review host preconditions, update the
   Product One Pager to the OpenCode V2-scoped native reviewer mechanism and the

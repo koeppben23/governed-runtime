@@ -29,20 +29,20 @@ case:
 
 ```bash
 OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","provider":{"deepseek":{"models":{"deepseek-flash":{"options":{"reasoningEffort":"none","thinking":{"type":"disabled"}}}}}}}' \
-FLOWGUARD_REVIEWER_EFFORT=none \
 FLOWGUARD_CLAIM_CASES=claim-positive \
 node demos/java-task-manager/run-live-claim-controls.mjs \
   --root /tmp/flowguard-claim-positive --model deepseek/deepseek-flash
 
 OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","provider":{"deepseek":{"models":{"deepseek-flash":{"options":{"reasoningEffort":"none","thinking":{"type":"disabled"}}}}}}}' \
-FLOWGUARD_REVIEWER_EFFORT=none \
 FLOWGUARD_CLAIM_CASES=claim-negative \
 node demos/java-task-manager/run-live-claim-controls.mjs \
   --root /tmp/flowguard-claim-negative --model deepseek/deepseek-flash
 ```
 
 Run these commands sequentially; the dedicated service requires an unused
-`127.0.0.1:49375`. Supply provider credentials in the environment. The runner
+`127.0.0.1:49375`. Supply provider credentials in the environment. OpenCode V2
+selects reasoning through the native model variant/configuration and rejects
+`FLOWGUARD_REVIEWER_EFFORT`; do not export it. The runner
 sets the JUnit skip in the negative case's actual service process and removes
 any inherited skip from the positive case. It will not reuse a running service.
 The negative approval is accepted only with a unique audit refusal and its
