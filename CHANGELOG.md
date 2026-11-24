@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   positive delivery evidence, integrity controls A/B, and an explicitly
   `NOT_VERIFIED` negative control. Publish the package manifest and hashes; the
   synthetic raw package remains withheld pending explicit owner approval after
-  the sensitivity review. No runtime or license change.
+  the sensitivity review. Harness hardening needed to reproduce the live run is
+  tracked separately. No runtime or license change.
 - Rework the root README for product positioning and discoverability: lead with
   the governance problem, add a read-only "Explore the Java demo" entry, group
   capabilities into deterministic governance, independent review, evidence and
@@ -2171,12 +2172,6 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
-- Fix the live Java demo harness for OpenCode 2.2.5: use the process working
-  directory instead of `--dir`, invoke decisions and export through the host
-  command API instead of `--command`, use `opencode session export`, accept the
-  current host export schema, propagate the adversarial skip environment, and
-  isolate the demo service port. This restores the documented live controls; no
-  runtime or license behavior changes.
 - Align public documentation with current behavior: refine README demo copy and
   lifecycle alt text, retain the peer-review host preconditions, update the
   Product One Pager to the OpenCode V2-scoped native reviewer mechanism and the

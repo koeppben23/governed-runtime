@@ -94,6 +94,7 @@
     "The negative control is NOT_VERIFIED in this reference run.",
     "Offline verification establishes internal consistency, not origin authenticity or external publication binding.",
     "The included package is a raw synthetic export; it is not a redacted sharing archive.",
-    "The runs were executed with an isolated HOME and service port to avoid the running Desktop host."
+    "The runs were executed with an isolated HOME and service port to avoid the running Desktop host.",
+    "The locally hardened live-demo harness used for the run is not part of this documentation change and requires separate technical acceptance."
   ]
 }

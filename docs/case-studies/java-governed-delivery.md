@@ -112,16 +112,11 @@ trusted external anchor.
 
 The evidence was produced with an isolated `HOME`, state directory, config
 directory, and service port so the demo did not restart or collide with the
-running desktop host. The harness fixes in this change are required for the
-pinned OpenCode 2.2.5 CLI:
+running desktop host. A locally hardened demo harness was used for the live
+run; those harness changes are deliberately **not part of this documentation
+change** and require separate technical acceptance before the run is
+reproducible from `develop`.
 
-- the working directory is passed to `opencode run` via `cwd`, not `--dir`;
-- host decisions and `/export` use the host command API, not `--command`;
-- host transcripts use `opencode session export`;
-- the isolated service port is written to `service.json`;
-- host-session export parsing accepts the current `location.directory`, flat
-  message, and `idle` shapes.
-
-A complete reference run requires a host with the pinned CLI and enough time
-for the live plan and review steps. All unobserved controls remain
+A complete reference run requires a host with the pinned OpenCode 2.2.5 CLI and
+enough time for the live plan and review steps. All unobserved controls remain
 `NOT_VERIFIED`.

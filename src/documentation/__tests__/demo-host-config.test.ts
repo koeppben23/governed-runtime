@@ -18,8 +18,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   HOST_CONFIG_FILE,
-  HOST_SERVICE_FILE,
-  HOST_SERVICE_PORT,
   HOST_TOOL_OUTPUT_MAX_BYTES,
   writeIsolatedHostConfig,
 } from '../../../demos/lib/host-config.mjs';
@@ -82,40 +80,6 @@ describe('isolated host config for the live demo runners', () => {
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({
       tool_output: { max_bytes: HOST_TOOL_OUTPUT_MAX_BYTES },
     });
-  });
-
-  it('isolates the managed service port from the default host port', () => {
-    const configDir = tempConfigDir();
-    writeIsolatedHostConfig(configDir);
-
-    const serviceFile = path.join(configDir, HOST_SERVICE_FILE);
-    expect(JSON.parse(fs.readFileSync(serviceFile, 'utf8'))).toEqual({ port: HOST_SERVICE_PORT });
-    expect(HOST_SERVICE_PORT).not.toBe(49374);
-  });
-
-  it('preserves a pre-existing isolated service configuration', () => {
-    const configDir = tempConfigDir();
-    fs.writeFileSync(
-      path.join(configDir, HOST_SERVICE_FILE),
-      `${JSON.stringify({ port: HOST_SERVICE_PORT, hostname: '127.0.0.1' }, null, 2)}\n`,
-    );
-
-    writeIsolatedHostConfig(configDir);
-
-    expect(JSON.parse(fs.readFileSync(path.join(configDir, HOST_SERVICE_FILE), 'utf8'))).toEqual({
-      port: HOST_SERVICE_PORT,
-      hostname: '127.0.0.1',
-    });
-  });
-
-  it('fails loudly instead of silently overriding a conflicting service port', () => {
-    const configDir = tempConfigDir();
-    fs.writeFileSync(
-      path.join(configDir, HOST_SERVICE_FILE),
-      `${JSON.stringify({ port: 49374 }, null, 2)}\n`,
-    );
-
-    expect(() => writeIsolatedHostConfig(configDir)).toThrow(/refusing to override/);
   });
 
   it('is byte-deterministic across repeated initialization', () => {

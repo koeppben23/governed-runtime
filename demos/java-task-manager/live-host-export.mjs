@@ -48,10 +48,9 @@ export function validateHostTranscript(content, { sessionId, workspace, parentSe
   if (exported.info.parentID !== parentSessionId) {
     throw new TranscriptCaptureError(`host transcript parent identity mismatch for ${sessionId}`);
   }
-  const directory = exported.info.location?.directory;
   if (
-    typeof directory !== 'string' ||
-    fs.realpathSync.native(directory) !== fs.realpathSync.native(workspace)
+    typeof exported.info.directory !== 'string' ||
+    fs.realpathSync.native(exported.info.directory) !== fs.realpathSync.native(workspace)
   ) {
     throw new TranscriptCaptureError(`host transcript worktree mismatch for ${sessionId}`);
   }
@@ -62,51 +61,36 @@ export function validateHostTranscript(content, { sessionId, workspace, parentSe
   }
   const messageIds = new Set();
   const partIds = new Set();
-  let hasUser = false;
-  let hasAssistant = false;
-  let hasAssistantText = false;
   for (const message of exported.messages) {
+    const info = message?.info;
     if (
       !isObject(message) ||
-      typeof message.id !== 'string' ||
-      message.id.length === 0 ||
-      messageIds.has(message.id) ||
-      !['user', 'assistant', 'idle'].includes(message.type)
+      !isObject(info) ||
+      typeof info.id !== 'string' ||
+      info.id.length === 0 ||
+      messageIds.has(info.id) ||
+      info.sessionID !== sessionId ||
+      !['user', 'assistant'].includes(info.role) ||
+      !Array.isArray(message.parts)
     ) {
       throw new TranscriptCaptureError(`invalid host transcript message for ${sessionId}`);
     }
-    messageIds.add(message.id);
-    if (message.type === 'idle') continue;
-    if (message.type === 'user') {
-      if (typeof message.text !== 'string' || message.text.trim().length === 0) {
-        throw new TranscriptCaptureError(`invalid host transcript message for ${sessionId}`);
-      }
-      hasUser = true;
-      continue;
-    }
-    if (!Array.isArray(message.content) || message.content.length === 0) {
-      throw new TranscriptCaptureError(`invalid host transcript message for ${sessionId}`);
-    }
-    hasAssistant = true;
-    for (const part of message.content) {
-      if (!isObject(part) || typeof part.type !== 'string' || part.type.length === 0) {
+    messageIds.add(info.id);
+    for (const part of message.parts) {
+      if (
+        !isObject(part) ||
+        typeof part.id !== 'string' ||
+        part.id.length === 0 ||
+        partIds.has(part.id) ||
+        typeof part.type !== 'string' ||
+        part.type.length === 0 ||
+        part.sessionID !== sessionId ||
+        part.messageID !== info.id
+      ) {
         throw new TranscriptCaptureError(`invalid host transcript part for ${sessionId}`);
       }
-      if (part.type === 'text' && typeof part.text === 'string' && part.text.trim().length > 0) {
-        hasAssistantText = true;
-      }
-      if (part.id !== undefined) {
-        if (typeof part.id !== 'string' || part.id.length === 0 || partIds.has(part.id)) {
-          throw new TranscriptCaptureError(`invalid host transcript part for ${sessionId}`);
-        }
-        partIds.add(part.id);
-      }
+      partIds.add(part.id);
     }
-  }
-  if (!hasUser || !hasAssistant || !hasAssistantText) {
-    throw new TranscriptCaptureError(
-      `host transcript lacks a complete reviewed user/assistant exchange for ${sessionId}`,
-    );
   }
 }
 
@@ -170,7 +154,7 @@ export async function exportHostTranscript({
   const stdoutFd = fs.openSync(file, 'wx');
   let result;
   try {
-    result = await executeExport(command, [...argsPrefix, 'session', 'export', sessionId], {
+    result = await executeExport(command, [...argsPrefix, 'export', sessionId], {
       workspace,
       stdoutFd,
       timeoutMs,
