@@ -72,9 +72,7 @@ export function requestLoopback(
       },
     );
     request.on('error', failed);
-    // codeql[js/file-access-to-http] The body is a bounded JSON command payload
-    // assembled from a closed command name and a generated rationale; no file
-    // contents or credentials are sent.
+    // codeql[js/file-access-to-http] Bounded JSON command payload; no file data or credentials.
     request.end(body);
   });
 }
