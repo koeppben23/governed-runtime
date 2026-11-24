@@ -96,12 +96,14 @@ authenticity.
 - [reference-evidence.json](./java-governed-delivery/evidence/reference-evidence.json)
 - [red-green.txt](./java-governed-delivery/evidence/red-green.txt)
 - [integrity-controls.json](./java-governed-delivery/evidence/integrity-controls.json)
-- Raw export package and sidecar:
-  [export-ses_df179688dffektuwvOOVINJBIc.tar.gz](./java-governed-delivery/evidence/export-ses_df179688dffektuwvOOVINJBIc.tar.gz)
+- [package-manifest.json](./java-governed-delivery/evidence/package-manifest.json)
 
-The package is synthetic and was scanned for local user paths and credential
-material before inclusion. Offline verification proves internal consistency;
-it does not prove origin or a trusted external anchor.
+The synthetic raw package is **withheld from this draft** pending explicit
+owner approval after a recorded sensitivity review. The manifest records its
+SHA-256 (`2b52c7690f7591e8cf39dbce38c3a88a8b29a843f1a5cc61669d00aceae9d259`)
+and the sidecar hash. The integrity controls were executed against a local copy;
+publication is a separate approval decision. Offline verification proves
+internal consistency, not origin or a trusted external anchor.
 
 ## Reproduction
 

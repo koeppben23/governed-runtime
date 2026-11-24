@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "java-reference-package-manifest.v1",
+  "package": {
+    "file": "export-ses_df179688dffektuwvOOVINJBIc.tar.gz",
+    "sha256": "2b52c7690f7591e8cf39dbce38c3a88a8b29a843f1a5cc61669d00aceae9d259",
+    "sidecarSha256": "a6583e875b6b0e69d14a40052e30f50b6371ab1c70ec3f0244b07d25a86e96a7",
+    "sessionId": "ses_df179688dffektuwvOOVINJBIc",
+    "flow": "development",
+    "archivedPhase": "EXPORT_READY"
+  },
+  "publication": {
+    "status": "withheld_pending_explicit_owner_approval",
+    "reason": "The synthetic raw package is not published in this draft. Publication requires an explicit owner approval after the recorded sensitivity review."
+  }
+}

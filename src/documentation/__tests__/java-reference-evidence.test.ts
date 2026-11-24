@@ -3,8 +3,7 @@
  * @description Contract guards for the public Java reference-evidence case study.
  */
 
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -43,10 +42,13 @@ describe('Java reference evidence contract', () => {
       status: 'NOT_VERIFIED',
     });
 
-    const packageFile = join(EVIDENCE_DIR, 'export-ses_df179688dffektuwvOOVINJBIc.tar.gz');
-    const digest = createHash('sha256').update(readFileSync(packageFile)).digest('hex');
-    expect(digest).toBe(evidence.positiveControl?.exportPackageSha256);
-    expect(read(`${packageFile}.sha256`)).toContain(digest);
+    const manifest = json(join(EVIDENCE_DIR, 'package-manifest.json')) as {
+      package?: { sha256?: string; file?: string };
+      publication?: { status?: string };
+    };
+    expect(manifest.package?.sha256).toBe(evidence.positiveControl?.exportPackageSha256);
+    expect(manifest.publication?.status).toBe('withheld_pending_explicit_owner_approval');
+    expect(existsSync(join(EVIDENCE_DIR, manifest.package?.file ?? 'missing'))).toBe(false);
   });
 
   it('keeps the red-green proof and both integrity findings', () => {

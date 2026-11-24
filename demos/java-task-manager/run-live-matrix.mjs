@@ -725,13 +725,16 @@ export class Runner {
     label,
     name,
     fromPhase,
-    { allowNon204 = false, expectPhaseChange = true } = {},
+    { allowNon204 = false, expectPhaseChange = true, text = '', toPhase } = {},
   ) {
     if (!session.sessionId) throw new Error(`${label}: host command requires a session`);
     const serviceFile = path.join(this.configDir, 'service.json');
     const service = JSON.parse(fs.readFileSync(serviceFile, 'utf8'));
     if (!Number.isInteger(service.port)) {
       throw new Error(`${label}: isolated service config has no port`);
+    }
+    if (expectPhaseChange && typeof toPhase !== 'string') {
+      throw new Error(`${label}: host command ${name} requires an expected target phase`);
     }
     const evidenceFile = path.join(this.evidenceDir, `${label}.jsonl`);
     if (fs.existsSync(evidenceFile)) {
@@ -750,7 +753,7 @@ export class Runner {
           'x-opencode-directory': session.workspace,
           ...(auth ? { authorization: auth } : {}),
         },
-        body: JSON.stringify({ name, text: '' }),
+        body: JSON.stringify({ name, text }),
       },
     );
     const body = response.status === 204 ? '' : await response.text();
@@ -791,16 +794,99 @@ export class Runner {
     if (!expectPhaseChange) return { status: response.status, body };
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
-      if (this.currentPhase(session) !== fromPhase) return { status: response.status, body };
+      if (this.currentPhase(session) === toPhase) return { status: response.status, body };
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    throw new Error(`${label}: host command ${name} did not leave ${fromPhase}`);
+    throw new Error(`${label}: host command ${name} did not reach ${toPhase} from ${fromPhase}`);
   }
 
   readAudit(session) {
     const { sessionDir } = this.requireBoundState(session);
     const file = path.join(sessionDir, 'audit.jsonl');
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  }
+
+  readAuditEventsSince(session, floor) {
+    return this.readAudit(session)
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((event) => Number(event.auditSequence) > floor);
+  }
+
+  async waitForSessionIdle(session) {
+    const service = JSON.parse(fs.readFileSync(path.join(this.configDir, 'service.json'), 'utf8'));
+    if (!Number.isInteger(service.port) || !session.sessionId) {
+      throw new Error('isolated service or session is unavailable');
+    }
+    const auth =
+      typeof service.password === 'string'
+        ? `Basic ${Buffer.from(`opencode:${service.password}`).toString('base64')}`
+        : undefined;
+    const response = await fetch(
+      `http://localhost:${service.port}/api/experimental/session/${encodeURIComponent(session.sessionId)}/wait`,
+      {
+        method: 'POST',
+        headers: {
+          'x-opencode-directory': session.workspace,
+          ...(auth ? { authorization: auth } : {}),
+        },
+      },
+    );
+    if (response.status !== 204) {
+      throw new Error(`session wait failed (${response.status}): ${await response.text()}`);
+    }
+  }
+
+  async hostCommandTurn(session, label, command, prompt, options = {}) {
+    if (!session.sessionId) {
+      throw new Error(`${label}: command ${command} requires an existing session`);
+    }
+    const auditFloor = lastAuditSequence(this.configDir, session.sessionId);
+    const before = this.currentPhase(session);
+    const response = await this.hostCommand(session, label, command, before, {
+      allowNon204: true,
+      expectPhaseChange: false,
+      text: prompt ?? '',
+    });
+    await this.waitForSessionIdle(session);
+    const after = this.currentPhase(session);
+    if (response.status !== 204 && !options.expectedDenial) {
+      throw new Error(
+        `${label}: host command ${command} failed (${response.status}): ${response.body}`,
+      );
+    }
+    if (options.expectedDenial) {
+      const events = this.readAuditEventsSince(session, auditFloor);
+      const denial = events.find((event) => {
+        const serialized = JSON.stringify(event);
+        if (!serialized.includes(options.expectedDenial)) return false;
+        return (
+          options.expectedDenialTool === undefined ||
+          event.event === `tool_call:${options.expectedDenialTool}`
+        );
+      });
+      if (!denial) {
+        throw new Error(
+          `${label}: expected denial ${options.expectedDenial} was not observed in new audit events`,
+        );
+      }
+    }
+    session.lastTurn = {
+      label,
+      toolCalls: 0,
+      stateObserved: true,
+      stateChanged: before !== after,
+      phaseAfter: after,
+    };
+    return {
+      code: response.status === 204 ? 0 : 1,
+      stdout: '',
+      stderr: '',
+      timedOut: false,
+      durationMs: 0,
+      sessionIds: [session.sessionId],
+    };
   }
 
   async hostStep(label, workspace, args, timeoutMs = 30 * 60_000) {
@@ -844,6 +930,13 @@ export class Runner {
   }
 
   async turn(session, label, prompt, options = {}) {
+    if (options.command && options.command !== 'start') {
+      return this.hostCommandTurn(session, label, options.command, prompt, options);
+    }
+    if (options.command === 'start') {
+      prompt = '/start';
+      options = { ...options, command: undefined };
+    }
     const phaseBefore = this.currentPhase(session);
     const digestBefore = this.currentStateDigest(session);
     const reviewProgressBefore = session.sessionId ? this.reviewProgress(session) : null;
@@ -1384,7 +1477,18 @@ export class Runner {
       );
       session.pendingPlanReviewCorrection = null;
     }
-    await this.hostCommand(session, label, 'approve', expectedPhase);
+    const targetPhase =
+      expectedPhase === 'PLAN_REVIEW'
+        ? 'IMPLEMENTATION'
+        : expectedPhase === 'ARCH_REVIEW'
+          ? 'ARCH_COMPLETE'
+          : expectedPhase === 'EVIDENCE_REVIEW'
+            ? 'EXPORT_READY'
+            : undefined;
+    if (targetPhase === undefined) {
+      throw new Error(`${label}: approval from ${expectedPhase} has no allowed target phase`);
+    }
+    await this.hostCommand(session, label, 'approve', expectedPhase, { toPhase: targetPhase });
   }
 
   /**

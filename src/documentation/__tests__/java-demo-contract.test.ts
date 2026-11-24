@@ -693,7 +693,7 @@ describe('Java Task Manager demo contract', () => {
         sessionIds: ['ses_parent'],
         stdout: `${success}\n`,
       });
-      await runner.turn(session, 'plan-c-retry', 'x', { command: 'approve' });
+      await runner.turn(session, 'plan-c-retry', '/approve');
       expect(session.recoveredDenials).toContainEqual(
         expect.objectContaining({
           step: 'plan-c',
@@ -763,14 +763,14 @@ describe('Java Task Manager demo contract', () => {
         sessionIds: ['ses_parent'],
         stdout: `${clean}\n`,
       });
-      await expect(runner.turn(session, 'task', 'x', { command: 'task' })).rejects.toThrow(
+      await expect(runner.turn(session, 'task', '/task')).rejects.toThrow(
         /authorized affected-operation transition/,
       );
 
       // Turn 3 with a real state change: recovered, evidence-bound.
       persisted = { ...persisted, phase: 'TICKET', ticket: { digest: 'ticket-A' } };
       await fs.writeFile(statePath, JSON.stringify(persisted));
-      await runner.turn(session, 'task-2', 'x', { command: 'task' });
+      await runner.turn(session, 'task-2', '/task');
       expect(session.recoveredDenials).toEqual([
         expect.objectContaining({
           step: 'start',
@@ -1288,39 +1288,39 @@ describe('Java Task Manager demo contract', () => {
     expect(unexpectedDenialCodes(terminal)).toEqual(['REVIEW_EVIDENCE_NOT_OBSERVED']);
   });
 
-  it('binds an expected denial to its authority tool at the runner boundary', async () => {
+  it('binds an expected denial to its authority tool in new audit events', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-denial-tool-'));
     try {
-      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
-      const wrongTool = JSON.stringify({
-        type: 'tool_use',
-        part: {
-          tool: 'flowguard_plan',
-          state: {
-            output: JSON.stringify({
-              error: true,
-              code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
-            }),
-          },
-        },
-      });
       const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
-      runner.hostStep = async () => ({
-        code: 0,
-        stderr: '',
-        timedOut: false,
-        durationMs: 0,
-        sessionIds: ['ses_parent'],
-        stdout: wrongTool,
-      });
+      runner.hostCommand = async () => ({ status: 204, body: '' });
+      runner.waitForSessionIdle = async () => {};
+      runner.currentPhase = () => 'EVIDENCE_REVIEW';
+      runner.readAuditEventsSince = () => [
+        {
+          event: 'tool_call:flowguard_plan',
+          code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+        },
+      ];
       const session = { workspace: root, terminal: 'COMPLETE', sessionId: 'ses_parent' };
       await expect(
-        runner.turn(session, 'approve', 'x', {
-          command: 'approve',
+        runner.hostCommandTurn(session, 'approve', 'approve', 'x', {
           expectedDenial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
           expectedDenialTool: 'flowguard_decision',
         }),
-      ).rejects.toThrow(/observed tool flowguard_plan/);
+      ).rejects.toThrow(/expected denial/);
+
+      runner.readAuditEventsSince = () => [
+        {
+          event: 'tool_call:flowguard_decision',
+          code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+        },
+      ];
+      await expect(
+        runner.hostCommandTurn(session, 'approve', 'approve', 'x', {
+          expectedDenial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+          expectedDenialTool: 'flowguard_decision',
+        }),
+      ).resolves.toMatchObject({ code: 0 });
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

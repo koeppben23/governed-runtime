@@ -218,6 +218,9 @@ describe('live host transcript export', () => {
       { ...value, messages: [{ id: 'msg_1', type: 'system', text: 'x' }] },
       { ...value, messages: [{ id: 'msg_1', type: 'user' }] },
       { ...value, messages: [{ id: 'msg_1', type: 'assistant' }] },
+      { ...value, messages: [{ id: 'msg_1', type: 'assistant', content: [] }] },
+      { ...value, messages: [{ id: 'msg_1', type: 'idle' }] },
+      { ...value, messages: [{ id: 'msg_1', type: 'user', text: 'x' }] },
       { ...value, messages: [value.messages[0], value.messages[0]] },
       {
         ...value,
