@@ -805,8 +805,8 @@ export class Runner {
     if (!session.sessionId) throw new Error(`${label}: host command requires a session`);
     const serviceFile = path.join(this.configDir, 'service.json');
     const service = JSON.parse(fs.readFileSync(serviceFile, 'utf8'));
-    if (!Number.isInteger(service.port)) {
-      throw new Error(`${label}: isolated service config has no port`);
+    if (!Number.isInteger(service.port) || service.port < 1 || service.port > 65535) {
+      throw new Error(`${label}: isolated service config has an invalid port`);
     }
     const evidenceFile = path.join(this.evidenceDir, `${label}.jsonl`);
     const auth =
@@ -917,7 +917,12 @@ export class Runner {
 
   async waitForSessionIdle(session, label = 'session wait') {
     const service = JSON.parse(fs.readFileSync(path.join(this.configDir, 'service.json'), 'utf8'));
-    if (!Number.isInteger(service.port) || !session.sessionId) {
+    if (
+      !Number.isInteger(service.port) ||
+      service.port < 1 ||
+      service.port > 65535 ||
+      !session.sessionId
+    ) {
       throw new Error('isolated service or session is unavailable');
     }
     const auth =
