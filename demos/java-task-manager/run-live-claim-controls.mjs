@@ -41,7 +41,7 @@ import {
   planGateNotConvergedReason,
 } from '../lib/review-continuation.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
-import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
+import { isolatedInstallEnv, writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { HARNESS_VERSION } from '../lib/harness-version.mjs';
 import { SKIP_ASSERTION_ENV } from '../lib/service-lifecycle.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
@@ -437,6 +437,7 @@ async function main() {
     {
       cwd: REPO,
       stdio: 'inherit',
+      env: isolatedInstallEnv(configDir),
     },
   );
   const workspace = path.join(options.root, 'workspaces', name);

@@ -2183,6 +2183,9 @@ stop`, reviewer child reported it could not complete the falsification).
   persisted reviewer obligation/invocation/attempt binding beside each
   reviewer transcript; transcript validation remains structural and
   `ReviewFindings` remains the review-completion authority.
+- Point the demo setup installer at an absent run-local service record so it
+  never discovers or restarts the user's shared OpenCode service. The harness
+  starts and verifies its own authenticated child instead.
 - Align public documentation with current behavior: refine README demo copy and
   lifecycle alt text, retain the peer-review host preconditions, update the
   Product One Pager to the OpenCode V2-scoped native reviewer mechanism and the

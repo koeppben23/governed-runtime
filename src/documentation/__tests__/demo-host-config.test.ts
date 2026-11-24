@@ -21,6 +21,7 @@ import {
   HOST_SERVICE_FILE,
   HOST_SERVICE_PORT,
   HOST_TOOL_OUTPUT_MAX_BYTES,
+  isolatedInstallEnv,
   writeIsolatedHostConfig,
 } from '../../../demos/lib/host-config.mjs';
 // Historical V1 config comparison only: do not retarget this experiment to V2.
@@ -140,6 +141,25 @@ describe('isolated host config for the live demo runners', () => {
     expect(second).toBe(first);
   });
 
+  it('never lets the installer discover or restart the shared service record', () => {
+    const configDir = tempConfigDir();
+    const foreign = path.join(configDir, 'foreign-service.json');
+    fs.writeFileSync(foreign, '{}');
+    const env = isolatedInstallEnv(configDir, {
+      FLOWGUARD_OPENCODE_SERVICE_RECORD: foreign,
+      PATH: '/kept',
+    });
+    const isolatedRecord = path.join(configDir, 'service-record.unavailable.json');
+    expect(env).toMatchObject({
+      FLOWGUARD_OPENCODE_SERVICE_RECORD: isolatedRecord,
+      PATH: '/kept',
+    });
+    expect(fs.existsSync(isolatedRecord)).toBe(false);
+    fs.writeFileSync(isolatedRecord, '{}');
+    isolatedInstallEnv(configDir);
+    expect(fs.existsSync(isolatedRecord)).toBe(false);
+  });
+
   it('preserves pre-existing configuration without touching max_lines', () => {
     const configDir = tempConfigDir();
     fs.writeFileSync(
@@ -177,13 +197,14 @@ describe('isolated host config for the live demo runners', () => {
     expect(transportDelivers(HOST_TOOL_OUTPUT_MAX_BYTES + 1)).toBe(false);
   });
 
-  it('wires the identical helper into all four live runners', () => {
+  it('wires the identical helpers into all four live runners', () => {
     for (const relative of runners) {
       const source = fs.readFileSync(path.join(REPO_ROOT, relative), 'utf8');
-      expect(source, relative).toContain(
-        "import { writeIsolatedHostConfig } from '../lib/host-config.mjs';",
+      expect(source, relative).toMatch(
+        /import \{[^}]*writeIsolatedHostConfig[^}]*\} from '\.\.\/lib\/host-config\.mjs';/,
       );
       expect(source, relative).toContain('writeIsolatedHostConfig(configDir);');
+      expect(source, relative).toContain('isolatedInstallEnv(');
     }
   });
 });

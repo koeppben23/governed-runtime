@@ -83,7 +83,7 @@ import {
 } from '../lib/recovery-state.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { HARNESS_VERSION } from '../lib/harness-version.mjs';
-import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
+import { isolatedInstallEnv, writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { HostTransportError } from '../lib/host-http.mjs';
 import { withIsolatedService } from '../lib/service-lifecycle.mjs';
 import { PLAN_GATE, classifyPlanGate } from '../lib/review-continuation.mjs';
@@ -2105,6 +2105,7 @@ async function main() {
     {
       cwd: REPO,
       stdio: 'inherit',
+      env: isolatedInstallEnv(configDir),
     },
   );
   // The installer writes allowRawExport=false into the repo config, which
@@ -2151,7 +2152,7 @@ async function main() {
             {
               cwd: REPO,
               stdio: 'inherit',
-              env: { ...process.env, OPENCODE_CONFIG_DIR: configDir },
+              env: { ...isolatedInstallEnv(configDir), OPENCODE_CONFIG_DIR: configDir },
             },
           );
         }

@@ -40,7 +40,7 @@ import {
   planGateNotConvergedReason,
 } from '../lib/review-continuation.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
-import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
+import { isolatedInstallEnv, writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { HARNESS_VERSION } from '../lib/harness-version.mjs';
 import { readPins, assertToolchain } from '../lib/toolchain.mjs';
@@ -387,7 +387,8 @@ export function applyFixtureRepoConfig(workspace, fixtureDir = FIXTURE) {
 }
 
 /** Copy the fixture, the Maven wrapper and install FlowGuard into a fresh repo. */
-export function prepareWorkspace(workspace, tarball) {
+export function prepareWorkspace(workspace, tarball, configDir) {
+  const isolatedConfigDir = configDir ?? path.join(path.dirname(path.dirname(workspace)), 'config');
   fs.cpSync(FIXTURE, workspace, {
     recursive: true,
     filter: (source) =>
@@ -426,7 +427,7 @@ export function prepareWorkspace(workspace, tarball) {
       '--core-tarball',
       tarball,
     ],
-    { cwd: workspace, stdio: 'inherit' },
+    { cwd: workspace, stdio: 'inherit', env: isolatedInstallEnv(isolatedConfigDir) },
   );
   applyFixtureRepoConfig(workspace);
   return workspace;
@@ -504,7 +505,7 @@ async function main() {
       workspace: path.join(options.root, 'workspaces', 'risk-covered'),
     },
   ];
-  for (const item of cases) prepareWorkspace(item.workspace, tarball);
+  for (const item of cases) prepareWorkspace(item.workspace, tarball, configDir);
 
   const runner = new Runner(options.root, options, configDir);
   const records = [];

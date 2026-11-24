@@ -244,7 +244,10 @@ work itself.
 
 Use a fresh root and a free `127.0.0.1:49375`. The runner starts and authenticates
 its own OpenCode child, with separate configuration and storage, and stops only
-that child on exit. It never attaches to an existing listener. Supply model
+that child on exit. It never attaches to an existing listener. The setup
+installer is pointed at an absent run-local service record, so it cannot
+discover or restart the user's shared OpenCode service; the runner verifies its
+own child and `/start` instead. Supply model
 credentials through the provider environment; the runner does not reuse the
 shared host's credential store. Native decisions require current, session-bound audit evidence, not just
 HTTP success: canonical state digests must link the pre-dispatch snapshot to the

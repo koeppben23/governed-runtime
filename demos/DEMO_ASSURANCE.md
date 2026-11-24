@@ -8,10 +8,11 @@ reviewer prompt context and installed Task-return guidance.
 ## Isolated host and decision witnesses (harness v6)
 
 - The Java and risk runners use an authenticated OpenCode child on
-  `127.0.0.1:49375`. A port
-  collision fails closed. Supply provider credentials in the environment;
-  shared host storage is not reused. Claim controls bind the assertion skip to
-  the child at startup, not to a later CLI client.
+  `127.0.0.1:49375`. A port collision fails closed. The setup installer receives
+  an absent run-local `FLOWGUARD_OPENCODE_SERVICE_RECORD`, so it cannot discover
+  or restart the user's shared service. Supply provider credentials in the
+  environment; shared host storage is not reused. Claim controls bind the
+  assertion skip to the child at startup, not to a later CLI client.
 - Native approval requires a successful decision call, a receipt matched to
   the dispatch rationale and verdict, and a persisted transition to the
   expected phase. Every tool event in the window must carry a boolean success

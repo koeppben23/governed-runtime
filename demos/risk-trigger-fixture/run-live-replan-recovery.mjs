@@ -40,7 +40,7 @@ import {
 } from '../lib/review-continuation.mjs';
 import { FLOWGUARD_CLI, FLOWGUARD_PACKAGE, productCli } from '../lib/product-cli.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults } from '../lib/results.mjs';
-import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
+import { isolatedInstallEnv, writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { HARNESS_VERSION } from '../lib/harness-version.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 
@@ -283,7 +283,7 @@ async function main() {
     execFileSync(
       process.execPath,
       [productInstaller, 'install', '--install-scope', 'repo', '--core-tarball', tarball],
-      { cwd: newWorkspace, stdio: 'inherit' },
+      { cwd: newWorkspace, stdio: 'inherit', env: isolatedInstallEnv(configDir) },
     );
     // `.opencode/` is gitignored, so the git worktree does not carry the
     // fixture configuration: apply it after the regular install, before the

@@ -37,6 +37,19 @@ export const HOST_SERVICE_FILE = 'service.json';
 export const HOST_SERVICE_PORT = 49375;
 
 /**
+ * Environment for the isolated demo installer. The product installer otherwise
+ * discovers the user's shared service record at
+ * `~/.local/state/opencode/service.json` and may restart that service. Point it
+ * at an absent run-local record instead; the harness starts and verifies its
+ * own authenticated child after installation.
+ */
+export function isolatedInstallEnv(configDir, base = process.env) {
+  const record = path.join(configDir, 'service-record.unavailable.json');
+  fs.rmSync(record, { force: true });
+  return { ...base, FLOWGUARD_OPENCODE_SERVICE_RECORD: record };
+}
+
+/**
  * Write the isolated host config into `configDir`. Creates the files when
  * absent; when present, every existing config key is preserved and only
  * `tool_output.max_bytes` is enforced. A conflicting pre-existing
