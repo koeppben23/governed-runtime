@@ -2168,9 +2168,10 @@ stop`, reviewer child reported it could not complete the falsification).
 
 - Align public documentation with current behavior: refine README demo copy and
   lifecycle alt text, retain the peer-review host preconditions, update the
-  Product One Pager to the native V2 reviewer mechanism and the four product
-  pillars, remove the unmeasured five-minute onboarding claim, and distinguish
-  the released artifact, development snapshot, installed host acceptance, and
+  Product One Pager to the OpenCode V2-scoped native reviewer mechanism and the
+  four product pillars, bind the Quick Start to a matching development build,
+  remove the unmeasured five-minute onboarding claim, and distinguish the
+  released artifact, development snapshot, installed host acceptance, and
   production readiness. No runtime behavior or license terms change.
 - Bump `actions/setup-java` from 6.2.0 to 6.3.0 in the CI and
   proofgraph-live-controls workflows while keeping the pins SHA-addressed.

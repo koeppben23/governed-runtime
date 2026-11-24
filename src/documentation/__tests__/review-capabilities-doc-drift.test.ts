@@ -170,11 +170,15 @@ describe('documentation/review-capabilities-doc-drift', () => {
       expect(op).toMatch(/derived/i);
     });
 
-    it('one-pager uses the current native reviewer mechanism', () => {
+    it('one-pager scopes the current native reviewer mechanism to OpenCode V2', () => {
       const op = readDoc('PRODUCT_ONE_PAGER.md');
+      expect(op).toContain('On OpenCode V2');
       expect(op).toContain('visible native `flowguard-reviewer` child session');
-      expect(op).toContain('same-child JSON serialization window');
-      expect(op).toContain('no `format` or forced tool is required');
+      expect(op).toContain('same-child JSON serialization');
+      expect(op).toContain('`format`');
+      expect(op).toContain('forced tool');
+      expect(op).toContain('Other supported hosts have platform-specific transport');
+      expect(op).toContain('[Independent Review](./docs/independent-review.md)');
       expect(op).not.toMatch(/hidden\s+`?flowguard-reviewer/i);
       expect(op).not.toContain('json_schema');
     });

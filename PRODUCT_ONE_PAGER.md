@@ -47,7 +47,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 ### Independent Review
 
 - Regulated mode enforces initiator/reviewer separation
-- Strict independent review uses a visible native `flowguard-reviewer` child session authorized before host release, bound to host child-session evidence, and validated through a same-child JSON serialization window. It uses obligation-bound attestation and fail-closed orchestration; no `format` or forced tool is required
+- On OpenCode V2, independent review uses a visible native `flowguard-reviewer` child session with obligation-bound authorization and a same-child JSON serialization window. It requires no `format` or forced tool. Other supported hosts have platform-specific transport and enforcement boundaries. See [Independent Review](./docs/independent-review.md) for current guarantees, known limitations, and installed acceptance
 - Independent review is wired for **all three** review-loop tools — `/plan`, `/architecture`, and `/implement` — sharing one orchestration pipeline, one ReviewFindings schema, and one fail-closed strict-enforcement model
 - Standalone `/review` creates obligation-bound content-review evidence with `review` obligations, strict attestation validation, and explicit host-orchestrated vs agent-submitted evidence source marking
 - Reviewer's `unable_to_review` third verdict consumes the obligation and BLOCKS via `SUBAGENT_UNABLE_TO_REVIEW` instead of fabricating an `approve` or `changes_requested`
@@ -111,7 +111,7 @@ FlowGuard is a host-aware governance runtime. It runs locally within the selecte
 
 For technical evaluation or pilot discussions, contact the FlowGuard project owner.
 
-**Released Technical Preview:** 2.0.0-tp.2 (2026-10-04)
+**Released Technical Preview:** [2.0.0-tp.2](https://github.com/koeppben23/governed-runtime/releases/tag/v2.0.0-tp.2) (2026-10-04)
 
 **Current snapshot: 2.0.0-tp.2** — `develop` may contain changes after the released artifact.
 
