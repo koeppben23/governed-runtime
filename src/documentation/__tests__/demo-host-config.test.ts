@@ -154,8 +154,7 @@ describe('isolated host config for the live demo runners', () => {
       FLOWGUARD_OPENCODE_SERVICE_RECORD: isolatedRecord,
       PATH: '/kept',
     });
-    expect(fs.existsSync(isolatedRecord)).toBe(false);
-    fs.writeFileSync(isolatedRecord, '{}');
+    fs.writeFileSync(isolatedRecord, '{}', { flag: 'wx' });
     isolatedInstallEnv(configDir);
     expect(fs.existsSync(isolatedRecord)).toBe(false);
   });

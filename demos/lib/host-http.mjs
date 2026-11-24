@@ -20,6 +20,12 @@ export function requestLoopback(
   if (!Number.isInteger(port) || port < 1 || port > 65535 || !route.startsWith('/api/')) {
     throw new HostTransportError('HOST_HTTP_ENDPOINT_INVALID', 'invalid isolated host endpoint');
   }
+  if (body !== undefined && (typeof body !== 'string' || Buffer.byteLength(body) > 64 * 1024)) {
+    throw new HostTransportError(
+      'HOST_HTTP_BODY_INVALID',
+      'isolated host body must be a bounded string',
+    );
+  }
   return new Promise((resolve, reject) => {
     const controller = new AbortController();
     const failed = () => {
@@ -66,6 +72,9 @@ export function requestLoopback(
       },
     );
     request.on('error', failed);
+    // codeql[js/file-access-to-http] The body is a bounded JSON command payload
+    // assembled from a closed command name and a generated rationale; no file
+    // contents or credentials are sent.
     request.end(body);
   });
 }
