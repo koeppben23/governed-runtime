@@ -72,7 +72,7 @@ export function requestLoopback(
       },
     );
     request.on('error', failed);
-    // codeql[js/file-access-to-http] Bounded JSON command payload; no file data or credentials.
+    // lgtm[js/file-access-to-http] Bounded JSON command payload; no file data or credentials.
     request.end(body);
   });
 }
