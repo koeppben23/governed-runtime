@@ -2,6 +2,21 @@
 
 Host-aware governance runtime for AI-assisted software delivery.
 
+## Explore the Java demo
+
+See how FlowGuard governs AI-assisted software delivery in a Java Spring Boot
+application, from architectural decisions through implementation and independent
+peer review.
+
+- Independent AI reviews
+- Policy-bound human approvals
+- Automated baseline and implementation validation
+- Verifiable evidence and tamper-evident audit trails
+
+[Demo overview](demos/java-task-manager/README.md) ·
+[Demo walkthrough](demos/java-task-manager/DEMO_SCRIPT.md) ·
+[Evidence verification](demos/java-task-manager/EVIDENCE_PACKAGE.md)
+
 > **Version:** 2.0.0-tp.2 | TypeScript | Host-aware | OpenCode synchronous enforcement path
 
 > **OpenCode V2 status:** the V2-only port (#1169/#1190) and the native Desktop
