@@ -91,6 +91,6 @@ describe('V2 README development lifecycle', () => {
       'not acceptance evidence. R4 is a documented NOT_SUPPORTED trusted-plugin limitation.',
     );
     expect(visible).toContain('Command origin is not verified human identity.');
-    expect(readme).toContain('not completed V2\nacceptance.');
+    expect(readme).toMatch(/not completed V2\s+acceptance\./);
   });
 });
