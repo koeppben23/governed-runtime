@@ -16,6 +16,7 @@ import { REVIEWER_AGENT } from '../templates/mandates.js';
 import { execFileSync } from 'node:child_process';
 import { assertNativeDecisionWitness } from '../../demos/java-task-manager/live-decision-witness.mjs';
 import { validateHostTranscript } from '../../demos/java-task-manager/live-host-export.mjs';
+import { computeStateDigest } from '../integration/audit-outbox.js';
 import {
   FlowGuardGovernance,
   type PresentationResult,
@@ -349,6 +350,7 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
           expectedDenial: 'GOVERNANCE_OVERRIDE_REQUIRED',
           expectedDenialTool: 'flowguard_decision',
           expectedTargetPhase: undefined,
+          stateDigest: computeStateDigest,
         });
       }
       const requestsBeforeApproval = p.requests.length;
@@ -398,6 +400,7 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
         expectedDenial: undefined,
         expectedDenialTool: undefined,
         expectedTargetPhase: 'IMPLEMENTATION',
+        stateDigest: computeStateDigest,
       });
       // Only baseline progress is model-free. The original final chat report
       // still carries check results and the /implement recommendation.

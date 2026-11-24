@@ -14,9 +14,23 @@ reviewer prompt context and installed Task-return guidance.
   the child at startup, not to a later CLI client.
 - Native approval requires a successful decision call, a receipt matched to
   the dispatch rationale and verdict, and a persisted transition to the
-  expected phase. A refusal requires a unique current call, a closing typed
-  error, a continuous unchanged audit prefix, and no persisted mutation. No
-  HTTP response body becomes evidence. An unknown outcome is never retried.
+  expected phase. Every tool event in the window must carry a boolean success
+  and a typed error code iff it failed; contradictory or unexplained error
+  events fail. Legitimate automatic follow-up calls are allowed only as
+  successful, fully typed calls inside the settled dispatch interval.
+- The receipt and transition digests are checked against the installed
+  product's canonical `computeStateDigest`, not a demo-local hash. The audit
+  chain must link the observed pre-dispatch state to the settled state; a
+  duplicate pair from the same state write and automatic follow-up transitions
+  are allowed. The chain proves digest linkage, not the reconstructed contents
+  of each intermediate state.
+- A refusal requires a unique current call, a closing typed error, a continuous
+  unchanged audit prefix, and no persisted mutation. No HTTP response body
+  becomes evidence. An unknown outcome is never retried.
+- Transcript validation proves structural completeness, session/worktree/parent
+  identity and a completed final assistant turn. Reviewer records also carry
+  the persisted obligation/invocation/attempt binding. `ReviewFindings` remains
+  the independent review-completion authority.
 - Keep v5 and earlier measurements separate. No existing observation is
   promoted to a v6 reference run.
 

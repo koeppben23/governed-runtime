@@ -318,7 +318,12 @@ describe('live host transcript export', () => {
       state: {
         binding: { hostSessionId: 'ses_parent' },
         reviewAssurance: {
-          invocations: ['ses_a', 'ses_b', 'ses_c'].map((childSessionId) => ({ childSessionId })),
+          invocations: ['ses_a', 'ses_b', 'ses_c'].map((childSessionId) => ({
+            childSessionId,
+            obligationId: `ob-${childSessionId}`,
+            invocationId: `inv-${childSessionId}`,
+            attemptId: `att-${childSessionId}`,
+          })),
         },
       },
       sessionDir: root,
@@ -345,6 +350,29 @@ describe('live host transcript export', () => {
       parent: { sessionId: 'ses_parent' },
       reviewers: [{ sessionId: 'ses_a' }, { sessionId: 'ses_c' }],
     });
+    expect(flow.transcripts).not.toMatchObject({
+      parent: { reviewBinding: expect.anything() },
+    });
+    expect(flow.transcripts).toMatchObject({
+      reviewers: [
+        {
+          sessionId: 'ses_a',
+          reviewBinding: {
+            obligationId: 'ob-ses_a',
+            invocationId: 'inv-ses_a',
+            attemptId: 'att-ses_a',
+          },
+        },
+        {
+          sessionId: 'ses_c',
+          reviewBinding: {
+            obligationId: 'ob-ses_c',
+            invocationId: 'inv-ses_c',
+            attemptId: 'att-ses_c',
+          },
+        },
+      ],
+    });
     expect(flow.transcriptErrors).toEqual([
       { sessionId: 'ses_b', reason: 'invalid host transcript JSON' },
     ]);
@@ -357,7 +385,12 @@ describe('live host transcript export', () => {
       state: {
         binding: { hostSessionId: 'ses_parent' },
         reviewAssurance: {
-          invocations: ['ses_a', 'ses_b', 'ses_c'].map((childSessionId) => ({ childSessionId })),
+          invocations: ['ses_a', 'ses_b', 'ses_c'].map((childSessionId) => ({
+            childSessionId,
+            obligationId: `ob-${childSessionId}`,
+            invocationId: `inv-${childSessionId}`,
+            attemptId: `att-${childSessionId}`,
+          })),
         },
       },
       sessionDir: root,

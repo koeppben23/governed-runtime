@@ -44,7 +44,15 @@ function reserveCaptureTarget(evidenceDir, label, sessionId) {
   }
 }
 
-/** Validate the current export envelope and every message/part identity. */
+/**
+ * Validate structural completeness and identity of an exported transcript.
+ *
+ * This proves ordered messages, unique identities, the expected
+ * session/worktree/parent, and a completed final assistant answer with text.
+ * It does not by itself prove which review obligation an exchange served;
+ * the runner records that binding from persisted reviewer provenance, and
+ * validated ReviewFindings remain the review-completion authority.
+ */
 export function validateHostTranscript(content, { sessionId, workspace, parentSessionId }) {
   let exported;
   try {

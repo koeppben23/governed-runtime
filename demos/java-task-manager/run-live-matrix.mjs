@@ -49,7 +49,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { exportHostTranscript } from './live-host-export.mjs';
 import { assertNativeDecisionWitness } from './live-decision-witness.mjs';
 import {
@@ -668,6 +668,19 @@ export function transcriptTargets(state, observedChildSessionIds = []) {
   return { parent: state.binding?.hostSessionId ?? null, reviewers };
 }
 
+/** Persisted reviewer provenance for a child transcript, when the state records one. */
+function reviewerBinding(state, sessionId) {
+  const invocation = (state.reviewAssurance?.invocations ?? []).find(
+    (item) => item.childSessionId === sessionId,
+  );
+  if (!invocation) return null;
+  return {
+    obligationId: typeof invocation.obligationId === 'string' ? invocation.obligationId : null,
+    invocationId: typeof invocation.invocationId === 'string' ? invocation.invocationId : null,
+    attemptId: typeof invocation.attemptId === 'string' ? invocation.attemptId : null,
+  };
+}
+
 function sessionStateDir(configDir, sessionId) {
   const workspacesRoot = path.join(configDir, 'workspaces');
   if (!fs.existsSync(workspacesRoot)) return null;
@@ -718,7 +731,8 @@ function typedAuditEvidence(events, session, flowguardSessionId) {
       event.hostSessionId !== session.sessionId ||
       event.flowguardSessionId !== flowguardSessionId ||
       !Number.isInteger(event.auditSequence) ||
-      typeof event.detail?.tool !== 'string'
+      typeof event.detail?.tool !== 'string' ||
+      event.event !== `tool_call:${event.detail.tool}`
     ) {
       throw new Error(
         `audit event identity/sequence mismatch for ${session.sessionId}: ${String(event.event)}`,
@@ -733,6 +747,21 @@ function typedAuditEvidence(events, session, flowguardSessionId) {
     });
   }
   return evidence;
+}
+
+/** Reject success flags or error codes that cannot distinguish success from refusal. */
+function assertTypedAuditConsistency(evidence, label) {
+  for (const event of evidence) {
+    if (typeof event.success !== 'boolean' || typeof event.tool !== 'string' || !event.tool) {
+      throw new DemoNotVerifiedError(`${label}: audit evidence has no unambiguous tool outcome`);
+    }
+    if (event.success === false && (!event.errorCode || typeof event.errorCode !== 'string')) {
+      throw new DemoNotVerifiedError(`${label}: failed audit event has no error code`);
+    }
+    if (event.success === true && event.errorCode !== null && event.errorCode !== undefined) {
+      throw new DemoNotVerifiedError(`${label}: successful audit event carries an error code`);
+    }
+  }
 }
 
 function expectedDecisionVerdict(command) {
@@ -882,6 +911,36 @@ export class Runner {
     }
   }
 
+  async productStateDigest(workspace) {
+    const cache = (this.stateDigests ??= new Map());
+    if (cache.has(workspace)) return cache.get(workspace);
+    const file = path.join(
+      workspace,
+      '.opencode',
+      'node_modules',
+      '@flowguard',
+      'core',
+      'dist',
+      'integration',
+      'audit-outbox.js',
+    );
+    if (!fs.existsSync(file)) {
+      throw new DemoNotVerifiedError('installed product state-digest authority is unavailable');
+    }
+    let compute;
+    try {
+      const module = await import(pathToFileURL(file).href);
+      compute = module.computeStateDigest;
+    } catch {
+      throw new DemoNotVerifiedError('installed product state-digest authority is unreadable');
+    }
+    if (typeof compute !== 'function') {
+      throw new DemoNotVerifiedError('installed product state-digest authority is unavailable');
+    }
+    cache.set(workspace, compute);
+    return compute;
+  }
+
   async hostCommandTransport(session, label, command, options) {
     // Read the full prefix, not just the largest sequence number. Replaced
     // history or a partial tail must not prove a later decision.
@@ -911,6 +970,8 @@ export class Runner {
     } catch {
       throw unknownHostOutcome(label);
     }
+    const settledAt = Date.now();
+    const stateDigest = await this.productStateDigest(session.workspace);
     const after = this.requireBoundState(session);
     const events = readAuditEvents(after.sessionDir);
     const window = assertNativeDecisionWitness({
@@ -920,16 +981,17 @@ export class Runner {
       events,
       sessionId: session.sessionId,
       startedAt: response.startedAt,
-      completedAt: response.completedAt,
+      completedAt: settledAt,
       verdict,
       rationale,
       expectedDenial: options.expectedDenial,
       expectedDenialTool: options.expectedDenialTool,
       expectedTargetPhase: options.expectedTargetPhase,
+      stateDigest,
     });
     const auditEvidence = typedAuditEvidence(window, session, after.state.flowguardSessionId);
     const denials = auditEvidence.filter((event) => event.success === false && event.errorCode);
-    const durationMs = response.completedAt - response.startedAt;
+    const durationMs = settledAt - response.startedAt;
     this.turnObservations.push({
       label,
       exitCode: 0,
@@ -1049,6 +1111,7 @@ export class Runner {
     };
     if (result.auditEvidence) {
       const command = options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1];
+      assertTypedAuditConsistency(result.auditEvidence, label);
       this.settleAwaitingRecovery(session, label, command);
       if (!options.expectedDenial) {
         const denials = result.auditEvidence.filter(
@@ -1735,9 +1798,12 @@ export class Runner {
           session.workspace,
           sessionId === targets.parent ? undefined : targets.parent,
         );
-        if (sessionId === targets.parent) flow.transcripts.parent = exported;
-        else flow.transcripts.reviewers.push(exported);
-        flow.transcriptCaptureAttempts.push({ sessionId, status: 'validated', ...exported });
+        const binding =
+          sessionId === targets.parent ? null : reviewerBinding(snapshot.state, sessionId);
+        const record = binding ? { ...exported, reviewBinding: binding } : exported;
+        if (sessionId === targets.parent) flow.transcripts.parent = record;
+        else flow.transcripts.reviewers.push(record);
+        flow.transcriptCaptureAttempts.push({ sessionId, status: 'validated', ...record });
       } catch (error) {
         const failure = { sessionId, reason: error.message };
         flow.transcriptErrors.push(failure);

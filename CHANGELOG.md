@@ -2176,6 +2176,13 @@ stop`, reviewer child reported it could not complete the falsification).
   governance-authority changes. Remove the obsolete V2
   `FLOWGUARD_REVIEWER_EFFORT` export from the demo scripts and live-control
   instructions; V2 selects the native model variant instead.
+- Require native decision approval windows to reject ambiguous tool outcomes,
+  unexplained error events and mixed success/error evidence. Bind the decision
+  receipt and every transition to the installed product's canonical
+  state-authority digest, including automatic follow-up transitions. Record the
+  persisted reviewer obligation/invocation/attempt binding beside each
+  reviewer transcript; transcript validation remains structural and
+  `ReviewFindings` remains the review-completion authority.
 - Align public documentation with current behavior: refine README demo copy and
   lifecycle alt text, retain the peer-review host preconditions, update the
   Product One Pager to the OpenCode V2-scoped native reviewer mechanism and the

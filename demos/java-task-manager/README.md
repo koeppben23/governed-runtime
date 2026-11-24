@@ -246,8 +246,10 @@ Use a fresh root and a free `127.0.0.1:49375`. The runner starts and authenticat
 its own OpenCode child, with separate configuration and storage, and stops only
 that child on exit. It never attaches to an existing listener. Supply model
 credentials through the provider environment; the runner does not reuse the
-shared host's credential store. Native decisions require current, session-bound
-audit evidence, not just HTTP success. An ambiguous transport outcome stops the
+shared host's credential store. Native decisions require current, session-bound audit evidence, not just
+HTTP success: canonical state digests must link the pre-dispatch snapshot to the
+settled state, and the audit window may contain only typed, interpretable tool
+outcomes. An ambiguous transport outcome stops the
 run without resubmitting the decision. Native HTTP response bodies are not
 written to evidence or logs.
 

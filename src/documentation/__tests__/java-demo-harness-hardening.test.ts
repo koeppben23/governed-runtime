@@ -8,10 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Runner } from '../../../demos/java-task-manager/run-live-matrix.mjs';
 import { requestLoopback } from '../../../demos/lib/host-http.mjs';
 import { withIsolatedService } from '../../../demos/lib/service-lifecycle.mjs';
+import { computeStateDigest } from '../../integration/audit-outbox.js';
 
 const SECRET = 'RAW_HTTP_SENTINEL_3fd8';
 const SESSION = 'ses_parent';
 const CODE = 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN';
+const digestOf = (value: unknown) => computeStateDigest(value as never);
 const state = {
   phase: 'EVIDENCE_REVIEW',
   flowguardSessionId: 'fg-session',
@@ -30,6 +32,7 @@ const port = Number(process.argv.at(-1).split('=')[1]);
 const secret = ${JSON.stringify(SECRET)};
 const expected = 'Basic '+Buffer.from('opencode:'+process.env.OPENCODE_PASSWORD).toString('base64');
 const scenario = fs.readFileSync('scenario', 'utf8');
+const digests = JSON.parse(fs.readFileSync('digests.json', 'utf8'));
 const dir = path.join('workspaces','fixture','sessions','ses_parent');
 const audit = path.join(dir,'audit.jsonl');
 const stateFile = path.join(dir,'session-state.json');
@@ -96,11 +99,11 @@ const server = http.createServer(async (req,res) => {
   }
   const plan = before.phase === 'PLAN_REVIEW';
   const fromPhase = before.phase;
-  const toPhase = plan ? 'VALIDATION' : 'EXPORT_READY';
+  const toPhase = digests.decisionPhase;
   const transitionEvent = 'DECISION_APPROVE';
   const transitionAt = new Date().toISOString();
-  const preStateDigest = 'a'.repeat(64);
-  const postStateDigest = 'b'.repeat(64);
+  const preStateDigest = scenario === 'positive-synthetic-digests' ? 'a'.repeat(64) : digests.before;
+  const postStateDigest = scenario === 'positive-synthetic-digests' ? 'b'.repeat(64) : digests.decisionPost;
   if (scenario !== 'positive-no-transition') {
     append('transition:'+transitionEvent, {
       from:fromPhase,to:toPhase,preStateDigest,
@@ -120,9 +123,22 @@ const server = http.createServer(async (req,res) => {
   };
   append('decision:DEC-001',details);
   if(scenario==='positive-two-receipts') append('decision:DEC-002',details);
-  if(plan) append('transition:VALIDATION_PASSED',{from:'VALIDATION',to:'IMPLEMENTATION'});
+  if(digests.afterPhase !== toPhase) append('transition:VALIDATION_PASSED',{
+    from:toPhase,to:digests.afterPhase,
+    preStateDigest:scenario==='positive-digest-chain-gap'?'c'.repeat(64):postStateDigest,
+    postStateDigest:digests.after,
+  });
+  if(scenario==='positive-digest-chain-gap') append('state_write',{
+    preStateDigest:'c'.repeat(64),postStateDigest:digests.after,mutationDigest:digests.after,
+  });
+  if(scenario==='positive-ambiguous-tool') append('tool_call:flowguard_status',{tool:'flowguard_status'});
+  if(scenario==='positive-failed-tool-no-code') append('tool_call:flowguard_status',{tool:'flowguard_status',success:false,transitionCount:0});
+  if(scenario==='positive-success-with-error') append('tool_call:flowguard_status',{tool:'flowguard_status',success:true,errorCode:'UNEXPECTED',transitionCount:0});
+  if(scenario==='positive-extra-error') append('error:UNEXPECTED',{code:'UNEXPECTED'});
   if(scenario!=='positive-unchanged') {
-    fs.writeFileSync(stateFile, JSON.stringify({...before, phase: plan ? 'IMPLEMENTATION' : 'EXPORT_READY'}));
+    const next = {...before, phase: digests.afterPhase};
+    if(scenario==='positive-final-digest-mismatch') next.extra = 'mismatch';
+    fs.writeFileSync(stateFile, JSON.stringify(next));
   }
   return res.writeHead(204).end();
 });
@@ -184,6 +200,31 @@ describe('Java live harness', () => {
   }
 
   async function run<T>(scenario: string, callback: () => Promise<T>, skipAssertion = false) {
+    const beforeState = JSON.parse(await fs.readFile(stateFile, 'utf8')) as Record<string, unknown>;
+    const phase = beforeState.phase;
+    const decisionPhase =
+      phase === 'PLAN_REVIEW'
+        ? 'VALIDATION'
+        : phase === 'ARCH_REVIEW'
+          ? 'ARCH_COMPLETE'
+          : 'EXPORT_READY';
+    const afterPhase =
+      phase === 'PLAN_REVIEW'
+        ? 'IMPLEMENTATION'
+        : phase === 'ARCH_REVIEW'
+          ? 'ARCH_COMPLETE'
+          : 'EXPORT_READY';
+    await fs.writeFile(
+      path.join(configDir, 'digests.json'),
+      JSON.stringify({
+        before: digestOf(beforeState),
+        decisionPost: digestOf({ ...beforeState, phase: decisionPhase }),
+        after: digestOf({ ...beforeState, phase: afterPhase }),
+        decisionPhase,
+        afterPhase,
+      }),
+    );
+    runner.productStateDigest = async () => digestOf;
     await fs.writeFile(path.join(configDir, 'scenario'), scenario);
     return withIsolatedService(args(skipAssertion), async (host: typeof runner.host) => {
       runner.host = host;
@@ -231,6 +272,13 @@ describe('Java live harness', () => {
     'positive-unchanged',
     'positive-no-transition',
     'positive-wrong-transition-digest',
+    'positive-synthetic-digests',
+    'positive-digest-chain-gap',
+    'positive-final-digest-mismatch',
+    'positive-ambiguous-tool',
+    'positive-failed-tool-no-code',
+    'positive-success-with-error',
+    'positive-extra-error',
   ])('does not credit a 204 approval with %s', async (scenario) => {
     await expect(
       run(scenario, () => runner.approve(session(), 'approval', 'EVIDENCE_REVIEW')),
