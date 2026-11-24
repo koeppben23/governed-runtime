@@ -248,11 +248,17 @@ describe('live claim control host integration', () => {
     expect(controls).not.toContain("'--command'");
   });
 
-  it('rejects an empty claim-control selection', () => {
+  it('requires exactly one explicit claim-control selection', () => {
     const previous = process.env.FLOWGUARD_CLAIM_CASES;
     try {
+      delete process.env.FLOWGUARD_CLAIM_CASES;
+      expect(() => selectedClaimCases()).toThrow(/must explicitly select exactly one/);
       process.env.FLOWGUARD_CLAIM_CASES = '';
-      expect(() => selectedClaimCases()).toThrow(/at least one claim control/);
+      expect(() => selectedClaimCases()).toThrow(/must explicitly select exactly one/);
+      process.env.FLOWGUARD_CLAIM_CASES = 'claim-positive,claim-negative';
+      expect(() => selectedClaimCases()).toThrow(/must select exactly one/);
+      process.env.FLOWGUARD_CLAIM_CASES = 'claim-negative';
+      expect(selectedClaimCases()).toEqual(['claim-negative']);
     } finally {
       if (previous === undefined) delete process.env.FLOWGUARD_CLAIM_CASES;
       else process.env.FLOWGUARD_CLAIM_CASES = previous;

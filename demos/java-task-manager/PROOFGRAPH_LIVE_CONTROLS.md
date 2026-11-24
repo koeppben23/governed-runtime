@@ -22,14 +22,23 @@ replacement.
 
 ## Executable controls
 
-`run-live-claim-controls.mjs` runs both cases on real OpenCode/FlowGuard tools with
-the same pinned toolchain and checksummed tarball as `run-live-matrix.mjs`:
+`run-live-claim-controls.mjs` runs one case per invocation on real
+OpenCode/FlowGuard tools with the same pinned toolchain and checksummed tarball
+as `run-live-matrix.mjs`. Use a separate root and service lifecycle for each
+case:
 
 ```bash
 OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","provider":{"deepseek":{"models":{"deepseek-flash":{"options":{"reasoningEffort":"none","thinking":{"type":"disabled"}}}}}}}' \
 FLOWGUARD_REVIEWER_EFFORT=none \
+FLOWGUARD_CLAIM_CASES=claim-positive \
 node demos/java-task-manager/run-live-claim-controls.mjs \
-  --root /tmp/flowguard-claim-controls --model deepseek/deepseek-flash
+  --root /tmp/flowguard-claim-positive --model deepseek/deepseek-flash
+
+OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","provider":{"deepseek":{"models":{"deepseek-flash":{"options":{"reasoningEffort":"none","thinking":{"type":"disabled"}}}}}}}' \
+FLOWGUARD_REVIEWER_EFFORT=none \
+FLOWGUARD_CLAIM_CASES=claim-negative \
+node demos/java-task-manager/run-live-claim-controls.mjs \
+  --root /tmp/flowguard-claim-negative --model deepseek/deepseek-flash
 ```
 
 Before `/start`, each case receives the same committed fixtures: a documentation

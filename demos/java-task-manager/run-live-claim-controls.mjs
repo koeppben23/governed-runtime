@@ -357,17 +357,20 @@ async function runCase(runner, name, workspace, negative) {
 }
 
 export function selectedClaimCases() {
-  const requested = (process.env.FLOWGUARD_CLAIM_CASES ?? 'claim-positive,claim-negative')
+  const raw = process.env.FLOWGUARD_CLAIM_CASES;
+  if (raw === undefined || raw.trim() === '') {
+    throw new Error(
+      'FLOWGUARD_CLAIM_CASES must explicitly select exactly one claim control per invocation',
+    );
+  }
+  const requested = raw
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
   const known = new Set(['claim-positive', 'claim-negative']);
-  if (requested.length === 0) {
-    throw new Error('FLOWGUARD_CLAIM_CASES must select at least one claim control');
-  }
-  if (requested.length > 1) {
+  if (requested.length !== 1) {
     throw new Error(
-      'FLOWGUARD_CLAIM_CASES must select one claim control per invocation so the service environment is bound before startup',
+      'FLOWGUARD_CLAIM_CASES must select exactly one claim control per invocation so the service environment is bound before startup',
     );
   }
   for (const value of requested) {

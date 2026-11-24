@@ -702,14 +702,17 @@ function assertHostCallOk(result, label) {
   if (hostErrors.length > 0) throw new Error(`${label}: host error event observed`);
 }
 
-async function fetchWithTimeout(url, options, timeoutMs, label) {
+async function fetchWithTimeout(url, options, timeoutMs, label, consume) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return await consume(response);
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new Error(`${label}: timed out after ${timeoutMs}ms`);
+      const timeout = new Error(`${label}: timed out after ${timeoutMs}ms`);
+      timeout.code = 'HOST_TIMEOUT';
+      throw timeout;
     }
     throw error;
   } finally {
@@ -722,6 +725,56 @@ async function fetchWithTimeout(url, options, timeoutMs, label) {
  * commands use the headless CLI with an explicit slash-command message; a
  * decision command must never be downgraded to model-prompt text.
  */
+function typedAuditEvidence(events, session, flowguardSessionId) {
+  const evidence = [];
+  for (const event of events) {
+    if (!event.event?.startsWith('tool_call:')) continue;
+    if (
+      event.hostSessionId !== session.sessionId ||
+      event.flowguardSessionId !== flowguardSessionId ||
+      !Number.isInteger(event.auditSequence) ||
+      typeof event.detail?.tool !== 'string'
+    ) {
+      throw new Error(
+        `audit event identity/sequence mismatch for ${session.sessionId}: ${String(event.event)}`,
+      );
+    }
+    evidence.push({
+      tool: event.detail.tool,
+      success: typeof event.detail.success === 'boolean' ? event.detail.success : null,
+      errorCode: typeof event.detail.errorCode === 'string' ? event.detail.errorCode : null,
+      errorMessage:
+        typeof event.detail.errorMessage === 'string' ? event.detail.errorMessage : null,
+      auditSequence: event.auditSequence,
+      occurredAt: typeof event.occurredAt === 'string' ? event.occurredAt : null,
+    });
+  }
+  return evidence;
+}
+
+export function assertTypedAuditDenial(events, expectedCode, expectedTool) {
+  const denial = events.find(
+    (event) =>
+      event.success === false &&
+      event.errorCode === expectedCode &&
+      (expectedTool === undefined || event.tool === expectedTool),
+  );
+  if (!denial) {
+    throw new Error(`expected typed denial ${expectedCode} was not observed in new audit events`);
+  }
+  const unexpected = [
+    ...new Set(
+      events
+        .filter((event) => event.success === false && event.errorCode !== expectedCode)
+        .map((event) => event.errorCode)
+        .filter(Boolean),
+    ),
+  ];
+  if (unexpected.length > 0) {
+    throw new Error(`unexpected denial(s) alongside ${expectedCode}: ${unexpected.join(', ')}`);
+  }
+}
+
 const HOST_DECISION_COMMANDS = new Set([
   'approve',
   'override-approve',
@@ -748,75 +801,94 @@ export class Runner {
     fs.appendFileSync(this.logFile, `${line}\n`);
   }
 
-  async hostCommand(
-    session,
-    label,
-    name,
-    fromPhase,
-    { allowNon204 = false, expectPhaseChange = true, text = '', toPhase } = {},
-  ) {
+  async hostCommand(session, label, name, { allowNon204 = false, text = '' } = {}) {
     if (!session.sessionId) throw new Error(`${label}: host command requires a session`);
     const serviceFile = path.join(this.configDir, 'service.json');
     const service = JSON.parse(fs.readFileSync(serviceFile, 'utf8'));
     if (!Number.isInteger(service.port)) {
       throw new Error(`${label}: isolated service config has no port`);
     }
-    if (expectPhaseChange && typeof toPhase !== 'string') {
-      throw new Error(`${label}: host command ${name} requires an expected target phase`);
-    }
     const evidenceFile = path.join(this.evidenceDir, `${label}.jsonl`);
     const auth =
       typeof service.password === 'string'
         ? `Basic ${Buffer.from(`opencode:${service.password}`).toString('base64')}`
         : undefined;
-    const response = await fetchWithTimeout(
-      `http://localhost:${service.port}/api/session/${encodeURIComponent(session.sessionId)}/command`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-opencode-directory': session.workspace,
-          ...(auth ? { authorization: auth } : {}),
-        },
-        body: JSON.stringify({ name, text }),
-      },
-      this.options.hostCommandTimeoutMs ?? 120_000,
-      `${label}: host command ${name}`,
-    );
-    const body = response.status === 204 ? '' : await response.text();
+    let evidenceFd;
     try {
-      fs.writeFileSync(
-        evidenceFile,
-        `${JSON.stringify({
-          type: 'host_command',
-          timestamp: Date.now(),
-          sessionID: session.sessionId,
-          workspace: session.workspace,
-          command: name,
-          status: response.status,
-          body,
-        })}\n`,
-        { flag: 'wx' },
-      );
+      evidenceFd = fs.openSync(evidenceFile, 'wx');
     } catch (error) {
       if (error?.code === 'EEXIST') {
         throw new Error(`evidence file already exists for ${label}; use a fresh --root`);
       }
       throw error;
     }
-    if (response.status !== 204) {
-      if (!allowNon204) {
-        throw new Error(`${label}: host command ${name} failed (${response.status}): ${body}`);
+    const writeEvidence = (value) => fs.writeSync(evidenceFd, `${JSON.stringify(value)}\n`);
+    writeEvidence({
+      type: 'host_command_started',
+      timestamp: Date.now(),
+      sessionID: session.sessionId,
+      workspace: session.workspace,
+      command: name,
+    });
+    let result;
+    try {
+      result = await fetchWithTimeout(
+        `http://localhost:${service.port}/api/session/${encodeURIComponent(session.sessionId)}/command`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-opencode-directory': session.workspace,
+            ...(auth ? { authorization: auth } : {}),
+          },
+          body: JSON.stringify({ name, text }),
+        },
+        this.options.hostCommandTimeoutMs ?? 120_000,
+        `${label}: host command ${name}`,
+        async (response) => ({
+          status: response.status,
+          body: response.status === 204 ? '' : await response.text(),
+        }),
+      );
+      writeEvidence({
+        type: 'host_command_result',
+        timestamp: Date.now(),
+        status: result.status,
+        bodyLength: Buffer.byteLength(result.body),
+        bodySha256: createHash('sha256').update(result.body).digest('hex'),
+      });
+    } catch (error) {
+      writeEvidence({
+        type: 'host_command_error',
+        timestamp: Date.now(),
+        code: error?.code ?? 'HOST_COMMAND_FAILED',
+        message: error instanceof Error ? error.message : String(error),
+      });
+      if (error?.code === 'HOST_TIMEOUT') {
+        const unknown = new Error(
+          `${label}: host command ${name} timed out after dispatch; outcome is unknown`,
+        );
+        unknown.code = 'HOST_COMMAND_UNKNOWN_OUTCOME';
+        throw unknown;
       }
-      this.log(`${label}: host command ${name} returned ${response.status}`);
+      throw error;
+    } finally {
+      fs.closeSync(evidenceFd);
+    }
+    const { status, body } = result;
+    if (status !== 204) {
+      if (!allowNon204) {
+        throw new Error(`${label}: host command ${name} failed (${status}): ${body}`);
+      }
+      this.log(`${label}: host command ${name} returned ${status}`);
       this.turnObservations.push({
         label,
-        exitCode: response.status,
+        exitCode: status,
         durationMs: 0,
         denialCodes: [],
         denialOccurrences: [],
       });
-      return { status: response.status, body };
+      return { status: status, body };
     }
     this.log(`${label}: host command ${name} accepted`);
     this.turnObservations.push({
@@ -826,13 +898,7 @@ export class Runner {
       denialCodes: [],
       denialOccurrences: [],
     });
-    if (!expectPhaseChange) return { status: response.status, body };
-    const deadline = Date.now() + 30_000;
-    while (Date.now() < deadline) {
-      if (this.currentPhase(session) === toPhase) return { status: response.status, body };
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    throw new Error(`${label}: host command ${name} did not reach ${toPhase} from ${fromPhase}`);
+    return { status: status, body };
   }
 
   readAudit(session) {
@@ -858,7 +924,7 @@ export class Runner {
       typeof service.password === 'string'
         ? `Basic ${Buffer.from(`opencode:${service.password}`).toString('base64')}`
         : undefined;
-    const response = await fetchWithTimeout(
+    const result = await fetchWithTimeout(
       `http://localhost:${service.port}/api/experimental/session/${encodeURIComponent(session.sessionId)}/wait`,
       {
         method: 'POST',
@@ -869,9 +935,13 @@ export class Runner {
       },
       this.options.sessionWaitTimeoutMs ?? 15 * 60_000,
       `${label}: session wait`,
+      async (response) => ({
+        status: response.status,
+        body: response.status === 204 ? '' : await response.text(),
+      }),
     );
-    if (response.status !== 204) {
-      throw new Error(`session wait failed (${response.status}): ${await response.text()}`);
+    if (result.status !== 204) {
+      throw new Error(`session wait failed (${result.status}): ${result.body}`);
     }
   }
 
@@ -879,9 +949,8 @@ export class Runner {
     if (!session.sessionId) {
       throw new Error(`${label}: command ${command} requires an existing session`);
     }
-    const response = await this.hostCommand(session, label, command, undefined, {
+    const response = await this.hostCommand(session, label, command, {
       allowNon204: true,
-      expectPhaseChange: false,
       text: prompt ?? '',
     });
     await this.waitForSessionIdle(session, `${label}: host command ${command}`);
@@ -890,36 +959,21 @@ export class Runner {
         `${label}: host command ${command} failed (${response.status}): ${response.body}`,
       );
     }
-    const events = this.readAuditEventsSince(session, auditFloor).filter(
-      (event) => event.event?.startsWith('tool_call:') || event.detail?.kind === 'tool_call',
+    const state = this.requireBoundState(session).state;
+    const auditEvidence = typedAuditEvidence(
+      this.readAuditEventsSince(session, auditFloor),
+      session,
+      state.flowguardSessionId,
     );
-    const stdout = events
-      .map((event) =>
-        JSON.stringify({
-          type: 'tool_use',
-          part: {
-            tool: event.detail?.tool ?? String(event.event).replace(/^tool_call:/, ''),
-            sessionID: session.sessionId,
-            state: {
-              status: 'completed',
-              output: JSON.stringify({
-                error: event.detail?.success === false,
-                code: event.detail?.errorCode,
-                message: event.detail?.errorMessage,
-              }),
-            },
-          },
-        }),
-      )
-      .join('\n');
     return {
       code: response.status === 204 || options.expectedDenial ? 0 : 1,
-      stdout,
+      stdout: '',
       stderr: '',
       timedOut: false,
       durationMs: 0,
       sessionIds: [session.sessionId],
       hostCommandTransport: true,
+      auditEvidence,
     };
   }
 
@@ -1004,12 +1058,47 @@ export class Runner {
     const stateObserved = digestBefore !== null && digestAfter !== null;
     session.lastTurn = {
       label,
-      toolCalls: toolUseEvents(result.stdout).length,
+      toolCalls: result.auditEvidence
+        ? result.auditEvidence.length
+        : toolUseEvents(result.stdout).length,
       stateObserved,
       // An unreadable state digest is NOT an observed unchanged state.
       stateChanged: stateObserved ? digestAfter !== digestBefore : null,
       phaseAfter: this.currentPhase(session),
     };
+    if (result.auditEvidence) {
+      const command = options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1];
+      this.settleAwaitingRecovery(session, label, command);
+      if (options.expectedDenial) {
+        assertTypedAuditDenial(
+          result.auditEvidence,
+          options.expectedDenial,
+          options.expectedDenialTool,
+        );
+      } else {
+        const denials = result.auditEvidence.filter(
+          (event) => event.success === false && event.errorCode,
+        );
+        if (denials.length > 0) {
+          throw new DemoNotVerifiedError(
+            `${label}: unhandled typed denial(s) [${[
+              ...new Set(denials.map((event) => event.errorCode)),
+            ].join(', ')}]; the proof is NOT_VERIFIED`,
+          );
+        }
+      }
+      if (
+        options.expectedTargetPhase !== undefined &&
+        this.currentPhase(session) !== options.expectedTargetPhase
+      ) {
+        throw new Error(
+          `${label}: expected target phase ${options.expectedTargetPhase}, observed ${String(
+            this.currentPhase(session),
+          )}`,
+        );
+      }
+      return result;
+    }
     if (options.expectedDenial) {
       assertExpectedDenial(result.stdout, options.expectedDenial, options.expectedDenialTool);
       this.settleAwaitingRecovery(
@@ -1533,7 +1622,10 @@ export class Runner {
     if (targetPhase === undefined) {
       throw new Error(`${label}: approval from ${expectedPhase} has no allowed target phase`);
     }
-    await this.hostCommand(session, label, 'approve', expectedPhase, { toPhase: targetPhase });
+    await this.turn(session, label, undefined, {
+      command: 'approve',
+      expectedTargetPhase: targetPhase,
+    });
   }
 
   /**
