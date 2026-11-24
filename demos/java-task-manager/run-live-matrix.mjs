@@ -752,9 +752,6 @@ export class Runner {
       throw new Error(`${label}: host command ${name} requires an expected target phase`);
     }
     const evidenceFile = path.join(this.evidenceDir, `${label}.jsonl`);
-    if (fs.existsSync(evidenceFile)) {
-      throw new Error(`evidence file already exists for ${label}; use a fresh --root`);
-    }
     const auth =
       typeof service.password === 'string'
         ? `Basic ${Buffer.from(`opencode:${service.password}`).toString('base64')}`
@@ -774,18 +771,26 @@ export class Runner {
       `${label}: host command ${name}`,
     );
     const body = response.status === 204 ? '' : await response.text();
-    fs.writeFileSync(
-      evidenceFile,
-      `${JSON.stringify({
-        type: 'host_command',
-        timestamp: Date.now(),
-        sessionID: session.sessionId,
-        workspace: session.workspace,
-        command: name,
-        status: response.status,
-        body,
-      })}\n`,
-    );
+    try {
+      fs.writeFileSync(
+        evidenceFile,
+        `${JSON.stringify({
+          type: 'host_command',
+          timestamp: Date.now(),
+          sessionID: session.sessionId,
+          workspace: session.workspace,
+          command: name,
+          status: response.status,
+          body,
+        })}\n`,
+        { flag: 'wx' },
+      );
+    } catch (error) {
+      if (error?.code === 'EEXIST') {
+        throw new Error(`evidence file already exists for ${label}; use a fresh --root`);
+      }
+      throw error;
+    }
     if (response.status !== 204) {
       if (!allowNon204) {
         throw new Error(`${label}: host command ${name} failed (${response.status}): ${body}`);

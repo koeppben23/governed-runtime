@@ -66,7 +66,12 @@ export function writeIsolatedHostConfig(configDir) {
   fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
 
   const serviceFile = path.join(configDir, HOST_SERVICE_FILE);
-  if (fs.existsSync(serviceFile)) {
+  try {
+    fs.writeFileSync(serviceFile, `${JSON.stringify({ port: HOST_SERVICE_PORT }, null, 2)}\n`, {
+      flag: 'wx',
+    });
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
     const service = JSON.parse(fs.readFileSync(serviceFile, 'utf8'));
     if (service?.port !== undefined && service.port !== HOST_SERVICE_PORT) {
       throw new Error(
@@ -74,8 +79,6 @@ export function writeIsolatedHostConfig(configDir) {
           'refusing to override it',
       );
     }
-  } else {
-    fs.writeFileSync(serviceFile, `${JSON.stringify({ port: HOST_SERVICE_PORT }, null, 2)}\n`);
   }
   return file;
 }
