@@ -181,7 +181,7 @@ export async function withIsolatedService(
           assertAlive();
           return { ...env, PWD: workspace };
         },
-        async request(route, { method, body }, timeoutMs) {
+        async request(route, { method, body, captureBody = false }, timeoutMs) {
           assertAlive();
           return requestLoopback(
             port,
@@ -193,6 +193,7 @@ export async function withIsolatedService(
                 ...(body === undefined ? {} : { 'content-type': 'application/json' }),
               },
               body,
+              captureBody,
             },
             timeoutMs,
           );

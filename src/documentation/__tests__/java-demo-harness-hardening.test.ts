@@ -48,7 +48,10 @@ const server = http.createServer(async (req,res) => {
     res.writeHead(401).end();
     return;
   }
-  if(req.url === '/api/session') return res.writeHead(200).end();
+  if(req.url === '/api/session') {
+    if(req.method === 'POST') return res.writeHead(200, {'content-type':'application/json'}).end(JSON.stringify({data:{id:'ses_parent'}}));
+    return res.writeHead(200).end();
+  }
   if(req.url === '/api/skip') {
     return res.end(process.env.FLOWGUARD_LIVE_SKIP_ASSERTION ?? 'unset');
   }
@@ -59,6 +62,7 @@ const server = http.createServer(async (req,res) => {
   const parts = [];
   for await (const bytes of req) parts.push(bytes);
   const input = JSON.parse(Buffer.concat(parts));
+  if (input.name === 'start') return res.writeHead(204).end();
   if(scenario === 'non204') return res.writeHead(500).end(secret);
   if(scenario === 'reset') {
     res.writeHead(500, {'content-length': 1000}).write(secret, () => res.destroy());
@@ -249,6 +253,16 @@ describe('Java live harness', () => {
     await fs.writeFile(stateFile, JSON.stringify(boundState('PLAN_REVIEW')));
     await run('positive', () => runner.approve(session(), 'approval', 'PLAN_REVIEW'));
     expect(JSON.parse(await fs.readFile(stateFile, 'utf8')).phase).toBe('IMPLEMENTATION');
+  });
+
+  it('starts a new session through the native command API', async () => {
+    await fs.writeFile(path.join(path.dirname(stateFile), 'audit.jsonl'), '');
+    const session: { workspace: string; sessionId?: string } = { workspace: root };
+    await run('native-start', () => runner.turn(session, 'start', undefined, { command: 'start' }));
+    expect(session.sessionId).toBe(SESSION);
+    const evidenceFile = await fs.readFile(path.join(evidence, 'start.jsonl'), 'utf8');
+    expect(evidenceFile).toContain('host_command_started');
+    expect(evidenceFile).toContain('host_command_response_received');
   });
 
   it('accepts a bound unchanged refusal despite a failing HTTP response without retaining its body', async () => {

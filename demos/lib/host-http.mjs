@@ -14,7 +14,7 @@ export class HostTransportError extends Error {
 export function requestLoopback(
   port,
   route,
-  { method, headers = {}, body = undefined },
+  { method, headers = {}, body = undefined, captureBody = false },
   timeoutMs,
 ) {
   if (!Number.isInteger(port) || port < 1 || port > 65535 || !route.startsWith('/api/')) {
@@ -42,6 +42,7 @@ export function requestLoopback(
       (response) => {
         const hash = createHash('sha256');
         let bodyLength = 0;
+        let captured = '';
         response.on('error', failed);
         response.on('data', (chunk) => {
           bodyLength += chunk.length;
@@ -50,11 +51,17 @@ export function requestLoopback(
             return;
           }
           hash.update(chunk);
+          if (captureBody) captured += chunk.toString('utf8');
         });
         response.on('end', () => {
           clearTimeout(timer);
           if (!response.complete || controller.signal.aborted) return failed();
-          resolve({ status: response.statusCode, bodyLength, bodySha256: hash.digest('hex') });
+          resolve({
+            status: response.statusCode,
+            bodyLength,
+            bodySha256: hash.digest('hex'),
+            ...(captureBody ? { body: captured } : {}),
+          });
         });
       },
     );

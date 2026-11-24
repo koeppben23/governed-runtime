@@ -232,8 +232,9 @@ and `.node-version`), verifies the tarball against its `checksums.sha256`
 sidecar before installing, prepares fresh workspaces, opts the repository
 config into raw auditor archives next to the isolated global grant, runs
 prompt-template steps through headless `opencode run` from an explicit working
-directory, and sends native decisions directly through the host command API.
-It verifies the worktree binding and packages and exports the parent and
+directory, and sends native start/check commands and decisions directly through
+the host command API. It creates the root session through the isolated host,
+then verifies the worktree binding and packages and exports the parent and
 reviewer-child transcripts to exclusive files. Each export must match its
 session, worktree and parent and end in a completed assistant response with
 text after the final user request. The matrix records the installed

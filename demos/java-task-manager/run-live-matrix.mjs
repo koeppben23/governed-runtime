@@ -779,6 +779,8 @@ const HOST_DECISION_COMMANDS = new Set([
   'reject',
   'review-decision',
 ]);
+const HOST_NATIVE_COMMANDS = new Set(['start', 'check']);
+const HOST_TRANSPORT_COMMANDS = new Set([...HOST_DECISION_COMMANDS, ...HOST_NATIVE_COMMANDS]);
 
 function unknownHostOutcome(label) {
   return new HostTransportError(
@@ -844,7 +846,7 @@ export class Runner {
   async hostCommand(session, label, name, text) {
     const host = this.requireHost();
     if (
-      !HOST_DECISION_COMMANDS.has(name) ||
+      !HOST_TRANSPORT_COMMANDS.has(name) ||
       !/^ses_[a-zA-Z0-9_-]+$/.test(session.sessionId ?? '')
     ) {
       throw new HostTransportError(
@@ -939,6 +941,86 @@ export class Runner {
     }
     cache.set(workspace, compute);
     return compute;
+  }
+
+  async createHostSession(session, label) {
+    if (!session.workspace) {
+      throw new DemoNotVerifiedError(`${label}: native start requires a workspace`);
+    }
+    const response = await this.requireHost().request(
+      '/api/session',
+      {
+        method: 'POST',
+        body: JSON.stringify({ title: label, location: { directory: session.workspace } }),
+        captureBody: true,
+      },
+      this.options.hostCommandTimeoutMs ?? 120_000,
+    );
+    if (response.status !== 200 && response.status !== 201) {
+      throw new DemoNotVerifiedError(`${label}: isolated host could not create a session`);
+    }
+    let id;
+    try {
+      const parsed = JSON.parse(response.body);
+      id = parsed?.data?.id ?? parsed?.id;
+    } catch {
+      id = undefined;
+    }
+    if (typeof id !== 'string' || !/^ses_[a-zA-Z0-9_-]+$/.test(id)) {
+      throw new DemoNotVerifiedError(`${label}: isolated host returned no valid session identity`);
+    }
+    return id;
+  }
+
+  async hostNativeCommandTransport(session, label, command) {
+    const before = session.sessionId ? this.requireBoundState(session) : null;
+    const auditBefore = before ? readAuditEvents(before.sessionDir) : [];
+    if (!session.sessionId) {
+      if (command !== 'start') {
+        throw new DemoNotVerifiedError(`${label}: native ${command} requires an existing session`);
+      }
+      session.sessionId = await this.createHostSession(session, label);
+    }
+    const response = await this.hostCommand(session, label, command, '');
+    if (response.status !== 204) {
+      throw new DemoNotVerifiedError(`${label}: isolated host rejected native ${command}`);
+    }
+    try {
+      await this.waitForSessionIdle(session);
+    } catch {
+      throw unknownHostOutcome(label);
+    }
+    const settledAt = Date.now();
+    const after = this.requireBoundState(session);
+    if (
+      typeof after.state.flowguardSessionId !== 'string' ||
+      after.state.binding?.hostSessionId !== session.sessionId
+    ) {
+      throw new DemoNotVerifiedError(
+        `${label}: native ${command} did not persist the bound session`,
+      );
+    }
+    const rawAudit = this.readAudit(session);
+    const events = rawAudit
+      ? rawAudit
+          .split('\n')
+          .filter((line) => line.trim().length > 0)
+          .map((line) => JSON.parse(line))
+      : [];
+    const auditEvidence = typedAuditEvidence(
+      events.slice(auditBefore.length),
+      session,
+      after.state.flowguardSessionId,
+    );
+    return {
+      code: 0,
+      stdout: '',
+      stderr: '',
+      timedOut: false,
+      durationMs: settledAt - response.startedAt,
+      sessionIds: [session.sessionId],
+      auditEvidence,
+    };
   }
 
   async hostCommandTransport(session, label, command, options) {
@@ -1059,13 +1141,17 @@ export class Runner {
 
   async turn(session, label, prompt, options = {}) {
     const slash = /^\/([a-z-]+)(?:\s|$)/.exec(prompt ?? '')?.[1];
-    if (HOST_DECISION_COMMANDS.has(slash) && !HOST_DECISION_COMMANDS.has(options.command)) {
+    if (
+      this.host &&
+      HOST_TRANSPORT_COMMANDS.has(slash) &&
+      !HOST_TRANSPORT_COMMANDS.has(options.command)
+    ) {
       throw new HostTransportError(
         'HOST_COMMAND_INVALID',
-        'native decision must use the explicit command boundary',
+        'native command must use the explicit command boundary',
       );
     }
-    if (options.command && !HOST_DECISION_COMMANDS.has(options.command)) {
+    if (options.command && !HOST_TRANSPORT_COMMANDS.has(options.command)) {
       prompt = `/${options.command}${prompt ? `\n${prompt}` : ''}`;
       options = { ...options, command: undefined };
     }
@@ -1079,7 +1165,9 @@ export class Runner {
         ? lastAuditSequence(this.configDir, session.sessionId)
         : 0;
     let result;
-    if (options.command) {
+    if (options.command && HOST_NATIVE_COMMANDS.has(options.command)) {
+      result = await this.hostNativeCommandTransport(session, label, options.command);
+    } else if (options.command) {
       result = await this.hostCommandTransport(session, label, options.command, options);
     } else {
       const model = this.options.variant
@@ -2132,7 +2220,7 @@ async function main() {
       runner.log(`START ${name}`);
       const session = { workspace: flow.workspace, terminal: flow.terminal };
       try {
-        await runner.turn(session, `${name}-01-start`, '/start');
+        await runner.turn(session, `${name}-01-start`, undefined, { command: 'start' });
         const installed = runner.installedBuild(flow.workspace);
         record.installedBuild = installed;
         if (options.productSha !== undefined && installed.gitSha !== options.productSha) {

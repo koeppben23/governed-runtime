@@ -44,7 +44,9 @@ Run these commands sequentially; the dedicated service requires an unused
 selects reasoning through the native model variant/configuration and rejects
 `FLOWGUARD_REVIEWER_EFFORT`; do not export it. The setup installer is pointed
 at an absent run-local service record, so it cannot restart the user's shared
-service; the runner starts and verifies its own child. The runner
+service; the runner starts and verifies its own child. Native `/start` is
+dispatched through that child's session command API; prompt templates continue
+through the headless CLI. The runner
 sets the JUnit skip in the negative case's actual service process and removes
 any inherited skip from the positive case. It will not reuse a running service.
 The negative approval is accepted only with a unique audit refusal and its

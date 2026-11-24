@@ -13,12 +13,14 @@ reviewer prompt context and installed Task-return guidance.
   or restart the user's shared service. Supply provider credentials in the
   environment; shared host storage is not reused. Claim controls bind the
   assertion skip to the child at startup, not to a later CLI client.
-- Native approval requires a successful decision call, a receipt matched to
-  the dispatch rationale and verdict, and a persisted transition to the
-  expected phase. Every tool event in the window must carry a boolean success
-  and a typed error code iff it failed; contradictory or unexplained error
-  events fail. Legitimate automatic follow-up calls are allowed only as
-  successful, fully typed calls inside the settled dispatch interval.
+- Native start/check commands and decisions use the host command API; prompt
+  templates use the headless CLI. Approval requires a successful decision call,
+  a receipt matched to the dispatch rationale and verdict, and a persisted
+  transition to the expected phase. Every tool event in the window must carry a
+  boolean success and a typed error code iff it failed; contradictory or
+  unexplained error events fail. Legitimate automatic follow-up calls are
+  allowed only as successful, fully typed calls inside the settled dispatch
+  interval.
 - The receipt and transition digests are checked against the installed
   product's canonical `computeStateDigest`, not a demo-local hash. The audit
   chain must link the observed pre-dispatch state to the settled state; a
