@@ -183,6 +183,44 @@ export function prepareClaimWorkspace(workspace) {
   );
 }
 
+/**
+ * The ticket-adoption turn must settle at exactly TICKET with the repository
+ * ticket and no plan. Planning is a separate supported command.
+ */
+export function assertPostTaskAdoption(state, expected) {
+  if (state?.phase !== 'TICKET') {
+    throw new DemoNotVerifiedError(
+      `task adoption ended in ${String(state?.phase)}; expected TICKET before planning`,
+    );
+  }
+  const ticket = state.ticket;
+  if (ticket?.digest !== expected.digest || ticket?.text !== expected.text) {
+    throw new DemoNotVerifiedError('task adoption did not persist the exact repository ticket');
+  }
+  if (ticket?.source !== 'user') {
+    throw new DemoNotVerifiedError('task adoption did not bind the repository ticket source');
+  }
+  if (ticket?.inputOrigin !== 'workspace') {
+    throw new DemoNotVerifiedError('task adoption did not record the workspace input origin');
+  }
+  if (
+    !Array.isArray(ticket.references) ||
+    !ticket.references.some(
+      (reference) => reference?.ref === TICKET_FILE && reference?.type === 'doc',
+    )
+  ) {
+    throw new DemoNotVerifiedError(
+      `task adoption does not reference the repository ticket ${TICKET_FILE}`,
+    );
+  }
+  if (state.plan !== null && state.plan !== undefined) {
+    throw new DemoNotVerifiedError(
+      'task adoption created a plan; planning must be a separate turn',
+    );
+  }
+  return ticket;
+}
+
 /** Reject withdrawal, weakening, reclassification or replacement of the claim. */
 export function assertRetainedCriticalClaim(state) {
   const expected = criticalClaimDeclaration();
@@ -230,15 +268,21 @@ export function assertClaimEvidence(state, { negative }) {
   };
 }
 
-const PLAN_PROMPT = (claims) =>
+export const PLAN_PROMPT = (claims) =>
   `Create a complete plan for the ticket in ${TICKET_FILE}. Its ## Verification section must state ` +
   `that baseline and post-implementation validation execute every active check of this workspace (do not ` +
   `substitute, re-bind, add or omit checks) and that the supplied fixtures assert the documented command. ` +
   `Use EXACTLY this claims array: ${JSON.stringify(claims)}. ` +
   `The assertion fixtures already exist. Retain this claim through every stage: do not withdraw, ` +
-  `reclassify, replace or weaken it. Complete the full independent plan review.`;
+  `reclassify, replace or weaken it. Complete the full independent plan review. ` +
+  `For the hypothetical counterexample, keep the complete required documentation line unchanged and ` +
+  `add a separate conflicting command containing -DskipTests: the presence assertion passes and the ` +
+  `conflicting-command assertion fails. Describe this as plan reasoning only; do not implement the ` +
+  `counterexample in the delivered documentation. ` +
+  `When responding to findings, use a flowguard-finding-resolutions block that references only the ` +
+  `current bound review obligation, review iteration, plan version and that review's finding IDs.`;
 
-async function runCase(runner, name, workspace, negative) {
+export async function runCase(runner, name, workspace, negative) {
   const record = { name, negative, workspace, result: RESULT.FAILED };
   const session = { workspace, terminal: 'COMPLETE' };
   try {
@@ -250,32 +294,29 @@ async function runCase(runner, name, workspace, negative) {
         `installed artifact gitSha ${String(installed.gitSha)} != declared product ${runner.options.productSha}`,
       );
     }
-    // Submit the ticket source through the /task prompt template. The command
-    // adopts the repository file itself, so the model never receives the ticket
-    // body as planning context.
-    await runner.turn(session, `${name}-02-task`, `--file ${TICKET_FILE}`, { command: 'task' });
-    // If /task reached an already-reviewed plan, do not resubmit it unless the
-    // retained claim was changed. A claim-changing /task spill must be replaced
-    // by the exact declared claim before the control can proceed.
-    const afterTask = runner.requireBoundState(session).state;
-    let plannedAlready =
-      afterTask.phase === 'PLAN_REVIEW' && afterTask.plan?.reviewCompletion === 'reviewer_accepted';
-    if (plannedAlready) {
-      try {
-        assertRetainedCriticalClaim(afterTask);
-      } catch {
-        plannedAlready = false;
-      }
-    }
-    if (!plannedAlready) {
-      await runner.turn(session, `${name}-03-plan`, PLAN_PROMPT([criticalClaimDeclaration()]), {
-        command: 'plan',
-      });
-      const gate = await convergePlanGate({ runner, session, label: `${name}-03-plan` });
-      if (gate.outcome !== PLAN_GATE.ACCEPTED) {
-        const reason = planGateNotConvergedReason(gate.outcome);
-        throw new DemoNotVerifiedError(`${name}: ${reason}; the control proof is NOT_VERIFIED`);
-      }
+    // Submit the ticket source through the /task prompt template. Adoption and
+    // planning are deliberately separate supported commands: /task must settle
+    // at TICKET with the exact repository ticket and no plan.
+    const ticketPath = path.join(workspace, TICKET_FILE);
+    const expectedTicket = {
+      digest: sha256(ticketPath),
+      text: fs.readFileSync(ticketPath, 'utf8'),
+    };
+    await runner.turn(
+      session,
+      `${name}-02-task`,
+      `--file ${TICKET_FILE} Adopt only this repository ticket and stop after ticket capture; ` +
+        'do not create, review or implement a plan.',
+      { command: 'task' },
+    );
+    assertPostTaskAdoption(runner.requireBoundState(session).state, expectedTicket);
+    await runner.turn(session, `${name}-03-plan`, PLAN_PROMPT([criticalClaimDeclaration()]), {
+      command: 'plan',
+    });
+    const gate = await convergePlanGate({ runner, session, label: `${name}-03-plan` });
+    if (gate.outcome !== PLAN_GATE.ACCEPTED) {
+      const reason = planGateNotConvergedReason(gate.outcome);
+      throw new DemoNotVerifiedError(`${name}: ${reason}; the control proof is NOT_VERIFIED`);
     }
     assertRetainedCriticalClaim(runner.requireBoundState(session).state);
     await runner.approve(session, `${name}-04-approve-plan`, 'PLAN_REVIEW');

@@ -349,7 +349,14 @@ export async function turn(runner, session, label, prompt, options = {}) {
     );
     if (
       expected.kind === 'ticket_adoption' &&
-      recoveryPersisted(expected, snapshot.state, command, readAuditEvents(snapshot.sessionDir))
+      recoveryPersisted(
+        expected,
+        snapshot.state,
+        command,
+        readAuditEvents(snapshot.sessionDir),
+        undefined,
+        await runner.transitionAuthority(session.workspace),
+      )
     ) {
       session.recoveredDenials.push({
         status: 'proven',

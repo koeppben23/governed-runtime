@@ -3,18 +3,22 @@
  * @description Fail-closed test oracles for the critical-claim live controls.
  */
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ADVERSARIAL_ASSERTION,
+  PLAN_PROMPT,
   POSITIVE_ASSERTION,
   TICKET_FILE,
   assertClaimEvidence,
+  assertPostTaskAdoption,
   assertRetainedCriticalClaim,
   criticalClaimDeclaration,
   prepareClaimWorkspace,
+  runCase,
   selectedClaimCases,
 } from '../../../demos/java-task-manager/run-live-claim-controls.mjs';
 import { finalizeControlRecord } from '../../../demos/java-task-manager/run-live-matrix.mjs';
@@ -221,6 +225,179 @@ describe('critical claim live-control oracles', () => {
       );
       expect(status.trim()).toBe('');
     });
+  });
+});
+
+describe('claim-control orchestration boundary', () => {
+  let workspace: string;
+  const ticketText = [
+    '# Documentation claim control',
+    '',
+    'Extend docs/usage-notes.md without changing the documented command.',
+    '',
+    'Run ./mvnw test to run the task-manager tests.',
+    '',
+  ].join('\n');
+  const ticketDigest = createHash('sha256').update(ticketText).digest('hex');
+
+  beforeEach(async () => {
+    workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-claim-orchestration-'));
+    await fs.writeFile(path.join(workspace, TICKET_FILE), ticketText);
+  });
+
+  afterEach(async () => {
+    await fs.rm(workspace, { recursive: true, force: true });
+  });
+
+  function postTaskState(phase: string, claims: unknown[] | null = null) {
+    return {
+      phase,
+      flowguardSessionId: 'fg-claim',
+      binding: { hostSessionId: 'ses_claim' },
+      ticket: {
+        digest: ticketDigest,
+        text: ticketText,
+        source: 'user',
+        inputOrigin: 'workspace',
+        references: [{ ref: TICKET_FILE, type: 'doc' }],
+      },
+      plan:
+        claims === null
+          ? null
+          : {
+              claimDeclarations: { claims },
+              current: { digest: 'plan-digest' },
+              reviewCompletion: 'reviewer_accepted',
+            },
+    };
+  }
+
+  it('accepts exactly the persisted repository ticket with no plan', () => {
+    const state = postTaskState('TICKET');
+    expect(assertPostTaskAdoption(state, { digest: ticketDigest, text: ticketText })).toBe(
+      state.ticket,
+    );
+    expect(() =>
+      assertPostTaskAdoption(
+        { ...state, ticket: { ...state.ticket, digest: 'a'.repeat(64) } },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/exact repository ticket/);
+    expect(() =>
+      assertPostTaskAdoption(
+        { ...state, ticket: { ...state.ticket, text: 'changed' } },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/exact repository ticket/);
+    expect(() =>
+      assertPostTaskAdoption(
+        { ...state, ticket: { ...state.ticket, source: 'repository' } },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/repository ticket source/);
+    expect(() =>
+      assertPostTaskAdoption(
+        { ...state, ticket: { ...state.ticket, inputOrigin: undefined } },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/workspace input origin/);
+    expect(() =>
+      assertPostTaskAdoption(
+        { ...state, ticket: { ...state.ticket, inputOrigin: 'external_reference' } },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/workspace input origin/);
+    expect(() =>
+      assertPostTaskAdoption(
+        { ...state, ticket: { ...state.ticket, references: [] } },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/does not reference the repository ticket/);
+    expect(() =>
+      assertPostTaskAdoption(
+        {
+          ...state,
+          ticket: {
+            ...state.ticket,
+            references: [{ ref: 'TICKET_DOCS.md', type: 'doc' }],
+          },
+        },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/does not reference the repository ticket/);
+    expect(() =>
+      assertPostTaskAdoption(
+        { ...state, plan: { claimDeclarations: { claims: [] } } },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/planning must be a separate turn/);
+  });
+
+  it('fails closed for every planning spill before a plan command can be dispatched', async () => {
+    const altered = {
+      ...criticalClaimDeclaration(),
+      statement: `${criticalClaimDeclaration().statement} (altered)`,
+    };
+    const cases: Array<[string, ReturnType<typeof postTaskState>]> = [
+      ['plan', postTaskState('PLAN')],
+      ['plan-review-missing', postTaskState('PLAN_REVIEW', [])],
+      ['plan-review-altered', postTaskState('PLAN_REVIEW', [altered])],
+      [
+        'plan-review-multiple',
+        postTaskState('PLAN_REVIEW', [
+          criticalClaimDeclaration(),
+          { ...criticalClaimDeclaration(), statement: 'second claim' },
+        ]),
+      ],
+    ];
+    for (const [label, afterTask] of cases) {
+      const calls: Array<{ label: string; prompt: string | undefined; command: unknown }> = [];
+      let state: Record<string, unknown> = postTaskState('READY');
+      const runner = {
+        options: {},
+        turn: async (
+          _session: unknown,
+          callLabel: string,
+          prompt: string | undefined,
+          options: { command?: string } = {},
+        ) => {
+          calls.push({ label: callLabel, prompt, command: options.command });
+          state = callLabel.endsWith('-01-start') ? postTaskState('READY') : afterTask;
+          return { code: 0, stderr: '', timedOut: false, durationMs: 0, sessionIds: [] };
+        },
+        installedBuild: () => ({ gitSha: 'head' }),
+        requireBoundState: () => ({ state, sessionDir: workspace }),
+        log: () => {},
+      };
+      const record = await runCase(runner, 'claim-negative', workspace, true);
+      expect(record.result, label).toBe(RESULT.NOT_VERIFIED);
+      expect(
+        calls.map((call) => call.label),
+        label,
+      ).toEqual(['claim-negative-01-start', 'claim-negative-02-task']);
+      expect(
+        calls.some((call) => call.label.includes('03-plan')),
+        label,
+      ).toBe(false);
+      expect(
+        calls.some((call) => call.command === 'plan'),
+        label,
+      ).toBe(false);
+      expect(calls[1]?.prompt, label).toContain('Adopt only this repository ticket');
+    }
+  });
+
+  it('uses one shared plan prompt with the hypothetical counterexample and finding binding', () => {
+    const prompt = PLAN_PROMPT([criticalClaimDeclaration()]);
+    expect(prompt).toContain('keep the complete required documentation line unchanged');
+    expect(prompt).toContain('add a separate conflicting command containing -DskipTests');
+    expect(prompt).toContain('presence assertion passes');
+    expect(prompt).toContain('conflicting-command assertion fails');
+    expect(prompt).toContain('plan reasoning only');
+    expect(prompt).toContain('do not implement the counterexample');
+    expect(prompt).toContain('current bound review obligation');
+    expect(prompt).toContain('review iteration, plan version and that review');
+    expect(JSON.stringify(prompt)).not.toContain('negative');
   });
 });
 

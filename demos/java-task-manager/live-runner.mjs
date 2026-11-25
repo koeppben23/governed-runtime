@@ -3,8 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { DemoNotVerifiedError } from '../lib/results.mjs';
-import { implementationReviewAcceptanceProven, recoveryPersisted } from '../lib/recovery-state.mjs';
+import {
+  implementationReviewAcceptanceProven,
+  readAuditEvents,
+  recoveryPersisted,
+} from '../lib/recovery-state.mjs';
 import { loadInstalledReviewInvocationValidator } from '../lib/review-recovery-authority.mjs';
+import { loadInstalledTransitionResolver } from '../lib/product-transition.mjs';
 import {
   withHost,
   requireHost,
@@ -48,6 +53,7 @@ export class Runner {
     this.flows = [];
     this.turnObservations = [];
     this.reviewAuthorities = new Map();
+    this.transitionAuthorities = new Map();
     /** @type {Parameters<Parameters<typeof import('../lib/service-lifecycle.mjs').withIsolatedService>[1]>[0] | undefined} */
     this.host = undefined;
   }
@@ -87,6 +93,13 @@ export class Runner {
       this.reviewAuthorities.set(workspace, loadInstalledReviewInvocationValidator(workspace));
     }
     return this.reviewAuthorities.get(workspace);
+  }
+
+  transitionAuthority(workspace) {
+    if (!this.transitionAuthorities.has(workspace)) {
+      this.transitionAuthorities.set(workspace, loadInstalledTransitionResolver(workspace));
+    }
+    return this.transitionAuthorities.get(workspace);
   }
 
   createHostSession(session, label) {
@@ -134,12 +147,26 @@ export class Runner {
   async settleAwaitingRecovery(session, label, command) {
     if (!session.awaitingRecovery) return;
     const pending = session.awaitingRecovery;
-    const after = this.requireBoundState(session).state;
+    const snapshot = this.requireBoundState(session);
+    const after = snapshot.state;
     const validateInvocation =
       pending.expected?.kind === 'subject_approval'
         ? await this.reviewInvocationAuthority(session.workspace)
         : undefined;
-    if (!recoveryPersisted(pending.expected, after, command, [], validateInvocation)) {
+    const ticketAdoption = pending.expected?.kind === 'ticket_adoption';
+    const resolveTransition = ticketAdoption
+      ? await this.transitionAuthority(session.workspace)
+      : undefined;
+    if (
+      !recoveryPersisted(
+        pending.expected,
+        after,
+        command,
+        ticketAdoption ? readAuditEvents(snapshot.sessionDir) : [],
+        validateInvocation,
+        resolveTransition,
+      )
+    ) {
       throw new DemoNotVerifiedError(
         `${label}: pending recovery [${pending.codes.join(', ')}] was not demonstrated ` +
           'by the authorized affected-operation transition; stopping the flow',

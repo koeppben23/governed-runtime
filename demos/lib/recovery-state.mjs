@@ -327,20 +327,26 @@ export function expectRecovery(
  * The persisted ticket must be the exact adopted identity: the stored digest
  * must equal the expected digest AND the SHA-256 of the stored content, so a
  * tampered ticket text can never inherit a trusted digest. The audit trail
- * must show the operational sequence that corrected THIS denial - a failed
- * `flowguard_ticket` call with each observed ticket-source denial code, followed by a
- * successful `flowguard_ticket` call that itself records a transition,
- * followed by the canonical `READY -> TICKET` selection - restricted to the
- * current recovery turn (`auditSequenceFloor`) and the verified FlowGuard
- * session. A state update alone, a historical sequence, or a tampered ticket
+ * must show the operational sequence that corrected THIS denial: the failed
+ * `flowguard_ticket` calls, exactly one later successful call with a transition,
+ * and the canonical `READY -> TICKET` selection. The settled state may be
+ * beyond TICKET only when the session-bound transition chain from that selection
+ * reaches it without a gap. A state update alone, a historical sequence, a
+ * competing adoption, a later unresolved ticket denial, or a tampered ticket
  * never counts.
  */
-function ticketAdoptionPersisted(expected, state, auditEvents) {
+const isTicketCall = (event) =>
+  event?.event === 'tool_call:flowguard_ticket' && event.detail?.tool === 'flowguard_ticket';
+const isTransitionEvent = (event) =>
+  typeof event?.event === 'string' && event.event.startsWith('transition:');
+
+function ticketAdoptionPersisted(expected, state, auditEvents, resolveTransition) {
+  if (typeof resolveTransition !== 'function') return false;
   const ticket = state?.ticket;
-  if (state?.phase !== 'TICKET') return false;
   if (typeof ticket?.digest !== 'string' || ticket.digest !== expected.digest) return false;
   if (typeof ticket.text !== 'string' || ticket.text.length === 0) return false;
   if (ticketContentDigest(ticket.text) !== expected.digest) return false;
+  if (expected.source != null && ticket.source !== expected.source) return false;
 
   const floor = expected.auditSequenceFloor;
   if (
@@ -351,47 +357,85 @@ function ticketAdoptionPersisted(expected, state, auditEvents) {
     expected.denialCodes.some((code) => !TICKET_SOURCE_CONFLICT_CODES.has(code))
   )
     return false;
-  const scoped = auditEvents.filter(
+  let scoped;
+  try {
+    scoped = assertCompleteAuditWindow(state, floor, auditEvents);
+  } catch {
+    return false;
+  }
+  const failures = scoped.filter(
     (event) =>
-      Number.isSafeInteger(event?.auditSequence) &&
-      event.auditSequence > floor &&
-      event?.flowguardSessionId === expected.flowguardSessionId,
+      isTicketCall(event) &&
+      event.detail.success === false &&
+      typeof event.detail.errorCode === 'string',
   );
-
-  return expected.denialCodes.every((code) => ticketAdoptionAfterDenial(scoped, code));
-}
-
-function ticketAdoptionAfterDenial(scoped, code) {
-  const denialIndex = scoped.findIndex(
-    (event) =>
-      event?.event === 'tool_call:flowguard_ticket' &&
-      event.detail?.tool === 'flowguard_ticket' &&
-      event.detail?.success === false &&
-      event.detail?.errorCode === code,
+  if (
+    failures.some((event) => !expected.denialCodes.includes(event.detail.errorCode)) ||
+    !expected.denialCodes.every((code) => failures.some((event) => event.detail.errorCode === code))
+  )
+    return false;
+  const successes = scoped.filter((event) => isTicketCall(event) && event.detail.success === true);
+  if (successes.length !== 1) return false;
+  const success = successes[0];
+  const successIndex = scoped.indexOf(success);
+  const lastFailureIndex = Math.max(...failures.map((event) => scoped.indexOf(event)));
+  if (
+    !Number.isInteger(success.detail.transitionCount) ||
+    success.detail.transitionCount <= 0 ||
+    lastFailureIndex > successIndex ||
+    scoped.some(
+      (event, index) =>
+        index > lastFailureIndex && index < successIndex && isTransitionEvent(event),
+    ) ||
+    scoped.some((event, index) => index > successIndex && isTicketCall(event))
+  )
+    return false;
+  const firstTransitionIndex = scoped.findIndex(
+    (event, index) => index > successIndex && isTransitionEvent(event),
   );
-  if (denialIndex === -1) return false;
-  const successIndex = scoped.findIndex(
-    (event, index) =>
-      index > denialIndex &&
-      event?.event === 'tool_call:flowguard_ticket' &&
-      event.detail?.tool === 'flowguard_ticket' &&
-      event.detail?.success === true &&
-      typeof event.detail?.transitionCount === 'number' &&
-      event.detail.transitionCount > 0,
-  );
-  if (successIndex === -1) return false;
-  return scoped.some(
+  const adoptionIndex = scoped.findIndex(
     (event, index) =>
       index > successIndex &&
-      event?.event === 'transition:TICKET_SELECTED' &&
+      event.event === 'transition:TICKET_SELECTED' &&
       event.detail?.from === 'READY' &&
       event.detail?.to === 'TICKET' &&
       event.detail?.event === 'TICKET_SELECTED',
   );
+  if (
+    adoptionIndex === -1 ||
+    firstTransitionIndex !== adoptionIndex ||
+    scoped.slice(adoptionIndex + 1).some((event) => event.event === 'transition:TICKET_SELECTED') ||
+    resolveTransition('READY', 'TICKET_SELECTED') !== 'TICKET'
+  )
+    return false;
+  let current = 'TICKET';
+  const visited = new Set([current]);
+  for (const event of scoped.slice(adoptionIndex + 1).filter(isTransitionEvent)) {
+    if (
+      event.detail?.from !== current ||
+      typeof event.detail?.to !== 'string' ||
+      event.detail.to.length === 0 ||
+      typeof event.detail?.event !== 'string' ||
+      event.event !== `transition:${event.detail.event}` ||
+      resolveTransition(current, event.detail.event) !== event.detail.to ||
+      visited.has(event.detail.to)
+    )
+      return false;
+    current = event.detail.to;
+    visited.add(current);
+  }
+  return current === state.phase;
 }
 
 /** An unrelated phase, audit or metadata update is never an operation witness. */
-export function recoveryPersisted(expected, state, command, auditEvents = [], validateInvocation) {
+export function recoveryPersisted(
+  expected,
+  state,
+  command,
+  auditEvents = [],
+  validateInvocation,
+  resolveTransition,
+) {
   if (
     !expected ||
     expected.command !== command ||
@@ -402,7 +446,7 @@ export function recoveryPersisted(expected, state, command, auditEvents = [], va
   if (typeof expected.flowguardSessionId !== 'string' || typeof expected.hostSessionId !== 'string')
     return false;
   if (expected.kind === 'ticket_adoption') {
-    return ticketAdoptionPersisted(expected, state, auditEvents);
+    return ticketAdoptionPersisted(expected, state, auditEvents, resolveTransition);
   }
   if (expected.kind === 'flow_selection') {
     if (command === 'task')

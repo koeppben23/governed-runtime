@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Runner } from '../../../demos/java-task-manager/run-live-matrix.mjs';
+import { resolveTransition } from '../../machine/topology.js';
 import {
   assertHumanDecisionRefusalUnchanged,
   readAuditEvents,
@@ -88,6 +89,7 @@ beforeEach(async () => {
   );
   await writeAudit([before]);
   runner = new Runner(root, { model: 'test/model', flows: [] }, path.join(root, 'config'));
+  runner.transitionAuthority = async () => resolveTransition;
 });
 
 afterEach(async () => {
