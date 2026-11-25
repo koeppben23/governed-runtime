@@ -17,6 +17,7 @@ import {
 } from './review/dispatch/native-review-execution.js';
 import {
   NativeReviewCaptureFence,
+  createCaptureQueue,
   executeNativeReviewCapture,
   type NativeCaptureHost,
 } from './review/dispatch/native-review-capture.js';
@@ -571,9 +572,8 @@ export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: R
   const captureFence = new NativeReviewCaptureFence();
   const initial = new NativeReviewInitialController();
   const tails = createResultIntegrityTails(ctx, captureFence, initial);
-  // Duplicate host completions for one child must not release the shared
-  // result-integrity tails while the first capture is still observing it.
-  const captureQueues = new Map<string, Promise<void>>();
+  // Duplicate completions for one child must not release shared tails mid-capture.
+  const enqueueCapture = createCaptureQueue();
   const authority = {
     async authorize(scope: ActiveGovernanceScope, event: NativeBefore) {
       if (scope.sessionId !== scope.root.sessionId || event.sessionID !== scope.root.sessionId)
@@ -616,32 +616,19 @@ export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: R
     },
     async capture(scope: ActiveGovernanceScope, event: NativeReviewCompletion) {
       const child = metadataFor(event).sessionID;
-      const run = async () => {
-        try {
-          await runNativeReviewerCapture({
-            ctx,
-            runtimeFor,
-            fence: captureFence,
-            initial,
-            scope,
-            event,
-          });
-        } finally {
-          if (typeof child === 'string') await tails.release(child);
-        }
-      };
-      if (typeof child !== 'string') {
-        await run();
-        return;
-      }
-      const previous = captureQueues.get(child) ?? Promise.resolve();
-      const current = previous.catch(() => undefined).then(run);
-      captureQueues.set(child, current);
-      try {
-        await current;
-      } finally {
-        if (captureQueues.get(child) === current) captureQueues.delete(child);
-      }
+      const run = () =>
+        runNativeReviewerCapture({
+          ctx,
+          runtimeFor,
+          fence: captureFence,
+          initial,
+          scope,
+          event,
+        }).finally(() => {
+          if (typeof child !== 'string') return;
+          return tails.release(child);
+        });
+      await (typeof child === 'string' ? enqueueCapture(child, run) : run());
     },
     async beforeTool(scope: ActiveGovernanceScope, event: NativeToolBefore) {
       guardReviewerTool(captureFence, scope, event);
