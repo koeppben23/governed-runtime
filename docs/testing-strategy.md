@@ -142,7 +142,9 @@ Each test and check job maps to its npm script(s) for clear diagnosis:
 | **integration-perf**     | `npm run test:integration:perf`                                                       | All integration PERF tests without v8 instrumentation                                                                      | No             |
 | **provider-conformance** | `npm run test:provider-conformance`                                                   | Provider runtime conformance on golden fixtures (vitest, jest, pytest, go); CI installs Java, Python, and Go               | No             |
 | **regulated-e2e**        | `npx vitest run --project integration` (three regulated suites)                       | Regulated completion gate, regulated recovery, and the audit/archive tamper matrix                                         | No             |
-| **smoke**                | `npm run test:smoke`                                                                  | Built CLI contract smoke, demo evidence-package verifier contract, and ACP smoke                                           | Yes            |
+| **smoke-package**        | `npm run pack:checksums`                                                              | Packs one checksum-bound release tarball from the built dist for every smoke group                                         | Yes            |
+| **smoke (group)**        | `npx vitest run --project smoke <group files>`                                        | Four measured groups share that tarball and run every existing smoke file; merge-blocking through the `smoke` aggregator   | Yes            |
+| **smoke**                | aggregator                                                                            | Confirms every smoke group succeeded; not a `ci-gate` dependency                                                           | No             |
 | **install-verify**       | `npm run test:install-verify`                                                         | Tarball pack/install/doctor verification                                                                                   | Yes            |
 | **mutation**             | `npm run mutation`                                                                    | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence                                    | No             |
 | **actions-pinning**      | `npm run check:actions-pinned`                                                        | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                                                | No             |
@@ -157,7 +159,13 @@ The ACP lifecycle probes also use the native pin and private global directories.
 They keep stdin open (EOF shuts down a stdio server), reject premature exits and
 await actual closure after termination. These are process-lifecycle checks, not
 an ACP conversation or governance proof; timeout and a PID alone never pass.
-The `install-verify` job runs cross-platform (Linux, macOS, Windows).
+The `smoke` gate packs one checksum-bound release tarball from the built dist
+and distributes it to four measured smoke groups. The groups run on separate
+runners, verify the artifact digest, and keep every existing smoke file, genuine
+installation, isolated workspace and native host scenario; the `smoke`
+aggregator passes only when every group succeeds. The split trades additional
+runner minutes for a shorter critical path, and is not part of `ci-gate`. The
+`install-verify` job runs cross-platform (Linux, macOS, Windows).
 The dedicated `opencode-parity.yml` acceptance workflow runs the two existing
 INACTIVE suites on Linux, macOS and Windows. It is manually dispatchable, nightly, or triggered by the
 `run-parity-acceptance` PR label, not a required gate; PR CI keeps the faster unit/
