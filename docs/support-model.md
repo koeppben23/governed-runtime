@@ -67,8 +67,8 @@ Open a [GitHub Issue](https://github.com/koeppben23/governed-runtime/issues) wit
 
 FlowGuard is proprietary software. The public repository is available for
 read-only evaluation; hands-on use requires prior written permission from the
-copyright holder. Contact
-[benjamin.fuchs@adorsys.com](mailto:benjamin.fuchs@adorsys.com) to request an
+copyright holder. Contact the author via
+[LinkedIn](https://www.linkedin.com/in/benjamin-fuchs-ba6986190/) to request an
 authorized technical evaluation or discuss your organization's governance
 requirements.
 

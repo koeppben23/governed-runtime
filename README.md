@@ -46,8 +46,9 @@ FlowGuard is proprietary software. The public repository is available for
 read-only evaluation. Hands-on use requires prior written permission from the
 copyright holder.
 
-[Contact the author](mailto:benjamin.fuchs@adorsys.com) to request an authorized
-technical evaluation or discuss your organization's governance requirements.
+[Contact the author via LinkedIn](https://www.linkedin.com/in/benjamin-fuchs-ba6986190/)
+to request an authorized technical evaluation or discuss your organization's
+governance requirements.
 
 ## Core Capabilities
 

@@ -287,9 +287,6 @@ describe('Documentation Links', () => {
 
       const brokenLinks: string[] = [];
       for (const link of allLinks) {
-        // Contact channels are external by definition; they are validated by
-        // their own README/support-model contract instead of the filesystem.
-        if (link.target.startsWith('mailto:') || link.target.startsWith('tel:')) continue;
         if (link.target.startsWith('http')) continue;
         if (link.target.startsWith('#')) continue;
 

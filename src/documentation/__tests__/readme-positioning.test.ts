@@ -70,7 +70,11 @@ describe('README positioning contract', () => {
     expect(evaluation).toContain('proprietary software');
     expect(evaluation).toContain('read-only evaluation');
     expect(evaluation).toContain('prior written permission');
-    expect(evaluation).toMatch(/\[Contact the author\]\(mailto:[^)]+\)/);
+    expect(evaluation).toContain(
+      '[Contact the author via LinkedIn](https://www.linkedin.com/in/benjamin-fuchs-ba6986190/)',
+    );
+    expect(evaluation).not.toContain('mailto:');
+    expect(evaluation).not.toContain('@adorsys.com');
     expect(evaluation).not.toMatch(/download|install|run-demo-setup/i);
   });
 
