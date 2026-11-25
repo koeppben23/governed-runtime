@@ -2194,6 +2194,10 @@ stop`, reviewer child reported it could not complete the falsification).
   new check attempt to the dispatch's baseline or implementation subject.
 - Split the Java live matrix into bounded modules for setup, scenarios, host
   transport, turn recovery and evidence, preserving its CLI and runner API.
+- Fix Java demo recovery rejecting valid V2 reviews: validate captured evidence
+  using the installed product's current review contract. Recovery still requires
+  a consumed acceptance bound to the parent, obligation, invocation, attempt
+  and current subject; historical transport does not qualify.
 - Treat current plan-preflight edits (evidence design, finding resolutions,
   claim lineage, claim submission, pending-subject guard) as correctable
   observations. Keep them pending until the same plan revision and consumed

@@ -5,8 +5,8 @@ const base = JSON.parse(readFileSync(new URL('./stryker.conf.json', import.meta.
 const demo = 'demos/java-task-manager';
 const tests = 'src/documentation/__tests__';
 
-function range(module, start, end) {
-  const file = `${demo}/${module}.mjs`;
+function range(module, start, end, directory = demo) {
+  const file = `${directory}/${module}.mjs`;
   const lines = readFileSync(new URL(`./${file}`, import.meta.url), 'utf8').split('\n');
   const first = lines.findIndex((line) => line.includes(start));
   const next = lines.findIndex((line, index) => index > first && line.includes(end));
@@ -29,11 +29,19 @@ export default {
     'java-demo-plan-preflight',
     'demo-rearm-lifecycle',
     'demo-audit-witness',
+    'demo-recovery-state',
   ].map((name) => `${tests}/${name}.test.ts`),
   mutate: [
     `${demo}/live-decision-witness.mjs`,
     `${demo}/live-native-command-witness.mjs`,
     `${demo}/live-plan-preflight.mjs`,
+    'demos/lib/review-recovery-authority.mjs',
+    range(
+      'recovery-state',
+      'function acceptingReview(',
+      'function ticketContentDigest(',
+      'demos/lib',
+    ),
     range(
       'live-host-transport',
       'export async function hostNativeCommandTransport',

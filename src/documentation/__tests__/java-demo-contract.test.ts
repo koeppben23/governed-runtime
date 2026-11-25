@@ -34,7 +34,11 @@ import {
 } from '../../../demos/java-task-manager/run-live-matrix.mjs';
 import { planReviewCorrectionProven } from '../../../demos/java-task-manager/live-plan-preflight.mjs';
 import { readPins } from '../../../demos/lib/toolchain.mjs';
-import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
+import {
+  approvedPlan,
+  reviewedPlan,
+  validateReviewInvocation,
+} from '../demo-recovery-test-helpers.js';
 import { DemoNotVerifiedError } from '../../../demos/lib/results.mjs';
 
 const execFile = promisify(execFileCallback);
@@ -564,7 +568,7 @@ describe('Java Task Manager demo contract', () => {
     'keeps preflight recovery pending until the bound plan gate is verified: %s',
     async (scenario) => {
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-plan-preflight-'));
-      const toolLine = (code: string, success: boolean) =>
+      const toolLine = (code: string, success: boolean, phase = 'PLAN_REVIEW') =>
         JSON.stringify({
           type: 'tool_use',
           sessionID: success && scenario === 'foreign-plan-response' ? 'ses_foreign' : 'ses_parent',
@@ -574,7 +578,7 @@ describe('Java Task Manager demo contract', () => {
               output: JSON.stringify(
                 success
                   ? {
-                      phase: 'PLAN_REVIEW',
+                      phase,
                       planDigest: (scenario === 'wrong-plan-response' ? 'f' : 'a').repeat(64),
                     }
                   : {
@@ -591,50 +595,27 @@ describe('Java Task Manager demo contract', () => {
       try {
         await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
         const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+        runner.reviewInvocationAuthority = async () => validateReviewInvocation;
         runner.hostStep = async () => ({
           code: 0,
           stderr: '',
           timedOut: false,
           durationMs: 0,
           sessionIds: ['ses_parent'],
-          stdout: `${toolLine('PLAN_EVIDENCE_DESIGN_REQUIRED', false)}\n${toolLine('', true)}\n`,
+          stdout: [
+            toolLine('PLAN_EVIDENCE_DESIGN_REQUIRED', false),
+            toolLine('', true, 'PLAN'),
+            toolLine('', true),
+          ].join('\n'),
         });
         const digest = 'a'.repeat(64);
         const reviewCompletion =
           scenario === 'not-accepted' ? 'review_exhausted' : 'reviewer_accepted';
-        const state = {
-          phase: 'PLAN_REVIEW',
-          flowguardSessionId: 'fg-bound',
-          binding: { hostSessionId: 'ses_parent' },
-          plan: {
-            current: { digest, recordDigest: 'b'.repeat(64), planVersion: 1 },
-            reviewCompletion,
-          },
-          selfReview: { iteration: 1, maxIterations: 2, verdict: 'accept' },
-          reviewAssurance: {
-            obligations: [
-              {
-                obligationType: 'plan',
-                obligationId: 'obl',
-                invocationId: 'inv',
-                subjectDigest: digest,
-                status: 'consumed',
-                consumedAt: '2026-01-01T00:00:00Z',
-              },
-            ],
-            invocations: [
-              {
-                invocationId: 'inv',
-                obligationId: 'obl',
-                consumedByObligationId: scenario === 'unbound-review' ? 'other' : 'obl',
-                capturedVerdict: 'accept',
-                structuredOutputUsed: true,
-                attemptId: 'attempt',
-              },
-            ],
-            attempts: [{ attemptId: 'attempt', obligationId: 'obl', subjectDigest: digest }],
-          },
-        };
+        const state = reviewedPlan(digest, 'b'.repeat(64));
+        state.plan.reviewCompletion = reviewCompletion;
+        if (scenario === 'unbound-review') {
+          state.reviewAssurance.invocations[0]!.consumedByObligationId = null;
+        }
         let current = { ...state, phase: 'PLAN' };
         runner.requireBoundState = () => ({ state: current, sessionDir: root });
         const dispatch = vi.fn(async () => {
@@ -716,6 +697,7 @@ describe('Java Task Manager demo contract', () => {
         part: { tool: 'flowguard_plan', state: { output: JSON.stringify({ reviewDispatch: {} }) } },
       });
       const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.reviewInvocationAuthority = async () => validateReviewInvocation;
       runner.requireBoundState = () => ({ state: { phase: 'PLAN' }, sessionDir: root });
 
       // No later success: the recovery is unproven and the flow stops.
@@ -794,6 +776,7 @@ describe('Java Task Manager demo contract', () => {
       await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
       await fs.writeFile(statePath, JSON.stringify({ phase: 'PLAN' }));
       const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.reviewInvocationAuthority = async () => validateReviewInvocation;
       let persisted: Record<string, unknown> = reviewedPlan();
       runner.requireBoundState = () => ({ state: persisted, sessionDir: root });
 
@@ -836,7 +819,7 @@ describe('Java Task Manager demo contract', () => {
       // With a real state change the independent proof resolves it.
       persisted = approvedPlan();
       await fs.writeFile(statePath, JSON.stringify(persisted));
-      runner.settleAwaitingRecovery(session, 'plan-c-retry', 'approve');
+      await runner.settleAwaitingRecovery(session, 'plan-c-retry', 'approve');
       expect(session.recoveredDenials).toContainEqual(
         expect.objectContaining({
           step: 'plan-c',
