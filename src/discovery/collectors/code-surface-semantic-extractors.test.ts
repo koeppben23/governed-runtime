@@ -54,6 +54,15 @@ describe('Java Spring semantic endpoint extraction', () => {
     expect(result.endpoints).toHaveLength(2);
   });
 
+  it('reaches identifier extraction with a long non-matching prefix', () => {
+    const prefix = 'a'.repeat(20_000);
+    const result = extractSemanticCodeSurfaces(
+      `@GetMapping("/x")\n${prefix} + (\n`,
+      'src/main/java/com/acme/LongPrefix.java',
+    );
+    expect(result.endpoints).toHaveLength(0);
+  });
+
   it('scans adversarial annotation remainders in linear time', () => {
     const hostile = `@GetMapping("/x")\n${'$<'.repeat(20_000)}${'> $<'.repeat(20_000)}\n`;
     const result = extractSemanticCodeSurfaces(hostile, 'src/main/java/com/acme/Hostile.java');
