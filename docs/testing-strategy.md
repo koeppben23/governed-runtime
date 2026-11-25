@@ -136,7 +136,9 @@ Each test and check job maps to its npm script(s) for clear diagnosis:
 | **critical-windows**     | `npx vitest run` (selected suites)                                                    | State, hook, ProofGraph, and real-Git approval/recovery suites on `windows-latest`; merge-blocking via `ci-gate`           | No             |
 | **unit (assertions)**    | `npm run test:assertion-conformance`                                                  | Golden assertion-parser conformance, run as a third step of the `unit` CI job                                              | No             |
 | **deterministic-evals**  | `npm run test:evals`                                                                  | Deterministic eval harness and transport-template contracts; no live provider                                              | No             |
-| **coverage**             | `npm run test:coverage:ci`                                                            | Unit + integration under v8 coverage; enforces aggregate 80% threshold                                                     | No             |
+| **coverage-unit**        | `npm run test:coverage:shard -- unit`                                                 | Unit project under v8 coverage with two workers; uploads one completeness-bound shard                                      | No             |
+| **coverage-integration** | `npm run test:coverage:shard -- integration`                                          | Integration project under v8 coverage with two workers; uploads one completeness-bound shard                               | No             |
+| **coverage**             | `npm run test:coverage:merge -- --ci`                                                 | Merges both shards and enforces the aggregate 80% threshold; merge-blocking through `ci-gate`                              | No             |
 | **integration-perf**     | `npm run test:integration:perf`                                                       | All integration PERF tests without v8 instrumentation                                                                      | No             |
 | **provider-conformance** | `npm run test:provider-conformance`                                                   | Provider runtime conformance on golden fixtures (vitest, jest, pytest, go); CI installs Java, Python, and Go               | No             |
 | **regulated-e2e**        | `npx vitest run --project integration` (three regulated suites)                       | Regulated completion gate, regulated recovery, and the audit/archive tamper matrix                                         | No             |
@@ -227,10 +229,19 @@ configuration change does not attribute earlier failures or prove speedups in
 the other jobs. Hosted verification of those jobs remains required; no release
 tag or publishing workflow is triggered just to test this change.
 
-Coverage CI bounds competing instrumented Vitest workers to two. It still covers
-the complete unit/integration projects with the same 80% gates and 15-second test
-budget, including the actual production TypeScript program-graph guard. Local
-coverage retains Vitest's default concurrency.
+Coverage CI runs the canonical unit and integration projects on separate
+two-worker runners and merges their native Vitest coverage blobs. Each shard is
+bound to the same commit and workflow run; the recorded run attempt keeps a
+merge-job-only rerun compatible with shards from the same run. The merge rejects
+missing, duplicated, foreign or coverage-less blobs, and requires the disjoint
+shard file sets to equal the `vitest list` inventory. Only the merge job runs the
+canonical configuration and therefore the four global 80% gates; the per-shard
+threshold checks are disabled because one project is not the gate. The complete
+projects, coverage scope, 15-second test budget, and the actual production
+TypeScript program-graph guard remain unchanged. `npm run test:coverage` keeps
+the monolithic local gate, and `npm run test:coverage:ci` remains the monolithic
+same-SHA baseline used to prove equivalence; neither is a second CI authority.
+Local coverage retains Vitest's default concurrency.
 
 The integration PERF invocation uses one file worker while retaining the entire
 `PERF` selection and unchanged budgets. The tool-description access benchmark

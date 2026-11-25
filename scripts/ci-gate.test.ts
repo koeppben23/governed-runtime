@@ -31,6 +31,7 @@ const workflow = parse(
         if?: string;
         env?: Record<string, string>;
         with?: Record<string, unknown>;
+        'continue-on-error'?: boolean;
       }[];
     }
   >;
@@ -251,6 +252,64 @@ describe('required ci-gate documentation enforcement', () => {
     ]);
     expect(commands.join(' ')).not.toMatch(/FLOWGUARD_PERF|PERF_BUDGET|testNamePattern|exclude/);
   });
+  it('runs unit and integration coverage shards on separate two-worker runners', () => {
+    for (const [jobName, project] of [
+      ['coverage-unit', 'unit'],
+      ['coverage-integration', 'integration'],
+    ] as const) {
+      const job = requiredJob(jobName);
+      expect(job['timeout-minutes'], jobName).toBe(25);
+      const commands = job.steps.flatMap((step) => (step.run ? [step.run] : []));
+      expect(commands).toEqual([`npm run test:coverage:shard -- ${project}`]);
+      expect(job.steps.some((step) => step.uses === './.github/actions/prepare-node')).toBe(true);
+      expect(
+        job.steps.some(
+          (step) =>
+            step.uses?.includes('actions/upload-artifact') &&
+            step.with?.name === `coverage-shard-${project}` &&
+            step.with?.path === `coverage-shards/${project}/`,
+        ),
+      ).toBe(true);
+      expect(job.steps.every((step) => step['continue-on-error'] !== true)).toBe(true);
+    }
+    const packageScripts = JSON.parse(
+      readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
+    ).scripts as Record<string, string>;
+    expect(packageScripts['test:coverage:shard']).toBe('node scripts/coverage-shard.mjs');
+    expect(packageScripts['test:coverage:merge']).toBe('node scripts/coverage-merge.mjs');
+  });
+
+  it('merges both coverage shards into the canonical coverage gate before ci-gate', () => {
+    const job = requiredJob('coverage');
+    expect(job.needs).toEqual(['coverage-unit', 'coverage-integration']);
+    expect(job['timeout-minutes']).toBe(15);
+    const downloads = job.steps
+      .filter((step) => step.uses?.includes('actions/download-artifact'))
+      .map((step) => step.with?.name);
+    expect(downloads).toEqual(['coverage-shard-unit', 'coverage-shard-integration']);
+    expect(job.steps.map((step) => step.run).filter(Boolean)).toContain(
+      'npm run test:coverage:merge -- --ci',
+    );
+    expect(
+      job.steps.some((step) => step.run?.includes('test:coverage:ci')),
+      'the monolithic CI runner must not remain a second coverage authority',
+    ).toBe(false);
+    expect(
+      job.steps.some(
+        (step) =>
+          step.uses?.includes('actions/upload-artifact') && step.with?.name === 'coverage-report',
+      ),
+    ).toBe(true);
+    expect(
+      job.steps.some((step) => step.name === 'Comment coverage summary'),
+      'PR summary bookkeeping must not be removed with the old runner',
+    ).toBe(true);
+    expect(
+      job.steps.find((step) => step.run?.includes('test:coverage:merge'))?.['continue-on-error'],
+    ).toBeUndefined();
+    expect(gate.needs).toContain('coverage');
+  });
+
   it('waits for documentation and every existing test dependency even on upstream failures', () => {
     expect(gate.name).toBe('ci-gate');
     expect(gate.needs).toEqual(dependencies);

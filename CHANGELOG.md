@@ -16,7 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and demo text, add a current-tree public-disclosure guard, preserve the
   synthetic ISO 27001 demo boundary, and clarify the reference demonstration
   wording. No runtime, license, release or evidence change.
-- Lead the public README with the reference demonstration's "green checks are not
+- Run CI coverage as two completeness-bound shards: the canonical unit and
+  integration Vitest projects execute on separate runners with the unchanged
+  two-worker bound, and a merge job enforces the unchanged four global 80%
+  coverage thresholds over the combined native Vitest blobs. The merge fails
+  closed on missing, duplicate, foreign, damaged or coverage-less shard
+  artifacts and on any inventory divergence from `vitest list`; commit and
+  workflow run bind every artifact, while the recorded run attempt keeps
+  merge-job reruns compatible with shards from the same run. Local coverage and
+  the monolithic same-SHA baseline remain available. No test scope, threshold,
+  timeout or branch-protection change.
+- Lead the public README with the reference experiment's "green checks are not
   enough" result and a version-bound evidence link, and add a LinkedIn contact
   path for authorized hands-on evaluation that preserves the proprietary
   read-only boundary.
