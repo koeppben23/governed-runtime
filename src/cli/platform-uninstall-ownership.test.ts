@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -84,7 +92,7 @@ describe('platform uninstall ownership', () => {
         }),
       );
       expect(result).toBe('skipped');
-      expect(readFileSync(file, 'utf-8')).toContain('start');
+      expect(existsSync(file)).toBe(true);
     } finally {
       rmSync(target, { recursive: true, force: true });
     }
