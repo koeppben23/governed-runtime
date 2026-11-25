@@ -145,6 +145,22 @@ describe('persistence-lock owner identity', () => {
 });
 
 describe('persistence-lock reclamation guard', () => {
+  it.skipIf(process.platform === 'win32')('creates a private guard owner record', async () => {
+    const dir = await makeSessionDir();
+    const guard = await acquireReclaimGuard(dir, LOCK_FILE, 500);
+    expect(guard).not.toBeNull();
+    try {
+      const guardDir = path.join(dir, `${LOCK_FILE}${RECLAIM_GUARD_SUFFIX}`);
+      const entries = await fs.readdir(guardDir);
+      expect(entries).toHaveLength(1);
+      for (const entry of entries) {
+        expect((await fs.stat(path.join(guardDir, entry))).mode & 0o077).toBe(0);
+      }
+    } finally {
+      await guard?.release();
+    }
+  });
+
   it('L1: exactly one reclaimer can hold the guard', async () => {
     const dir = await makeSessionDir();
 
@@ -312,18 +328,26 @@ describe('persistence-lock stale reclamation', () => {
     const dir = await makeSessionDir();
     const owner = await acquireSessionWriteLock(dir);
     const lockPath = sessionLockPath(dir);
-    const before = await fs.stat(lockPath);
-    const bodyBefore = await fs.readFile(lockPath, 'utf-8');
+    const snapshot = async () => {
+      const file = await fs.open(lockPath, 'r');
+      try {
+        const { dev, ino } = await file.stat({ bigint: true });
+        return { dev, ino, body: await file.readFile('utf-8') };
+      } finally {
+        await file.close();
+      }
+    };
 
-    await expect(acquireSessionWriteLock(dir, 150)).rejects.toMatchObject({
-      code: 'LOCK_TIMEOUT',
-    });
-
-    const after = await fs.stat(lockPath);
-    expect(await fs.readFile(lockPath, 'utf-8')).toBe(bodyBefore);
-    // Same inode: the file was neither replaced nor deleted.
-    expect(after.ino).toBe(before.ino);
-    await owner.release();
+    try {
+      const before = await snapshot();
+      await expect(acquireSessionWriteLock(dir, 150)).rejects.toMatchObject({
+        code: 'LOCK_TIMEOUT',
+      });
+      // The final pathname still resolves to the original inode and bytes.
+      expect(await snapshot()).toEqual(before);
+    } finally {
+      await owner.release();
+    }
   });
 
   it('L4: a shifted boot reference never evicts the live owner', async () => {

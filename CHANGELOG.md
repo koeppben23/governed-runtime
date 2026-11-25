@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   claim publication; the artifact is published only after the tag-triggered
   workflow completes.
 
+### Security
+
+- Reconcile the release CodeQL baseline and triage follow-ups against the
+  scanned candidate; document the uninstall race's trusted-ancestor
+  assumption and record five individual owner decisions scoped to TP.3.
+  CodeQL and the remaining verification gates still block publication.
+
 ## [2.0.0-tp.3] - 2026-11-25
 
 ### Added
@@ -2837,14 +2844,11 @@ stop`, reviewer child reported it could not complete the falsification).
   confirmed findings in Markdown/diagnostic escaping, file reads, owner-file
   removal, the Java method detector, transport error responses, changelog
   parsing and test fixtures; document false positives with reachability
-  evidence; and record four operator-harness TOCTOU findings and one production
-  uninstall path-replacement residual as accepted risks **pending explicit
-  owner approval**. The shared bounded `O_NOFOLLOW` reader, Markdown/Java
-  adversarial regressions, deterministic race controls and eval snapshot
-  hardening are included. The Java detector uses a linear backward character
-  scan. No alert has been dismissed or
-  suppressed; the release remains blocked until the triage is reviewed and
-  CodeQL plus the remaining gates pass. See
+  evidence; and track four operator-harness TOCTOU findings and the production
+  uninstall pathname race with individual owner decisions scoped to TP.3.
+  The bounded `O_NOFOLLOW` reader, linear Java method-name scan, adversarial
+  regressions, and eval snapshot hardening are included. Alerts are closed only
+  as fixed or individually dismissed with a documented rule-scoped reason. See
   `docs/security/codeql-triage-2026-11-25.md`.
 
 ## [2.0.0-tp.2] - 2026-10-04
