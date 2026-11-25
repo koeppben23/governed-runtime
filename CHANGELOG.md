@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Correct the base mutation target inventory: reclassify the interface-only
+  `host-adapter.ts` and the TypeScript-checker-rejected `finding-identity.ts`
+  as not mutation suitable with measured evidence, and remove their stale
+  selectors, candidate entry and admission record. No admitted target,
+  aggregate threshold, test scope or runtime behavior changed.
+- Re-triage the 2026-11-01 OpenCode V2 opt-in finding as fixed on current
+  `develop` using the passing packed-installed parity and unstarted-session
+  integration suites. Desktop 2.2.x acceptance and live remote model refresh
+  remain `NOT_VERIFIED`; historical host-probe documents are unchanged.
+
 - Split the PR smoke gate into four measured groups that run on separate
   runners, all consuming one SHA-256-verified release tarball packed from the
   built dist. Every existing smoke file, real installation, isolated workspace,
