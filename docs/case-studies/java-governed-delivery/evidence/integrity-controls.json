@@ -3,6 +3,7 @@
   "package": {
     "file": "export-ses_dedafedf2ffeRyFyTwVJod0xwc.tar.gz",
     "sha256": "ddce83743a4747152644c2d368e9b5799014338a34127d523113a5df8a3e41dc",
+    "productCommit": "ede07f02df05ebee7a4e01751429a4df2e508f66",
     "sessionId": "ses_dedafedf2ffeRyFyTwVJod0xwc",
     "flow": "development",
     "archivedPhase": "EXPORT_READY"

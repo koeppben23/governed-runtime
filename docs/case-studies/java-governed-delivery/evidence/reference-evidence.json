@@ -40,8 +40,12 @@
   },
   "positiveControl": {
     "result": "PASS",
+    "scope": "documentation_only",
+    "productCommit": "ede07f02df05ebee7a4e01751429a4df2e508f66",
     "livePhase": "COMPLETE",
     "archivedPhase": "EXPORT_READY",
+    "verificationState": "PROVEN",
+    "adversarialStatus": "passed",
     "hostSessionId": "ses_dedafedf2ffeRyFyTwVJod0xwc",
     "flowguardSessionId": "97c1fd5e-82bc-4a24-a171-275452714507",
     "reviewerSessionIds": [
@@ -71,6 +75,15 @@
   },
   "redGreen": {
     "result": "PASS",
+    "provenance": {
+      "scenario": "historical Java task-manager bugfix (HTTP 500 to 404)",
+      "productCommit": "7a01f4c209b6875aad3fc65947ac6b7b78a7dc9d",
+      "harness": "historical modified local harness",
+      "harnessStatus": "NOT_VERIFIED",
+      "limitation": "The exact local harness patch was not preserved. This historical scenario is not the final documentation-only control pair and is not evidence for the new positive control.",
+      "artifact": "red-green.txt",
+      "partOfFinalControlPair": false
+    },
     "baseline": {
       "tests": 16,
       "failures": 0,
@@ -92,6 +105,8 @@
   "negativeControl": {
     "result": "PASS",
     "status": "VERIFIED",
+    "scope": "documentation_only",
+    "productCommit": "ede07f02df05ebee7a4e01751429a4df2e508f66",
     "livePhase": "EVIDENCE_REVIEW",
     "hostSessionId": "ses_dedac4888ffetYRaWRpekeRXDu",
     "flowguardSessionId": "88ab9405-9a91-4e84-917e-fcead6773e51",

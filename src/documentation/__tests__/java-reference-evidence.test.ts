@@ -22,40 +22,76 @@ describe('Java reference evidence contract', () => {
     expect(study).toContain('**PASS**');
     expect(study).toContain('Overall: COMPLETE');
     expect(study).toContain('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
+    expect(study).toContain('Historical red-green scenario (separate provenance)');
+    expect(study).toContain('documentation-only control pair on `ede07f02');
+    expect(study).toContain('does not use the 16-test bugfix result as evidence');
+    expect(study).toContain('`PROVEN`');
+    expect(study).toContain('`passed`');
     expect(study).not.toContain('BLOCKED / NOT_VERIFIED');
     expect(study).not.toContain('Overall: PARTIAL');
   });
 
   it('binds the completed controls to the withheld package manifest', () => {
     const evidence = json(join(EVIDENCE_DIR, 'reference-evidence.json')) as {
+      product?: { commit?: string };
       positiveControl?: {
         exportPackageSha256?: string;
+        scope?: string;
+        productCommit?: string;
         livePhase?: string;
         archivedPhase?: string;
+        verificationState?: string;
+        adversarialStatus?: string;
         initialPlanDigest?: string;
         verificationCandidateIds?: unknown;
       };
       negativeControl?: {
         result?: string;
         status?: string;
+        scope?: string;
+        productCommit?: string;
+        verificationState?: string;
+        adversarialStatus?: string;
         denial?: string;
         packageProduced?: boolean;
         initialPlanDigest?: string;
         verificationCandidateIds?: unknown;
         priorRelatedEvidence?: string;
       };
+      redGreen?: {
+        provenance?: {
+          productCommit?: string;
+          harnessStatus?: string;
+          partOfFinalControlPair?: boolean;
+        };
+      };
       harness?: { status?: string; patchDigest?: string | null };
     };
+    expect(evidence.product?.commit).toBe('ede07f02df05ebee7a4e01751429a4df2e508f66');
     expect(evidence.positiveControl).toMatchObject({
+      scope: 'documentation_only',
+      productCommit: evidence.product?.commit,
       livePhase: 'COMPLETE',
       archivedPhase: 'EXPORT_READY',
+      verificationState: 'PROVEN',
+      adversarialStatus: 'passed',
     });
     expect(evidence.negativeControl).toMatchObject({
       result: 'PASS',
       status: 'VERIFIED',
+      scope: 'documentation_only',
+      productCommit: evidence.product?.commit,
+      verificationState: 'NOT_VERIFIED',
+      adversarialStatus: 'skipped',
       denial: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
       packageProduced: false,
     });
+    expect(evidence.redGreen?.provenance).toMatchObject({
+      productCommit: '7a01f4c209b6875aad3fc65947ac6b7b78a7dc9d',
+      harnessStatus: 'NOT_VERIFIED',
+      partOfFinalControlPair: false,
+    });
+    expect(evidence.redGreen?.provenance?.productCommit).not.toBe(evidence.product?.commit);
     expect(evidence.harness).toMatchObject({
       status: 'VERIFIED',
       patchDigest: null,
@@ -73,10 +109,11 @@ describe('Java reference evidence contract', () => {
     // The raw package is withheld in this draft. After publication approval,
     // restore the byte-level SHA-256 check against the package file here.
     const manifest = json(join(EVIDENCE_DIR, 'package-manifest.json')) as {
-      package?: { sha256?: string; file?: string };
+      package?: { sha256?: string; file?: string; productCommit?: string };
       publication?: { status?: string };
     };
     expect(manifest.package?.sha256).toBe(evidence.positiveControl?.exportPackageSha256);
+    expect(manifest.package?.productCommit).toBe(evidence.product?.commit);
     expect(manifest.publication?.status).toBe('withheld_pending_explicit_owner_approval');
     expect(existsSync(join(EVIDENCE_DIR, manifest.package?.file ?? 'missing'))).toBe(false);
   });
@@ -88,10 +125,12 @@ describe('Java reference evidence contract', () => {
     expect(redGreen).toContain('HTTP status: 500');
 
     const integrity = json(join(EVIDENCE_DIR, 'integrity-controls.json')) as {
+      package?: { productCommit?: string };
       manipulationA?: { findings?: string[]; exitCode?: number };
       manipulationB?: { findings?: string[]; exitCode?: number };
       originalAfterManipulations?: { exitCode?: number; verified?: boolean };
     };
+    expect(integrity.package?.productCommit).toBe('ede07f02df05ebee7a4e01751429a4df2e508f66');
     expect(integrity.manipulationA).toMatchObject({
       exitCode: 1,
       findings: ['archive_checksum_mismatch'],

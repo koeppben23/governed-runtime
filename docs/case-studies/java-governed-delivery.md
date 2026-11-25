@@ -6,32 +6,57 @@ not.
 
 ## Status
 
-| Control                                        | Observed result | Final acceptance | Evidence                                                                             |
-| ---------------------------------------------- | --------------- | ---------------- | ------------------------------------------------------------------------------------ |
-| Red-green bug reproduction                     | **PASS**        | **PASS**         | [red-green.txt](./java-governed-delivery/evidence/red-green.txt)                     |
-| Positive control — governed delivery           | **PASS**        | **PASS**         | [reference-evidence.json](./java-governed-delivery/evidence/reference-evidence.json) |
-| Negative control — missing evidence            | **PASS**        | **PASS**         | [reference-evidence.json](./java-governed-delivery/evidence/reference-evidence.json) |
-| Integrity control A — package checksum         | **PASS**        | **PASS**         | [integrity-controls.json](./java-governed-delivery/evidence/integrity-controls.json) |
-| Integrity control B — internal artifact digest | **PASS**        | **PASS**         | [integrity-controls.json](./java-governed-delivery/evidence/integrity-controls.json) |
-| Original package re-verification               | **PASS**        | **PASS**         | `exit 0`, `verified: true`                                                           |
+The final acceptance matrix covers the documentation-only ProofGraph control
+pair and the integrity checks on integrated commit
+`ede07f02df05ebee7a4e01751429a4df2e508f66`. The historical Java red-green
+bugfix scenario is recorded separately below. It is **not** part of the final
+control pair and is **not** evidence for the new positive control.
 
-**Overall: COMPLETE.** Both live controls and both integrity checks passed on the
-same integrated harness and the same checksummed product tarball. The synthetic
-raw package remains withheld from this tree pending explicit owner approval; its
-manifest and hashes are published.
+| Final control                                  | Observed result                                                                                                         | Evidence                                                                             |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Positive control — governed delivery           | **PASS**; claim `PROVEN`; adversarial assertion `passed`                                                                | [reference-evidence.json](./java-governed-delivery/evidence/reference-evidence.json) |
+| Negative control — missing evidence            | **PASS**; claim `NOT_VERIFIED`; adversarial assertion `skipped`; exact `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN`; no package | [reference-evidence.json](./java-governed-delivery/evidence/reference-evidence.json) |
+| Integrity control A — package checksum         | **PASS**                                                                                                                | [integrity-controls.json](./java-governed-delivery/evidence/integrity-controls.json) |
+| Integrity control B — internal artifact digest | **PASS**                                                                                                                | [integrity-controls.json](./java-governed-delivery/evidence/integrity-controls.json) |
+| Original package re-verification               | **PASS**; `exit 0`, `verified: true`                                                                                    | `exit 0`, `verified: true`                                                           |
 
-## Red-green reproduction
+**Overall: COMPLETE.** Both documentation-only live controls and both integrity
+checks passed on the same integrated harness and the same checksummed product
+tarball. The synthetic raw package remains withheld from this tree pending
+explicit owner approval; its manifest and hashes are published.
+
+## Historical red-green scenario (separate provenance)
+
+This evidence belongs to the earlier Java task-manager bugfix scenario. It was
+produced on product baseline `7a01f4c209b6875aad3fc65947ac6b7b78a7dc9d` with a
+historical modified local harness whose exact patch was not preserved. Its
+historical harness identity is therefore `NOT_VERIFIED`; it is retained
+unchanged as historical evidence and is **not** part of the final
+documentation-only control pair on `ede07f02…`.
 
 The seed starts with 16 tests, 15 passing and one `@Disabled` regression test.
 In a separate copy of the unmodified seed, removing only `@Disabled` makes the
 test fail with `NullPointerException: existing is null`. An actual
 `PUT /tasks/non-existent-id` request against that copy returns HTTP 500.
 
-After the governed fix, the bound build and test checks report 16 passed, 0
-failed, 0 errored, 0 skipped. The active test asserts both HTTP 404 and
-`$.taskId == "non-existent-id"`.
+After the historical governed fix, the bound build and test checks report 16
+passed, 0 failed, 0 errored, 0 skipped. The active test asserts both HTTP 404
+and `$.taskId == "non-existent-id"`.
 
-## Positive control
+This 16-test bugfix result is **not** evidence for the final positive control.
+The final positive control is a documentation-only change: it verifies the
+ticket-required `docs/usage-notes.md` section and the documented test command,
+not the historical bugfix. The red-green artifact is preserved separately in
+[red-green.txt](./java-governed-delivery/evidence/red-green.txt).
+
+## Positive control (documentation-only)
+
+This control runs on `ede07f02df05ebee7a4e01751429a4df2e508f66` and changes
+only `docs/usage-notes.md`. It does not repeat the historical Java bugfix and
+does not use the 16-test bugfix result as evidence. The retained critical claim
+is `docs/usage-notes.md documents the task-manager test command: Run ./mvnw
+test to run the task-manager tests.` The observed claim verification state is
+`PROVEN`; the adversarial assertion is `passed`.
 
 The development flow completed through the real host command boundary:
 
@@ -54,10 +79,12 @@ revisions were accepted with plan approval certificate
 The two plan-review sessions and the implementation-review session are recorded
 in the host-session metadata and the package's review artifacts.
 
-## Negative control
+## Negative control (documentation-only)
 
-The negative control used a separate fresh workspace and session with the same
-ticket, the same initial plan candidate and the same retained critical claim.
+This is the documentation-only counterpart on
+`ede07f02df05ebee7a4e01751429a4df2e508f66`. It used a separate fresh workspace
+and session with the same ticket, the same initial plan candidate and the same
+retained critical claim.
 The independent review and normal revisions completed, the implementation ran,
 and the real evidence gate refused the approval with exactly
 `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN` at unchanged `EVIDENCE_REVIEW`. No package
@@ -98,27 +125,29 @@ authenticity.
 
 ## Environment and identity
 
-| Item                       | Value                                                                                                |
-| -------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Product commit             | `ede07f02df05ebee7a4e01751429a4df2e508f66`                                                           |
-| Version                    | `2.0.0-tp.2`                                                                                         |
-| Tarball SHA-256            | `bafe4c57e97ce31bd7700092c4aab8d721b0017371c1868172dba6692a1d3486`                                   |
-| Harness                    | `demo-harness.v6`, integrated `develop@ede07f02`; no local patch                                     |
-| Host                       | OpenCode CLI `2.2.5`                                                                                 |
-| Model                      | `deepseek/deepseek-flash`, thinking disabled, reasoning effort `none`                                |
-| Node / npm                 | `22.22.2` / `10.9.7`                                                                                 |
-| Java / Maven               | `21.0.13.1` / `3.9.5`                                                                                |
-| Policy                     | `team`, `human_gated`; digest `4ed5e5858689c7345205ffb5b74178eddbe98246e3ef68d8ae3fd2db4b1b5a34`     |
-| Positive parent session    | `ses_dedafedf2ffeRyFyTwVJod0xwc`                                                                     |
-| Positive FlowGuard session | `97c1fd5e-82bc-4a24-a171-275452714507`                                                               |
-| Positive reviewer sessions | `ses_dedaf6f4affe0VN4Rj149vWg0K`, `ses_dedad7ef6ffeX1AAUinDP4SYTE`, `ses_dedae24fcffezaza1GtapgKgKg` |
-| Plan approval certificate  | `7102d028-2d0f-448f-8f92-29089c6afec2`                                                               |
-| Implementation digest      | `c461946a9de0e2b0c142a4b971a362057ee926624b9f7031d91c37fc1ae5aa31`                                   |
-| Negative parent session    | `ses_dedac4888ffetYRaWRpekeRXDu`                                                                     |
-| Negative FlowGuard session | `88ab9405-9a91-4e84-917e-fcead6773e51`                                                               |
-| Negative reviewer sessions | `ses_dedabd8ffffe2LmJbX41KMQsl5`, `ses_dedaad04fffeOHKVekqRvzp7kN`                                   |
-| Negative plan certificate  | `a36c1d59-d099-442c-8822-236c8cd54704`                                                               |
-| Negative implementation    | `a74336cc5f220ec54197e919bfe6d23f219bde247e0b8e9aeb8a4197ba47fc7c`                                   |
+| Item                         | Value                                                                                                |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Product commit               | `ede07f02df05ebee7a4e01751429a4df2e508f66`                                                           |
+| Version                      | `2.0.0-tp.2`                                                                                         |
+| Tarball SHA-256              | `bafe4c57e97ce31bd7700092c4aab8d721b0017371c1868172dba6692a1d3486`                                   |
+| Harness                      | `demo-harness.v6`, integrated `develop@ede07f02`; no local patch                                     |
+| Historical red-green commit  | `7a01f4c209b6875aad3fc65947ac6b7b78a7dc9d`                                                           |
+| Historical red-green harness | historical modified local harness; exact patch not preserved; historical `NOT_VERIFIED`              |
+| Host                         | OpenCode CLI `2.2.5`                                                                                 |
+| Model                        | `deepseek/deepseek-flash`, thinking disabled, reasoning effort `none`                                |
+| Node / npm                   | `22.22.2` / `10.9.7`                                                                                 |
+| Java / Maven                 | `21.0.13.1` / `3.9.5`                                                                                |
+| Policy                       | `team`, `human_gated`; digest `4ed5e5858689c7345205ffb5b74178eddbe98246e3ef68d8ae3fd2db4b1b5a34`     |
+| Positive parent session      | `ses_dedafedf2ffeRyFyTwVJod0xwc`                                                                     |
+| Positive FlowGuard session   | `97c1fd5e-82bc-4a24-a171-275452714507`                                                               |
+| Positive reviewer sessions   | `ses_dedaf6f4affe0VN4Rj149vWg0K`, `ses_dedad7ef6ffeX1AAUinDP4SYTE`, `ses_dedae24fcffezaza1GtapgKgKg` |
+| Plan approval certificate    | `7102d028-2d0f-448f-8f92-29089c6afec2`                                                               |
+| Implementation digest        | `c461946a9de0e2b0c142a4b971a362057ee926624b9f7031d91c37fc1ae5aa31`                                   |
+| Negative parent session      | `ses_dedac4888ffetYRaWRpekeRXDu`                                                                     |
+| Negative FlowGuard session   | `88ab9405-9a91-4e84-917e-fcead6773e51`                                                               |
+| Negative reviewer sessions   | `ses_dedabd8ffffe2LmJbX41KMQsl5`, `ses_dedaad04fffeOHKVekqRvzp7kN`                                   |
+| Negative plan certificate    | `a36c1d59-d099-442c-8822-236c8cd54704`                                                               |
+| Negative implementation      | `a74336cc5f220ec54197e919bfe6d23f219bde247e0b8e9aeb8a4197ba47fc7c`                                   |
 
 ### Harness identity
 
@@ -130,9 +159,14 @@ above, and both controls installed it with the same `--product-sha` value.
 ## Evidence files
 
 - [reference-evidence.json](./java-governed-delivery/evidence/reference-evidence.json)
-- [red-green.txt](./java-governed-delivery/evidence/red-green.txt)
+- [red-green.txt](./java-governed-delivery/evidence/red-green.txt) — historical
+  bugfix scenario on `7a01f4c2…`, not part of the final control pair
 - [integrity-controls.json](./java-governed-delivery/evidence/integrity-controls.json)
 - [package-manifest.json](./java-governed-delivery/evidence/package-manifest.json)
+
+The historical red-green scenario used a modified local harness whose exact
+patch was not preserved; it is retained with that limitation and is not
+attributed to the final documentation-only positive control.
 
 The synthetic raw package is **withheld from the current draft tree** pending
 explicit owner approval after a recorded sensitivity review. The manifest
@@ -146,10 +180,12 @@ consistency, not origin or a trusted external anchor.
 
 ## Reproduction
 
-The evidence was produced with an isolated `HOME`, state directory, config
+The final evidence was produced with an isolated `HOME`, state directory, config
 directory, and service port so the demo did not restart or collide with the
 running desktop host. The same checksummed tarball was supplied to both
-controls, each in a separate fresh root:
+controls, each in a separate fresh root. These commands reproduce only the final
+documentation-only control pair; the historical red-green scenario is not
+reproduced here because its exact local harness patch was not preserved:
 
 ```bash
 FLOWGUARD_CLAIM_CASES=claim-positive \
