@@ -9,7 +9,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -50,6 +50,15 @@ afterEach(() => {
 });
 
 describe('demo run lease', () => {
+  it.skipIf(process.platform === 'win32')('creates a private lease record', () => {
+    const lease = acquireLease(fakeRepo('private'));
+    try {
+      expect(statSync(lease.leaseFile).mode & 0o077).toBe(0);
+    } finally {
+      lease.release();
+    }
+  });
+
   describe('HAPPY — token-checked release', () => {
     it('blocks a second acquire and allows re-acquire after the owner releases', () => {
       const repo = fakeRepo('happy');

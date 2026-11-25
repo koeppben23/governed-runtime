@@ -126,7 +126,11 @@ async function withdrawClaim(dir: string, ownEntry: string): Promise<void> {
  */
 async function claimDirectory(dir: string, entry: string, content: string): Promise<boolean> {
   try {
-    await fs.writeFile(path.join(dir, entry), content, { encoding: 'utf-8', flag: 'wx' });
+    await fs.writeFile(path.join(dir, entry), content, {
+      encoding: 'utf-8',
+      flag: 'wx',
+      mode: 0o600,
+    });
   } catch (err) {
     if (isCode(err, 'ENOENT')) return false; // directory vanished — we lost
     if (isCode(err, 'EEXIST', 'EACCES', 'EPERM', 'EBUSY')) {
