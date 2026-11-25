@@ -260,6 +260,8 @@ describe('demo review continuation classification', () => {
         expect(prompts).toHaveLength(1);
         expect(prompts[0]).toContain('`blockingIssues`');
         expect(prompts[0]).toContain('majorRisks');
+        expect(prompts[0]).toContain('`findingId`, `planSection` and `response`');
+        expect(prompts[0]).toContain('existing heading');
       }
     });
   });

@@ -179,8 +179,11 @@ export function planCandidatePrompt() {
     'returns ' +
     'changes_requested, address every bound finding in `blockingIssues` only; include a ' +
     'flowguard-finding-resolutions block bound only to the current review obligation, iteration, ' +
-    'plan version and those blocking finding IDs. Never include `majorRisks`, minor findings, ' +
-    '`missingVerification` or any finding outside `blockingIssues` in that block. Preserve all ' +
+    'plan version and those blocking finding IDs. Each resolutions entry must contain exactly ' +
+    '`findingId`, `planSection` and `response`; `planSection` must be an exact existing heading ' +
+    'in the revised plan, such as `Verification`, not a prose location. Never include `majorRisks`, ' +
+    'minor findings, `missingVerification` or any finding outside `blockingIssues` in that block. ' +
+    'Preserve all ' +
     'fixed constraints, the exact claim, the evidence design and the Getting started verification. ' +
     'Never use FLOWGUARD_LIVE_SKIP_ASSERTION to simulate a failing assertion. Do not modify the ' +
     'candidate files.'

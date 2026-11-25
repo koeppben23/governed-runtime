@@ -608,6 +608,8 @@ describe('claim-control orchestration boundary', () => {
     expect(prompt).toContain('Do not call flowguard_plan before reading both files');
     expect(prompt).toContain('preserve its literal double quotes exactly');
     expect(prompt).toContain('strip them');
+    expect(prompt).toContain('`findingId`, `planSection` and `response`');
+    expect(prompt).toContain('exact existing heading');
     expect(prompt).toContain('Do not modify the candidate files');
     expect(prompt).toContain('FLOWGUARD_LIVE_SKIP_ASSERTION');
   });
