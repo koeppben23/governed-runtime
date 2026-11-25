@@ -4,6 +4,7 @@
   "testRunner": "vitest",
   "reporters": ["html", "clear-text", "progress", "json"],
   "coverageAnalysis": "perTest",
+  "dryRunTimeoutMinutes": 45,
   "checkers": ["typescript"],
   "tsconfigFile": "tsconfig.json",
   "vitest": {
