@@ -19,7 +19,7 @@
  * no non-critical replacement, no override, no state edit.
  *
  * Usage:
- *   node demos/java-task-manager/run-live-claim-controls.mjs --root <dir> [--tarball <tgz>]
+ *   FLOWGUARD_CLAIM_CASES=claim-positive node demos/java-task-manager/run-live-claim-controls.mjs --root <dir> [--tarball <tgz>]
  */
 
 import fs from 'node:fs';
@@ -41,7 +41,9 @@ import {
   planGateNotConvergedReason,
 } from '../lib/review-continuation.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
-import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
+import { isolatedInstallEnv, writeIsolatedHostConfig } from '../lib/host-config.mjs';
+import { HARNESS_VERSION } from '../lib/harness-version.mjs';
+import { SKIP_ASSERTION_ENV } from '../lib/service-lifecycle.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { readPins, assertToolchain } from '../lib/toolchain.mjs';
 
@@ -55,8 +57,7 @@ export const ADVERSARIAL_ASSERTION =
 export const POSITIVE_ASSERTION = 'com.example.taskmanager.UsageNotesHintTest#documentsTestCommand';
 /** Exact documentation line both assertions act on. */
 export const REQUIRED_HINT = 'Run ./mvnw test to run the task-manager tests.';
-/** Environment variable that genuinely disables the adversarial assertion. */
-export const SKIP_ASSERTION_ENV = 'FLOWGUARD_LIVE_SKIP_ASSERTION';
+export { SKIP_ASSERTION_ENV };
 export const TICKET_FILE = 'TICKET_CLAIM_CONTROL.md';
 
 /** The one retained critical claim; ids/certificates/evidence stay runtime-owned. */
@@ -240,9 +241,8 @@ const PLAN_PROMPT = (claims) =>
 async function runCase(runner, name, workspace, negative) {
   const record = { name, negative, workspace, result: RESULT.FAILED };
   const session = { workspace, terminal: 'COMPLETE' };
-  const savedSkip = process.env[SKIP_ASSERTION_ENV];
   try {
-    await runner.turn(session, `${name}-01-start`, '/start');
+    await runner.turn(session, `${name}-01-start`, undefined, { command: 'start' });
     const installed = runner.installedBuild(workspace);
     record.installedBuild = installed;
     if (runner.options.productSha !== undefined && installed.gitSha !== runner.options.productSha) {
@@ -250,17 +250,23 @@ async function runCase(runner, name, workspace, negative) {
         `installed artifact gitSha ${String(installed.gitSha)} != declared product ${runner.options.productSha}`,
       );
     }
-    // Use the host command boundary with the ticket text as the message. This
-    // keeps /task from spilling into planning; a leading `--file` argument would
-    // be parsed as an opencode option, so the ticket content is passed directly.
-    const ticketText = fs.readFileSync(path.join(workspace, TICKET_FILE), 'utf8');
-    await runner.turn(session, `${name}-02-task`, ticketText, { command: 'task' });
-    // The host command boundary keeps /task from spilling into planning; if a
-    // model still over-runs, an already-accepted retained plan is reused instead
-    // of resubmitting and colliding with the active human gate.
+    // Submit the ticket source through the /task prompt template. The command
+    // adopts the repository file itself, so the model never receives the ticket
+    // body as planning context.
+    await runner.turn(session, `${name}-02-task`, `--file ${TICKET_FILE}`, { command: 'task' });
+    // If /task reached an already-reviewed plan, do not resubmit it unless the
+    // retained claim was changed. A claim-changing /task spill must be replaced
+    // by the exact declared claim before the control can proceed.
     const afterTask = runner.requireBoundState(session).state;
-    const plannedAlready =
+    let plannedAlready =
       afterTask.phase === 'PLAN_REVIEW' && afterTask.plan?.reviewCompletion === 'reviewer_accepted';
+    if (plannedAlready) {
+      try {
+        assertRetainedCriticalClaim(afterTask);
+      } catch {
+        plannedAlready = false;
+      }
+    }
     if (!plannedAlready) {
       await runner.turn(session, `${name}-03-plan`, PLAN_PROMPT([criticalClaimDeclaration()]), {
         command: 'plan',
@@ -275,8 +281,6 @@ async function runCase(runner, name, workspace, negative) {
     await runner.approve(session, `${name}-04-approve-plan`, 'PLAN_REVIEW');
     assertRetainedCriticalClaim(runner.requireBoundState(session).state);
 
-    delete process.env[SKIP_ASSERTION_ENV];
-    if (negative) process.env[SKIP_ASSERTION_ENV] = '1';
     await runner.turn(
       session,
       `${name}-05-implement`,
@@ -290,17 +294,16 @@ async function runCase(runner, name, workspace, negative) {
 
     if (negative) {
       const before = runner.requireBoundState(session).state;
-      await runner.turn(
-        session,
-        `${name}-06-approve`,
-        'Demo approval through the real command boundary.',
-        {
-          command: 'approve',
-          expectedDenial: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
-        },
-      );
+      await runner.turn(session, `${name}-06-approve`, undefined, {
+        command: 'approve',
+        expectedDenial: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
+        expectedDenialTool: 'flowguard_decision',
+      });
       const after = runner.requireBoundState(session).state;
       assertClaimEvidence(after, { negative: true });
+      if (after.phase !== 'EVIDENCE_REVIEW') {
+        throw new Error(`the blocked approval left EVIDENCE_REVIEW: ${String(after.phase)}`);
+      }
       if (
         JSON.stringify(after.reviewDecision ?? null) !==
         JSON.stringify(before.reviewDecision ?? null)
@@ -344,12 +347,26 @@ async function runCase(runner, name, workspace, negative) {
     } else {
       record.result = RESULT.FAILED;
       record.error = String(error);
+      if (error?.code === 'HOST_COMMAND_UNKNOWN_OUTCOME') record.errorCode = error.code;
     }
-  } finally {
-    if (savedSkip === undefined) delete process.env[SKIP_ASSERTION_ENV];
-    else process.env[SKIP_ASSERTION_ENV] = savedSkip;
   }
   return record;
+}
+
+export function selectedClaimCases() {
+  const raw = process.env.FLOWGUARD_CLAIM_CASES;
+  if (raw === undefined || raw.trim() === '') {
+    throw new Error(
+      'FLOWGUARD_CLAIM_CASES must explicitly select exactly one claim control per invocation',
+    );
+  }
+  const value = raw.trim();
+  if (value !== 'claim-positive' && value !== 'claim-negative') {
+    throw new Error(
+      'FLOWGUARD_CLAIM_CASES must select exactly one of claim-positive or claim-negative',
+    );
+  }
+  return [value];
 }
 
 async function main() {
@@ -362,11 +379,17 @@ async function main() {
     return;
   }
   if (process.argv.includes('--flows')) {
-    throw new Error('claim controls always execute both cases; --flows is not supported');
+    throw new Error(
+      'claim controls require FLOWGUARD_CLAIM_CASES to select one case; --flows is not supported',
+    );
   }
+  const selected = selectedClaimCases();
+  const [name] = selected;
+  const negative = name === 'claim-negative';
   const evidenceDir = path.join(options.root, 'evidence');
   const configDir = path.join(options.root, 'config');
-  fs.mkdirSync(evidenceDir, { recursive: true });
+  fs.mkdirSync(options.root, { recursive: true });
+  fs.mkdirSync(evidenceDir, { mode: 0o700 });
   fs.mkdirSync(configDir, { recursive: true });
   writeIsolatedHostConfig(configDir);
 
@@ -391,12 +414,13 @@ async function main() {
       {
         startedAt: new Date().toISOString(),
         model: options.model,
+        harnessVersion: HARNESS_VERSION,
         pins,
         checkoutHead,
         tarball,
         tarballSha256: sha256(tarball),
         productSha: options.productSha ?? null,
-        flows: ['claim-positive', 'claim-negative'],
+        flows: selected,
         claim: criticalClaimDeclaration(),
         positiveAssertion: POSITIVE_ASSERTION,
         adversarialAssertion: ADVERSARIAL_ASSERTION,
@@ -405,6 +429,7 @@ async function main() {
       null,
       2,
     ),
+    { flag: 'wx' },
   );
 
   execFileSync(
@@ -415,44 +440,34 @@ async function main() {
       'repo',
       '--tarball',
       tarball,
+      '--demo',
+      'main',
       path.join(options.root, 'workspaces'),
     ],
     {
       cwd: REPO,
       stdio: 'inherit',
+      env: isolatedInstallEnv(configDir),
     },
   );
-  const cases = [
-    {
-      name: 'claim-positive',
-      negative: false,
-      workspace: path.join(options.root, 'workspaces', 'claim-positive'),
-    },
-    {
-      name: 'claim-negative',
-      negative: true,
-      workspace: path.join(options.root, 'workspaces', 'claim-negative'),
-    },
-  ];
-  for (const item of cases) {
-    fs.cpSync(path.join(options.root, 'workspaces', 'java-task-manager'), item.workspace, {
-      recursive: true,
-    });
-    prepareClaimWorkspace(item.workspace);
-  }
+  const workspace = path.join(options.root, 'workspaces', name);
+  fs.cpSync(path.join(options.root, 'workspaces', 'java-task-manager'), workspace, {
+    recursive: true,
+  });
+  prepareClaimWorkspace(workspace);
 
   const runner = new Runner(options.root, options, configDir);
-  const records = [];
-  for (const item of cases) {
-    runner.log(`START ${item.name}`);
-    const record = await runCase(runner, item.name, item.workspace, item.negative);
-    records.push(record);
-    runner.log(`${record.result} ${item.name}${record.error ? `: ${record.error}` : ''}`);
-    fs.writeFileSync(
-      path.join(evidenceDir, 'claim-controls.json'),
-      JSON.stringify(records, null, 2),
-    );
-  }
+  runner.log(`START ${name}`);
+  const record = await runner.withHost(() => runCase(runner, name, workspace, negative), {
+    skipAssertion: negative,
+  });
+  const records = [record];
+  runner.log(`${record.result} ${name}${record.error ? `: ${record.error}` : ''}`);
+  fs.writeFileSync(
+    path.join(evidenceDir, 'claim-controls.json'),
+    JSON.stringify(records, null, 2),
+    { flag: 'wx' },
+  );
   const code = exitCodeForResults(records);
   runner.log(resultLine(records, 'CLAIM CONTROLS'));
   process.exitCode = code;

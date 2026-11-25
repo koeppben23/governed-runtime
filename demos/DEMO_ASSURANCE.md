@@ -5,6 +5,38 @@ This document records the forensic review of the live-demo harness beginning on
 The product ProofGraph/gate semantics are untouched. The v2 follow-up also fixes
 reviewer prompt context and installed Task-return guidance.
 
+## Isolated host and decision witnesses (harness v6)
+
+- The Java and risk runners use an authenticated OpenCode child on
+  `127.0.0.1:49375`. A port collision fails closed. The setup installer receives
+  an absent run-local `FLOWGUARD_OPENCODE_SERVICE_RECORD`, so it cannot discover
+  or restart the user's shared service. Supply provider credentials in the
+  environment; shared host storage is not reused. Claim controls bind the
+  assertion skip to the child at startup, not to a later CLI client.
+- Native start/check commands and decisions use the host command API; prompt
+  templates use the headless CLI. Approval requires a successful decision call,
+  a receipt matched to the dispatch rationale and verdict, and a persisted
+  transition to the expected phase. Every tool event in the window must carry a
+  boolean success and a typed error code iff it failed; contradictory or
+  unexplained error events fail. Legitimate automatic follow-up calls are
+  allowed only as successful, fully typed calls inside the settled dispatch
+  interval.
+- The receipt and transition digests are checked against the installed
+  product's canonical `computeStateDigest`, not a demo-local hash. The audit
+  chain must link the observed pre-dispatch state to the settled state; a
+  duplicate pair from the same state write and automatic follow-up transitions
+  are allowed. The chain proves digest linkage, not the reconstructed contents
+  of each intermediate state.
+- A refusal requires a unique current call, a closing typed error, a continuous
+  unchanged audit prefix, and no persisted mutation. No HTTP response body
+  becomes evidence. An unknown outcome is never retried.
+- Transcript validation proves structural completeness, session/worktree/parent
+  identity and a completed final assistant turn. Reviewer records also carry
+  the persisted obligation/invocation/attempt binding. `ReviewFindings` remains
+  the independent review-completion authority.
+- Keep v5 and earlier measurements separate. No existing observation is
+  promoted to a v6 reference run.
+
 ## Re-arm lifecycle telemetry (harness v5)
 
 - A structured re-arm is authorized exactly once per freshly minted
@@ -43,7 +75,7 @@ reviewer prompt context and installed Task-return guidance.
   workflow gates retain their canonical authority. The regression tests exercise
   real audit files through `Runner.turn` with a mocked host process; they do not
   constitute a new provider-backed live validation.
-- New measurements record `demo-harness.v5`. Keep v4 and earlier measurements
+- v5 measurements record `demo-harness.v5`. Keep v4 and earlier measurements
   separate and preserve their original evidence roots. After installing this
   harness, re-run affected flows in a fresh root; do not relabel old results.
 

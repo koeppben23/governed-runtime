@@ -40,7 +40,8 @@ import {
 } from '../lib/review-continuation.mjs';
 import { FLOWGUARD_CLI, FLOWGUARD_PACKAGE, productCli } from '../lib/product-cli.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults } from '../lib/results.mjs';
-import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
+import { isolatedInstallEnv, writeIsolatedHostConfig } from '../lib/host-config.mjs';
+import { HARNESS_VERSION } from '../lib/harness-version.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
@@ -53,8 +54,7 @@ function git(workspace, ...args) {
 function snapshot(runner, session, label) {
   const current = runner.requireBoundState(session);
   const file = path.join(runner.evidenceDir, `${label}-state.json`);
-  if (fs.existsSync(file)) throw new Error(`evidence already exists: ${file}`);
-  fs.writeFileSync(file, JSON.stringify(current.state, null, 2));
+  fs.writeFileSync(file, JSON.stringify(current.state, null, 2), { flag: 'wx' });
   return { ...current, file, sha256: sha256(file) };
 }
 
@@ -140,13 +140,12 @@ async function planAndApprove(runner, session, prefix, covered, allowOverride) {
   );
   const command = oldControlApprovalCommand(resolveWorkflowDirective(state), allowOverride);
   runner.log(`old control plan approval: ${command}; explicitOverride=${allowOverride}`);
-  await runner.turn(
-    session,
-    `${prefix}-04-approve-plan`,
-    'Explicit operator decision for the deliberately uncovered OLD negative control only. ' +
-      'This does not authorize evidence approval or override missing risk coverage.',
-    { command },
-  );
+  await runner.turn(session, `${prefix}-04-approve-plan`, undefined, {
+    command,
+    expectedTargetPhase: 'IMPLEMENTATION',
+    decisionRationale:
+      'Approval of the deliberately uncovered OLD plan only; no waiver of evidence approval or risk coverage.',
+  });
 }
 
 /**
@@ -192,9 +191,8 @@ async function main() {
   assertToolchain(readPins());
   if (options.check) return;
   const evidenceDir = path.join(options.root, 'evidence');
-  if (fs.existsSync(evidenceDir))
-    throw new Error('use a fresh --root; recovery evidence is never overwritten');
-  fs.mkdirSync(evidenceDir, { recursive: true });
+  fs.mkdirSync(options.root, { recursive: true });
+  fs.mkdirSync(evidenceDir, { mode: 0o700 });
   const configDir = path.join(options.root, 'config');
   fs.mkdirSync(configDir, { recursive: true });
   writeIsolatedHostConfig(configDir);
@@ -210,13 +208,14 @@ async function main() {
   const runner = new Runner(options.root, options, configDir);
   const record = {
     name: 'replan-recovery',
+    harnessVersion: HARNESS_VERSION,
     checkoutHead,
     tarballSha256: sha256(tarball),
     productSha: options.productSha ?? null,
     result: RESULT.FAILED,
     snapshots: {},
   };
-  try {
+  const runRecovery = async () => {
     const oldWorkspace = path.join(options.root, 'workspaces', 'old');
     prepareWorkspace(oldWorkspace, tarball);
     const base = git(oldWorkspace, 'rev-parse', 'HEAD');
@@ -241,9 +240,10 @@ async function main() {
     const deniedBasis = runner.requireBoundState(oldSession).state;
     assertStateIntegrityTrigger(deniedBasis);
     assertFullEvidence(deniedBasis, false);
-    await runner.turn(oldSession, 'old-06-denial', 'Explicit operator approval probe.', {
+    await runner.turn(oldSession, 'old-06-denial', undefined, {
       command: 'approve',
       expectedDenial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+      expectedDenialTool: 'flowguard_decision',
     });
     assertNoCompletionPackage(runner, oldSession);
     const repaired = fs.readFileSync(path.join(oldWorkspace, SUBJECT), 'utf8');
@@ -283,7 +283,7 @@ async function main() {
     execFileSync(
       process.execPath,
       [productInstaller, 'install', '--install-scope', 'repo', '--core-tarball', tarball],
-      { cwd: newWorkspace, stdio: 'inherit' },
+      { cwd: newWorkspace, stdio: 'inherit', env: isolatedInstallEnv(configDir) },
     );
     // `.opencode/` is gitignored, so the git worktree does not carry the
     // fixture configuration: apply it after the regular install, before the
@@ -383,6 +383,9 @@ async function main() {
       newProvenance,
       hostSessionIds: [oldSession.sessionId, newSession.sessionId],
     });
+  };
+  try {
+    await runner.withHost(runRecovery);
   } catch (error) {
     if (error instanceof DemoNotVerifiedError || error?.code === 'DEMO_NOT_VERIFIED') {
       record.result = RESULT.NOT_VERIFIED;
@@ -391,7 +394,11 @@ async function main() {
     }
     record.error = String(error);
   }
-  fs.writeFileSync(path.join(evidenceDir, 'replan-recovery.json'), JSON.stringify(record, null, 2));
+  fs.writeFileSync(
+    path.join(evidenceDir, 'replan-recovery.json'),
+    JSON.stringify(record, null, 2),
+    { flag: 'wx' },
+  );
   runner.log(`${record.result} replan-recovery${record.error ? `: ${record.error}` : ''}`);
   process.exitCode = exitCodeForResults([record]);
 }

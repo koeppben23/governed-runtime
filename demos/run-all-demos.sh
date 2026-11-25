@@ -49,7 +49,6 @@ fi
 #    roots do not share protected targets.
 export FLOWGUARD_INSTALL_LOCK_PATH="$ROOT/.flowguard-install.lock"
 export OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","provider":{"deepseek":{"models":{"deepseek-flash":{"options":{"reasoningEffort":"none","thinking":{"type":"disabled"}}}}}}}'
-export FLOWGUARD_REVIEWER_EFFORT=none
 
 RUN=(npx --yes --package=node@22.22.2 -- node)
 STATUS=0

@@ -2166,6 +2166,41 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Harden the live Java demo harness (`demo-harness.v6`): run prompt templates
+  through headless OpenCode and native decisions through a dedicated,
+  authenticated loopback service. Bind approvals and refusals to the current
+  persisted audit and state, stop without replay on unknown transport outcomes,
+  and keep raw HTTP response bodies out of evidence and diagnostics. Bind the
+  negative assertion skip at service startup and require a completed final
+  transcript response and exclusive evidence writes. No runtime or
+  governance-authority changes. Remove the obsolete V2
+  `FLOWGUARD_REVIEWER_EFFORT` export from the demo scripts and live-control
+  instructions; V2 selects the native model variant instead.
+- Require native decision approval windows to reject ambiguous tool outcomes,
+  unexplained error events and mixed success/error evidence. Bind the decision
+  receipt and every transition to the installed product's canonical
+  state-authority digest, rejecting automatic follow-up transitions with
+  missing or malformed digest pairs. Record the
+  persisted reviewer obligation/invocation/attempt binding beside each
+  reviewer transcript; transcript validation remains structural and
+  `ReviewFindings` remains the review-completion authority.
+- Point the demo setup installer at an absent run-local service record so it
+  never discovers or restarts the user's shared OpenCode service. The harness
+  starts and verifies its own authenticated child instead. Drive native
+  `/start` and `/check` through the generated session's host command API; the
+  headless CLI is reserved for prompt templates. Require a fresh host-command
+  activation record for `/start` and audited, persisted check attempts for
+  `/check`, both within a complete, dispatch-bound audit window. Bind every
+  new check attempt to the dispatch's baseline or implementation subject.
+- Split the Java live matrix into bounded modules for setup, scenarios, host
+  transport, turn recovery and evidence, preserving its CLI and runner API.
+- Treat current plan-preflight edits (evidence design, finding resolutions,
+  claim lineage, claim submission, pending-subject guard) as correctable
+  observations. Keep them pending until the same plan revision and consumed
+  independent acceptance are verified at the gate and native approval is witnessed.
+  Ignore host control messages such as `model-switched` when validating the
+  structural review exchange, and bind `/task` to the repository ticket file
+  instead of passing its body as planning context.
 - Align public documentation with current behavior: refine README demo copy and
   lifecycle alt text, retain the peer-review host preconditions, update the
   Product One Pager to the OpenCode V2-scoped native reviewer mechanism and the

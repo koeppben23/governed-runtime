@@ -21,15 +21,22 @@ function transcript(sessionId = 'ses_parent', parentSessionId?: string) {
   return {
     info: {
       id: sessionId,
-      directory: root,
+      location: { directory: root },
       ...(parentSessionId === undefined ? {} : { parentID: parentSessionId }),
     },
     messages: [
       {
-        info: { id: 'msg_1', sessionID: sessionId, role: 'user' },
-        parts: [
-          { id: 'prt_1', sessionID: sessionId, messageID: 'msg_1', type: 'text', text: 'review' },
-        ],
+        id: 'msg_1',
+        type: 'user',
+        text: 'review',
+        time: { created: 1 },
+      },
+      {
+        id: 'msg_2',
+        type: 'assistant',
+        content: [{ id: 'prt_1', type: 'text', text: 'ok' }],
+        time: { created: 2, completed: 3 },
+        finish: 'stop',
       },
     ],
   };
@@ -67,7 +74,8 @@ afterEach(async () => {
 describe('live host transcript export', () => {
   it('captures and validates a real-process export far above 64 KiB', async () => {
     const value = transcript();
-    value.messages[0]!.parts[0]!.text = 'x'.repeat(3 * 65_536);
+    const assistant = value.messages[1] as { content: Array<{ text: string }> };
+    assistant.content[0]!.text = 'x'.repeat(3 * 65_536);
     const serialized = JSON.stringify(value);
     await fs.writeFile(payload, serialized);
     const file = await capture();
@@ -79,7 +87,8 @@ describe('live host transcript export', () => {
 
   it('rejects a deliberately truncated successful export and preserves the failed bytes', async () => {
     const value = transcript();
-    value.messages[0]!.parts[0]!.text = 'x'.repeat(3 * 65_536);
+    const assistant = value.messages[1] as { content: Array<{ text: string }> };
+    assistant.content[0]!.text = 'x'.repeat(3 * 65_536);
     const truncated = JSON.stringify(value).slice(0, 65_536);
     await fs.writeFile(payload, truncated);
     await expect(capture()).rejects.toThrow(/invalid host transcript JSON/);
@@ -109,23 +118,18 @@ describe('live host transcript export', () => {
 
     const continued = transcript();
     continued.messages.push({
-      info: { id: 'msg_2', sessionID: 'ses_parent', role: 'assistant' },
-      parts: [
-        {
-          id: 'prt_2',
-          sessionID: 'ses_parent',
-          messageID: 'msg_2',
-          type: 'text',
-          text: 'continued host session',
-        },
-      ],
+      id: 'msg_3',
+      type: 'assistant',
+      content: [{ id: 'prt_2', type: 'text', text: 'continued host session' }],
+      time: { created: 4, completed: 5 },
+      finish: 'stop',
     });
     await fs.writeFile(payload, JSON.stringify(continued));
     const second = await capture();
 
     expect(path.basename(second)).toBe('architecture-attempt-2-host-ses_parent.json');
-    expect(JSON.parse(await fs.readFile(second, 'utf8')).messages).toHaveLength(2);
-    expect(JSON.parse(await fs.readFile(first, 'utf8')).messages).toHaveLength(1);
+    expect(JSON.parse(await fs.readFile(second, 'utf8')).messages).toHaveLength(3);
+    expect(JSON.parse(await fs.readFile(first, 'utf8')).messages).toHaveLength(2);
     expect(JSON.parse(await fs.readFile(`${second}.receipt.json`, 'utf8'))).toMatchObject({
       attempt: 2,
       sha256: createHash('sha256')
@@ -141,7 +145,7 @@ describe('live host transcript export', () => {
     const next = await capture();
     expect(next).not.toBe(first);
     expect(await fs.readFile(first, 'utf8')).toBe(`${JSON.stringify(transcript())} `);
-    expect(JSON.parse(await fs.readFile(next, 'utf8')).messages).toHaveLength(1);
+    expect(JSON.parse(await fs.readFile(next, 'utf8')).messages).toHaveLength(2);
     expect(path.basename(await capture())).toBe('architecture-attempt-3-host-ses_parent.json');
   });
 
@@ -191,6 +195,43 @@ describe('live host transcript export', () => {
     await expect(capture('ses_parent', undefined, 1)).rejects.toThrow(/exit=1/);
   });
 
+  it('rejects an unanswered new user request even with an older answer and trailing idle', async () => {
+    const value = transcript();
+    const messages = [
+      ...value.messages,
+      { id: 'msg_3', type: 'user', text: 'Review the new plan', time: { created: 4 } },
+      { id: 'msg_4', type: 'idle', time: { created: 5 } },
+    ];
+    await fs.writeFile(payload, JSON.stringify({ ...value, messages }));
+    await expect(capture()).rejects.toThrow(/complete ordered user\/assistant/);
+  });
+
+  it.each(['length', 'error', 'tool-calls', undefined])(
+    'does not publish a final assistant answer with finish=%s',
+    async (finish) => {
+      const value = transcript();
+      Object.assign(value.messages[1]!, { finish });
+      await fs.writeFile(payload, JSON.stringify(value));
+      await expect(capture()).rejects.toThrow(/complete ordered user\/assistant/);
+    },
+  );
+
+  it('rejects an old assistant response moved after a newer user request', async () => {
+    const value = transcript();
+    Object.assign(value.messages[0]!, { time: { created: 4 } });
+    await fs.writeFile(payload, JSON.stringify(value));
+    await expect(capture()).rejects.toThrow(/invalid host transcript message/);
+  });
+
+  it('reserves distinct transcript/receipt pairs during concurrent capture', async () => {
+    await fs.writeFile(payload, JSON.stringify(transcript()));
+    const files = await Promise.all([capture(), capture()]);
+    expect(new Set(files).size).toBe(2);
+    for (const file of files) {
+      await expect(fs.readFile(`${file}.receipt.json`, 'utf8')).resolves.toContain('"sha256"');
+    }
+  });
+
   it('surfaces host startup failure without accepting an empty artifact', async () => {
     await expect(
       exportHostTranscript({
@@ -207,7 +248,7 @@ describe('live host transcript export', () => {
     expect((await fs.stat(path.join(root, 'architecture-host-ses_parent.json'))).size).toBe(0);
   });
 
-  it('rejects foreign sessions, invalid envelopes, cross-session messages and parts', () => {
+  it('rejects foreign sessions, invalid envelopes and malformed message identities', () => {
     const options = { sessionId: 'ses_parent', workspace: root, parentSessionId: undefined };
     const value = transcript();
     const invalid = [
@@ -216,27 +257,39 @@ describe('live host transcript export', () => {
       { ...value, info: { ...value.info, parentID: 'ses_foreign_parent' } },
       { ...value, messages: {} },
       { ...value, messages: [] },
+      { ...value, messages: [{ id: 'msg_1', type: 'unknown-control', text: 'x' }] },
+      { ...value, messages: [{ id: 'msg_1', type: 'user' }] },
+      { ...value, messages: [{ id: 'msg_1', type: 'assistant' }] },
+      { ...value, messages: [{ id: 'msg_1', type: 'assistant', content: [] }] },
+      { ...value, messages: [{ id: 'msg_1', type: 'assistant', content: [{ type: 'tool' }] }] },
       {
         ...value,
-        messages: [{ info: { id: 'msg_1', sessionID: 'ses_foreign', role: 'user' }, parts: [] }],
+        messages: [value.messages[1], value.messages[0]],
       },
-      { ...value, messages: [{ info: value.messages[0]!.info, parts: {} }] },
+      {
+        ...value,
+        messages: [
+          value.messages[0],
+          { id: 'msg_2', type: 'assistant', content: [{ type: 'tool' }] },
+        ],
+      },
+      { ...value, messages: [{ id: 'msg_1', type: 'idle' }] },
+      { ...value, messages: [{ id: 'msg_1', type: 'user', text: 'x' }] },
       { ...value, messages: [value.messages[0], value.messages[0]] },
       {
         ...value,
-        messages: [
-          {
-            info: value.messages[0]!.info,
-            parts: [{ ...value.messages[0]!.parts[0], messageID: 'msg_foreign' }],
-          },
-        ],
+        messages: [{ id: 'msg_1', type: 'assistant', content: [{ type: 'text' }, {}] }],
       },
       {
         ...value,
         messages: [
           {
-            info: value.messages[0]!.info,
-            parts: [{ ...value.messages[0]!.parts[0], sessionID: 'ses_foreign' }],
+            id: 'msg_1',
+            type: 'assistant',
+            content: [
+              { id: 'part_1', type: 'text' },
+              { id: 'part_1', type: 'text' },
+            ],
           },
         ],
       },
@@ -245,11 +298,29 @@ describe('live host transcript export', () => {
       expect(() => validateHostTranscript(JSON.stringify(malformed), options)).toThrow();
   });
 
+  it('ignores host control messages around a complete review exchange', () => {
+    const value = transcript();
+    const messages = [
+      { id: 'msg_ctrl_0', type: 'model-switched', time: { created: 0 } },
+      value.messages[0],
+      { id: 'msg_ctrl_1', type: 'system', time: { created: 2 } },
+      { ...value.messages[1], time: { created: 3, completed: 4 } },
+      { id: 'msg_idle', type: 'idle', time: { created: 5 } },
+    ];
+    expect(() =>
+      validateHostTranscript(JSON.stringify({ ...value, messages }), {
+        sessionId: 'ses_parent',
+        workspace: root,
+        parentSessionId: undefined,
+      }),
+    ).not.toThrow();
+  });
+
   it('rejects a foreign worktree even when the session identity matches', async () => {
     const foreign = path.join(root, 'foreign');
     await fs.mkdir(foreign);
     const value = transcript();
-    value.info.directory = foreign;
+    value.info.location.directory = foreign;
     expect(() =>
       validateHostTranscript(JSON.stringify(value), {
         sessionId: 'ses_parent',
@@ -265,7 +336,12 @@ describe('live host transcript export', () => {
       state: {
         binding: { hostSessionId: 'ses_parent' },
         reviewAssurance: {
-          invocations: ['ses_a', 'ses_b', 'ses_c'].map((childSessionId) => ({ childSessionId })),
+          invocations: ['ses_a', 'ses_b', 'ses_c'].map((childSessionId) => ({
+            childSessionId,
+            obligationId: `ob-${childSessionId}`,
+            invocationId: `inv-${childSessionId}`,
+            attemptId: `att-${childSessionId}`,
+          })),
         },
       },
       sessionDir: root,
@@ -292,6 +368,29 @@ describe('live host transcript export', () => {
       parent: { sessionId: 'ses_parent' },
       reviewers: [{ sessionId: 'ses_a' }, { sessionId: 'ses_c' }],
     });
+    expect(flow.transcripts).not.toMatchObject({
+      parent: { reviewBinding: expect.anything() },
+    });
+    expect(flow.transcripts).toMatchObject({
+      reviewers: [
+        {
+          sessionId: 'ses_a',
+          reviewBinding: {
+            obligationId: 'ob-ses_a',
+            invocationId: 'inv-ses_a',
+            attemptId: 'att-ses_a',
+          },
+        },
+        {
+          sessionId: 'ses_c',
+          reviewBinding: {
+            obligationId: 'ob-ses_c',
+            invocationId: 'inv-ses_c',
+            attemptId: 'att-ses_c',
+          },
+        },
+      ],
+    });
     expect(flow.transcriptErrors).toEqual([
       { sessionId: 'ses_b', reason: 'invalid host transcript JSON' },
     ]);
@@ -304,7 +403,12 @@ describe('live host transcript export', () => {
       state: {
         binding: { hostSessionId: 'ses_parent' },
         reviewAssurance: {
-          invocations: ['ses_a', 'ses_b', 'ses_c'].map((childSessionId) => ({ childSessionId })),
+          invocations: ['ses_a', 'ses_b', 'ses_c'].map((childSessionId) => ({
+            childSessionId,
+            obligationId: `ob-${childSessionId}`,
+            invocationId: `inv-${childSessionId}`,
+            attemptId: `att-${childSessionId}`,
+          })),
         },
       },
       sessionDir: root,
