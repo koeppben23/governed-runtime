@@ -14,12 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removal, the Java method detector, transport error responses, changelog
   parsing and test fixtures; document false positives with reachability
   evidence; and track four operator-harness TOCTOU findings and the production
-  uninstall pathname race as pending individual owner decisions. Document the
-  trusted-directory assumption for uninstall and reconcile the baseline and
-  follow-up alerts separately. The bounded `O_NOFOLLOW` reader, linear Java
-  method-name scan, adversarial regressions, and eval snapshot hardening are
-  included. No alert has been dismissed or suppressed; release remains blocked
-  on independent review, owner decisions, CodeQL, and the remaining gates. See
+  uninstall pathname race with individual owner decisions scoped to TP.3.
+  Document the trusted-directory assumption for uninstall and reconcile the
+  baseline and follow-up alerts separately. The bounded `O_NOFOLLOW` reader,
+  linear Java method-name scan, adversarial regressions, and eval snapshot
+  hardening are included. No alert has been dismissed or suppressed; release
+  remains blocked on CodeQL and the remaining verification gates. See
   `docs/security/codeql-triage-2026-11-25.md`.
 - Create demo lease and stale-lock guard owner records with owner-only
   permissions on POSIX. Use one file handle per audit tamper operation and
