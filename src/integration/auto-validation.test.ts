@@ -33,6 +33,7 @@ import {
 } from './test-helpers.js';
 import { status, hydrate, ticket, plan, decision, implement } from './tools/index.js';
 import { readState, statePath, writeState } from '../adapters/persistence.js';
+import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import {
   decidePostCommandAutoValidation,
   resumePendingSystemWork,
@@ -43,9 +44,13 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ToolDefinition } from './tools/helpers.js';
 import type { VerificationCandidateKind } from '../state/discovery-schemas.js';
+import type { ExecuteCheckInput, ExecutionEvidence } from '../verification/executor.js';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -127,7 +132,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -165,7 +170,7 @@ function recordDecisionIntentForTool(
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: context.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,
@@ -211,6 +216,56 @@ function timedOutCheck(kind: VerificationCandidateKind) {
   };
 }
 
+/** The default passing executor result for the requested candidate. */
+async function passingExecution(input: ExecuteCheckInput): Promise<ExecutionEvidence> {
+  return {
+    kind: input.kind,
+    command: input.command,
+    exitCode: 0,
+    passed: true,
+    executionMs: 100,
+    outputDigest: 'a'.repeat(64),
+    stdout: 'OK',
+    stderr: '',
+    timedOut: false,
+    startedAt: new Date().toISOString(),
+  };
+}
+
+/** Repo-native scripts so Discovery plans more than one active check. */
+async function withTwoScriptCandidates(): Promise<void> {
+  await fs.writeFile(
+    `${ws.tmpDir}/package.json`,
+    JSON.stringify({ private: true, scripts: { build: 'tsc -b', lint: 'eslint .' } }),
+    'utf-8',
+  );
+}
+/** Active checks without a passing result in the given persisted results. */
+function openAfter(
+  results: ReadonlyArray<{ checkId: string; passed: boolean }>,
+  active: readonly string[],
+): string[] {
+  return active.filter((id) => !results.some((result) => result.checkId === id && result.passed));
+}
+
+/** Kinds the executor ran since its last mockClear, in order. */
+function executedKinds(): string[] {
+  return vi
+    .mocked(executorMock.executeCheck)
+    .mock.calls.map(([input]) => (input as { kind: string }).kind);
+}
+/** Move a re-armed operation's backoff into the past (no timer wakes it). */
+async function expireBackoff(sessDir: string): Promise<void> {
+  const current = await readState(sessDir);
+  expect(current!.pendingSystemWork).not.toBeNull();
+  await writeState(sessDir, {
+    ...current!,
+    pendingSystemWork: {
+      ...current!.pendingSystemWork!,
+      retryAfter: new Date(Date.now() - 1000).toISOString(),
+    },
+  });
+}
 /** Reach PLAN_REVIEW in team mode (the plan review loop must converge first). */
 async function reachTeamPlanReview(context: TestToolContext = ctx): Promise<void> {
   await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' }, context);
@@ -248,8 +303,13 @@ describe('automatic validation', () => {
     it('team plan approval runs every active check automatically and persists the evidence', async () => {
       await reachTeamPlanReview();
       vi.mocked(executorMock.executeCheck).mockClear();
+      const progress = vi.fn();
 
-      const result = await callOk(decision, { verdict: 'approve', rationale: 'Approved' });
+      const result = await callOk(
+        decision,
+        { verdict: 'approve', rationale: 'Approved' },
+        { ...ctx, autoValidationProgress: progress },
+      );
 
       // The decision response is superseded by the final automatic run_check
       // response: the approval crossed VALIDATION into IMPLEMENTATION.
@@ -265,6 +325,33 @@ describe('automatic validation', () => {
       expect(vi.mocked(executorMock.executeCheck).mock.calls).toHaveLength(
         state!.activeChecks.length,
       );
+      expect(progress).toHaveBeenCalledTimes(2 + state!.activeChecks.length * 2);
+      const binding = {
+        operation: expect.objectContaining({ kind: 'validation', attempt: 0 }),
+        runID: expect.any(String),
+      };
+      expect(progress).toHaveBeenNthCalledWith(1, {
+        ...binding,
+        phase: 'VALIDATION',
+        checks: state!.activeChecks,
+        stage: 'starting',
+      });
+      for (const [index, check] of state!.activeChecks.entries()) {
+        expect(progress).toHaveBeenNthCalledWith(2 + index * 2, {
+          phase: 'VALIDATION',
+          checks: state!.activeChecks,
+          stage: 'check_started',
+          ...binding,
+          check,
+        });
+        expect(progress).toHaveBeenNthCalledWith(3 + index * 2, {
+          phase: 'VALIDATION',
+          checks: state!.activeChecks,
+          stage: 'check_finished',
+          ...binding,
+          check,
+        });
+      }
     });
 
     it('team /implement runs the post-implementation checks automatically and activates the review obligation', async () => {
@@ -272,7 +359,8 @@ describe('automatic validation', () => {
       await callOk(decision, { verdict: 'approve', rationale: 'Approved' });
       vi.mocked(executorMock.executeCheck).mockClear();
 
-      const result = await callOk(implement, {});
+      const progress = vi.fn();
+      const result = await callOk(implement, {}, { ...ctx, autoValidationProgress: progress });
 
       // IMPL_VALIDATION was crossed automatically; the response is the final
       // post-implementation run_check response at IMPL_REVIEW.
@@ -283,6 +371,38 @@ describe('automatic validation', () => {
 
       const state = await readState(await getSessDir());
       expect(state!.phase).toBe('IMPL_REVIEW');
+      expect(progress).toHaveBeenCalledTimes(2 + state!.activeChecks.length * 2);
+      expect(progress).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          phase: 'IMPL_VALIDATION',
+          checks: state!.activeChecks,
+          stage: 'starting',
+        }),
+      );
+      for (const [index, check] of state!.activeChecks.entries()) {
+        expect(progress).toHaveBeenNthCalledWith(
+          2 + index * 2,
+          expect.objectContaining({
+            phase: 'IMPL_VALIDATION',
+            checks: state!.activeChecks,
+            stage: 'check_started',
+            check,
+          }),
+        );
+        expect(progress).toHaveBeenNthCalledWith(
+          3 + index * 2,
+          expect.objectContaining({
+            phase: 'IMPL_VALIDATION',
+            checks: state!.activeChecks,
+            stage: 'check_finished',
+            check,
+          }),
+        );
+      }
+      expect(progress).toHaveBeenLastCalledWith(
+        expect.objectContaining({ phase: 'IMPL_VALIDATION', stage: 'finished' }),
+      );
       expect(state!.implValidation.map((entry) => entry.checkId)).toEqual(state!.activeChecks);
       expect(state!.implValidation.every((entry) => entry.passed)).toBe(true);
       expect(vi.mocked(executorMock.executeCheck).mock.calls).toHaveLength(
@@ -507,12 +627,12 @@ describe('automatic validation', () => {
           return defaultExecuteCheck!(input);
         });
 
-        recordUserDecisionIntent({
+        recordComponentDecision({
           sessionId: ctx.sessionID,
           command: '/approve',
           expectedVerdict: 'approve',
         });
-        recordUserDecisionIntent({
+        recordComponentDecision({
           sessionId: ctxB.sessionID,
           command: '/approve',
           expectedVerdict: 'approve',
@@ -573,6 +693,35 @@ describe('automatic validation', () => {
       expect(vi.mocked(executorMock.executeCheck)).not.toHaveBeenCalled();
     });
 
+    it('runs checks even when a presentation callback never settles', async () => {
+      await reachTeamPlanReview();
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        phase: 'VALIDATION',
+        pendingSystemWork: {
+          kind: 'validation',
+          requestedAt: new Date().toISOString(),
+          attempt: 0,
+          retryAfter: null,
+        },
+        validation: [],
+      });
+      vi.mocked(executorMock.executeCheck).mockClear();
+      const hanging: TestToolContext = {
+        ...ctx,
+        autoValidationProgress: () => new Promise<void>(() => {}),
+      };
+
+      const resumed = await resumePendingSystemWork(hanging);
+
+      expect(resumed).toMatchObject({ kind: 'completed', phase: 'IMPLEMENTATION' });
+      expect(vi.mocked(executorMock.executeCheck)).toHaveBeenCalledTimes(
+        state!.activeChecks.length,
+      );
+    });
+
     it('a technical resume outcome keeps the marker pending and reports still_pending', async () => {
       await reachTeamPlanReview();
 
@@ -619,30 +768,118 @@ describe('automatic validation', () => {
       expect(vi.mocked(executorMock.executeCheck)).toHaveBeenCalledTimes(1);
     });
 
-    it('fails closed with a blocked resume outcome on an unreadable session state', async () => {
+    it('a retry after a timeout re-executes only the open VALIDATION checks', async () => {
+      await withTwoScriptCandidates();
       await reachTeamPlanReview();
       const sessDir = await getSessDir();
-      await fs.writeFile(statePath(sessDir), '{ this is not valid json', 'utf-8');
+      const state = await readState(sessDir);
+      const active = state!.activeChecks;
+      expect(active.length).toBeGreaterThanOrEqual(2);
+      await writeState(sessDir, {
+        ...state!,
+        phase: 'VALIDATION',
+        pendingSystemWork: {
+          kind: 'validation',
+          requestedAt: new Date().toISOString(),
+          attempt: 0,
+          retryAfter: null,
+        },
+        validation: [],
+      });
+      // First check passes (default executor), the second times out.
+      vi.mocked(executorMock.executeCheck)
+        .mockClear()
+        .mockImplementationOnce(passingExecution)
+        .mockImplementationOnce(async (input) => ({
+          ...timedOutCheck(input.kind),
+          command: input.command,
+        }));
+      expect(await resumePendingSystemWork(ctx)).toMatchObject({ kind: 'still_pending' });
+      const open = openAfter((await readState(sessDir))!.validation, active);
+      expect(open).toEqual([active[1]]);
+
+      await expireBackoff(sessDir);
+      vi.mocked(executorMock.executeCheck).mockClear();
+      await resumePendingSystemWork(ctx);
+
+      expect(executedKinds()).toEqual(open);
+      expect(executedKinds()).not.toContain(active[0]);
+    });
+
+    it('a retry after a timeout re-executes only the open IMPL_VALIDATION checks', async () => {
+      await withTwoScriptCandidates();
+      await reachTeamPlanReview();
+      await callOk(decision, { verdict: 'approve', rationale: 'Approved' });
+      const active = (await readState(await getSessDir()))!.activeChecks;
+      expect(active.length).toBeGreaterThanOrEqual(2);
+      vi.mocked(executorMock.executeCheck)
+        .mockClear()
+        .mockImplementationOnce(passingExecution)
+        .mockImplementationOnce(async (input) => ({
+          ...timedOutCheck(input.kind),
+          command: input.command,
+        }));
+      parseToolResult(await implement.execute({}, ctx));
+      const sessDir = await getSessDir();
+      expect((await readState(sessDir))!.phase).toBe('IMPL_VALIDATION');
+
+      const open = openAfter((await readState(sessDir))!.implValidation, active);
+      expect(open).toEqual([active[1]]);
+
+      await expireBackoff(sessDir);
+      vi.mocked(executorMock.executeCheck).mockClear();
+      await resumePendingSystemWork(ctx);
+
+      expect(executedKinds()).toEqual(open);
+      expect(executedKinds()).not.toContain(active[0]);
+    });
+    it('never resumes work when the canonical authority reports an unreadable session state', async () => {
+      await reachTeamPlanReview();
+      const sessDir = await getSessDir();
+      const corrupt = '{ this is not valid json';
+      await fs.writeFile(statePath(sessDir), corrupt, 'utf-8');
+      vi.mocked(executorMock.executeCheck).mockClear();
 
       const resumed = await resumePendingSystemWork(ctx);
 
+      // The single canonical authority owns unreadability: it reports the
+      // typed persistence failure and never silently resumes work. The
+      // corrupted state is left untouched and no check is executed.
+      const authority = await resolveSessionAuthority({
+        root: ws.tmpDir,
+        sessionId: ctx.sessionID,
+      });
+      expect(authority).toMatchObject({ status: 'unavailable', code: 'PARSE_FAILED' });
+      // Fail-closed, never "no work": the typed unreadable block is surfaced.
       expect(resumed).toMatchObject({ kind: 'blocked', code: 'SYSTEM_WORK_STATE_UNREADABLE' });
-      expect(JSON.parse(resumed.kind === 'blocked' ? resumed.response : '{}')).toMatchObject({
+      expect((resumed as { response: string }).response).toContain('PARSE_FAILED');
+      expect(vi.mocked(executorMock.executeCheck)).not.toHaveBeenCalled();
+      expect(await fs.readFile(statePath(sessDir), 'utf-8')).toBe(corrupt);
+    });
+
+    it('never runs checks when the canonical authority reports an unreadable session state', async () => {
+      await reachTeamPlanReview();
+      const sessDir = await getSessDir();
+      const corrupt = '{ this is not valid json';
+      await fs.writeFile(statePath(sessDir), corrupt, 'utf-8');
+      vi.mocked(executorMock.executeCheck).mockClear();
+
+      const result = await runActiveChecksAutomatically(ctx);
+
+      // Never a silent "do not run" behind a fabricated session: the authority
+      // surfaces the typed persistence failure, the runner performs no check
+      // and the corrupted state is not rewritten.
+      const authority = await resolveSessionAuthority({
+        root: ws.tmpDir,
+        sessionId: ctx.sessionID,
+      });
+      expect(authority).toMatchObject({ status: 'unavailable', code: 'PARSE_FAILED' });
+      expect(JSON.parse(result!)).toMatchObject({
         error: true,
         code: 'SYSTEM_WORK_STATE_UNREADABLE',
       });
-    });
-
-    it('fails closed with SYSTEM_WORK_STATE_UNREADABLE on an unreadable session state', async () => {
-      await reachTeamPlanReview();
-      const sessDir = await getSessDir();
-      await fs.writeFile(statePath(sessDir), '{ this is not valid json', 'utf-8');
-
-      const result = JSON.parse((await runActiveChecksAutomatically(ctx))!);
-
-      // Never a silent "do not run": an unreadable system-work session is a
-      // typed fail-closed result.
-      expect(result).toMatchObject({ error: true, code: 'SYSTEM_WORK_STATE_UNREADABLE' });
+      expect(vi.mocked(executorMock.executeCheck)).not.toHaveBeenCalled();
+      expect(await fs.readFile(statePath(sessDir), 'utf-8')).toBe(corrupt);
     });
   });
 });

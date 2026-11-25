@@ -1,0 +1,47 @@
+{
+  "mappingSchemaVersion": "iso27001-evidence-mapping.v1",
+  "framework": { "id": "ISO/IEC 27001:2022", "annex": "A" },
+  "organizationId": "acme-secdev",
+  "ismsScopeId": "isms-iso-demo",
+  "mappingVersion": "1.0-negative",
+  "owner": "Secure Development Lead",
+  "approval": {
+    "reference": "ISMS-APPROVAL-2026-014",
+    "approvedAt": "2026-01-15T10:00:00.000Z",
+    "assertedBy": "CISO Office"
+  },
+  "rules": [
+    {
+      "ruleId": "skipped-assertion",
+      "controlRef": { "namespace": "iso27001:2022/annexA", "controlId": "A.8.29" },
+      "policyRequirementId": "SDLC-SEC-TEST-NEG-01",
+      "applicability": "asserted_applicable",
+      "evidence": [
+        {
+          "kind": "validation.assertion_passed",
+          "checkId": "integration",
+          "assertion": {
+            "providerId": "vitest",
+            "localId": "legacy.spec.ts::deprecated-path"
+          }
+        }
+      ]
+    },
+    {
+      "ruleId": "aggregate-not-attested",
+      "controlRef": { "namespace": "iso27001:2022/annexA", "controlId": "A.8.29" },
+      "policyRequirementId": "SDLC-SEC-TEST-NEG-02",
+      "applicability": "asserted_applicable",
+      "evidence": [
+        {
+          "kind": "validation.assertion_passed",
+          "checkId": "regression",
+          "assertion": {
+            "providerId": "vitest",
+            "localId": "regression.spec.ts::suite-entry"
+          }
+        }
+      ]
+    }
+  ]
+}

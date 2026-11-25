@@ -32,6 +32,7 @@ const VALID_ACTIONS: readonly CliAction[] = [
   'run',
   'serve',
   'inspect',
+  'debug-export',
 ] as const;
 
 interface ParseState {
@@ -43,6 +44,7 @@ interface ParseState {
   coreTarball: string | undefined;
   checksumsFile: string | undefined;
   allowUnverifiedTarball: boolean;
+  restartHost: boolean | undefined;
   logMode: 'file' | 'console' | 'file+console' | undefined;
 }
 
@@ -58,6 +60,7 @@ function initialParseState(): ParseState {
     coreTarball: undefined,
     checksumsFile: undefined,
     allowUnverifiedTarball: false,
+    restartHost: undefined,
     logMode: undefined,
   };
 }
@@ -163,6 +166,16 @@ function parseOneArg(st: ParseState, arg: string, argv: string[], i: number): nu
     case '--allow-unverified-tarball':
       st.allowUnverifiedTarball = true;
       return 1;
+    case '--restart-host':
+      if (st.restartHost === false)
+        return '--restart-host and --no-restart-host are mutually exclusive';
+      st.restartHost = true;
+      return 1;
+    case '--no-restart-host':
+      if (st.restartHost === true)
+        return '--restart-host and --no-restart-host are mutually exclusive';
+      st.restartHost = false;
+      return 1;
     default:
       return -1;
   }
@@ -179,6 +192,7 @@ function buildArgs(action: CliAction, st: ParseState): CliArgs {
     ...(st.coreTarball !== undefined ? { coreTarball: st.coreTarball } : {}),
     ...(st.checksumsFile !== undefined ? { checksumsFile: st.checksumsFile } : {}),
     allowUnverifiedTarball: st.allowUnverifiedTarball,
+    ...(st.restartHost !== undefined ? { restartHost: st.restartHost } : {}),
     ...(st.logMode !== undefined ? { logMode: st.logMode } : {}),
   };
 }
@@ -236,7 +250,7 @@ export function parseArgs(argv: string[]): CliParseResult<CliArgs> {
     };
   }
 
-  if (action === 'run' || action === 'serve' || action === 'inspect') {
+  if (action === 'run' || action === 'serve' || action === 'inspect' || action === 'debug-export') {
     return makeDelegatedResult(action);
   }
 

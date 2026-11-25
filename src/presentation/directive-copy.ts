@@ -43,11 +43,12 @@ export const DIRECTIVE_COPY = {
   PLAN_OVERRIDE_REQUIRED: {
     label: 'Plan review exhausted: governance override required.',
     description:
-      'The reviewer did not accept the plan. Choose /override-approve to accept anyway with a recorded override, or /request-changes or /reject.',
+      'The reviewer did not accept the plan. Choose /request-changes to start a new review cycle and resubmit the revision, or /override-approve <Begründung> to accept the reviewed plan despite the open findings; /reject to decline.',
   },
   PLAN_VALIDATION_IN_PROGRESS: {
     label: 'Plan validation in progress.',
-    description: 'No action required; FlowGuard runs the approved validation automatically.',
+    description:
+      'No action required; FlowGuard runs the approved validation automatically. After a technical failure it retries on the next session lifecycle event (such as the session becoming idle) once the backoff has elapsed; it does not wake itself.',
   },
   IMPLEMENTATION_REQUIRED: {
     label: 'Implementation required.',
@@ -59,7 +60,8 @@ export const DIRECTIVE_COPY = {
   },
   IMPLEMENTATION_VALIDATION_IN_PROGRESS: {
     label: 'Implementation validation in progress.',
-    description: 'No action required; FlowGuard re-runs the verification checks automatically.',
+    description:
+      'No action required; FlowGuard re-runs the open verification checks automatically. After a technical failure it retries on the next session lifecycle event (such as the session becoming idle) once the backoff has elapsed; it does not wake itself.',
   },
   IMPLEMENTATION_REVIEW_IN_PROGRESS: {
     label: 'Independent implementation review in progress.',
@@ -72,7 +74,7 @@ export const DIRECTIVE_COPY = {
   IMPLEMENTATION_OVERRIDE_REQUIRED: {
     label: 'Implementation review exhausted: governance override required.',
     description:
-      'The reviewer did not accept the implementation. Choose /override-approve to accept anyway with a recorded override, or /request-changes or /reject.',
+      'The reviewer did not accept the implementation. Choose /request-changes to start a new review cycle, or /override-approve <Begründung> to accept the reviewed implementation despite the open findings; /reject to decline.',
   },
   ARCHITECTURE_IN_PROGRESS: {
     label: 'Architecture review in progress.',
@@ -85,7 +87,7 @@ export const DIRECTIVE_COPY = {
   ARCHITECTURE_OVERRIDE_REQUIRED: {
     label: 'Architecture review exhausted: governance override required.',
     description:
-      'The reviewer did not accept the ADR. Choose /override-approve to accept anyway with a recorded override, or /request-changes or /reject.',
+      'The reviewer did not accept the ADR. Choose /request-changes to start a new review cycle, or /override-approve <Begründung> to accept the reviewed ADR despite the open findings; /reject to decline.',
   },
   PEER_REVIEW_IN_PROGRESS: {
     label: 'Peer review in progress.',

@@ -28,6 +28,7 @@ import {
 import { deriveRepositoryRevisionProvenance } from '../../../state/evidence.js';
 import { indexMarkdownSections } from '../../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import { isBindableReviewTransport } from '../../../state/evidence-review-invocation.js';
 import {
   DEFAULT_MAX_REVIEWER_ATTEMPTS,
   CHALLENGE_POLICY_V1,
@@ -39,7 +40,24 @@ import type { RepositoryEvidenceFreeze } from '../../../state/evidence-review-fr
 import { assertRepositoryFreezeCoherence } from './freeze-coherence.js';
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../../templates/mandates.js';
-export const REVIEW_CRITERIA_VERSION = 'p42-v1';
+// #1081: the implementation criteria were expanded to the risk-adaptive
+// quality checklist and blocking-finding contract. Any semantic criteria change
+// advances this generation; stale obligations fail closed instead of silently
+// reviewing under unstated semantics.
+// p42-v3: plan-review verification authority (persisted verification candidates,
+// executable candidate command) and plan-before-validation phase boundary.
+// p42-v7: compact output contract (Ref-number citation, settled points); criteria unchanged.
+// p42-v6: counterexample sufficiency — a counterexample must be a targeted
+// falsification (concrete violating variant detected by the bound check), not a
+// second green execution; different check/attempt identities stay required,
+// assertion-identity inequality is not.
+// p42-v5: implementation challenges separate execution evidence (current-digest
+// validation attempt) from content evidence (current implementation ref); a
+// passing challenge requires both. Finding-relation grammar scope + retry
+// ordering corrections ride the same criteria generation.
+// p42-v4: plan evidence-role rule stated once in the criteria (overlapping
+// suites of different checks are admissible) and the plan blocking-issue bar.
+export const REVIEW_CRITERIA_VERSION = 'p42-v7';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
 
@@ -52,6 +70,7 @@ export function isCurrentReviewGeneration(
   );
 }
 import {
+  artifactReviewSubjectScopeFromSections,
   resolveSubjectScope,
   resolveChallengeRequirements,
   requireArtifactSubjectScope,
@@ -66,35 +85,24 @@ function resolveSubjectDigest(input: {
 }
 
 /**
- * Mint the canonical artifact subject scope for pre-implementation reviews
- * (plan, ADR). The subject is the exact frozen artifact, indexed by the same
- * canonical Markdown section authority that feeds the reviewer prompt's
- * evidence refs (`indexMarkdownSections`), so scope sections and reviewer-
- * visible sections are structurally identical.
- *
- * Fail-closed: an artifact without ATX headings cannot produce section anchors
- * and therefore cannot support a bindable artifact review.
+ * Mint an artifact subject scope from a standalone artifact markdown document.
+ * Use only where the document itself is the complete review subject; plan and
+ * ADR obligations must use {@link artifactReviewSubjectScopeFromSections}
+ * with the paths derived from the frozen material.
  */
 export function artifactReviewSubjectScope(
   kind: 'plan' | 'adr',
   markdown: string,
   digest: string,
 ): ReviewSubjectScope {
-  const sectionPaths = indexMarkdownSections(markdown).map((section) => section.sectionPath);
-  if (sectionPaths.length === 0) {
-    throw new IntegrationInvariantError(
-      'REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING',
-      `FAIL_CLOSED: cannot mint a ${kind} artifact review subject scope from Markdown ` +
-        'without ATX headings; artifact review findings must anchor to concrete sections.',
-    );
-  }
-  return {
-    kind: 'artifact',
-    artifact: { kind, digest, sectionPaths },
-  };
+  return artifactReviewSubjectScopeFromSections(
+    kind,
+    indexMarkdownSections(markdown).map((section) => section.sectionPath),
+    digest,
+  );
 }
 
-import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { ensureReviewAssurance, isOpenReviewObligation } from '../../../state/review-dispatch.js';
 import {
   createReviewAttempt,
   appendReviewAttempt,
@@ -103,7 +111,7 @@ import {
 } from './attempt-lifecycle.js';
 
 /**
- * Resolve the opaque observation capability of the attempt a reviewer Task
+ * Resolve the opaque observation capability of the attempt a reviewer subagent
  * will bind to: the highest-ordinal attempt of the obligation. Returns null
  * when no attempt exists or the obligation backs no frozen repository
  * revision — repository evidence is then unavailable for the attempt.
@@ -142,10 +150,14 @@ function resolveFrozenChallengeRequirements(
     declaredTaskClass?: TaskClass | null | undefined;
     escalatedTaskClass?: TaskClass | undefined;
     provisionalScopeUnknown?: boolean | undefined;
+    policySnapshot?: { riskTriggerPaths?: PolicySnapshot['riskTriggerPaths'] } | null | undefined;
   },
 ): ReturnType<typeof resolveChallengeRequirements> {
   return resolveChallengeRequirements(challengePolicy, {
     obligationType: input.obligationType,
+    ...(input.policySnapshot?.riskTriggerPaths !== undefined
+      ? { riskTriggerPaths: input.policySnapshot.riskTriggerPaths }
+      : {}),
     ...(input.changedFiles !== undefined ? { changedFiles: input.changedFiles } : {}),
     ...(input.declaredTaskClass !== undefined
       ? { declaredTaskClass: input.declaredTaskClass }
@@ -172,6 +184,7 @@ export function createReviewObligation(input: {
   policySnapshot?:
     | (Pick<PolicySnapshot, 'maxReviewerAttempts'> & {
         challengePolicy?: ChallengePolicy;
+        riskTriggerPaths?: PolicySnapshot['riskTriggerPaths'];
       })
     | null
     | undefined;
@@ -319,17 +332,14 @@ export function findReviewObligationById(
   return base.obligations.find((o) => o.obligationId === obligationId) ?? null;
 }
 
-export function findLatestUnconsumedObligation(
+export function findLatestOpenObligation(
   assurance: ReviewAssuranceState | undefined,
   obligationType: ReviewObligationType,
 ): ReviewObligation | null {
   const base = ensureReviewAssurance(assurance);
   return (
     base.obligations
-      .filter(
-        (o) =>
-          o.obligationType === obligationType && o.status !== 'consumed' && o.consumedAt === null,
-      )
+      .filter((o) => o.obligationType === obligationType && isOpenReviewObligation(o))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .at(0) ?? null
   );
@@ -373,13 +383,13 @@ export function findAcceptedInvocationForFindings(
   if (!obligation || !findings) return null;
   const findingsHash = hashFindings(findings);
   const base = ensureReviewAssurance(assurance);
-
   if (obligation.invocationId) {
     return (
       base.invocations.find(
         (invocation) =>
           invocation.invocationId === obligation.invocationId &&
           invocation.obligationId === obligation.obligationId &&
+          isBindableReviewTransport(invocation) &&
           invocation.childSessionId === findings.reviewedBy.sessionId &&
           invocation.findingsHash === findingsHash &&
           invocation.consumedByObligationId === null,
@@ -390,7 +400,7 @@ export function findAcceptedInvocationForFindings(
     base.invocations.find(
       (invocation) =>
         invocation.obligationId === obligation.obligationId &&
-        invocation.invocationMode === 'native_task_structured_followup' &&
+        isBindableReviewTransport(invocation) &&
         invocation.childSessionId === findings.reviewedBy.sessionId &&
         invocation.findingsHash === findingsHash &&
         invocation.consumedByObligationId === null,
@@ -456,60 +466,7 @@ export function appendObligationWithAttempt(
   };
 }
 
-/** Build canonical invocation evidence for the one sanctioned review transport. */
-export function buildInvocationEvidence(input: {
-  obligationId: string;
-  obligationType: ReviewObligationType;
-  mandateDigest: string;
-  criteriaVersion: string;
-  parentSessionId: string;
-  childSessionId: string;
-  promptHash: string;
-  canonicalPromptDigest?: string;
-  modelPromptDigest?: string | null;
-  findingsHash: string;
-  invokedAt: string;
-  fulfilledAt?: string;
-  capturedRawFindings: Record<string, unknown>;
-  resolvedBranchSha?: string | null;
-  resolvedBaseSha?: string | null;
-  reviewedContentDigest?: string | null;
-  attemptId: string;
-}): ReviewInvocationEvidence {
-  const capturedVerdict = input.capturedRawFindings.overallVerdict;
-  return {
-    invocationId: randomUUID(),
-    obligationId: input.obligationId,
-    obligationType: input.obligationType,
-    parentSessionId: input.parentSessionId,
-    childSessionId: input.childSessionId,
-    agentType: REVIEWER_SUBAGENT_TYPE,
-    // Canonical transport: one native, host-visible Task child executes the
-    // review and serializes its findings in a schema-constrained follow-up.
-    invocationMode: 'native_task_structured_followup',
-    hostVisible: true,
-    transcriptNavigable: true,
-    promptHash: input.promptHash,
-    canonicalPromptDigest: input.canonicalPromptDigest,
-    modelPromptDigest: input.modelPromptDigest,
-    mandateDigest: input.mandateDigest,
-    criteriaVersion: input.criteriaVersion,
-    findingsHash: input.findingsHash,
-    invokedAt: input.invokedAt,
-    fulfilledAt: input.fulfilledAt ?? null,
-    consumedByObligationId: null,
-    capturedRawFindings: input.capturedRawFindings,
-    ...(typeof capturedVerdict === 'string' ? { capturedVerdict } : {}),
-    source: 'host-orchestrated',
-    reviewOutputMode: 'structured_output',
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high',
-    resolvedBranchSha: input.resolvedBranchSha ?? null,
-    resolvedBaseSha: input.resolvedBaseSha ?? null,
-    reviewedContentDigest: input.reviewedContentDigest ?? null,
-    attemptId: input.attemptId,
-  };
-}
+export { buildInvocationEvidence } from './invocation-evidence.js';
 
 export function hasEvidenceReuse(
   invocations: ReviewInvocationEvidence[],
@@ -556,6 +513,60 @@ export function fulfillObligation(
       item.obligationId !== obligationId
         ? item
         : { ...item, status: 'fulfilled' as const, invocationId, fulfilledAt: now },
+    ),
+  };
+}
+
+/**
+ * Deterministically close a pending review obligation as blocked by bound
+ * reviewer evidence that cannot carry a verdict (`unable_to_review`).
+ *
+ * The invocation reference is retained so the failure stays auditable: the
+ * evidence was recorded, but it can never be consumed as an approval and the
+ * obligation cannot be repaired by submitting a verdict. Recovery is flow
+ * specific — an artifact flow submits a fresh revision, which mints a new
+ * obligation.
+ */
+export function blockObligationWithInvocation(
+  assurance: ReviewAssuranceState,
+  obligationId: string,
+  invocationId: string,
+  blockedCode: string,
+  now: string,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  const obligation = base.obligations.find((item) => item.obligationId === obligationId);
+  if (!obligation) {
+    throw new IntegrationInvariantError(
+      'REVIEW_OBLIGATION_NOT_FOUND',
+      `Review obligation not found: ${obligationId}`,
+    );
+  }
+  if (obligation.status !== 'pending') {
+    if (
+      obligation.status === 'blocked' &&
+      obligation.blockedCode === blockedCode &&
+      obligation.invocationId === invocationId
+    ) {
+      return base;
+    }
+    throw new IntegrationInvariantError(
+      'REVIEW_OBLIGATION_STATUS_INVALID',
+      `Cannot block review obligation in status ${obligation.status}`,
+    );
+  }
+  return {
+    ...base,
+    obligations: base.obligations.map((item) =>
+      item.obligationId !== obligationId
+        ? item
+        : {
+            ...item,
+            status: 'blocked' as const,
+            blockedCode,
+            invocationId,
+            fulfilledAt: now,
+          },
     ),
   };
 }

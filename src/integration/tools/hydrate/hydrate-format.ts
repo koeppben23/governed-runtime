@@ -22,18 +22,16 @@ import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import { LOCK_CONTENDED_OUTPUT_FIELD } from '../../../shared/flowguard-identifiers.js';
 import { PHASE_LABELS } from '../../../presentation/phase-labels.js';
 import { renderMarkdown } from '../../../presentation/markdown.js';
-import { getInstalledCommand } from '../../installed-commands.js';
+import { buildGateNotice } from '../../../presentation/gate-notice.js';
+import { buildWorkflowChoiceConclusion } from '../../../presentation/workflow-choice.js';
 import type {
   CompactCardDocument,
   PresentationSection,
-  PresentationConclusion,
   KeyValueSection,
-  CommandListSection,
   NoticeSection,
 } from '../../../presentation/model.js';
 import type { Phase } from '../../../state/schema.js';
 import { isTaskClass, type TaskClass } from '../../../state/task-class.js';
-import { IntegrationInvariantError } from '../../errors.js';
 
 import type {
   DiscoveryHydration,
@@ -281,22 +279,16 @@ interface HydrateCardParams {
 function buildHydratePresentationCard(params: HydrateCardParams): { markdown: string } {
   const sections: PresentationSection[] = [];
   sections.push(buildHydrateStatusSection(params));
-  sections.push(buildHydrateWorkflowsSection());
   if (params.gateNotice !== null) {
     sections.push(buildHydrateGateNoticeSection(params.gateNotice));
   }
 
-  const conclusion: PresentationConclusion = {
-    kind: 'next_action',
-    action: hydrateCommandAction('/task', 'recommended'),
-  };
-
   const document: CompactCardDocument = {
     kind: 'compact_card',
     density: 'compact',
-    form: 'success',
+    form: 'decision',
     sections,
-    conclusion,
+    conclusion: buildWorkflowChoiceConclusion(),
   };
   return { markdown: renderMarkdown(document) };
 }
@@ -327,18 +319,6 @@ function buildHydrateStatusSection(params: HydrateCardParams): KeyValueSection {
       { label: 'Phase', value: PHASE_LABELS[params.phase] },
       { label: 'Policy', value: `${modeLabel}${gateQualifier}` },
       { label: 'Profile', value: profileParts.join(', ') },
-    ],
-  };
-}
-
-function buildHydrateWorkflowsSection(): CommandListSection {
-  return {
-    kind: 'commandList',
-    heading: 'Workflows',
-    items: [
-      hydrateCommandAction('/task', 'available'),
-      hydrateCommandAction('/architecture', 'available'),
-      hydrateCommandAction('/review', 'available'),
     ],
   };
 }
@@ -485,18 +465,6 @@ export function injectLockContended(output: string): string {
 
 // ─── Gate Notice ──────────────────────────────────────────────────────────
 
-export function buildGateNotice(
-  gateBehavior: string | undefined,
-  mode: string | undefined,
-): string | null {
-  if (gateBehavior !== 'auto_approve') return null;
-  return (
-    `Auto-approve is active (mode: ${mode ?? 'unknown'}). ` +
-    'Plan and evidence review gates advance WITHOUT a human decision. ' +
-    'Use team or regulated for human-gated approval.'
-  );
-}
-
 /** Inject a non-null gateNotice into the JSON head of a hydrate output. */
 export function injectGateNotice(output: string, notice: string | null): string {
   if (!notice) return output;
@@ -514,28 +482,4 @@ export function withGateNotice(result: ToolResult, notice: string | null): ToolR
   if (!notice) return result;
   if (typeof result === 'string') return injectGateNotice(result, notice);
   return { ...result, output: injectGateNotice(result.output, notice) };
-}
-
-function hydrateCommandAction(
-  invocation: string,
-  visibility: 'recommended' | 'available',
-): {
-  invocation: string | null;
-  description: string;
-  visibility: 'recommended' | 'available';
-  intent?: import('../../../shared/presentation-vocabulary.js').ActionIntent;
-} {
-  const cmd = getInstalledCommand(invocation);
-  if (!cmd) {
-    throw new IntegrationInvariantError(
-      'HYDRATE_COMMAND_METADATA_MISSING',
-      `hydrate presentation: no installed command metadata for "${invocation}".`,
-    );
-  }
-  return {
-    invocation: cmd.invocation,
-    description: cmd.description,
-    visibility,
-    ...(cmd.intent ? { intent: cmd.intent } : {}),
-  };
 }

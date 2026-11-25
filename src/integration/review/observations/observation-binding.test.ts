@@ -1,3 +1,8 @@
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../../../review-invocation-test-helpers.js';
+
 /**
  * @module integration/review/observation-binding.test
  * @description Adversarial matrix for canonical repository evidence binding.
@@ -155,7 +160,14 @@ function snapshot() {
       ageWarning: null,
       notVerified: [],
     },
-    drift: { status: 'clean', drifted: false, changedContributorNames: [], notVerified: [] },
+    drift: {
+      status: 'clean',
+      drifted: false,
+      currentDigest: null,
+      persistedDigest: null,
+      changedContributorNames: [],
+      notVerified: [],
+    },
     detectedStack: null,
     verificationCandidates: [],
     riskSurfaces: [],
@@ -485,6 +497,12 @@ describe('direct/submitted validator path', () => {
       pluginHandshakeAt: NOW_ISO,
       fulfilledAt: NOW_ISO,
     };
+    const capture = messageCaptureFixture({
+      childSessionId: CHILD_SESSION_ID,
+      obligationId: obligation.obligationId,
+      attemptId,
+      findings,
+    });
     const invocation: ReviewInvocationEvidence = {
       invocationId,
       obligationId: obligation.obligationId,
@@ -493,10 +511,13 @@ describe('direct/submitted validator path', () => {
       parentSessionId: SESSION_ID,
       childSessionId: CHILD_SESSION_ID,
       agentType: REVIEWER_SUBAGENT_TYPE,
-      invocationMode: 'native_task_structured_followup',
-      reviewOutputMode: 'structured_output',
-      structuredOutputUsed: true,
-      reviewAssuranceLevel: 'structured_high',
+      invocationMode: 'native_subagent_message_json',
+      transportVersion: 6,
+      capture,
+      // completedDispatchForInvocation uses the child session id as hostCallId.
+      nativeProvenance: nativeProvenanceFixture(capture, CHILD_SESSION_ID),
+      reviewOutputMode: 'validated_json',
+      reviewAssuranceLevel: 'host_message_validated',
       hostVisible: true,
       transcriptNavigable: true,
       source: 'host-orchestrated',

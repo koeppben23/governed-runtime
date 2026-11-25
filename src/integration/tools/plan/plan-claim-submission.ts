@@ -15,6 +15,7 @@ import {
 import { MUTATION_PROFILE_IDS } from '../../proofgraph/mutation-provider.js';
 import { STRUCTURAL_SURFACE_IDS } from '../../proofgraph/structural-provider.js';
 import { formatBlocked } from '../../blocked-result.js';
+import { PLAN_CLAIM_REPAIR_INSTRUCTION } from '../../../templates/plan-claim-guidance.js';
 
 import type { PlanArgs, PlanClaimSubmissionDiagnostics } from './plan-types.js';
 
@@ -26,13 +27,18 @@ export type PlanClaimSubmissionClassification =
     }
   | { readonly kind: 'blocked'; readonly message: string };
 
-/** Keep set-level failures fail-closed; persist rejected declarations for later admission. */
+/** Reject blocking declarations before review; only nonblocking rejections permit partial acceptance. */
 export function classifyPlanClaimSubmission(
   args: PlanArgs,
   state: SessionState,
   digest: (value: string) => string,
 ): PlanClaimSubmissionClassification {
-  if (!args.claims || args.claims.length === 0) return { kind: 'ok', args };
+  if (args.claims === undefined) {
+    const diagnostics = state.plan?.claimSubmissionDiagnostics;
+    const blocked = blockRejectedDeclarations(diagnostics, 'historical', state.phase);
+    return blocked ?? { kind: 'ok', args };
+  }
+  if (args.claims.length === 0) return { kind: 'ok', args };
   const normalized = normalizePlanClaims(args.claims);
   if (normalized === undefined) {
     throw new IntegrationInvariantError(
@@ -52,6 +58,9 @@ export function classifyPlanClaimSubmission(
       critical: claim.critical,
       claimScope: claim.claimScope,
       positiveCheckId: claim.expectedCheckId,
+      ...(claim.expectedAssertion !== undefined
+        ? { expectedAssertion: claim.expectedAssertion }
+        : {}),
       ...(claim.counterexampleRequirement !== undefined
         ? { counterexampleRequirement: claim.counterexampleRequirement }
         : {}),
@@ -59,6 +68,9 @@ export function classifyPlanClaimSubmission(
         ? { structuralSurface: claim.structuralSurface }
         : {}),
       ...(claim.mutationProfile !== undefined ? { mutationProfile: claim.mutationProfile } : {}),
+      ...(claim.coversRiskTriggers !== undefined
+        ? { coversRiskTriggers: claim.coversRiskTriggers }
+        : {}),
       authoritySectionId: claim.authoritySectionId,
     })),
   });
@@ -76,13 +88,75 @@ export function classifyPlanClaimSubmission(
   const rejected = [...batch.rejectedNonBlocking, ...batch.rejectedBlocking];
   if (rejected.length === 0) return { kind: 'ok', args };
 
+  const diagnostics = buildPartialAcceptanceDiagnostics(normalized, batch, digest);
+  const blocked = blockRejectedDeclarations(diagnostics, 'submitted', state.phase);
+  if (blocked) return blocked;
+
   const acceptedIndexes = new Set(batch.accepted.map((entry) => entry.index));
   const acceptedClaims = args.claims.filter((_, index) => acceptedIndexes.has(index));
   return {
     kind: 'ok',
     args: { ...args, claims: acceptedClaims },
-    diagnostics: buildPartialAcceptanceDiagnostics(normalized, batch, digest),
+    diagnostics,
   };
+}
+
+function blockRejectedDeclarations(
+  diagnostics: PlanClaimSubmissionDiagnostics | undefined,
+  origin: 'historical' | 'submitted',
+  phase: SessionState['phase'],
+): Extract<PlanClaimSubmissionClassification, { kind: 'blocked' }> | undefined {
+  if (!diagnostics) return undefined;
+  const first = diagnostics.rejectedClaims.find(
+    (claim) => claim.disposition === 'rejected_blocking',
+  );
+  if (!first) return undefined;
+  const canonicalResponse = formatBlocked(
+    'PLAN_CLAIM_SUBMISSION_REJECTED',
+    { detail: first.reason },
+    {
+      phase,
+      admission: { kind: 'rejected', admittedClaimCount: 0 },
+      agentInstruction: PLAN_CLAIM_REPAIR_INSTRUCTION,
+      claimSubmissionDiagnostics: diagnostics,
+      claimSubmissionDiagnosticsOrigin: origin,
+    },
+  );
+  return {
+    kind: 'blocked',
+    message: appendClaimPresentation(canonicalResponse, diagnostics.rejectedClaims, origin),
+  };
+}
+
+/** Append declaration details without replacing the canonical blocker or its recovery. */
+function appendClaimPresentation(
+  canonicalResponse: string,
+  claims: PlanClaimSubmissionDiagnostics['rejectedClaims'],
+  origin: 'historical' | 'submitted',
+): string {
+  const response = JSON.parse(canonicalResponse) as {
+    presentation: { markdown: string };
+    [key: string]: unknown;
+  };
+  const heading =
+    origin === 'historical'
+      ? 'Historical rejected declarations (carried over)'
+      : 'Declarations rejected by this call';
+  const declarations = claims
+    .map(
+      (claim) =>
+        `### ${claim.statement}\n\n` +
+        `- Claim: ${claim.claimRef}\n- Disposition: ${claim.disposition}\n\n` +
+        `${claim.reason}`,
+    )
+    .join('\n\n');
+  return JSON.stringify({
+    ...response,
+    presentation: {
+      ...response.presentation,
+      markdown: `${response.presentation.markdown}\n\n## ${heading}\n\n${declarations}`,
+    },
+  });
 }
 
 function buildPartialAcceptanceDiagnostics(
@@ -92,6 +166,7 @@ function buildPartialAcceptanceDiagnostics(
 ): PlanClaimSubmissionDiagnostics {
   const acceptedIndexes = new Set(batch.accepted.map((entry) => entry.index));
   const rejected = [...batch.rejectedNonBlocking, ...batch.rejectedBlocking];
+  const batchBlocked = batch.rejectedBlocking.length > 0;
   const submittedDeclarations = {
     flow: 'plan' as const,
     version: 'v2' as const,
@@ -105,7 +180,7 @@ function buildPartialAcceptanceDiagnostics(
   return {
     submittedClaimDeclarationsDigest: digest(canonicalJsonStringify(submittedDeclarations)),
     acceptedClaimDeclarationsDigest: digest(canonicalJsonStringify(acceptedDeclarations)),
-    rejectedClaims: rejected.map(({ claim, result }) => {
+    rejectedClaims: rejected.map(({ claim, result, disposition }) => {
       const claimId = claim.claimId;
       if (claimId === undefined) {
         throw new IntegrationInvariantError(
@@ -118,17 +193,26 @@ function buildPartialAcceptanceDiagnostics(
         claimRef: claimId,
         field: result.field,
         detail: result.detail,
+        // The same catalog code covers partial acceptance and the blocking
+        // withdrawal case; the consequence sentence must follow the severity.
+        consequence: batchBlocked
+          ? 'The complete submission was rejected; no plan version or independent review was created.'
+          : 'The plan and its accepted claims remain valid.',
       });
       return {
         claimRef: claimId,
         statement: claim.statement,
         critical: claim.critical,
-        disposition: claim.critical
-          ? ('rejected_blocking' as const)
-          : ('rejected_non_blocking' as const),
+        disposition,
         code,
         reason: formatted.reason,
-        recovery: [...formatted.recovery],
+        recovery: [
+          ...(batchBlocked
+            ? defaultReasonRegistry.format('PLAN_CLAIM_SUBMISSION_REJECTED', {
+                detail: result.detail,
+              }).recovery
+            : formatted.recovery),
+        ],
       };
     }),
   };

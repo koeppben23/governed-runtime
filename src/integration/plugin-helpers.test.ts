@@ -21,7 +21,7 @@ import {
   getAutoAdvanceOverflow,
   getSessionLockSignal,
 } from './plugin-helpers.js';
-import { formatAutoAdvanceOverflow } from './tools/helpers.js';
+import { formatAutoAdvanceOverflow } from '../rails/auto-advance-overflow.js';
 
 describe('parseToolResult', () => {
   it('GOOD: parses valid JSON string', () => {

@@ -11,6 +11,44 @@ import { STRUCTURED_REVIEW_REASONS } from './reasons-validation-structured.js';
 
 export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
+    code: 'GOVERNANCE_AUTHORITY_BLOCKED',
+    category: 'state',
+    messageTemplate: 'Governance activation authority cannot be verified: {message}',
+    recoverySteps: [
+      'Preserve the activation journal and workflow evidence; missing authority is not deactivation',
+      'Resolve the reported storage, generation or scope conflict before retrying a governed action',
+      'Use an explicit authorized recovery or EndGovernance action; do not recreate authority with hydrate',
+    ],
+  },
+  {
+    code: 'GOVERNANCE_NOT_ACTIVE',
+    category: 'admissibility',
+    messageTemplate:
+      'This FlowGuard operation requires explicit trusted operator activation: {message}',
+    recoverySteps: [
+      'Continue ordinary native host work without invoking governance tools',
+      'Run /start in the root session to start governance; prompts, tools and hydrate cannot activate it',
+    ],
+  },
+  {
+    code: 'GOVERNANCE_END_UNSAFE',
+    category: 'state',
+    messageTemplate: 'Governance cannot end safely: {message}',
+    recoverySteps: [
+      'Finish or abort the workflow before ending governance; workflow termination is not EndGovernance',
+      'Resolve pending system work, reviewer execution, mutation outcomes and unreconciled audit operations first',
+      'Use RecoverCapacity or the typed review transport settlement for a blocked reviewer capacity lock',
+    ],
+  },
+  {
+    code: 'START_ARGUMENTS_INVALID',
+    category: 'input',
+    messageTemplate: 'Invalid /start arguments: {message}',
+    recoverySteps: [
+      'Run /start without arguments, or with exactly one policy mode: solo, team, team-ci or regulated',
+    ],
+  },
+  {
     code: 'HELP_ARGUMENTS_INVALID',
     category: 'input',
     messageTemplate: 'Invalid FlowGuard help arguments.',
@@ -169,6 +207,18 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'TICKET_SOURCE_ORIGIN_CONFLICT',
+    category: 'input',
+    messageTemplate:
+      'ticketSource reads the ticket from the worktree, so inputOrigin {inputOrigin} conflicts with it; omit inputOrigin (it is derived as workspace) or pass the content as text',
+    recoverySteps: [
+      'Omit inputOrigin when using ticketSource; the runtime records the origin as workspace',
+      'Use text with the complete content when the ticket comes from a manual, external, or mixed source',
+      'Never label a file-backed ticket with a foreign inputOrigin',
+    ],
+  },
+
+  {
     code: 'TICKET_RISK_DECLARATION_INVALID',
     category: 'admissibility',
     messageTemplate:
@@ -200,9 +250,9 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'MISSING_SESSION_ID',
     category: 'input',
-    messageTemplate: 'sessionId is required (from OpenCode context.sessionID)',
+    messageTemplate: 'sessionId is required from the host tool context',
     recoverySteps: [
-      'Ensure OpenCode context provides a valid sessionID',
+      'Ensure the host provides a valid sessionID',
       'This is usually an integration error — check tool context',
     ],
   },
@@ -210,9 +260,9 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'MISSING_WORKTREE',
     category: 'input',
-    messageTemplate: 'worktree is required (from OpenCode context.worktree)',
+    messageTemplate: 'worktree is required from the host tool context',
     recoverySteps: [
-      'Ensure OpenCode context provides a valid worktree path',
+      'Ensure the host provides a valid worktree path',
       'This is usually an integration error — check tool context',
     ],
   },
@@ -222,7 +272,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'input',
     messageTemplate: 'fingerprint is missing or malformed (expected 24 hex chars)',
     recoverySteps: [
-      'Ensure OpenCode context provides a valid worktree and fingerprint',
+      'Ensure the host provides a valid worktree and fingerprint',
       'Fingerprint must be a 24-character lowercase hex string',
     ],
   },
@@ -261,8 +311,10 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'input',
     messageTemplate: 'Config file is invalid: {message}',
     recoverySteps: [
-      'Fix flowguard.json to match FlowGuard schema',
-      'If unsure, remove flowguard.json and re-run flowguard install to create defaults',
+      'Back up the reported flowguard.json before editing it; preserve unrelated supported settings',
+      'Manually correct the reported invalid fields against the current schema; see docs/configuration.md#breaking-change-manual-configuration-recovery',
+      'Do not delete the configuration or reset session state, activation or audit evidence; install --force does not migrate unsupported keys',
+      'After saving valid JSON, retry the failed installation or authorized operation',
     ],
   },
 
@@ -282,7 +334,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Central policy file is invalid JSON: {message}',
     recoverySteps: [
       'Fix JSON syntax in the central policy file',
-      'Validate file structure before re-running /hydrate',
+      'Validate file structure before retrying the interrupted operation through the documented host session-start procedure',
     ],
   },
 
@@ -302,7 +354,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Central policy minimumMode is invalid: {message}',
     recoverySteps: [
       'Set minimumMode to one of: solo, team, regulated',
-      'Re-run /hydrate after updating the central policy file',
+      'After correcting the central policy file, retry through the documented host session-start procedure',
     ],
   },
 
@@ -312,7 +364,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Profile "{profile}" from config is not registered.',
     recoverySteps: [
       'Register the profile in the profile registry',
-      'Use an explicit profileId with /hydrate',
+      'Configure a supported profile before preparing a new governed session through its host integration',
       'Remove config.profile.defaultId from flowguard.json',
     ],
   },
@@ -322,7 +374,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'state',
     messageTemplate: 'Hydrate discovery contract failed: {message}',
     recoverySteps: [
-      'Re-run /hydrate and verify discovery artifacts are created',
+      'Inspect the failed session preparation; retry only through the documented host recovery and verify discovery artifacts',
       'Do not proceed until discoveryDigest and discoverySummary are present',
     ],
   },
@@ -414,18 +466,6 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
-    code: 'OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED',
-    category: 'config',
-    messageTemplate:
-      'OpenCode accepts the FlowGuard instruction entry but the detected runtime ({runtimeLine}, version {version}) does not resolve instruction sources. FlowGuard mandates are not active.',
-    recoverySteps: [
-      'Switch to an OpenCode runtime that is not on the FlowGuard incompatible deny-list',
-      'Verify the mandate file path is present in the opencode.json instructions[] array',
-      'Open an OpenCode session and confirm FlowGuard mandates take effect; FlowGuard cannot verify activation automatically',
-    ],
-  },
-
-  {
     code: 'REVIEW_SUBJECT_CHANGED_WHILE_PENDING',
     category: 'input',
     messageTemplate:
@@ -445,6 +485,36 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Inspect the session state and audit trail before further workflow actions',
       'Restore a consistent review cycle from trusted evidence or abort the session',
+    ],
+  },
+
+  {
+    code: 'INVALID_POLICY_DIGEST',
+    category: 'config',
+    messageTemplate: 'Policy snapshot digest is invalid: {message}',
+    recoverySteps: [
+      'Re-resolve the policy snapshot with the currently installed version',
+      'Do not hand-edit the persisted policy snapshot or its digest',
+    ],
+  },
+
+  {
+    code: 'INVALID_POLICY_DIGEST_VERSION',
+    category: 'config',
+    messageTemplate: 'Policy snapshot digest version is not supported: {message}',
+    recoverySteps: [
+      'Use the FlowGuard version that wrote the policy snapshot',
+      'Do not mint a replacement snapshot for the existing session. New work requires a distinct host session and its documented session-start procedure under the current contract',
+    ],
+  },
+
+  {
+    code: 'INVALID_POLICY_MODE',
+    category: 'config',
+    messageTemplate: 'Policy mode is invalid: {message}',
+    recoverySteps: [
+      'Set the policy mode to one of: solo, team, team-ci, regulated',
+      'Correct the central policy file or flowguard.json before retrying the documented host session-start procedure; existing sessions retain their frozen policy',
     ],
   },
 

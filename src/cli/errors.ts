@@ -5,6 +5,8 @@
  * @version v1
  */
 
+import type { CliInstallErrorCode } from './install-types.js';
+
 /**
  * Error raised by CLI install, rollback, ownership, and platform-uninstall paths.
  *
@@ -13,9 +15,9 @@
  * user-facing recovery vocabulary for tarball and reviewer-config failures.
  */
 export class CliInstallError extends Error {
-  readonly code: string;
+  readonly code: CliInstallErrorCode;
 
-  constructor(code: string, message: string, options?: ErrorOptions) {
+  constructor(code: CliInstallErrorCode, message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = 'CliInstallError';
     this.code = code;

@@ -11,7 +11,7 @@ the demo workspace is gone.
 raw evidence package through the canonical archive path and records
 `ExportCompletionEvidence` in the session state:
 
-- package: `<sessionId>.tar.gz` under
+- package: `export-<sessionId>.tar.gz` under
   `~/.config/opencode/workspaces/<fingerprint>/sessions/archive/`
 - sidecar: the same path plus `.sha256`
 - contents: `archive-manifest.json` (schema `archive-manifest.v4`), the
@@ -49,6 +49,23 @@ original file after the run starts cannot mix versions) and checks:
 | Flow and phase           | The flow's allowed terminal/export phase (development `EXPORT_READY`/`COMPLETE`, architecture `ARCH_COMPLETE`, peer review `PEER_REVIEW_COMPLETE`, regulated `COMPLETE`) and the phase transition shape; `COMPLETE` additionally requires the `EXPORT_READY -> COMPLETE` (`EXPORT_MATERIALIZED`) transition                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Audit chain              | `verifyChain` over the archived `audit/audit.jsonl` (offline), the manifest's `auditChainHead` / `auditEventCount` truncation anchor, and the event identity against the archived state                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Regulated evidence       | For regulated packages, the verifier first requires an admissible archive-time lifecycle status (`regulatedArchiveStatus` `pending` or `created`; missing/`null`, `verified`, and `failed` fail closed) and only then runs the canonical `verifyRegulatedCompletionCompleteness` over the **archived** completion evidence (terminal transition, reconciled outbox, ordered approval/decision/export/lifecycle trail). The gate matters because the canonical validator self-gates on a present status and would otherwise return silently. The mandatory `regulated-<sessionId>.tar.gz` necessarily snapshots `regulatedArchiveStatus: pending` — the live status only becomes `verified` after the archive exists — so the offline verifier never requires the later live status. |
+
+## Optional ISO/IEC 27001:2022 projection
+
+After a successful `/export`, the prepared demo workspace can project the same
+verified package onto a synthetic ISO/IEC 27001:2022 demo mapping:
+
+```bash
+./run-iso-mapping.sh --session <host-session-id>
+```
+
+This is a read-only companion report. It does not alter or replace the export,
+does not create new session evidence, and calls no model or network service.
+The report is written outside the worktree and FlowGuard config directory. The
+mapping is explicitly synthetic: it is not an organization-specific Statement of
+Applicability, organizational approval, or ISO conformity assessment. The
+report's `EVIDENCE_*` statuses and limitations remain authoritative; a missing
+control is not converted into a successful headline.
 
 ## Evidence manifest
 
@@ -94,7 +111,7 @@ node demos/java-task-manager/verify-evidence-package.mjs --manifest evidence-man
 
 ```bash
 node demos/java-task-manager/verify-evidence-package.mjs \
-  /path/to/<sessionId>.tar.gz \
+  /path/to/export-<sessionId>.tar.gz \
   --expect-session <session-id> \
   --expect-flow development \
   --expect-phase EXPORT_READY

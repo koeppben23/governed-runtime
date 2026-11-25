@@ -37,14 +37,12 @@ FlowGuard is installed system-wide in `~/.config/opencode/`:
 ```
 ~/.config/opencode/
 ├── flowguard-mandates.md   # Managed mandates with content digest
-├── opencode.json           # OpenCode configuration (jsonc preferred when present)
 ├── package.json            # With file:-based @flowguard/core dependency
 ├── agents/
 │   └── flowguard-reviewer.md   # Independent-review subagent prompt
 ├── plugins/
-│   └── flowguard-audit.ts  # Audit plugin
-├── tools/
-│   └── flowguard.ts        # Tool bindings
+│   └── flowguard/
+│       └── index.ts        # One native V2 default-export plugin; owns tools
 └── commands/
     ├── hydrate.md
     ├── ticket.md
@@ -65,7 +63,6 @@ FlowGuard is installed per-repository in `.opencode/`:
 repository/
 ├── .opencode/              # Committed to repo
 │   ├── flowguard-mandates.md
-│   ├── opencode.json
 │   ├── package.json
 │   └── ...
 └── ...
@@ -76,6 +73,12 @@ repository/
 - Must be explicitly enabled with `--install-scope repo`
 - Allows per-project policy mode selection
 - Installation committed to version control
+
+Native V2 installation does not write OpenCode configuration, global instruction
+entries or build-agent permission rules. Mandates remain passive until verified
+activation. This layout is an implementation checkpoint; installed INACTIVE
+parity, operator UI and reviewer acceptance remain NOT_VERIFIED. See
+[the installation boundary and archival recovery](./installation.md#native-v2-layout-and-fresh-install-boundary).
 
 ---
 

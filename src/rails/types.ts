@@ -13,16 +13,22 @@
  */
 
 import type { SessionState, Phase, Event } from '../state/schema.js';
-import type {
-  LoopVerdict,
-  ReviewDecision,
-  RevisionDelta,
-  SelfReviewLoop,
-} from '../state/evidence.js';
+import type { LoopVerdict, ReviewDecision, RevisionDelta } from '../state/evidence.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { EvalResult } from '../machine/evaluate.js';
 import { resolveTransition } from '../machine/topology.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
+import type { EvidenceApprovalAdmission } from '../audit/proofgraph/evidence-approval-admission.js';
+import {
+  applyEvidenceApprovalTransition,
+  applyTransition,
+  type EvidenceApprovalPreflightBlocked,
+} from './evidence-approval-application.js';
+
+export {
+  applyEvidenceApprovalTransition,
+  applyTransition,
+} from './evidence-approval-application.js';
 
 // ─── Transition Record ────────────────────────────────────────────────────────
 
@@ -55,6 +61,11 @@ export interface AutoAdvanceAdvanced {
    * For audit: one audit event per entry.
    */
   readonly transitions: readonly TransitionRecord[];
+  /**
+   * Present when the protected approval edge was applied: the ephemeral
+   * admission the persistence boundary consumes for exactly this commit.
+   */
+  readonly approvalAdmission?: EvidenceApprovalAdmission;
 }
 
 /**
@@ -75,11 +86,24 @@ export interface AutoAdvanceOverflow {
 }
 
 /**
- * Return type for autoAdvance(): a discriminated union so the overflow case
- * cannot be silently ignored. `advanced` is the normal settle; `overflow` is
- * fail-closed and forces the caller to block before any persistence.
+ * Return type for autoAdvance(): a discriminated union so the overflow and
+ * protected-approval denial cases cannot be silently ignored.
  */
-export type AutoAdvanceResult = AutoAdvanceAdvanced | AutoAdvanceOverflow;
+export type AutoAdvanceResult = AutoAdvanceAdvanced | AutoAdvanceOverflow | AutoAdvanceBlocked;
+
+/**
+ * autoAdvance() refused the protected `EVIDENCE_REVIEW -> EXPORT_READY`
+ * approval because the canonical evidence prerequisite did not clear. Carries
+ * NO state: the caller must block before any persistence, exactly like the
+ * overflow outcome. The substantive denial remains the canonical preflight
+ * result, never a locally re-derived code.
+ */
+export interface AutoAdvanceBlocked {
+  readonly kind: 'blocked';
+  /** Phase the machine stopped at (the gate phase). */
+  readonly phase: Phase;
+  readonly block: EvidenceApprovalPreflightBlocked;
+}
 
 // ─── Rail Result ──────────────────────────────────────────────────────────────
 
@@ -102,6 +126,12 @@ export interface RailOk {
    * receipt; never persisted as state and never serialized into tool output.
    */
   readonly decisionEvidence?: ReviewDecision;
+  /**
+   * Ephemeral approval admission for a protected EXPORT_READY approval. The
+   * caller MUST pass it to the persistence helper for that same commit; it is
+   * never persisted as state and never serialized into tool output.
+   */
+  readonly approvalAdmission?: EvidenceApprovalAdmission;
 }
 
 /** Rail was blocked — precondition failed, state is UNCHANGED. */
@@ -201,39 +231,6 @@ export function buildFlowSelectionTransition(
 }
 
 /**
- * Apply a transition to state. Returns a new state object (no mutation).
- * Sets phase, records transition, clears error (successful transition = no error).
- */
-export function applyTransition(
-  state: SessionState,
-  from: Phase,
-  to: Phase,
-  event: Event,
-  at: string,
-): SessionState {
-  return {
-    ...state,
-    phase: to,
-    transition: { from, to, event, at },
-    error: null,
-    // System work is durable: entering a validation phase records the pending
-    // operation in the SAME atomic state write as the transition, and leaving
-    // it clears the marker. A crash between the human decision and the check
-    // execution is therefore recoverable instead of a dead state.
-    pendingSystemWork:
-      to === 'VALIDATION' || to === 'IMPL_VALIDATION'
-        ? { kind: 'validation', requestedAt: at, attempt: 0, retryAfter: null }
-        : null,
-    // Entering IMPL_REVIEW is possible only from IMPL_VALIDATION with a FULLY
-    // passing fresh validation of the current record. That is the exact point
-    // where the repair loop converges, so the rework marker closes here: after
-    // this, repository mutations are forbidden and only the reviewed revision
-    // can be presented to a fresh independent reviewer.
-    ...(from === 'IMPL_VALIDATION' && to === 'IMPL_REVIEW' ? { implementationRework: null } : {}),
-  };
-}
-
-/**
  * Auto-advance loop: keeps evaluating and transitioning until the machine stops.
  * Stops when: terminal, waiting (user gate), pending (needs work), or max steps reached.
  *
@@ -254,6 +251,7 @@ export function autoAdvance(
   const transitions: TransitionRecord[] = [];
   let current = state;
   let result = evalFn(current);
+  let approvalAdmission: EvidenceApprovalAdmission | undefined;
 
   for (let step = 0; step < MAX_AUTO_ADVANCE_STEPS && result.kind === 'transition'; step++) {
     // Self-loop guard: if the transition targets the same phase, the state
@@ -265,6 +263,24 @@ export function autoAdvance(
     const from = current.phase;
     const to = result.target;
     const event = result.event;
+
+    // The protected evidence-approval edge is gated by the canonical preflight
+    // BEFORE the transition is recorded or applied. A denial returns a
+    // fail-closed outcome with no state, so no caller can persist or audit an
+    // unapproved EXPORT_READY session.
+    if (to === 'EXPORT_READY') {
+      const application = applyEvidenceApprovalTransition(current, at);
+      if (application.kind === 'blocked') {
+        return { kind: 'blocked', phase: current.phase, block: application.block };
+      }
+      // The admission MUST reach the caller's persistence commit: the lowest
+      // writer refuses a new EXPORT_READY without it.
+      approvalAdmission = application.admission;
+      transitions.push({ from, to, event, at });
+      current = application.state;
+      result = evalFn(current);
+      continue;
+    }
 
     // Record transition for audit trail
     transitions.push({ from, to, event, at });
@@ -285,7 +301,13 @@ export function autoAdvance(
     };
   }
 
-  return { kind: 'advanced', state: current, evalResult: result, transitions };
+  return {
+    kind: 'advanced',
+    state: current,
+    evalResult: result,
+    transitions,
+    ...(approvalAdmission !== undefined ? { approvalAdmission } : {}),
+  };
 }
 
 // ─── Convergence Loop ─────────────────────────────────────────────────────────
@@ -503,49 +525,5 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
     currDigest: processed.artifact.digest,
     revisionDelta: processed.revisionDelta,
     verdict: result.verdict,
-  };
-}
-
-// ─── Loop State Builders ──────────────────────────────────────────────────────
-
-/**
- * Build a self-review loop state object from a convergence result.
- *
- * `reviewCycle` is the owning loop's active human review-cycle counter
- * (`state.reviewCycles.<loop>`) at creation; it is part of the persisted loop
- * identity and is never derived from the convergence result.
- *
- * Eliminates the duplicated 6-field object literal pattern that appears
- * identically at 4 call sites in continue.ts and plan.ts.
- */
-export function buildSelfReviewState(
-  loop: Omit<SelfReviewLoop, 'reviewCycle'>,
-  reviewCycle: number,
-) {
-  return {
-    iteration: loop.iteration,
-    reviewCycle,
-    maxIterations: loop.maxIterations,
-    prevDigest: loop.prevDigest,
-    currDigest: loop.currDigest,
-    revisionDelta: loop.revisionDelta,
-    verdict: loop.verdict,
-  };
-}
-
-/**
- * Build an implementation review loop state object from a convergence result.
- *
- * Extends buildSelfReviewState with the mandatory executedAt timestamp. The
- * human review-cycle counter comes from `state.reviewCycles.implementation`.
- */
-export function buildImplReviewState(
-  loop: Omit<SelfReviewLoop, 'reviewCycle'>,
-  executedAt: string,
-  reviewCycle: number,
-) {
-  return {
-    ...buildSelfReviewState(loop, reviewCycle),
-    executedAt,
   };
 }

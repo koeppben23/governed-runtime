@@ -2,9 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { makeState, PLAN_RECORD, FIXED_TIME } from '../fixtures.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
-import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
+import {
+  emptyClaimDeclarations,
+  hasCurrentPlanApprovalCertificate,
+} from '../state/proofgraph-approval.js';
+import { planApprovalContextOf } from '../state/proofgraph-approval-context.js';
 import type { ReviewAssuranceState } from '../state/evidence-review.js';
-import { enforcePlanReviewEvidence } from './plan-review-evidence.js';
+import { createPolicySnapshot } from '../config/policy-snapshot.js';
+import { getPolicyPreset } from '../config/policy.js';
+import { createTestContext } from '../testing.js';
+import {
+  createAutomaticPlanApprovalCertificate,
+  enforcePlanReviewEvidence,
+} from './plan-review-evidence.js';
 import { executeReviewDecision } from './review-decision.js';
 import { assuranceChain } from './review-decision-test-helpers.js';
 
@@ -279,5 +289,57 @@ describe('plan approval certificate authority (version-tuple binding)', () => {
       expect(binding?.kind).toBe('current_review');
       expect(binding?.kind === 'current_review' ? binding.reviewObligationId : undefined).toBe(O2);
     }
+  });
+});
+
+describe('createAutomaticPlanApprovalCertificate', () => {
+  const ctx = createTestContext(FIXED_TIME);
+  const binding = {
+    kind: 'current_review' as const,
+    reviewObligationId: PLAN_OBLIGATION_ID,
+    reviewEvidenceDigest: 'e'.repeat(64),
+    reviewedSubjectDigest: PLAN_RECORD.current.digest,
+  };
+
+  function stateFor(
+    policy: ReturnType<typeof getPolicyPreset>,
+    completion: 'reviewer_accepted' | 'review_exhausted',
+  ) {
+    return makeState('PLAN_REVIEW', {
+      policySnapshot: createPolicySnapshot(policy, FIXED_TIME, hashText),
+      plan: {
+        ...PLAN_RECORD,
+        reviewCompletion: completion,
+        claimDeclarations: emptyClaimDeclarations('plan'),
+      },
+    });
+  }
+
+  it('mints a policy_auto certificate under an automatic policy for an accepted review', () => {
+    const state = stateFor(getPolicyPreset('solo'), 'reviewer_accepted');
+    const certificate = createAutomaticPlanApprovalCertificate(state, state.plan!, ctx, binding);
+    expect(certificate).not.toBeNull();
+    expect(certificate?.schemaVersion).toBe('plan-approval-certificate.v1');
+    expect(certificate?.approvalAttestation.kind).toBe('policy_auto');
+    expect(
+      hasCurrentPlanApprovalCertificate(
+        {
+          current: PLAN_RECORD.current,
+          claimDeclarations: emptyClaimDeclarations('plan'),
+          approvalCertificate: certificate!,
+        },
+        planApprovalContextOf(state),
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses to mint under a human-gated policy', () => {
+    const state = stateFor(getPolicyPreset('team'), 'reviewer_accepted');
+    expect(createAutomaticPlanApprovalCertificate(state, state.plan!, ctx, binding)).toBeNull();
+  });
+
+  it('refuses to certify an exhausted review', () => {
+    const state = stateFor(getPolicyPreset('solo'), 'review_exhausted');
+    expect(createAutomaticPlanApprovalCertificate(state, state.plan!, ctx, binding)).toBeNull();
   });
 });

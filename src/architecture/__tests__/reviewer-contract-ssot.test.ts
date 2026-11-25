@@ -124,12 +124,13 @@ describe('reviewer contract SSOT guard', () => {
     expect(content).toContain('never a SHA');
   });
 
-  it('finding-relation-grammar.ts documents evidenceLocations as optional', () => {
+  it('finding-relation-grammar.ts documents evidenceLocations as required but possibly empty', () => {
     const content = readFileSync(
       join(SRC_ROOT, 'integration/review/evidence/finding-relation-grammar.ts'),
       'utf8',
     );
-    expect(content).toContain('evidenceLocations MAY be empty');
+    expect(content).toContain('evidenceLocations is REQUIRED');
+    expect(content).toContain('MAY be empty');
     expect(content).toContain('does not itself establish');
     expect(content).toContain('flowguard_observe_repository');
   });
@@ -168,7 +169,10 @@ describe('reviewer contract SSOT guard', () => {
     expect(content).toContain('SEVERITY_VALUES');
     expect(content).toContain('CATEGORY_VALUES');
     expect(content).toContain('REVISION_VALUES');
-    expect(content).toContain('ANCHOR_KINDS');
+    // Anchor kinds are scoped by the canonical review-subject authority, not
+    // restated here: only the kind admitted by the current scope is rendered.
+    expect(content).toContain('AdmittedSubjectAnchorKind');
+    expect(content).toContain("from '../../../state/evidence-review-subject.js'");
   });
 
   it('finding-relation-grammar.ts documents reviewer-contract.ts as authority', () => {

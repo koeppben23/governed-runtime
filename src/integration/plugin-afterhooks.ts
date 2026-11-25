@@ -9,7 +9,7 @@
  *
  * Independent review is intentionally NOT auto-spawned here. A review-required
  * FlowGuard response remains pending so the parent agent invokes OpenCode's
- * native Task surface; that host-visible Task is the single productive review
+ * native reviewer subagent surface; that host-visible Task is the single productive review
  * transport and owns the child-session lifecycle.
  *
  * @version v2
@@ -17,13 +17,12 @@
 
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
-import { parseToolResult, strictBlockedOutput } from './blocked-result.js';
+import { buildEnforcementError, parseToolResult, strictBlockedOutput } from './blocked-result.js';
 import { getToolOutput, getAutoAdvanceOverflow, getSessionLockSignal } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
-import { appendReviewAuditEventForState } from './review/evidence/audit-events.js';
-import { readState } from '../adapters/persistence.js';
+import { appendSessionErrorAuditOnce } from './plugin-session-error-audit.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import {
   isReviewableFlowGuardTool,
@@ -40,14 +39,23 @@ import {
 import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
 import {
   cleanupSessionRuntime,
+  consumeToolLatency,
   getToolTraceId,
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
-import { FLOWGUARD_TOOL_PREFIX, TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
+import {
+  FLOWGUARD_TOOL_PREFIX,
+  isFlowGuardToolName,
+  TOOL_FLOWGUARD_HYDRATE,
+  TOOL_FLOWGUARD_STATUS,
+} from './tool-names.js';
+import { statusProjectionKind } from './status/status-detail-projections.js';
 import { resumePendingSystemWork as runSystemWorkResume } from './tools/auto-validation.js';
+import type { AutoValidationProgress } from './tools/helpers.js';
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
+import { reconcileMutationEvent } from './plugin-mutation-reconciliation.js';
 
 export async function toolAfter(
   runtime: FlowGuardPluginRuntime,
@@ -61,12 +69,15 @@ export async function toolAfter(
     const toolName = hookInput?.tool ?? '';
     // Stryker disable next-line OptionalChaining
     const sessionId = hookInput?.sessionID ?? 'unknown';
-    const traceId = getToolTraceId(runtime, input, 'after');
+    // Measured at after-hook entry, before any further after-hook processing.
+    const latencyFields = toolLatencyLogFields(runtime, toolName, input, hookOutput);
+    const traceId = getToolTraceId(input);
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
       const now = new Date().toISOString();
       // Stryker disable next-line ObjectLiteral
       runtime.log.info('hook', 'tool.execute.after', {
         tool: toolName,
+        ...latencyFields,
       });
       const afterCtx: AfterHookContext = {
         toolName,
@@ -90,6 +101,58 @@ export async function toolAfter(
   });
 }
 
+/**
+ * Diagnostic outcome of the tool result as it reached the after-hook, i.e.
+ * BEFORE the remaining after-hook processing (diagnostics, audit
+ * reconciliation, enforcement), which may still block or fail. Only FlowGuard
+ * tools carry the FlowGuard result contract; every other or unreadable result
+ * is `unknown` and never evidence of a successful execution.
+ */
+type HostToolOutcomeFields =
+  | { readonly hostToolOutcome: 'flowguard_blocked'; readonly hostToolCode: string }
+  | { readonly hostToolOutcome: 'flowguard_returned' | 'unknown' };
+
+function classifyHostToolOutcome(toolName: string, rawOutput: unknown): HostToolOutcomeFields {
+  if (!isFlowGuardToolName(toolName)) return { hostToolOutcome: 'unknown' };
+  const parsed = parseToolResult(rawOutput);
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { hostToolOutcome: 'unknown' };
+  }
+  if (parsed.error === true && typeof parsed.code === 'string' && parsed.code.length > 0) {
+    return { hostToolOutcome: 'flowguard_blocked', hostToolCode: parsed.code };
+  }
+  return { hostToolOutcome: 'flowguard_returned' };
+}
+
+/**
+ * Diagnostic-only latency fields for the existing `tool.execute.after` line:
+ * `callId`, `beforeToAfterMs` or `durationUnavailable`, `hostToolOutcome`
+ * (+ `hostToolCode`), and `statusProjection` for `flowguard_status`. Reads the
+ * hook input/output without mutating them; any failure yields fewer fields,
+ * never a changed hook result.
+ */
+function toolLatencyLogFields(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  input: unknown,
+  hookOutput: ToolHookAfterOutput | undefined,
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  try {
+    Object.assign(fields, consumeToolLatency(runtime, input));
+    const hookInput = input as Partial<ToolHookAfterInput> | undefined;
+    if (typeof hookInput?.callID === 'string' && hookInput.callID.length > 0) {
+      fields.callId = hookInput.callID;
+    }
+    Object.assign(fields, classifyHostToolOutcome(toolName, hookOutput?.output));
+    if (toolName === TOOL_FLOWGUARD_STATUS) {
+      fields.statusProjection = statusProjectionKind(hookInput?.args);
+    }
+  } catch {
+    if (fields.hostToolOutcome === undefined) fields.hostToolOutcome = 'unknown';
+  }
+  return fields;
+}
 interface AfterHookContext {
   readonly toolName: string;
   readonly sessionId: string;
@@ -194,8 +257,8 @@ async function verifyPersistedReviewAuthority(
       obligationId: signal.obligationId,
     };
   }
-  const sessDir = runtime.ws.getSessionDir(ctx.sessionId);
-  const state = sessDir ? await readState(sessDir) : null;
+  const resolution = await runtime.ws.resolveSessionAuthority(ctx.sessionId);
+  const state = resolution.status === 'resolved' ? resolution.state : null;
   const continuation = resolveReviewContinuation(state?.reviewAssurance, signal.obligationType);
   const matches =
     continuation.kind === 'awaiting_task' &&
@@ -296,19 +359,26 @@ async function runFlowGuardAuditAfter(args: {
 /**
  * Resume interrupted canonical system work at the session lifecycle boundary.
  * `system_work` phases carry no commands, so the runtime — not a later user
- * command — owns the continuation. Fail-safe: the event handler catches.
+ * command — owns the continuation. Thrown handler failures reach the scope fence.
  */
 async function resumeSystemWorkForSession(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
+  wakeupCreatedAtMs?: number,
+  autoValidationProgress?: AutoValidationProgress,
 ): Promise<void> {
   const worktreeRoot = runtime.riskDeps.getWorktreeRoot?.();
   if (!worktreeRoot) return;
-  const outcome = await runSystemWorkResume({
-    sessionID: sessionId,
-    worktree: worktreeRoot,
-    directory: worktreeRoot,
-  });
+  const outcome = await runSystemWorkResume(
+    {
+      sessionID: sessionId,
+      worktree: worktreeRoot,
+      directory: worktreeRoot,
+      ...(autoValidationProgress === undefined ? {} : { autoValidationProgress }),
+    },
+    undefined,
+    wakeupCreatedAtMs,
+  );
   if (outcome.kind === 'blocked') {
     runtime.log.error('system-work', 'system work resume blocked', {
       sessionId,
@@ -327,25 +397,41 @@ async function resumeSystemWorkForSession(
 export async function handlePluginEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
+  governedSessionId: string,
+  autoValidationProgress?: AutoValidationProgress,
 ): Promise<void> {
   return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
     const eventDeps: EventHandlerDeps = {
       log: runtime.log,
       cleanupSession: (sessionId: string) => cleanupSessionRuntime(runtime, sessionId),
-      resumePendingSystemWork: (sessionId: string) =>
-        resumeSystemWorkForSession(runtime, sessionId),
+      // Delegated-session completion is not a root lifecycle wakeup.
+      resumePendingSystemWork: async (sessionId: string, wakeupCreatedAtMs?: number) => {
+        if (sessionId === governedSessionId)
+          await resumeSystemWorkForSession(
+            runtime,
+            governedSessionId,
+            wakeupCreatedAtMs,
+            autoValidationProgress,
+          );
+      },
+      observeMutationEvent: (hostEvent) =>
+        reconcileMutationEvent(runtime, hostEvent, governedSessionId),
       async emitSessionErrorAudit(sessionId, errorMessage, detail) {
-        const sessDir = runtime.ws.getSessionDir(sessionId);
-        if (!sessDir) return;
-        const state = await readState(sessDir);
-        // Without durable session identity there is no canonical audit event
-        // to append. The outer event handler remains fail-safe for the host.
-        if (!state) return;
-        // Stryker disable next-line ObjectLiteral
-        await appendReviewAuditEventForState(sessDir, sessionId, state, 'error:SESSION_ERROR', {
-          code: 'SESSION_ERROR',
-          message: errorMessage,
-          ...detail,
+        const resolution = await runtime.ws.resolveSessionAuthority(governedSessionId);
+        // The event was admitted for a verified ACTIVE scope; losing its
+        // workflow authority now must reach the scope fence, not vanish.
+        if (resolution.status !== 'resolved')
+          throw buildEnforcementError(
+            resolution.status === 'unavailable' ? resolution.code : 'SESSION_DIR_NOT_FOUND',
+            'The ACTIVE session error cannot be persisted to its governed audit trail.',
+          );
+        await appendSessionErrorAuditOnce({
+          sessDir: resolution.sessDir,
+          governedSessionId,
+          state: resolution.state,
+          nativeSessionId: sessionId,
+          errorMessage,
+          detail,
         });
       },
     };
@@ -363,7 +449,7 @@ export async function handleCompaction(
     // Stryker disable next-line ConditionalExpression
     if (!sessionId) return;
     const compactionDeps: CompactionDeps = {
-      getSessionDir: runtime.ws.getSessionDir,
+      resolveSessionAuthority: (sid) => runtime.ws.resolveSessionAuthority(sid),
       log: runtime.log,
     };
     const context = await buildCompactionContext(compactionDeps, sessionId);

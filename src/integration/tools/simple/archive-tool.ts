@@ -18,16 +18,20 @@ import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
 import {
-  resolveWorkspacePaths,
+  requireWorkspacePaths,
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from '../helpers.js';
-import { readState } from '../../../adapters/persistence.js';
-import { readConfig } from '../../../adapters/persistence-config.js';
+import { readEffectiveArchivePolicy } from '../../../adapters/persistence-config.js';
 import { archiveSession } from '../../../adapters/workspace/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
 import { evaluateArchivePreflight } from '../../archive-preflight.js';
 import { z } from 'zod';
+
+async function resolveRawExportAllowed(worktree: string): Promise<boolean> {
+  const effective = await readEffectiveArchivePolicy(worktree);
+  return effective.kind === 'resolved' && effective.policy.allowRawExport;
+}
 
 function buildArchiveGuidance(
   redactionMode: string,
@@ -109,8 +113,9 @@ export const archive: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
-      const state = await readState(sessDir);
+      const paths = await requireWorkspacePaths(context);
+      const { fingerprint, sessDir } = paths;
+      const state = paths.state;
 
       if (!state) return formatBlocked('NO_SESSION');
       const preflight = evaluateArchivePreflight(state);
@@ -128,6 +133,7 @@ export const archive: ToolDefinition = {
       const includeRaw = (args.includeRaw ?? false) as boolean;
 
       const archivePath = await archiveSession(fingerprint, context.sessionID, {
+        worktree: paths.worktree,
         redactionMode,
         includeRaw,
       });
@@ -157,11 +163,13 @@ export const archive: ToolDefinition = {
         ...getLogTraceFields(),
       });
 
-      const config = await readConfig();
+      // Guidance must use the same effective (admin-ceiling) policy projection
+      // as the archive gate; otherwise the response can contradict the applied
+      // policy. A blocked conflict means raw export is not available.
       const guidance = buildArchiveGuidance(
         redactionMode,
         includeRaw,
-        config.archive.redaction.allowRawExport,
+        await resolveRawExportAllowed(paths.worktree),
       );
 
       // Route the immediate response from the archive that was just created,

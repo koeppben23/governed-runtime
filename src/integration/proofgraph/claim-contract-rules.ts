@@ -25,13 +25,17 @@
 
 import type { CounterexampleRequirement } from '../../state/proofgraph-approval.js';
 import { normalizeClaimStatement } from '../../state/proofgraph-approval.js';
+import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
+import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import {
   ASSERTION_FORMATS_BY_PROVIDER,
   ASSERTION_CODEC_BY_PROVIDER,
   AGGREGATE_FORMATS_BY_PROVIDER,
 } from '../../providers/registry.js';
 import { hasProvingMutationProvider } from './mutation-provider.js';
+import { positiveAssertionFailure } from './claim-positive-assertion.js';
+import { declaredEvidenceRolesCollide } from '../../audit/proofgraph/evidence-role-independence.js';
 
 /** Write boundary a declaration arrived through; selects the public field names. */
 export type ClaimContractSource = 'plan' | 'declare_contract';
@@ -50,9 +54,15 @@ export interface NormalizedClaimDeclaration {
   readonly critical: boolean;
   readonly claimScope: 'specific_behavior' | 'suite';
   readonly positiveCheckId: string;
+  readonly expectedAssertion?: AssertionIdentity;
   readonly counterexampleRequirement?: CounterexampleRequirement;
   readonly structuralSurface?: string;
   readonly mutationProfile?: string;
+  /**
+   * Specific risk triggers this claim explicitly covers. Only a critical claim
+   * can carry coverage; the relation is validated, never inferred.
+   */
+  readonly coversRiskTriggers?: readonly SpecificRiskTrigger[];
   /** Present only for plan declarations; architecture/contract flows omit it. */
   readonly authoritySectionId?: string;
 }
@@ -83,6 +93,7 @@ export type ClaimContractResult =
     };
 
 export interface ClaimContractRejectedDeclaration {
+  readonly disposition: 'rejected_blocking' | 'rejected_non_blocking';
   readonly claim: NormalizedClaimDeclaration;
   readonly index: number;
   readonly result: Extract<ClaimContractResult, { kind: 'invalid' }>;
@@ -112,6 +123,7 @@ const FIELD_LABELS: Readonly<Record<ClaimContractSource, Readonly<Record<string,
     claimId: 'claimId',
     structuralSurface: 'structuralSurface',
     mutationProfile: 'mutationProfile',
+    coversRiskTriggers: 'coversRiskTriggers',
     authoritySectionId: 'authoritySectionId',
   },
   declare_contract: {
@@ -121,6 +133,7 @@ const FIELD_LABELS: Readonly<Record<ClaimContractSource, Readonly<Record<string,
     claimId: 'statement',
     structuralSurface: 'structuralSurface',
     mutationProfile: 'mutationProfile',
+    coversRiskTriggers: 'coversRiskTriggers',
     authoritySectionId: 'authoritySectionId',
   },
 };
@@ -202,6 +215,37 @@ function checkCriticalContract(
   return null;
 }
 
+/**
+ * Rule 3b: only a critical claim can cover specific risk triggers, and each
+ * trigger may be declared at most once. A non-critical claim is never
+ * gate-eligible, so its declared coverage could never satisfy the final risk
+ * requirement.
+ */
+function checkRiskTriggerCoverage(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  const covered = claim.coversRiskTriggers;
+  if (covered === undefined) return null;
+  if (!claim.critical) {
+    return invalid(
+      input.source,
+      claim,
+      'coversRiskTriggers',
+      'only a critical claim can cover specific risk triggers; a non-critical claim is never gate-eligible, so its coverage could never satisfy the trigger requirement.',
+    );
+  }
+  if (new Set(covered).size !== covered.length) {
+    return invalid(
+      input.source,
+      claim,
+      'coversRiskTriggers',
+      'duplicate risk triggers are not allowed; declare each covered trigger at most once.',
+    );
+  }
+  return null;
+}
+
 /** Rule 4: an inactive check produces evidence that can never resolve. */
 function checkCheckReferences(
   input: ClaimContractInput,
@@ -226,6 +270,20 @@ function checkCheckReferences(
     );
   }
   return null;
+}
+
+/** Rule 4b: one check cannot serve as both the positive and the adversarial evidence. */
+function checkEvidenceRoleCollision(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  if (!declaredEvidenceRolesCollide(claim)) return null;
+  return invalid(
+    input.source,
+    claim,
+    'counterexampleRequirement',
+    `the positive check and the counterexample check must be different checks and must resolve to different executions; '${claim.positiveCheckId}' cannot serve both evidence roles. The same assertion identity may serve as the falsification witness when it fails on the targeted faulty variant`,
+  );
 }
 
 /** Rule 5: an unregistered surface or profile yields permanently missing evidence. */
@@ -360,7 +418,7 @@ function checkAggregateCounterexampleCapability(
   );
 }
 
-function resolveCounterexampleCandidate(
+export function resolveCounterexampleCandidate(
   candidates: readonly VerificationCandidate[],
   requirement: NonNullable<NormalizedClaimDeclaration['counterexampleRequirement']>,
 ): VerificationCandidate | undefined {
@@ -514,12 +572,64 @@ function checkSuitePositiveSatisfiability(
   return null;
 }
 
+/** Rule 10: a declared positive assertion must be reachable from its positive check. */
+function checkPositiveAssertion(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  const expectedAssertion = claim.expectedAssertion;
+  if (!expectedAssertion) return null;
+  const failure = positiveAssertionFailure({
+    positiveCheckId: claim.positiveCheckId,
+    expectedAssertion,
+    verificationCandidates: input.verificationCandidates,
+  });
+  return failure === null
+    ? null
+    : invalid(input.source, claim, failure.field, failure.detail, 'unsatisfiable');
+}
+/**
+ * Rule 11: a `specific_behavior` claim must name at least one claim-specific
+ * evidence binding — a positive assertion, an assertion counterexample
+ * requirement, a structural surface, or a mutation profile.
+ *
+ * Without one, only execution evidence (a passing check) can ever attach, and
+ * the claim could be reported PROVEN by a check that never observed the
+ * declared behavior (Run-9 F4). Critical claims without a requirement are
+ * already blocked by Rule 3; this rule closes the non-critical gap and keeps
+ * the diagnostic actionable at the write boundary.
+ */
+function checkSpecificityBinding(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  if (claim.claimScope !== 'specific_behavior') return null;
+  if (
+    claim.expectedAssertion !== undefined ||
+    claim.counterexampleRequirement !== undefined ||
+    claim.structuralSurface !== undefined ||
+    claim.mutationProfile !== undefined
+  ) {
+    return null;
+  }
+  return invalid(
+    input.source,
+    claim,
+    'counterexampleRequirement',
+    'a specific_behavior claim requires at least one claim-specific evidence binding: ' +
+      'an expectedAssertion, a counterexample requirement (assertion), a structuralSurface, or a mutationProfile; ' +
+      'a passing check alone does not prove the declared behavior',
+    'unsatisfiable',
+  );
+}
+
 export function claimViolations(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
 ): Extract<ClaimContractResult, { kind: 'invalid' }>[] {
   return [
     checkCriticalContract(input, claim),
+    checkRiskTriggerCoverage(input, claim),
     checkCheckReferences(input, claim),
     checkRegistries(input, claim),
     checkMutationSatisfiability(input, claim),
@@ -527,6 +637,11 @@ export function claimViolations(
     checkSuitePositiveSatisfiability(input, claim),
     checkCounterexampleScope(input, claim),
     checkCounterexampleSatisfiability(input, claim),
+    checkPositiveAssertion(input, claim),
+    checkSpecificityBinding(input, claim),
+    // Last: a more specific rule above (inactive check, unsupported capability,
+    // scope mismatch) names the actionable defect when it already applies.
+    checkEvidenceRoleCollision(input, claim),
   ].filter(
     (violation): violation is Extract<ClaimContractResult, { kind: 'invalid' }> =>
       violation !== null,

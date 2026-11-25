@@ -22,9 +22,14 @@ jobs:
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
       - name: Run unit tests
-        run: npm run test:unit
+        run: npm run test:unit:no-perf
         env:
           FORCE_COLOR: 0
+      - name: Run unit PERF tests
+        run: npm run test:unit:perf
+        env:
+          FORCE_COLOR: 0
+          FLOWGUARD_PERF: '1'
       - name: Run scripts tests
         run: npm run test:scripts
         env:
@@ -35,6 +40,7 @@ jobs:
           FORCE_COLOR: 0
 
   scripts-windows:
+    # Windows integration evidence is owned by critical-windows below.
     name: scripts-windows
     runs-on: windows-latest
     timeout-minutes: 15
@@ -47,6 +53,22 @@ jobs:
         run: npm run test:scripts
         env:
           FORCE_COLOR: 0
+
+  critical-windows:
+    name: critical-windows
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Verify critical state and hook boundaries
+        # Preserve the full critical set and its p99 budgets; avoid concurrent
+        # Vitest workers competing with the warm state-serialization benchmark.
+        run: npx vitest run --maxWorkers=1 --project unit src/hooks src/state src/audit/proofgraph src/adapters/git-porcelain.test.ts src/verification/implementation-subject.test.ts
+      - name: Verify real-Git approval and recovery paths
+        run: npx vitest run --project integration src/integration/proofgraph-replan-recovery.test.ts src/integration/evidence-approval-persistence.test.ts src/integration/reduced-ceremony-subject-artifacts-e2e.test.ts
 
   known-issues-note:
     name: known-issues-note
@@ -77,27 +99,84 @@ jobs:
   test:
     name: ci-gate
     runs-on: ubuntu-latest
-    needs: [unit, scripts-windows, coverage, integration_perf, provider-conformance, regulated_e2e]
+    needs:
+      [
+        unit,
+        scripts-windows,
+        critical-windows,
+        coverage,
+        integration_perf,
+        provider-conformance,
+        regulated_e2e,
+        doc-drift,
+      ]
     if: always()
     timeout-minutes: 1
     steps:
-      - name: Confirm test, coverage, PERF, regulated e2e, and provider conformance jobs passed
+      - name: Confirm tests and documentation checks passed
         run: |
           echo "unit: ${{ needs.unit.result }}"
           echo "scripts-windows: ${{ needs.scripts-windows.result }}"
+          echo "critical-windows: ${{ needs.critical-windows.result }}"
           echo "coverage: ${{ needs.coverage.result }}"
           echo "integration-perf: ${{ needs.integration_perf.result }}"
           echo "provider-conformance: ${{ needs.provider-conformance.result }}"
           echo "regulated-e2e: ${{ needs.regulated_e2e.result }}"
-          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.scripts-windows.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.regulated_e2e.result }}" != "success" ]; then
-            echo "Blocked: unit, scripts-windows, coverage, integration-perf, provider-conformance, or regulated-e2e job failed"
+          echo "doc-drift: ${{ needs.doc-drift.result }}"
+          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.scripts-windows.result }}" != "success" ] || [ "${{ needs.critical-windows.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.regulated_e2e.result }}" != "success" ] || [ "${{ needs.doc-drift.result }}" != "success" ]; then
+            echo "Blocked: a required test or documentation job did not succeed"
             exit 1
           fi
+
+  coverage-unit:
+    name: coverage-unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Run unit coverage shard
+        run: npm run test:coverage:shard -- unit
+        env:
+          FORCE_COLOR: 0
+      - name: Upload unit coverage shard
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
+        with:
+          name: coverage-shard-unit
+          path: coverage-shards/unit/
+          if-no-files-found: error
+          retention-days: 1
+
+  coverage-integration:
+    name: coverage-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Run integration coverage shard
+        run: npm run test:coverage:shard -- integration
+        env:
+          FORCE_COLOR: 0
+      - name: Upload integration coverage shard
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
+        with:
+          name: coverage-shard-integration
+          path: coverage-shards/integration/
+          if-no-files-found: error
+          retention-days: 1
 
   coverage:
     name: coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    needs:
+      - coverage-unit
+      - coverage-integration
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write
@@ -107,13 +186,23 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
-      - name: Run coverage
-        run: npm run test:coverage:ci
+      - name: Download unit coverage shard
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
+        with:
+          name: coverage-shard-unit
+          path: coverage-shards/unit
+      - name: Download integration coverage shard
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
+        with:
+          name: coverage-shard-integration
+          path: coverage-shards/integration
+      - name: Merge shards and enforce the global coverage gate
+        run: npm run test:coverage:merge -- --ci
         env:
           FORCE_COLOR: 0
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
         with:
           name: coverage-report
           path: coverage/
@@ -170,16 +259,16 @@ jobs:
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
       - name: Setup Java
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # actions/setup-java v6.0.1
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # actions/setup-java v6.3.0
         with:
           distribution: temurin
           java-version: '21'
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # actions/setup-python v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # actions/setup-python v7.1.0
         with:
           python-version: '3.12'
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # actions/setup-go v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # actions/setup-go v7.1.0
         with:
           go-version: '1.23'
           # Golden fixture provenance: Go 1.26.5. CI tests against 1.23 for
@@ -213,6 +302,35 @@ jobs:
         env:
           FORCE_COLOR: 0
           FLOWGUARD_PERF: '1'
+      - name: Verify compact status is at least 3x faster
+        run: |
+          npx vitest run --project integration src/integration/tools-execute-status.test.ts \
+            -t 'BENCHMARK: compact fast path'
+        env:
+          FORCE_COLOR: 0
+          FLOWGUARD_STATUS_BENCHMARK: '1'
+      - name: Measure real-Git V2 runtime bootstrap before and after
+        run: npm run build && node scripts/perf/runtime-bootstrap.mjs
+      - name: Verify audit append scale baseline
+        run: AUDIT_SCALE_COUNTS=1000 AUDIT_SCALE_PAD=100 node scripts/perf/audit-append-scale.mjs
+      - name: Verify audit append cost at 10k history depth
+        run: AUDIT_DEPTH_COUNTS=10000 AUDIT_DEPTH_APPENDS=3 node scripts/perf/audit-append-depth.mjs
+      - name: Verify bounded audit outbox checkpoint
+        run: AUDIT_OUTBOX_DEPTH=10000 npm run perf:audit-outbox-scale
+      - name: Verify independent audit writers
+        run: AUDIT_WRITERS=32 node scripts/perf/audit-concurrent-writers.mjs
+      - name: Verify independent-process lock exclusivity and recovery
+        run: LOCK_WRITERS=32 node scripts/perf/lock-exclusivity.mjs
+      - name: Verify audit crash recovery
+        run: node scripts/perf/audit-crash-matrix.mjs
+      - name: Verify deterministic persistence phase crash recovery
+        run: npm run perf:persistence-crash-matrix
+      - name: Verify bounded audit append-proof memory
+        run: npm run perf:audit-cache-memory
+      - name: Verify bounded runtime lifecycle soak
+        run: SOAK_ITERATIONS=10000 node scripts/perf/runtime-soak.mjs
+      - name: Measure durable audit clone speed on actual runner filesystem
+        run: node scripts/perf/audit-clone-append.mjs
 
   regulated_e2e:
     name: regulated-e2e
@@ -319,8 +437,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          baseline_version=$(node -p "JSON.parse(require('fs').readFileSync('.sdk-baselines/opencode/version.json','utf8')).version")
-          installed_version=$(node -p "JSON.parse(require('fs').readFileSync('node_modules/@opencode-ai/plugin/package.json','utf8')).version")
+          baseline_version=$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('.sdk-baselines/opencode/version.json','utf8')).packages)")
+          installed_version=$(node -p "JSON.stringify(Object.fromEntries(['plugin','client'].map(n=>['@opencode/'+n,JSON.parse(require('fs').readFileSync('node_modules/@opencode/'+n+'/package.json','utf8')).version])))")
           if [ "$baseline_version" != "$installed_version" ]; then
             echo "SDK version mismatch: baseline=$baseline_version installed=$installed_version"
             gh workflow run opencode-sdk-update.yml
@@ -373,12 +491,16 @@ jobs:
   doc-drift:
     name: doc-drift
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          fetch-depth: 0
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
+      - name: Require changelog update for every PR
+        run: npm run check:pr-documentation -- "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
       - name: Check documentation inventory drift
         run: npm run check:doc-drift
         env:
@@ -441,7 +563,7 @@ jobs:
           FORCE_COLOR: 0
 
       - name: Upload dist artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
         with:
           name: dist
           path: dist/
@@ -489,7 +611,7 @@ jobs:
         uses: ./.github/actions/prepare-node
 
       - name: Download built dist
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
         with:
           name: dist
           path: dist/
@@ -519,9 +641,12 @@ jobs:
         run: npm run test:install-verify
         env:
           FORCE_COLOR: 0
+      - name: Measure durable audit clone on macOS CoW filesystem
+        if: matrix.os == 'macos-latest'
+        run: node scripts/perf/audit-clone-append.mjs
 
-  smoke:
-    name: smoke
+  smoke-package:
+    name: smoke-package
     runs-on: ubuntu-latest
     needs: build
     timeout-minutes: 10
@@ -533,7 +658,7 @@ jobs:
         uses: ./.github/actions/prepare-node
 
       - name: Download built dist
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
         with:
           name: dist
           path: dist/
@@ -559,10 +684,130 @@ jobs:
           }
           NODE
 
+      - name: Pack the one checksum-bound smoke artifact
+        run: |
+          npm run pack:checksums
+          mkdir -p smoke-package
+          mv flowguard-core-*.tgz checksums.sha256 smoke-package/
+
+      - name: Upload smoke package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
+        with:
+          name: smoke-package
+          path: smoke-package/
+          if-no-files-found: error
+          retention-days: 1
+
+  smoke-suite:
+    name: smoke (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    needs: smoke-package
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Four groups balance the measured per-file durations from the previous
+        # monolithic job (sums ~311s each; longest files 223s, 184s, 149s and
+        # 93s). scripts/ci-gate.test.ts guards that the union stays the full
+        # smoke inventory with no duplicate or dropped file.
+        include:
+          - name: native-parity
+            files: >-
+              src/cli/opencode-inactive-parity.smoke.test.ts
+              src/cli/install-verify.smoke.test.ts
+              src/cli/opencode-reviewer-transport.smoke.test.ts
+              src/cli/opencode-reviewer-dispatch-live.smoke.test.ts
+              src/cli/opencode-start-command-live.smoke.test.ts
+              src/cli/run-acp.smoke.test.ts
+              src/cli/iso27001-java-demo.smoke.test.ts
+              src/cli/inspect-iso27001.smoke.test.ts
+              src/cli/claude-plugin-load.smoke.test.ts
+          - name: installed-host
+            files: >-
+              src/cli/opencode-inactive-installed.smoke.test.ts
+              src/cli/opencode-reviewer-capture-live.smoke.test.ts
+              src/cli/opencode-reviewer-observation-live.smoke.test.ts
+              src/cli/opencode-validation-resume.smoke.test.ts
+              src/cli/demo-evidence-verify.smoke.test.ts
+              src/cli/opencode-activation-scope.smoke.test.ts
+              src/cli/opencode-reviewer-capability.smoke.test.ts
+              src/cli/inspect-command.smoke.test.ts
+              src/mcp-server/mcp-protocol.smoke.test.ts
+          - name: package-install
+            files: >-
+              src/cli/java-demo-install.smoke.test.ts
+              src/cli/opencode-autonomous-start-live.smoke.test.ts
+              src/cli/opencode-tui-chooser.smoke.test.ts
+              src/cli/opencode-reviewer-event-lifecycle.smoke.test.ts
+              src/cli/opencode-authority-primitives.smoke.test.ts
+              src/cli/opencode-validation-progress.smoke.test.ts
+              src/cli/cli-contract.smoke.test.ts
+              src/cli/opencode-tool-result-error-projection.smoke.test.ts
+              src/cli/opencode-reviewer-structured-live.smoke.test.ts
+          - name: runtime-install
+            files: >-
+              src/cli/opencode-running-install.smoke.test.ts
+              src/cli/opencode-decision-command-live.smoke.test.ts
+              src/cli/opencode-native-install.smoke.test.ts
+              src/cli/opencode-reviewer-tool-result-live.smoke.test.ts
+              src/cli/opencode-output-token-limit.smoke.test.ts
+              src/cli/opencode-mutation-lifecycle-live.smoke.test.ts
+              src/cli/opencode-reviewer-initial-live.smoke.test.ts
+              src/cli/opencode-check-command-live.smoke.test.ts
+              src/hooks/command-hooks.smoke.test.ts
+              src/cli/iso27001-demo.smoke.test.ts
+              src/cli/doctor-cli.smoke.test.ts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+
+      - name: Download built dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
+        with:
+          name: dist
+          path: dist/
+
+      - name: Download smoke package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
+        with:
+          name: smoke-package
+          path: smoke-package/
+
+      - name: Restore executable permissions
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { chmodSync } = require('node:fs');
+          const pkg = require('./package.json');
+
+          const bins =
+            typeof pkg.bin === 'string'
+              ? [pkg.bin]
+              : Object.values(pkg.bin ?? {});
+
+          if (bins.length === 0) {
+            throw new Error('package.json declares no shipped binaries');
+          }
+
+          for (const binPath of bins) {
+            chmodSync(binPath, 0o755);
+          }
+          NODE
+
+      - name: Verify the shared smoke package
+        run: |
+          cd smoke-package
+          sha256sum -c checksums.sha256
+          TARBALL=$(ls flowguard-core-*.tgz)
+          echo "FLOWGUARD_TARBALL=$GITHUB_WORKSPACE/smoke-package/$TARBALL" >> "$GITHUB_ENV"
+
       - name: Install OpenCode CLI
         run: |
-          OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
-          npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          OPENCODE_SPEC=$(node -p "const c = require('./.sdk-baselines/opencode/cli-candidate.json'); c.package + '@' + c.version")
+          npm install -g --prefer-offline --no-audit --no-fund "$OPENCODE_SPEC"
           # npm may link global bins into a prefix that is not on PATH yet.
           GLOBAL_BIN="$(npm prefix -g)/bin"
           if [ -d "$GLOBAL_BIN" ]; then
@@ -575,19 +820,33 @@ jobs:
             echo "::error::opencode CLI not found on runner. Smoke tests require it."
             exit 1
           fi
-          opencode --version
-        env:
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
+          EXPECTED_VERSION=$(node -p "'opencode v' + require('./.sdk-baselines/opencode/cli-candidate.json').version")
+          ACTUAL_VERSION=$(opencode --version)
+          test "$ACTUAL_VERSION" = "$EXPECTED_VERSION"
 
-      - name: Run smoke tests
-        run: npm run test:smoke
+      - name: Run smoke group
+        run: npx vitest run --project smoke ${{ matrix.files }}
         env:
           FORCE_COLOR: 0
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
-          # The pinned host is installed above; prove the frozen structured
-          # reviewer wire contract (child session + json_schema + info.structured).
+          # The native candidate host is installed above. Positive reviewer and
+          # recovery contracts remain mandatory; installing V2 does not prove them.
           FLOWGUARD_OPENCODE_HOST_E2E: '1'
           RUN_OPENCODE_ACP_TESTS: '1'
+
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    needs: smoke-suite
+    if: always()
+    timeout-minutes: 2
+    steps:
+      - name: Confirm every smoke group passed
+        run: |
+          echo "smoke-suite: ${{ needs.smoke-suite.result }}"
+          if [ "${{ needs.smoke-suite.result }}" != "success" ]; then
+            echo "Blocked: at least one smoke group did not succeed"
+            exit 1
+          fi
 
   independent-review-e2e:
     name: independent-review-e2e
@@ -602,7 +861,7 @@ jobs:
         uses: ./.github/actions/prepare-node
 
       - name: Download built dist
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
         with:
           name: dist
           path: dist/
@@ -630,8 +889,8 @@ jobs:
 
       - name: Install OpenCode CLI
         run: |
-          OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
-          npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          OPENCODE_SPEC=$(node -p "const c = require('./.sdk-baselines/opencode/cli-candidate.json'); c.package + '@' + c.version")
+          npm install -g --prefer-offline --no-audit --no-fund "$OPENCODE_SPEC"
           # npm may link global bins into a prefix that is not on PATH yet.
           GLOBAL_BIN="$(npm prefix -g)/bin"
           if [ -d "$GLOBAL_BIN" ]; then
@@ -644,15 +903,14 @@ jobs:
             echo "::error::opencode CLI not found on runner. Independent-review runtime e2e is mandatory."
             exit 1
           fi
-          opencode --version
-        env:
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
+          EXPECTED_VERSION=$(node -p "'opencode v' + require('./.sdk-baselines/opencode/cli-candidate.json').version")
+          ACTUAL_VERSION=$(opencode --version)
+          test "$ACTUAL_VERSION" = "$EXPECTED_VERSION"
 
       - name: Run independent-review e2e verifier
         run: npm run test:independent-review-e2e
         env:
           FORCE_COLOR: 0
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
 
   actionlint:
     name: actionlint
@@ -701,12 +959,14 @@ jobs:
           fi
           echo "SECURITY.md found"
 
-      - name: Check for private vulnerability reporting
+      - name: Check declarative PVR configuration intent
         run: |
           if [ ! -f .github/security-advisories.yml ] && [ ! -d .github/security-advisories ]; then
-            echo "::error::Private vulnerability reporting not configured. Enable it at https://github.com/${{ github.repository }}/security/advisories/new"
+            echo "::error::PVR intent file is missing. Add .github/security-advisories.yml; this does not enable GitHub private vulnerability reporting."
             exit 1
           fi
+          echo "Declarative PVR intent present. This job does not verify the live GitHub setting."
+          echo "Live PVR status is recorded manually in docs/security-assurance.md." >> "$GITHUB_STEP_SUMMARY"
 
   dependency-review:
     name: dependency-review
@@ -723,7 +983,7 @@ jobs:
       - name: Dependency review
         if: github.event_name == 'pull_request'
         continue-on-error: true
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # actions/dependency-review-action v5.0.0
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # actions/dependency-review-action v5.0.1
         with:
           fail-on-severity: high
 
@@ -744,7 +1004,7 @@ jobs:
         uses: ./.github/actions/prepare-node
 
       - name: Download built dist
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
         with:
           name: dist
           path: dist/
@@ -798,6 +1058,8 @@ jobs:
     needs:
       - unit
       - test
+      - coverage-unit
+      - coverage-integration
       - coverage
       - integration_perf
       - architecture
@@ -811,6 +1073,8 @@ jobs:
       - build
       - build-clean
       - install-verify
+      - smoke-package
+      - smoke-suite
       - smoke
       - independent-review-e2e
       - actionlint

@@ -89,13 +89,9 @@ function projectDrift(
 function projectCandidates(
   context: DiscoveryReviewContext,
 ): RepositoryDiscoverySnapshot['verificationCandidates'] {
-  return (context.verificationCandidates ?? []).map((candidate) => ({
-    ...(candidate.candidateId ? { candidateId: candidate.candidateId } : {}),
-    kind: candidate.kind,
-    command: candidate.command,
-    source: candidate.source,
-    confidence: candidate.confidence,
-  }));
+  // The full canonical candidate travels: capability and assertion-report
+  // configuration are required reviewer context for check assessment.
+  return (context.verificationCandidates ?? []).map((candidate) => ({ ...candidate }));
 }
 
 function projectSnapshot(
@@ -136,6 +132,27 @@ function projectSnapshot(
  *   fingerprint, or an unprojectable snapshot → STRUCTURAL: the attempt must
  *   not be minted (`REVIEWER_CONTEXT_UNAVAILABLE`).
  */
+/**
+ * The persisted binding fingerprint is the canonical workspace identity (the
+ * session authority validated it); prefer it over recomputing from a possibly
+ * OS-aliased input path (Windows 8.3 short names), which could select a
+ * workspace where the Discovery basis was never persisted.
+ */
+async function resolveDiscoveryFingerprint(input: {
+  readonly state: SessionState;
+  readonly worktree: string;
+  readonly fingerprint?: string | null;
+}): Promise<string | null> {
+  if (input.fingerprint) return input.fingerprint;
+  if (input.state.binding.fingerprint.length > 0) return input.state.binding.fingerprint;
+  if (!input.worktree) return null;
+  try {
+    return (await computeFingerprint(input.worktree)).fingerprint;
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveReviewAttemptDiscoveryContext(input: {
   readonly state: SessionState;
   readonly worktree: string;
@@ -147,14 +164,7 @@ export async function resolveReviewAttemptDiscoveryContext(input: {
   if (!input.repositoryGoverned) {
     return { kind: 'not_applicable', context: { kind: 'not_applicable' } };
   }
-  let fingerprint = input.fingerprint ?? null;
-  if (!fingerprint && input.worktree) {
-    try {
-      fingerprint = (await computeFingerprint(input.worktree)).fingerprint;
-    } catch {
-      fingerprint = null;
-    }
-  }
+  const fingerprint = await resolveDiscoveryFingerprint(input);
   if (!fingerprint) {
     return {
       kind: 'blocked',

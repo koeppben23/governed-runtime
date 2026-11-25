@@ -9,6 +9,8 @@
 
 import { maxTaskClass, type TaskClass } from './task-class.js';
 import type { RiskTrigger } from './schema.js';
+import { normalizeRepoRelativePath, matchesRepositoryGlob } from '../shared/repo-path.js';
+import type { RiskTriggerPaths } from './risk-trigger-paths.js';
 
 const HIGH_RISK_PREFIXES = [
   'src/state/',
@@ -87,7 +89,7 @@ const GOVERNANCE_DOC_RE =
   /(^|\/)(architecture|security|compliance|release|governance|policy)(\/|[-_].*\.md$|\.md$)/;
 
 export function normalizePathForRisk(filePath: string): string {
-  return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
+  return normalizeRepoRelativePath(filePath);
 }
 
 /**
@@ -194,28 +196,47 @@ const RISK_TRIGGER_RULES: ReadonlyArray<{
   },
 ];
 
-function riskTriggersForPath(p: string): readonly Exclude<RiskTrigger, 'ceremony_only'>[] {
-  return RISK_TRIGGER_RULES.filter((rule) => rule.pattern.test(p))
-    .map((rule) => rule.trigger)
-    .sort();
+const DISTRIBUTION_PATHS =
+  /(^|\/)(pom\.xml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|gradle\.properties|mvnw(\.cmd)?|pyproject\.toml|setup\.(py|cfg)|requirements[^/]*\.txt|Pipfile(\.lock)?|poetry\.lock|uv\.lock|go\.(mod|sum)|Cargo\.(toml|lock)|Jenkinsfile|Dockerfile|docker-compose[^/]*\.ya?ml|\.gitlab-ci\.yml)$|(^|\/)(\.github\/workflows|\.mvn|gradle\/wrapper)\//;
+const VERIFICATION_CONFIG =
+  /(^|\/)(vitest\.config\.[^/]+|jest\.config\.[^/]+|pytest\.ini|tox\.ini|conftest\.py)$/;
+
+function riskTriggersForPath(
+  p: string,
+  configured: RiskTriggerPaths,
+): readonly Exclude<RiskTrigger, 'ceremony_only'>[] {
+  const triggers = new Set(
+    RISK_TRIGGER_RULES.filter((rule) => rule.pattern.test(p)).map((rule) => rule.trigger),
+  );
+  if (DISTRIBUTION_PATHS.test(p)) triggers.add('distribution_integrity');
+  for (const rule of configured)
+    if (matchesRepositoryGlob(rule.pattern, p)) triggers.add(rule.trigger);
+  return [...triggers].sort();
 }
 
-function classifyPath(filePath: string): {
+function classifyPath(
+  filePath: string,
+  configured: RiskTriggerPaths,
+): {
   minimumTaskClass: TaskClass;
   surface: string;
   riskTriggers: readonly Exclude<RiskTrigger, 'ceremony_only'>[];
 } {
   const p = normalizePathForRisk(filePath);
+  const riskTriggers = riskTriggersForPath(p, configured);
+  if (riskTriggers.length > 0) return { minimumTaskClass: 'HIGH-RISK', surface: p, riskTriggers };
   if (
     HIGH_RISK_EXACT.has(p) ||
     HIGH_RISK_PREFIXES.some((prefix) => p.startsWith(prefix)) ||
     HIGH_RISK_RE.some((pattern) => pattern.test(p))
   ) {
-    return { minimumTaskClass: 'HIGH-RISK', surface: p, riskTriggers: riskTriggersForPath(p) };
+    return { minimumTaskClass: 'HIGH-RISK', surface: p, riskTriggers: [] };
   }
   // Root-level tool/editor config (opencode.json, tsconfig.json, ...) is not a
   // governed domain surface and must not impose a STANDARD floor. High-risk
   // config (package.json, lockfiles, .opencode/) already returned above.
+  if (VERIFICATION_CONFIG.test(p))
+    return { minimumTaskClass: 'STANDARD', surface: p, riskTriggers: [] };
   if (isNonDomainConfigPath(p)) {
     return { minimumTaskClass: 'TRIVIAL', surface: p, riskTriggers: [] };
   }
@@ -231,7 +252,10 @@ function classifyPath(filePath: string): {
   return { minimumTaskClass: 'STANDARD', surface: p, riskTriggers: [] };
 }
 
-export function assessMinimumTaskClass(paths: readonly string[]): {
+export function assessMinimumTaskClass(
+  paths: readonly string[],
+  configured: RiskTriggerPaths = [],
+): {
   readonly minimumTaskClass: TaskClass;
   readonly touchedSurfaces: readonly string[];
   readonly riskTriggers: readonly RiskTrigger[];
@@ -243,7 +267,7 @@ export function assessMinimumTaskClass(paths: readonly string[]): {
   const touchedSurfaces = new Set<string>();
   const riskTriggers = new Set<Exclude<RiskTrigger, 'ceremony_only'>>();
   for (const filePath of paths) {
-    const classified = classifyPath(filePath);
+    const classified = classifyPath(filePath, configured);
     minimumTaskClass = maxTaskClass(minimumTaskClass, classified.minimumTaskClass);
     touchedSurfaces.add(classified.surface);
     classified.riskTriggers.forEach((trigger) => riskTriggers.add(trigger));

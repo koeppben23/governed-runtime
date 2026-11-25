@@ -5,6 +5,7 @@
 
 import { chmod, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { CliInstallError } from './errors.js';
 import type { FileOp } from './install-types.js';
 import { writeIfAbsent } from './install-helpers.js';
 import type { InstallMutationSink } from './install-mutation-types.js';
@@ -26,6 +27,12 @@ export function claudeCodePluginSnapshotPaths(target: string): string[] {
   ];
 }
 
+/** Every plugin file the installer writes via writeIfAbsent for this target. */
+export function claudeCodePluginFilePaths(target: string): string[] {
+  const pluginRoot = resolveClaudeCodePluginRoot(target);
+  return CLAUDE_CODE_PLUGIN_RELATIVE_FILES.map((relativePath) => join(pluginRoot, relativePath));
+}
+
 export async function installClaudeCodePlugin(
   target: string,
   version: string,
@@ -41,8 +48,14 @@ export async function installClaudeCodePlugin(
     const filePath = join(pluginRoot, relativePath);
     await mutations.ensureDir(dirname(filePath));
     const op = await writeIfAbsent(filePath, content, force);
+    if (op.action === 'skipped') {
+      throw new CliInstallError(
+        'NON_OPENCODE_ARTIFACT_EXISTS',
+        `Plugin artifact already exists at ${filePath}; it appeared after the install preflight. Remove or rename it and retry, or run uninstall first.`,
+      );
+    }
     ops.push(op);
-    if (op.action !== 'skipped') await mutations.recordFile(filePath);
+    await mutations.recordFile(filePath);
 
     if (relativePath.startsWith('dist/') && ops[ops.length - 1]?.action === 'written') {
       await chmod(filePath, 0o755);

@@ -21,15 +21,17 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState, writeStateAlreadyLocked } from '../adapters/persistence.js';
-import { makeProgressedState, makeState } from '../fixtures.js';
+import { makePolicySnapshot, makeProgressedState, makeState } from '../fixtures.js';
 import { buildStateWriteBody } from '../audit/types.js';
 import { buildSemanticAuditBody } from '../audit/semantic-event.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeStateDigest, writeStateWithAuditOperations } from './audit-outbox.js';
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
+import { getRuntimeInstanceId } from './runtime-instance.js';
 import { finalizeStrictTimestampFailure } from './plugin-audit-reconcile.js';
 import { persistRiskDecisionBlock } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
+import { resolvedAuthority } from './plugin-audit-test-helpers.js';
 import { PluginWorkspaceImpl } from './plugin-workspace.js';
 import { freezeReviewMaterial } from './review/obligations/assurance.js';
 import { blockObligation } from './review/obligations/obligation-state.js';
@@ -77,7 +79,7 @@ function episode(hostCallId: string, toolName: string): SessionState['mutationEp
     episodeId: crypto.randomUUID(),
     hostCallId,
     toolName,
-    runtimeInstanceId: crypto.randomUUID(),
+    runtimeInstanceId: getRuntimeInstanceId(),
     leaseGeneration: 1,
     authorizedAt: '2026-01-01T00:00:00.000Z',
     status: 'dispatch_authorized',
@@ -137,6 +139,13 @@ async function seedClaimState(
 ): Promise<SessionState> {
   const state: SessionState = {
     ...withClaim(makeProgressedState(phase)),
+    runtimeLease: {
+      holderRuntimeInstanceId: getRuntimeInstanceId(),
+      holderPid: process.pid,
+      generation: 1,
+      acquiredAt: NOW,
+      lastHeartbeatAt: NOW,
+    },
     ...(overrides.mutationEpisodes === undefined
       ? {}
       : { mutationEpisodes: overrides.mutationEpisodes }),
@@ -156,11 +165,18 @@ describe('direct metadata write channel', () => {
     const seeded = await seedClaimState('IMPLEMENTATION', {
       mutationEpisodes: [episode(hostCallId, 'bash')],
     });
-    const runtime = { ws: { getSessionDir: () => sessDir } } as never;
+    const runtime = {
+      ws: {
+        resolveSessionAuthority: async () => ({
+          ...resolvedAuthority(seeded, sessDir),
+          worktreeRoot: seeded.binding.worktree,
+        }),
+      },
+    } as never;
 
     await recordMutationCompletion({
       runtime,
-      sessionId: seeded.flowguardSessionId,
+      sessionId: seeded.binding.hostSessionId,
       hookInput: { tool: 'bash', callID: hostCallId } as never,
       hookOutput: { metadata: { exit: 0 }, output: '' } as never,
       now: NOW,
@@ -302,10 +318,10 @@ describe('direct metadata write channel', () => {
       'policySnapshot',
       (state: SessionState): SessionState => ({
         ...state,
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...state.policySnapshot,
           enforceRiskClassification: state.policySnapshot.enforceRiskClassification !== true,
-        },
+        }),
       }),
     ],
     [
@@ -546,10 +562,10 @@ describe('direct metadata write channel', () => {
   it('keeps authority committed after the decision read when a discovery block persists', async () => {
     const base = makeProgressedState('IMPLEMENTATION');
     const seeded = await seedClaimState('IMPLEMENTATION', {
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...base.policySnapshot,
         discoveryHealth: { enforcement: 'required', onDegraded: 'block', onDrift: 'block' },
-      },
+      }),
     });
     const intervening = await writeStateWithAuditOperations(sessDir, seeded, [
       {
@@ -565,7 +581,20 @@ describe('direct metadata write channel', () => {
 
     try {
       await enforceDiscoveryHealthAfterBash(
-        { getSessionDir: () => sessDir, getWorkspaceDir: () => workspaceDir },
+        {
+          resolveSessionAuthority: async (sessionId: string) => {
+            const state = await readState(sessDir);
+            if (state === null || state.flowguardSessionId !== sessionId) {
+              return {
+                status: 'unavailable' as const,
+                code: 'SESSION_BINDING_MISMATCH' as const,
+                reason: 'test authority unavailable',
+              };
+            }
+            return resolvedAuthority(state, sessDir);
+          },
+          getWorkspaceDir: () => workspaceDir,
+        },
         seeded.flowguardSessionId,
         output,
       );

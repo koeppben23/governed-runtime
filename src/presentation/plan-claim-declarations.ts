@@ -2,7 +2,13 @@
 
 import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
 
-/** Render every authority-relevant plan claim field for human and reviewer review. */
+/**
+ * Render every authority-relevant plan claim field for human and reviewer review.
+ * Labels name the evidence ROLE of each check (positive vs. counterexample) so a
+ * reader never has to infer the role from a check id or an assertion name. The
+ * shared evidence-role rule is a review criterion stated once in the task
+ * contract, never repeated per claim.
+ */
 export function renderPlanClaimDeclarations(
   declarations: PlanClaimDeclarations | undefined,
 ): string {
@@ -22,10 +28,16 @@ export function renderPlanClaimDeclarations(
         `  - Statement: ${claim.statement}`,
         `  - Authority section: ${claim.authoritySectionId}`,
         `  - Claim scope: ${claim.claimScope}`,
-        `  - Expected check: ${claim.expectedCheckId}`,
-        `  - Counterexample requirement: ${counterexampleText}`,
+        `  - Positive evidence check: ${claim.expectedCheckId}`,
+        ...(claim.expectedAssertion
+          ? [
+              `  - Positive evidence assertion: providerId: ${claim.expectedAssertion.providerId}; localId: ${claim.expectedAssertion.localId}`,
+            ]
+          : []),
+        `  - Counterexample (adversarial) check: ${counterexampleText}`,
         `  - Structural surface: ${claim.structuralSurface ?? 'none'}`,
         `  - Mutation profile: ${claim.mutationProfile ?? 'none'}`,
+        `  - Risk triggers covered: ${claim.coversRiskTriggers?.join(', ') ?? 'none'}`,
       ].join('\n');
     })
     .join('\n');

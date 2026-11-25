@@ -15,6 +15,7 @@
         "src/adapters/persistence-core.ts",
         "src/adapters/persistence-lock.ts",
         "src/adapters/persistence.ts",
+        "src/adapters/session-authority.ts",
         "src/adapters/workspace/archive-publish.ts",
         "src/adapters/workspace/archive-timestamp-verification.ts",
         "src/adapters/workspace/archive-verify-artifact-binding.ts",
@@ -60,7 +61,6 @@
         "src/integration/proofgraph/claim-contract-rules.ts",
         "src/integration/proofgraph/claim-contract.ts",
         "src/integration/proofgraph/materialize-contract.ts",
-        "src/integration/review/dispatch/agent-resolution.ts",
         "src/integration/review/enforcement/challenge-consistency.ts",
         "src/integration/review/enforcement/dispatch-signal.ts",
         "src/integration/review/evidence/reviewed-digest.ts",
@@ -74,6 +74,7 @@
         "src/integration/tools/challenge/pre-implementation-challenge.ts",
         "src/integration/tools/mutation/reconcile-mutation-episode.ts",
         "src/integration/tools/mutation/record-mutation-evidence.ts",
+        "src/integration/tools/plan/plan-claim-submission.ts",
         "src/integration/tools/review-validation-mode.ts",
         "src/logging/error-serialize.ts",
         "src/machine/commands.ts",
@@ -141,6 +142,13 @@
         "src/templates/commands/plan.ts",
         "src/templates/mandates.ts"
       ]
+    },
+    "review-capture": {
+      "configFile": "stryker.review-capture.conf.json",
+      "vitestConfigFile": "vitest.stryker-review-capture.config.ts",
+      "reportPath": "reports/mutation/review-capture/mutation.json",
+      "manifestPath": "reports/mutation/review-capture/admission-manifest.json",
+      "admittedSelectors": []
     },
     "schemas": {
       "configFile": "stryker.schemas.conf.json",

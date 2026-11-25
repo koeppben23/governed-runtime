@@ -8,18 +8,27 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { atomicWrite, readState } from '../persistence.js';
+import { readState } from '../persistence.js';
+import { validateBinding } from '../binding.js';
 import { appendAuditEvent, readAuditTrail } from '../persistence-audit.js';
 import { hashBuffer } from '../../shared/hashing.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
-import { readConfig } from '../persistence-config.js';
+import {
+  readEffectiveArchivePolicy,
+  type EffectiveArchiveRedactionPolicy,
+} from '../persistence-config.js';
 import { verifyEvidenceArtifacts } from './evidence-artifacts.js';
 import { WorkspaceError, validateFingerprint, validateSessionId } from './types.js';
 import { workspacesHome, sessionDir } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import { createArchiveStaging } from './archive-staging.js';
 import { listSessionFiles } from './archive-files.js';
-import { ARCHIVE_MANIFEST_FILE, archiveArtifactPath } from './archive-layout.js';
+import {
+  ARCHIVE_MANIFEST_FILE,
+  archiveArtifactPath,
+  archiveFileName,
+  type ArchivePurpose,
+} from './archive-layout.js';
 import type { RedactionMode } from '../../redaction/export-redaction.js';
 import {
   type ArtifactBindingEntry,
@@ -36,15 +45,30 @@ import {
   lastPublicationBinding,
 } from './archive-verify-helpers.js';
 import { inspectArchiveTar } from './archive-tar.js';
-import { publishArchiveArtifacts, removeArchiveArtifacts } from './archive-publish.js';
+import {
+  publishArchiveArtifacts,
+  removeArchiveTemporaries,
+  writeArchiveChecksum,
+} from './archive-publish.js';
 
-export interface ArchiveSessionOptions {
+/** Redaction shape shared by every archive entrypoint. */
+export interface ArchivePayloadOptions {
   readonly redactionMode: RedactionMode;
   readonly includeRaw: boolean;
 }
 
-export function archiveFileName(sessionId: string, regulatedEvidence = false): string {
-  return `${regulatedEvidence ? 'regulated-' : ''}${sessionId}.tar.gz`;
+/**
+ * User-configurable archive options.
+ *
+ * `worktree` is required: the effective archive policy is projected from the
+ * explicit global installation config (administrator ceiling) and the repo
+ * `.opencode/flowguard.json` (which may only restrict). A caller without a
+ * canonical worktree would silently lose the repository restriction — the exact
+ * divergence this contract forbids.
+ */
+export interface ArchiveSessionOptions extends ArchivePayloadOptions {
+  /** Canonical worktree root (authority-validated). */
+  readonly worktree: string;
 }
 
 export async function archiveSession(
@@ -52,10 +76,17 @@ export async function archiveSession(
   sessionId: string,
   opts: ArchiveSessionOptions,
 ): Promise<string> {
-  return archiveWithAuthorization(fingerprint, sessionId, opts, {
-    authorizedRaw: false,
-    regulatedEvidence: false,
-  });
+  return archiveWithAuthorization(
+    fingerprint,
+    sessionId,
+    opts,
+    {
+      authorizedRaw: false,
+      regulatedEvidence: false,
+      purpose: 'archive',
+    },
+    opts.worktree,
+  );
 }
 
 /**
@@ -73,7 +104,7 @@ export async function archiveRegulatedEvidence(
     fingerprint,
     sessionId,
     { redactionMode: 'none', includeRaw: true },
-    { authorizedRaw: true, regulatedEvidence: true },
+    { authorizedRaw: true, regulatedEvidence: true, purpose: 'regulated' },
   );
 }
 
@@ -95,44 +126,44 @@ export async function archiveCompletionExport(
     fingerprint,
     sessionId,
     { redactionMode: 'none', includeRaw: true },
-    { authorizedRaw: true, regulatedEvidence: false },
+    { authorizedRaw: true, regulatedEvidence: false, purpose: 'export' },
   );
 }
 
 interface ArchiveAuthorization {
   readonly authorizedRaw: boolean;
   readonly regulatedEvidence: boolean;
+  readonly purpose: ArchivePurpose;
 }
 
 async function archiveWithAuthorization(
   fingerprint: string,
   sessionId: string,
-  opts: ArchiveSessionOptions,
+  opts: ArchivePayloadOptions,
   authorization: ArchiveAuthorization,
+  worktree?: string,
 ): Promise<string> {
   return withSpan(
     'archive.create',
     async () => {
       addFingerprint(fingerprint);
       addSessionId(sessionId);
-      return archiveSessionImpl(fingerprint, sessionId, opts, authorization);
+      return archiveSessionImpl(fingerprint, sessionId, opts, authorization, worktree);
     },
     { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
   );
 }
 
 function validateArchiveOptions(
-  opts: ArchiveSessionOptions,
-  config: Awaited<ReturnType<typeof readConfig>>,
-  rawEvidenceAuthorized: boolean,
+  opts: ArchivePayloadOptions,
+  policy: EffectiveArchiveRedactionPolicy,
 ): void {
   const { redactionMode, includeRaw } = opts;
-  const rc = config.archive.redaction;
 
-  if (!rawEvidenceAuthorized && !rc.allowedModes.includes(redactionMode)) {
+  if (!policy.allowedModes.includes(redactionMode)) {
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
-      `Redaction mode '${redactionMode}' is not allowed (config allows: ${rc.allowedModes.join(', ')}).`,
+      `Redaction mode '${redactionMode}' is not allowed (effective config allows: ${policy.allowedModes.join(', ')}).`,
     );
   }
 
@@ -143,10 +174,10 @@ function validateArchiveOptions(
     );
   }
 
-  if (includeRaw && !rc.allowRawExport && !rawEvidenceAuthorized) {
+  if (includeRaw && !policy.allowRawExport) {
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
-      'Raw export is not enabled. Set archive.redaction.allowRawExport=true in flowguard.json.',
+      'Raw export is not enabled. An administrator must set archive.redaction.allowRawExport=true in the explicit global flowguard.json; the repository config can only restrict the effective policy.',
     );
   }
 }
@@ -181,18 +212,55 @@ function assertCompletionAuditEvent(
   );
 }
 
+/**
+ * Resolve the effective archive policy for the configurable export, binding the
+ * repository-policy worktree to the session that is actually being archived.
+ * Missing state/worktree and worktree-binding drift fail closed.
+ */
+async function resolveBoundArchivePolicy(
+  opts: ArchivePayloadOptions,
+  worktree: string | undefined,
+  state: import('../../state/schema.js').SessionState | null,
+  sessionId: string,
+): Promise<EffectiveArchiveRedactionPolicy> {
+  if (worktree === undefined || state === null) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      'The configurable archive export requires the canonical worktree and persisted session state to bind the repository policy.',
+    );
+  }
+  try {
+    validateBinding(state, { worktreeRoot: worktree, sessionId });
+  } catch (err) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Archive worktree does not match the persisted session binding: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const effective = await readEffectiveArchivePolicy(worktree);
+  if (effective.kind === 'blocked') {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Archive redaction policy conflict: ${effective.reason}. Reconcile the global and repository allowedModes.`,
+    );
+  }
+  validateArchiveOptions(opts, effective.policy);
+  return effective.policy;
+}
+
 async function archiveSessionImpl(
   fingerprint: string,
   sessionId: string,
-  opts: ArchiveSessionOptions,
+  opts: ArchivePayloadOptions,
   authorization: ArchiveAuthorization,
+  worktree?: string,
 ): Promise<string> {
   const { authorizedRaw, regulatedEvidence } = authorization;
   validateFingerprint(fingerprint);
   const validSessionId = validateSessionId(sessionId);
   const sessDir = sessionDir(fingerprint, validSessionId);
   const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-  const archivePath = path.join(archiveDir, archiveFileName(validSessionId, regulatedEvidence));
+  const archivePath = path.join(archiveDir, archiveFileName(validSessionId, authorization.purpose));
   try {
     await fs.access(sessDir);
     await fs.mkdir(archiveDir, { recursive: true });
@@ -206,24 +274,31 @@ async function archiveSessionImpl(
   const state = await readState(sessDir);
   if (state) await verifyEvidenceArtifacts(sessDir, state);
   if (regulatedEvidence) assertRegulatedEvidenceState(state);
-  const archiveConfig = authorizedRaw ? undefined : await readConfig();
-  if (archiveConfig) validateArchiveOptions(opts, archiveConfig, false);
+  // The configurable archive export applies the admin-ceiling projection over
+  // the explicit global config and the repo config, bound to the session's
+  // persisted worktree. A malformed config, an empty allowedModes intersection,
+  // and worktree-binding drift are fail-closed. System-authorized raw exports
+  // (regulated completion and the canonical `/export` rail) skip the projection
+  // by design and stay workflow-authorized.
+  const archivePolicy = authorizedRaw
+    ? undefined
+    : await resolveBoundArchivePolicy(opts, worktree, state, validSessionId);
 
   await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);
   const events = await readAuditTrail(sessDir);
   if (regulatedEvidence) assertCompletionAuditEvent(events);
 
   if (opts.redactionMode !== 'none') {
-    if (archiveConfig === undefined) {
+    if (archivePolicy === undefined) {
       throw new WorkspaceError(
         'ARCHIVE_FAILED',
         'Archive audit-trail limits require loaded archive configuration.',
       );
     }
-    if (events.length > archiveConfig.archive.redaction.maxAuditEvents) {
+    if (events.length > archivePolicy.maxAuditEvents) {
       throw new WorkspaceError(
         'ARCHIVE_FAILED',
-        `Audit trail length (${events.length}) exceeds maxAuditEvents (${archiveConfig.archive.redaction.maxAuditEvents}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
+        `Audit trail length (${events.length}) exceeds maxAuditEvents (${archivePolicy.maxAuditEvents}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
       );
     }
   }
@@ -295,7 +370,10 @@ async function stagePublishAndBind(input: {
     temporaryArchivePath,
     temporaryChecksumPath,
   };
-  const existingPublication = lastPublicationBinding(input.events);
+  const existingPublication = lastPublicationBinding(
+    input.events,
+    path.basename(input.archivePath),
+  );
   try {
     let publication: ArchivePublicationBinding;
     try {
@@ -307,7 +385,9 @@ async function stagePublishAndBind(input: {
         existingPublication,
       );
     } catch (error) {
-      await removeArchiveArtifacts(archiveArtifacts);
+      // Only the staging inputs are discarded. A published or retained
+      // generation is never removed by a failed attempt.
+      await removeArchiveTemporaries(archiveArtifacts);
       throw error;
     }
     if (existingPublication?.publicationId === publication.publicationId) return;
@@ -359,10 +439,8 @@ async function createAndPublishArchive(
     await fs.rm(artifacts.temporaryChecksumPath, { force: true });
     return publication;
   }
-  await Promise.all([
-    fs.rm(artifacts.archivePath, { force: true }),
-    fs.rm(artifacts.checksumPath, { force: true }),
-  ]);
+  // No files are removed here: publishArchiveArtifacts retains the current
+  // generation and restores it if this attempt fails.
   await publishArchiveArtifacts(artifacts);
   return publication;
 }
@@ -483,24 +561,6 @@ function isSafeArchiveMemberPath(relativePath: string): boolean {
       .some((segment) => segment.length === 0 || segment === '.' || segment === '..') &&
     !relativePath.includes('\\')
   );
-}
-
-async function writeArchiveChecksum(
-  archivePath: string,
-  checksumPath: string,
-  archiveFileName: string,
-): Promise<void> {
-  try {
-    await atomicWrite(
-      checksumPath,
-      `${hashBuffer(await fs.readFile(archivePath))}  ${archiveFileName}\n`,
-    );
-  } catch (error) {
-    throw new WorkspaceError(
-      'ARCHIVE_FAILED',
-      `Checksum sidecar write failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
 }
 
 async function appendArtifactBindingAuditEvent(

@@ -21,6 +21,7 @@ const COMPLIANCE_MAPPINGS = [
   'docs/ba-it-mapping.md',
   'docs/dora-mapping.md',
   'docs/gobd-mapping.md',
+  'docs/iso27001-evidence-mapping.md',
 ] as const;
 
 function readDoc(relativePath: string): string {

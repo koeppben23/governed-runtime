@@ -25,25 +25,28 @@ import {
 } from '../audit/types.js';
 import { buildSemanticAuditBody } from '../audit/semantic-event.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
+import { verifyChain } from '../audit/integrity.js';
 import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
 import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
+import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { computeStateDigest, mutateStateWithAuditOperations } from './audit-outbox.js';
+import { indexCommittedOperationAudits } from '../audit/reconcile-index.js';
+import {
+  compactVerifiedOutbox,
+  MAX_RECONCILED_OUTBOX_OPERATIONS,
+} from '../audit/outbox-compaction.js';
 
 /** Closure dependencies injected from plugin.ts. */
 export interface AuditDeps {
-  resolveFingerprint(): Promise<string | null>;
-  getSessionDir(sessionId: string): string | null;
   /**
-   * Canonical worktree + sessionId → sessionDir resolution, independent of the
-   * cached fingerprint mapping. Discriminated outcome: `unavailable` must be
-   * distinguished from a positively resolved-but-absent session directory.
+   * The canonical session authority. Audit context is never derived from a
+   * cached fingerprint: the authority validates root, fingerprint, and the
+   * persisted binding, and returns the validated state.
    */
-  resolveCanonicalSessionDir?(
-    sessionId: string,
-  ): Promise<{ status: 'resolved'; sessDir: string } | { status: 'unavailable' }>;
+  resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   resolveSessionPolicy(sessDir: string): Promise<{
     policy: {
       audit: {
@@ -73,7 +76,6 @@ export interface AuditDeps {
     warn(service: string, message: string, extra?: Record<string, unknown>): void;
   };
   logError(message: string, err: unknown): void;
-  cachedFingerprint: string | null;
   mode: string;
   tsaProvider?: TimestampAuthorityProvider;
   timestampVerifier?: TimestampVerifier;
@@ -96,6 +98,25 @@ export function createStrictTimestampTracker(
     },
     failure: () => failure,
   };
+}
+
+class AuditReconciliationChainError extends Error {
+  readonly code = 'CHAIN_BREAK' as const;
+
+  constructor(reason: string) {
+    super(`Refusing to trust unverified audit snapshot: ${reason}`);
+    this.name = 'AuditReconciliationChainError';
+  }
+}
+
+/** Read-only checks may not acknowledge an event from a corrupted chain. */
+function assertVerifiedAuditSnapshot(events: Awaited<ReturnType<typeof readAuditTrail>>): void {
+  const result = verifyChain(events);
+  if (!result.valid) {
+    throw new AuditReconciliationChainError(
+      result.firstBreak?.reason ?? result.reason ?? 'unknown audit integrity failure',
+    );
+  }
 }
 
 class AuditTransitionEvidenceGapError extends Error {
@@ -170,6 +191,7 @@ function buildOperationAuditBody(
       autoAdvanced: t.autoAdvanced,
       chainIndex: t.chainIndex,
     },
+    ...(t.actorInfo !== undefined ? { actorInfo: t.actorInfo } : {}),
     occurredAt: t.at,
     prevHash,
   });
@@ -203,6 +225,7 @@ export async function emitTransitionAudits(input: {
     // `emitTransitions: false` that event is intentionally never emitted, so
     // asserting it would report a gap for evidence the policy suppressed.
     if (ctx.emitTransitions) await assertNoTransitionGap(ctx.sessDir, state);
+    if (state) await compactReconciledOutbox(ctx.sessDir);
     return;
   }
   if (!state) {
@@ -215,6 +238,12 @@ export async function emitTransitionAudits(input: {
     count: operations.length,
   });
   assertLatestOperationMatchesState(state, operations);
+  // One snapshot per batch. The writer still checks idempotency and integrity
+  // under its lock for audit events committed after this read.
+  const operationIds = new Set(operations.map((op) => op.operationId));
+  const snapshot = await readAuditTrail(ctx.sessDir);
+  assertVerifiedAuditSnapshot(snapshot);
+  const existingAudits = indexCommittedOperationAudits(snapshot, operationIds);
   for (const operation of operations) {
     const body = buildOperationAuditBody(state, operation, ctx.prevHash);
     const expectedDigest = computeCanonicalEventDigest(body);
@@ -224,7 +253,8 @@ export async function emitTransitionAudits(input: {
         `Audit operation ${operation.operationId} does not match its committed event digest`,
       );
     }
-    const existing = await findOperationAudit(ctx.sessDir, state, operation);
+    const committed = existingAudits.get(operation.operationId);
+    const existing = findOperationAudit(state, operation, committed);
     if (existing) {
       await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
       continue;
@@ -246,6 +276,22 @@ export async function emitTransitionAudits(input: {
     await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'audit_committed');
     await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
   }
+  await compactReconciledOutbox(ctx.sessDir);
+}
+
+/** Atomic metadata-only retirement after durable audit acknowledgement. */
+async function compactReconciledOutbox(sessDir: string): Promise<void> {
+  await withSessionWriteLock(sessDir, async () => {
+    const state = await readState(sessDir);
+    if (!state) return;
+    const count = state.pendingAuditOperations.filter((op) => op.status === 'reconciled').length;
+    // Amortize the full canonical-chain verification: tolerate a bounded
+    // 64-record state tail, then compact back to 32 in one verified batch.
+    if (count <= MAX_RECONCILED_OUTBOX_OPERATIONS * 2) return;
+    const events = await readAuditTrail(sessDir);
+    const compacted = compactVerifiedOutbox(state, events);
+    await writeStateAlreadyLocked(sessDir, compacted);
+  });
 }
 
 function assertLatestOperationMatchesState(
@@ -270,6 +316,7 @@ function assertLatestOperationMatchesState(
 async function assertNoTransitionGap(sessDir: string, state: SessionState | null): Promise<void> {
   if (!state?.transition) return;
   const events = await readAuditTrail(sessDir);
+  assertVerifiedAuditSnapshot(events);
   const transition = state.transition;
   const evidenceExists = events.some(
     (event) =>
@@ -282,17 +329,11 @@ async function assertNoTransitionGap(sessDir: string, state: SessionState | null
   if (!evidenceExists) throw new AuditTransitionEvidenceGapError(transition);
 }
 
-async function findOperationAudit(
-  sessDir: string,
+function findOperationAudit(
   state: SessionState,
   operation: PendingAuditOperation,
-): Promise<boolean> {
-  const events = await readAuditTrail(sessDir);
-  const event = events.find(
-    (candidate) =>
-      candidate.id === operation.operationId &&
-      candidate.detail.operationId === operation.operationId,
-  );
+  event: Awaited<ReturnType<typeof readAuditTrail>>[number] | undefined,
+): boolean {
   if (!event) return false;
   // The loop already verified digest(operation body) === operation.auditEventDigest;
   // here only the persisted event must equal that same expected digest.
@@ -367,8 +408,11 @@ export async function emitAuditBodyWithEvidence(input: {
       'Finalized audit event is missing its chain hash',
     );
   }
-  ctx.prevHash = chainHash;
+  // Only a durable append advances this reconciliation context. The writer
+  // re-stamps the position and timestamp under its lock, so the finalized
+  // in-memory hash is provisional. Read the writer's tracked persisted tip.
   await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
+  ctx.prevHash = await deps.initChain(ctx.sessDir, sessionId);
 }
 
 /**
@@ -382,6 +426,8 @@ export interface AuditBlockOutcome {
   readonly auditOk: false;
   readonly block: true;
   readonly code: string;
+  /** Original typed authority code when the block wraps an unavailable resolution. */
+  readonly causeCode?: string;
   readonly reason: string;
 }
 
@@ -425,14 +471,13 @@ export async function reconcilePendingAuditOperations(
     // the call whose mutation is being reconciled. A synthetic identity here
     // would silently miss `policy.actorClassification[toolName]` and
     // misattribute the diagnostic tool label.
-    const resolved = await resolveAuditContext(deps, toolName, {}, sessionId);
-    if (!resolved) {
+    const resolution = await resolveAuditContext(deps, toolName, {}, sessionId);
+    if (resolution.kind === 'absent') {
       // Only a genuine bootstrap may tolerate a missing audit session
       // authority: the very first flowguard_hydrate creates the session and
       // its outbox — and only when the absence of a session is positively
-      // proven. An unavailable resolution authority fails closed.
-      const existence = await resolveBootstrapStateExistence(deps, sessionId);
-      if (toolName === TOOL_FLOWGUARD_HYDRATE && existence === 'absent') {
+      // proven by the canonical authority.
+      if (toolName === TOOL_FLOWGUARD_HYDRATE) {
         return undefined;
       }
       return {
@@ -445,9 +490,23 @@ export async function reconcilePendingAuditOperations(
           'restore the session state.',
       };
     }
-    const tracker = createStrictTimestampTracker(resolved.ctx.timestampAssurance);
-    await emitTransitionAudits({ deps, ctx: resolved.ctx, sessionId, timestampTracker: tracker });
-    return await finalizeStrictTimestampFailure(resolved.ctx, tracker.failure);
+    if (resolution.kind === 'unavailable') {
+      return {
+        auditOk: false,
+        block: true,
+        code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+        causeCode: resolution.code,
+        reason: resolution.reason,
+      };
+    }
+    const tracker = createStrictTimestampTracker(resolution.ctx.timestampAssurance);
+    await emitTransitionAudits({
+      deps,
+      ctx: resolution.ctx,
+      sessionId,
+      timestampTracker: tracker,
+    });
+    return await finalizeStrictTimestampFailure(resolution.ctx, tracker.failure);
   } catch (err) {
     deps.logError('Failed to reconcile durable audit operations', err);
     if (err instanceof AuditTransitionEvidenceGapError) {
@@ -470,24 +529,15 @@ export type BootstrapStateExistence = 'exists' | 'absent' | 'unavailable';
  * fail closed — unavailable is never treated as absent.
  */
 /**
- * Positively establish whether a governed session exists, independent of the
- * cached fingerprint mapping.
- *
- * `getSessionDir` resolves through a CACHED fingerprint, so a cold process or a
- * transient fingerprint failure yields null — which is indistinguishable from
- * a session that does not exist. Only this function may decide absence, and
- * it reports `unavailable` when it cannot: an unavailable resolution
- * authority must never be treated as proof of absence.
+ * Positively establish whether a governed session exists through the canonical
+ * session authority. `unavailable` is never treated as proof of absence.
  */
 export async function resolveBootstrapStateExistence(
   deps: AuditDeps,
   sessionId: string,
 ): Promise<BootstrapStateExistence> {
-  const mapped = deps.getSessionDir(sessionId);
-  if (mapped) {
-    return (await readState(mapped)) !== null ? 'exists' : 'absent';
-  }
-  const canonical = await deps.resolveCanonicalSessionDir?.(sessionId);
-  if (!canonical || canonical.status === 'unavailable') return 'unavailable';
-  return (await readState(canonical.sessDir)) !== null ? 'exists' : 'absent';
+  const resolution = await deps.resolveSessionAuthority(sessionId);
+  if (resolution.status === 'resolved') return 'exists';
+  if (resolution.status === 'absent') return 'absent';
+  return 'unavailable';
 }

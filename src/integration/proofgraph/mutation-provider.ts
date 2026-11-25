@@ -37,7 +37,7 @@ import type { MutationAttempt } from '../../state/evidence-mutation.js';
 import type { VerifiedProfileVerdict } from '../../audit/proofgraph/mutation-binder.js';
 
 /** Default location of the recorded mutation report (Stryker `json` reporter). */
-export const MUTATION_REPORT_RELATIVE_PATH = path.join('reports', 'mutation', 'mutation.json');
+export const MUTATION_REPORT_RELATIVE_PATH = 'reports/mutation/mutation.json';
 
 /** Command that produces the recorded report. */
 const MUTATION_COMMAND = 'npm run mutation';

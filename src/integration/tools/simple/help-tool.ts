@@ -77,7 +77,7 @@ async function executeHelp(
   context: Parameters<ToolDefinition['execute']>[1],
 ): Promise<string> {
   const glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
-    .opencode.glyphProfile;
+    .glyphProfile;
   const session = await withReadOnlySession(context);
   const reviewReport = session.sessDir
     ? ((await readReport(session.sessDir)) ?? undefined)
@@ -90,6 +90,7 @@ async function executeHelp(
     ...(reviewReport !== undefined ? { reviewReport } : {}),
     ...(requestedInvocation !== undefined ? { requestedInvocation } : {}),
     includeArtifactContent,
+    ...(context.helpCapabilities !== undefined ? { capabilities: context.helpCapabilities } : {}),
   });
   return renderHelp(result, {
     format: view.verbose ? 'json' : 'markdown',

@@ -10,7 +10,6 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import * as path from 'node:path';
 import { parsePorcelainZ } from './git.js';
 
 /** Build a NUL-delimited `-z` porcelain blob from raw records (no trailing NUL added between joins beyond the separators). */
@@ -20,9 +19,9 @@ function z(...records: string[]): string {
   return records.join('\0') + '\0';
 }
 
-/** Normalize expected paths to the OS separator, matching parsePorcelainZ output. */
+/** Git and persisted repository paths use POSIX separators on every host. */
 function norm(...paths: string[]): string[] {
-  return paths.map((p) => path.normalize(p));
+  return paths;
 }
 
 describe('parsePorcelainZ', () => {

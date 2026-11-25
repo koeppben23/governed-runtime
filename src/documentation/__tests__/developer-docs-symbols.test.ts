@@ -53,8 +53,8 @@ describe('developer documentation symbols', () => {
       barrel.includes(`'./${name.replace(/\.ts$/, '.js')}'`),
     );
 
-    expect(modules).toHaveLength(12);
-    expect(importedByBarrel).toHaveLength(6);
+    expect(modules).toHaveLength(16);
+    expect(importedByBarrel).toHaveLength(7);
     for (const moduleFile of modules) {
       expect(agents, moduleFile).toContain(moduleFile);
     }
@@ -66,12 +66,14 @@ describe('developer documentation symbols', () => {
   it('points hook registration at the real composition surface', () => {
     const agents = read('src/integration/AGENTS.md');
     const plugin = read('src/integration/plugin.ts');
-    const orchestrator = read('src/integration/plugin-orchestrator.ts');
+    const types = read('src/integration/review/pipeline-types.ts');
 
     expect(plugin).toContain('createFlowGuardPluginHooks');
-    expect(orchestrator).toContain('export type { OrchestratorDeps }');
+    expect(types).toContain('export interface OrchestratorDeps');
+    expect(read('src/integration/plugin-shared.ts')).toContain("from './review/pipeline-types.js'");
     expect(agents).toContain('plugin.ts');
     expect(agents).toContain('createFlowGuardPluginHooks');
+    expect(agents).toContain('review/pipeline-types.ts');
     expect(agents).not.toContain('register it in the plugin orchestrator');
   });
 

@@ -9,8 +9,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  makePolicySnapshot,
   IMPL_EVIDENCE,
   makeState,
+  PLAN_REVIEW_ASSURANCE,
   POLICY_SNAPSHOT,
   VALIDATION_PASSED,
   VERIFICATION_CANDIDATES,
@@ -44,12 +46,12 @@ function attempt(checkId: string) {
 }
 
 function reducedState(): SessionState {
-  const policySnapshot = {
+  const policySnapshot = makePolicySnapshot({
     ...POLICY_SNAPSHOT,
     allowReducedCeremony: true,
     requireHumanGates: true,
-    effectiveGateBehavior: 'human_gated' as const,
-  };
+    effectiveGateBehavior: 'human_gated',
+  });
   return makeState('EVIDENCE_REVIEW', {
     claimedTaskClass: 'TRIVIAL',
     verificationCandidates: VERIFICATION_CANDIDATES,
@@ -146,6 +148,30 @@ describe('reduced-ceremony approval gate', () => {
         },
       }),
     ).toMatchObject({ code: 'IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH' });
+  });
+
+  it('BAD: a reuse integrity incident blocks the reduced-ceremony approval waiver', () => {
+    const incident = {
+      ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+      status: 'blocked' as const,
+      blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+      invocationId: null,
+      fulfilledAt: null,
+      consumedAt: null,
+    };
+    const state: SessionState = {
+      ...reducedState(),
+      reviewAssurance: { ...PLAN_REVIEW_ASSURANCE, obligations: [incident] },
+    };
+
+    // The otherwise-valid waiver (subjectAttestation matches DOC_IMPL) must not
+    // authorize the approval once an integrity incident is present.
+    expect(
+      enforceImplementationReviewSubject(state, {
+        ...input,
+        subjectAttestation: { kind: 'ok', digest: DOC_IMPL.digest },
+      }),
+    ).toMatchObject({ code: 'IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED' });
   });
 
   it('BAD: a detached waiver (digest mismatch) cannot be approved', () => {

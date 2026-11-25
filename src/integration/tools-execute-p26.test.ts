@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import {
   createToolContext,
   createTestWorkspace,
@@ -54,13 +55,20 @@ import {
   SELF_REVIEW_CONVERGED,
   REVIEW_APPROVE,
   VALIDATION_PASSED,
+  CURRENT_IMPL_RISK_ASSESSMENT,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
+  makePolicySnapshot,
 } from '../fixtures.js';
+import { computeImplementationDigest } from '../verification/implementation-subject.js';
+import { hashText } from '../shared/hashing.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import type { ToolDefinition, ToolResult } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 
 vi.mock('./git-control-plane', async (importOriginal) => {
   const { gitControlPlaneAdapterMock } = await import('./adapter-mock-test-helpers.js');
@@ -106,6 +114,8 @@ const wsOriginals = vi.hoisted(() => ({
     null as unknown as (typeof import('../adapters/workspace/index.js'))['archiveSession'],
   verifyArchive:
     null as unknown as (typeof import('../adapters/workspace/index.js'))['verifyArchive'],
+  verifyCompletionExport:
+    null as unknown as (typeof import('../adapters/workspace/index.js'))['verifyCompletionExport'],
 }));
 const regulatedArchiveMock = vi.hoisted(() => ({
   archiveRegulatedEvidence: vi.fn(),
@@ -124,10 +134,12 @@ vi.mock('../adapters/workspace', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/workspace/index.js')>();
   wsOriginals.archiveSession = original.archiveSession;
   wsOriginals.verifyArchive = original.verifyArchive;
+  wsOriginals.verifyCompletionExport = original.verifyCompletionExport;
   return {
     ...original,
     archiveSession: vi.fn(original.archiveSession),
     verifyArchive: vi.fn(original.verifyArchive),
+    verifyCompletionExport: vi.fn(original.verifyCompletionExport),
   };
 });
 
@@ -202,7 +214,11 @@ beforeEach(async () => {
   });
   vi.mocked(regulatedArchive.archiveRegulatedEvidence).mockImplementation(
     (fingerprint, sessionId) =>
-      wsMock.archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true }),
+      wsMock.archiveSession(fingerprint, sessionId, {
+        worktree: ws.tmpDir,
+        redactionMode: 'none',
+        includeRaw: true,
+      }),
   );
   vi.mocked(regulatedArchive.archiveCompletionExport).mockImplementation(
     (
@@ -219,6 +235,12 @@ beforeEach(async () => {
     manifest: null,
     verifiedAt: '2026-01-01T00:00:00.000Z',
   });
+  vi.mocked(wsMock.verifyCompletionExport).mockResolvedValue({
+    passed: true,
+    findings: [],
+    manifest: null,
+    verifiedAt: '2026-01-01T00:00:00.000Z',
+  });
   vi.mocked(regulatedVerification.verifyRegulatedArchive).mockResolvedValue({
     passed: true,
     findings: [],
@@ -228,7 +250,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   // Reset workspace mock once-queues to prevent cross-test leaks.
   // vi.clearAllMocks() only clears calls/results, NOT mockResolvedValueOnce
   // queues. If a P26 test fails before consuming its once-mocks, the stale
@@ -243,6 +265,7 @@ afterEach(async () => {
     verifiedAt: '2026-01-01T00:00:00.000Z',
   });
   vi.mocked(wsMock.verifyArchive).mockReset();
+  vi.mocked(wsMock.verifyCompletionExport).mockReset();
   // Reset actor mock to default deterministic value (P27/P34)
   vi.mocked(actorMock.resolveActor)
     .mockReset()
@@ -296,7 +319,7 @@ async function executeDecision(args: {
   verdict: 'approve' | 'changes_requested' | 'reject';
   rationale: string;
 }): Promise<ToolResult> {
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: args.verdict,
@@ -308,7 +331,7 @@ function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void 
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,
@@ -343,6 +366,20 @@ describe('P26: regulated archive completion', () => {
     // 3. Write EVIDENCE_REVIEW state with regulated policy + fixture evidence.
     //    Uses writeStateWithArtifacts to materialize ticket/plan artifacts
     //    (required by requireStateForMutation's verifyEvidenceArtifacts).
+    //    The governed implementation subject must match the live worktree:
+    //    final approvals re-attest the actual bytes, so the fixture writes the
+    //    mocked changed files and derives the canonical content digest.
+    const subjectFiles = [...GIT_MOCK_DEFAULTS.changedFiles];
+    for (const relative of subjectFiles) {
+      const absolute = path.join(ws.tmpDir, relative);
+      await fs.mkdir(path.dirname(absolute), { recursive: true });
+      await fs.writeFile(absolute, `content:${relative}\n`, 'utf8');
+    }
+    const implementationDigest = await computeImplementationDigest({
+      worktree: ws.tmpDir,
+      files: subjectFiles,
+      digest: hashText,
+    });
     const regulatedState = {
       ...baseState!,
       phase: 'EVIDENCE_REVIEW' as const,
@@ -359,8 +396,19 @@ describe('P26: regulated archive completion', () => {
         },
       },
       validation: VALIDATION_PASSED,
-      implementation: IMPL_EVIDENCE,
-      implReview: IMPL_REVIEW_CONVERGED,
+      implementation: {
+        ...IMPL_EVIDENCE,
+        changedFiles: subjectFiles,
+        domainFiles: [...subjectFiles],
+        digest: implementationDigest,
+      },
+      implementationRiskAssessment: {
+        ...CURRENT_IMPL_RISK_ASSESSMENT,
+        touchedSurfaces: [...subjectFiles],
+        assessedFileCount: subjectFiles.length,
+        implementationDigest,
+      },
+      implReview: { ...IMPL_REVIEW_CONVERGED, currDigest: implementationDigest },
       initiatedBy: 'initiator',
       initiatedByIdentity: {
         actorId: 'initiator',
@@ -368,7 +416,7 @@ describe('P26: regulated archive completion', () => {
         actorSource: 'env' as const,
         actorAssurance: 'best_effort' as const,
       },
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...baseState!.policySnapshot,
         mode: 'regulated' as const,
         requestedMode: 'regulated' as const,
@@ -378,7 +426,7 @@ describe('P26: regulated archive completion', () => {
           ...baseState!.policySnapshot.audit,
           enableChainHash: true,
         },
-      },
+      }),
       error: null,
     };
     await writeStateWithArtifacts(sessDir, regulatedState);
@@ -588,13 +636,13 @@ describe('P26: regulated archive completion', () => {
       expect(state).not.toBeNull();
       await writeState(sessDir, {
         ...state!,
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...state!.policySnapshot,
           mode: 'regulated',
           requestedMode: 'regulated',
           allowSelfApproval: false,
           requireHumanGates: true,
-        },
+        }),
       });
 
       // Abort → the explicit terminal ABORTED position with an error marker
@@ -808,6 +856,21 @@ describe('P26: regulated archive completion', () => {
 
       appendSpy.mockRestore();
     });
+  });
+
+  it('blocks an approval whose worktree bytes changed after the recorded review, and reports the persisted phase', async () => {
+    const sessDir = await reachRegulatedEvidenceReview();
+    await fs.writeFile(path.join(ws.tmpDir, 'src/foo.ts'), 'tampered-after-review\n', 'utf8');
+
+    const result = parseToolResult(
+      await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+    );
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH');
+    expect(result.phase).toBe('EVIDENCE_REVIEW');
+
+    const persisted = await readState(sessDir);
+    expect(persisted?.phase).toBe('EVIDENCE_REVIEW');
   });
 });
 

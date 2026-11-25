@@ -128,10 +128,14 @@ export function normalizeForFingerprint(absPath: string): string {
  * - OS normalization differences (casefolding, separators)
  *
  * @param worktree - Git worktree root path.
+ * @param timeoutMs - Optional per-probe timeout override (deadline budgeting).
  * @returns FingerprintResult with fingerprint, material class, and derivation metadata.
  */
-export async function computeFingerprint(worktree: string): Promise<FingerprintResult> {
-  const remote = await remoteOriginUrl(worktree);
+export async function computeFingerprint(
+  worktree: string,
+  timeoutMs?: number,
+): Promise<FingerprintResult> {
+  const remote = await remoteOriginUrl(worktree, timeoutMs);
 
   if (remote) {
     const canonical = canonicalizeOriginUrl(remote);

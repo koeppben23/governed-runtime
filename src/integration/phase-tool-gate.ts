@@ -5,7 +5,7 @@
  * Host mutations are authorized exclusively during IMPLEMENTATION. Read-only
  * tools (read, glob, grep, webfetch, todowrite) are always allowed.
  *
- * FlowGuard's own tools (`flowguard_*`) and `task` subagent calls are
+ * FlowGuard's own tools (`flowguard_*`) and native `subagent` calls are
  * excluded — they have their own enforcement in review-enforcement.ts
  * and the plugin hook pipeline.
  *
@@ -21,7 +21,10 @@ import type {
   SessionState,
 } from '../state/schema.js';
 import { randomUUID } from 'node:crypto';
-import { hasOutstandingReviewObligation } from '../state/review-dispatch.js';
+import {
+  hasOutstandingReviewObligation,
+  hasUnresolvedIntegrityIncident,
+} from '../state/review-dispatch.js';
 import {
   resolveEffectiveTaskClass,
   ticketRiskDeclarationFloor,
@@ -39,6 +42,35 @@ import type { GateDecision } from '../shared/gate-decision.js';
 import { FLOWGUARD_TOOL_PREFIX, MCP_FLOWGUARD_TOOL_PREFIX } from './tool-names.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { appendReviewAuditEvent } from './review/evidence/audit-events.js';
+import { defaultReasonRegistry } from '../config/reasons.js';
+
+/** Defense-in-depth; shell inspection is not an OS sandbox or attestation. */
+export function hostMutationIntegrityGate(
+  tool: string,
+  state: SessionState,
+  input: Record<string, unknown> = {},
+  sessionDirectory?: string,
+):
+  | { readonly kind: 'clear' }
+  | { readonly kind: 'blocked'; readonly code: string; readonly reason: string } {
+  if (!requiresHostAuthority(tool)) return { kind: 'clear' };
+  let code: string | null = null;
+  if (hasUnresolvedIntegrityIncident(state.reviewAssurance))
+    code = 'INTEGRITY_INCIDENT_MUTATION_DENIED';
+  if (tool === 'bash' && typeof input.command === 'string') {
+    const command = normalizePathForRisk(input.command).toLowerCase();
+    const targetsState =
+      (sessionDirectory !== undefined &&
+        command.includes(normalizePathForRisk(sessionDirectory).toLowerCase())) ||
+      (command.includes('/workspaces/') && command.includes('/sessions/'));
+    const writes =
+      />|\b(rm|mv|cp|tee|truncate|dd|chmod|python\w*|node|perl|ruby)\b|\bsed\b.*\s-i/.test(command);
+    if (targetsState && writes) code = 'SESSION_STATE_DIRECT_WRITE_DENIED';
+  }
+  return code === null
+    ? { kind: 'clear' }
+    : { kind: 'blocked', code, reason: defaultReasonRegistry.format(code).reason };
+}
 
 function riskClassificationFacts(input: {
   readonly state: SessionState;
@@ -93,7 +125,7 @@ export {
  * Intentionally does NOT include:
  * - `read`, `glob`, `grep`: read-only investigation tools
  * - `webfetch`: read-only (fetches URL content), useful for ticket research
- * - `task`: governed separately by subagent enforcement (BUG-08)
+ * - `subagent`: separately authorized dispatch; child effects keep their own gates
  * - `flowguard_*`: governed by FlowGuard's own command admissibility
  */
 export const MUTATING_HOST_TOOLS: ReadonlySet<string> = new Set([
@@ -115,9 +147,16 @@ export const READ_ONLY_HOST_TOOLS: ReadonlySet<string> = new Set([
   'todowrite',
 ]);
 
+/** The sole current native delegation tool identity, not a mutation completion. */
+export const NATIVE_SUBAGENT_TOOL = 'subagent';
+
+export function requiresHostAuthority(tool: string): boolean {
+  return isMutatingHostTool(tool) || tool === NATIVE_SUBAGENT_TOOL;
+}
+
 function isGovernedOutsideHostPhaseGate(toolName: string): boolean {
   return (
-    toolName === 'task' ||
+    toolName === NATIVE_SUBAGENT_TOOL ||
     toolName.startsWith(FLOWGUARD_TOOL_PREFIX) ||
     toolName.startsWith(MCP_FLOWGUARD_TOOL_PREFIX)
   );
@@ -342,7 +381,7 @@ export function isRiskClassificationAllowed(
     normalizePathForRisk,
   );
   const uniquePaths = [...new Set(combinedPaths)].sort();
-  const assessment = assessMinimumTaskClass(uniquePaths);
+  const assessment = assessMinimumTaskClass(uniquePaths, state.policySnapshot.riskTriggerPaths);
   const provisional = (input.mode ?? 'final') === 'provisional';
   const unknownScope = input.unknownScope === true;
   // Missing scope information is never interpreted as low risk: the
@@ -415,7 +454,8 @@ function ceremonyEffectiveTaskClass(
 ): TaskClass {
   const declaration: TicketRiskDeclaration = state.ticket?.riskDeclaration ?? { kind: 'absent' };
   return resolveEffectiveTaskClass({
-    computed: assessMinimumTaskClass(changedFiles).minimumTaskClass,
+    computed: assessMinimumTaskClass(changedFiles, state.policySnapshot.riskTriggerPaths)
+      .minimumTaskClass,
     declaration,
     escalated: state.claimedTaskClass,
   });
@@ -445,7 +485,10 @@ export function projectCeremonyEligibility(
  * checks bound to the current implementation generation.
  */
 export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyProfileDecision {
-  const assessment = assessMinimumTaskClass(input.changedFiles);
+  const assessment = assessMinimumTaskClass(
+    input.changedFiles,
+    input.state.policySnapshot.riskTriggerPaths,
+  );
   const declaration: TicketRiskDeclaration = input.state.ticket?.riskDeclaration ?? {
     kind: 'absent',
   };
@@ -469,6 +512,13 @@ export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyPro
 
   const staticReason = staticCeremonyIneligibilityReason(input);
   if (staticReason !== null) return { ...base, profile: 'full', reason: staticReason };
+  // D7 (#1028): a reused-evidence integrity incident withholds the
+  // reduced-ceremony shortcut for the session even after later evidence; the
+  // full-ceremony review path stays available and a fresh session is the
+  // explicit recovery.
+  if (hasUnresolvedIntegrityIncident(input.state.reviewAssurance)) {
+    return { ...base, profile: 'full', reason: 'REVIEW_INTEGRITY_INCIDENT' };
+  }
   if (hasOutstandingReviewObligation(input.state.reviewAssurance)) {
     return { ...base, profile: 'full', reason: 'REVIEW_OBLIGATION_REQUIRED' };
   }

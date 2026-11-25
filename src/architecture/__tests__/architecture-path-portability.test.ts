@@ -21,9 +21,9 @@ import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { isTestSourcePath } from './module-classification.js';
-import { collectProductionSources } from './production-source.js';
-import { normalizeRepoPath, repoRelative } from './repo-path.js';
+import { isTestSourcePath } from '../support/module-classification.js';
+import { collectProductionSources } from '../support/production-source.js';
+import { normalizeRepoPath, repoRelative } from '../support/repo-path.js';
 
 const SRC = resolve(import.meta.dirname, '..', '..');
 

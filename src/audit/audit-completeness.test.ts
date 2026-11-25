@@ -1027,7 +1027,7 @@ describe('audit completeness', () => {
   });
 
   describe('PERF', () => {
-    it('evaluateCompleteness < 2ms (p99 over 200 iterations)', () => {
+    it(`evaluateCompleteness stays under its p99 budget (${PERF_BUDGETS.completenessEvalMs}ms)`, () => {
       const state = makeProgressedState('COMPLETE');
       const { p99Ms } = benchmarkSync(() => evaluateCompleteness(state), 200, 50);
       expect(p99Ms).toBeLessThan(PERF_BUDGETS.completenessEvalMs);

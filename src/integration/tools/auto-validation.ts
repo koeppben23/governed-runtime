@@ -9,7 +9,7 @@
  *
  * Both phases are `system_work` states whose exit is normally driven by
  * explicit `/run_check` calls. This module closes that gap: it executes every
- * active check in order through the production run-check path (candidate
+ * still-open active check in order through the production run-check path (candidate
  * resolution, execution-subject attestation, evidence persistence,
  * phase-aware auto-advance), so the phase exits on the same evidence the
  * explicit surface would have produced. The explicit `/run_check`
@@ -21,6 +21,10 @@
  * re-arms the exact pending operation generation with backoff, or blocks. A
  * retry metadata write is therefore never best-effort.
  *
+ * Liveness: there is no timer. A re-armed operation is resumed only by the next
+ * host session lifecycle event (`session.idle` / idle `session.status`) that
+ * arrives after `retryAfter`; an event inside the backoff window is a no-op.
+ *
  * Reentrancy: the runner is guarded per session, never process-globally. Two
  * sessions may validate concurrently; a second re-entrant call for the SAME
  * session is a no-op.
@@ -28,9 +32,11 @@
  * @version v3
  */
 
+import { randomUUID } from 'node:crypto';
 import type { Phase, SessionState } from '../../state/schema.js';
 import type { SystemWorkOperation } from '../../state/system-work.js';
-import type { ToolResult, WorkspaceToolContext } from './helpers.js';
+import { isValidationProgressPhase } from './helpers.js';
+import type { AutoValidationProgress, ToolResult, WorkspaceToolContext } from './helpers.js';
 import { formatBlocked } from '../blocked-result.js';
 import {
   withMutableSessionTransaction,
@@ -43,6 +49,8 @@ import { formatError } from './error-format.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import type { VerificationCandidateKind } from '../../state/discovery-schemas.js';
 import { IntegrationInvariantError } from '../errors.js';
+import { missingValidationChecks } from '../../machine/validation-evidence.js';
+import { evaluateImplValidationEvidence } from '../../machine/impl-validation-evidence.js';
 
 type ValidationPhase = 'VALIDATION' | 'IMPL_VALIDATION';
 
@@ -132,7 +140,28 @@ export function decidePostCommandAutoValidation(input: {
 interface SessionRead {
   readonly phase: Phase;
   readonly activeChecks: readonly string[];
+  /**
+   * Active checks the phase's evidence authority still reports as open: only
+   * these are re-executed, so a fresh bound PASS is never repeated.
+   */
+  readonly openChecks: readonly string[];
   readonly pendingSystemWork: SystemWorkOperation | null;
+}
+
+/** Open checks of a validation phase, from the phase's canonical evidence authority. */
+function openChecksFor(state: SessionState): readonly string[] {
+  if (state.phase === 'VALIDATION') return missingValidationChecks(state);
+  if (state.phase === 'IMPL_VALIDATION') return evaluateImplValidationEvidence(state).missing;
+  return [];
+}
+
+/**
+ * Checks one automatic attempt executes. With every active check satisfied but
+ * the phase not yet left (an interrupted transition), the full active set is
+ * re-executed so the run-check path re-evaluates and advances the phase.
+ */
+function checksToExecute(session: SessionRead): readonly string[] {
+  return session.openChecks.length > 0 ? session.openChecks : session.activeChecks;
 }
 
 type ReadOutcome =
@@ -149,13 +178,23 @@ type ReadOutcome =
  */
 async function readSession(context: WorkspaceToolContext): Promise<ReadOutcome> {
   try {
-    const { state } = await withReadOnlySession(context);
+    const session = await withReadOnlySession(context);
+    // The canonical authority reports an unreadable state as a VALUE, not a
+    // throw; collapsing it into "no session" would skip the fail-closed path.
+    if (session.authority.status === 'unavailable') {
+      return {
+        kind: 'unreadable',
+        reason: `${session.authority.code}: ${session.authority.reason}`,
+      };
+    }
+    const { state } = session;
     if (!state) return { kind: 'none' };
     return {
       kind: 'ok',
       session: {
         phase: state.phase,
         activeChecks: [...state.activeChecks],
+        openChecks: [...openChecksFor(state)],
         pendingSystemWork: state.pendingSystemWork,
       },
     };
@@ -295,38 +334,77 @@ type CheckSequenceResult =
   | { readonly kind: 'finished'; readonly lastResponse: string }
   | { readonly kind: 'empty' };
 
+/**
+ * A presentation callback is not a validation authority. Never await it: a
+ * broken or hanging UI must not delay checks, hold a lock or change results.
+ */
+function emitValidationProgress(
+  progress: AutoValidationProgress | undefined,
+  event: Parameters<AutoValidationProgress>[0],
+): void {
+  if (progress === undefined || !isValidationProgressPhase(event.phase)) return;
+  try {
+    void Promise.resolve(progress(event)).catch((error: unknown) => {
+      console.warn('[FlowGuard] Validation progress delivery failed; validation continues.', error);
+    });
+  } catch (error) {
+    console.warn('[FlowGuard] Validation progress delivery failed; validation continues.', error);
+  }
+}
+
 async function runActiveCheckSequence(
   context: WorkspaceToolContext,
   phase: ValidationPhase,
   activeChecks: readonly string[],
+  operation: SystemWorkOperation | null,
+  progress?: AutoValidationProgress,
 ): Promise<CheckSequenceResult> {
-  let lastResponse: string | null = null;
-  for (const kind of activeChecks) {
-    const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
-    lastResponse = text;
+  const runID = randomUUID();
+  const emit = (stage: Parameters<AutoValidationProgress>[0]['stage'], check?: string): void => {
+    if (operation !== null)
+      emitValidationProgress(progress, {
+        phase,
+        checks: activeChecks,
+        operation,
+        runID,
+        stage,
+        ...(check === undefined ? {} : { check }),
+      });
+  };
+  emit('starting');
+  try {
+    let lastResponse: string | null = null;
+    for (const kind of activeChecks) {
+      emit('check_started', kind);
+      const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
+      emit('check_finished', kind);
+      lastResponse = text;
 
-    if (responseReportsError(text)) break;
+      if (responseReportsError(text)) break;
 
-    const fresh = await readSession(context);
-    if (fresh.kind === 'unreadable') {
-      return {
-        kind: 'blocked',
-        code: 'SYSTEM_WORK_STATE_UNREADABLE',
-        response: unreadableResponse(fresh),
-      };
+      const fresh = await readSession(context);
+      if (fresh.kind === 'unreadable') {
+        return {
+          kind: 'blocked',
+          code: 'SYSTEM_WORK_STATE_UNREADABLE',
+          response: unreadableResponse(fresh),
+        };
+      }
+      if (fresh.kind === 'none') {
+        return unavailableAfterAttemptResponse(
+          'session disappeared while automatic validation was running',
+        );
+      }
+      if (fresh.session.phase !== phase) {
+        return { kind: 'completed', phase: fresh.session.phase, response: text };
+      }
     }
-    if (fresh.kind === 'none') {
-      return unavailableAfterAttemptResponse(
-        'session disappeared while automatic validation was running',
-      );
-    }
-    if (fresh.session.phase !== phase) {
-      return { kind: 'completed', phase: fresh.session.phase, response: text };
-    }
+
+    if (lastResponse === null) return { kind: 'empty' };
+    return { kind: 'finished', lastResponse };
+  } finally {
+    emit('finished');
   }
-
-  if (lastResponse === null) return { kind: 'empty' };
-  return { kind: 'finished', lastResponse };
 }
 
 async function rearmAfterTechnicalOutcome(input: {
@@ -404,6 +482,7 @@ async function finalizeAutomaticValidationAttempt(input: {
 async function runAutomaticValidationAttempt(
   context: WorkspaceToolContext,
   deps: SystemWorkRetryDeps,
+  progress: AutoValidationProgress | undefined = context.autoValidationProgress,
 ): Promise<SystemWorkResumeOutcome> {
   const sessionKey = context.sessionID;
   if (activeValidationSessions.has(sessionKey)) return { kind: 'none' };
@@ -427,14 +506,21 @@ async function runAutomaticValidationAttempt(
       return { kind: 'none' };
     }
 
+    const checks = checksToExecute(before.session);
     getAdapterLogger().info('tool', 'auto_validation', {
       sessionId: context.sessionID,
       phase,
-      checks: activeChecks.join(','),
+      checks: checks.join(','),
       ...getLogTraceFields(),
     });
 
-    const sequence = await runActiveCheckSequence(context, phase, activeChecks);
+    const sequence = await runActiveCheckSequence(
+      context,
+      phase,
+      checks,
+      pendingSystemWork,
+      progress,
+    );
     if (sequence.kind === 'completed' || sequence.kind === 'blocked') return sequence;
     if (sequence.kind === 'empty') return { kind: 'none' };
 
@@ -460,8 +546,9 @@ async function runAutomaticValidationAttempt(
 export async function runActiveChecksAutomatically(
   context: WorkspaceToolContext,
   deps: SystemWorkRetryDeps = DEFAULT_SYSTEM_WORK_RETRY_DEPS,
+  progress?: AutoValidationProgress,
 ): Promise<string | null> {
-  const outcome = await runAutomaticValidationAttempt(context, deps);
+  const outcome = await runAutomaticValidationAttempt(context, deps, progress);
   return outcome.kind === 'none' ? null : outcome.response;
 }
 
@@ -475,7 +562,7 @@ const inFlightSystemWorkResumes = new Set<string>();
 /**
  * Resume a pending system-work operation.
  *
- * Triggered by the host session lifecycle (session becomes idle/active), never
+ * Triggered by the host session lifecycle (idle or admitted execution success), never
  * by a user workflow command: `system_work` phases have no commands, so the
  * runtime owns the continuation.
  */
@@ -494,6 +581,7 @@ function classifyPendingOperation(session: SessionRead, nowMs: number): PendingO
 export async function resumePendingSystemWork(
   context: WorkspaceToolContext,
   deps: SystemWorkRetryDeps = DEFAULT_SYSTEM_WORK_RETRY_DEPS,
+  wakeupCreatedAtMs?: number,
 ): Promise<SystemWorkResumeOutcome> {
   const outcome = await readSession(context);
   if (outcome.kind === 'unreadable') {
@@ -505,7 +593,12 @@ export async function resumePendingSystemWork(
   }
   if (outcome.kind === 'none') return { kind: 'none' };
 
-  const decision = classifyPendingOperation(outcome.session, deps.nowMs());
+  // Delayed delivery cannot turn a notification emitted inside backoff into
+  // a later retry opportunity. The runner still rechecks the current clock.
+  const decision = classifyPendingOperation(
+    outcome.session,
+    Math.min(deps.nowMs(), wakeupCreatedAtMs ?? Infinity),
+  );
   if (decision.kind === 'none') return { kind: 'none' };
   if (decision.kind === 'stale') {
     await clearStalePendingSystemWork(context);

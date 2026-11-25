@@ -25,35 +25,42 @@ import type {
   PlanSubmissionResponseInput,
   ConvergedPlanReviewInput,
 } from './plan-types.js';
+import { forcedConvergenceResponseFields } from './plan-review-exhaustion.js';
 import { formatBlocked } from '../../blocked-result.js';
 import {
+  formatAutoAdvanceBlocked,
   formatAutoAdvanceOverflow,
-  enrichWithWorkflowDirective,
-  writeStateWithArtifacts,
-} from '../helpers.js';
+} from '../../../rails/auto-advance-overflow.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
 import {
   PHASE_LABELS,
   buildPlanReviewCard,
   renderPlanClaimDeclarations,
 } from '../../../presentation/index.js';
+import { differencedCardPresentation } from '../../../presentation/glyph-profile.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
+import {
+  automaticPlanBaselineBlock,
+  persistBlockedAutomaticPlanApproval,
+  prepareAutomaticPlanApproval,
+} from './plan-auto-approval.js';
 import { evaluate } from '../../../machine/evaluate.js';
 import { autoAdvance } from '../../../rails/types.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import { TOOL_FLOWGUARD_PLAN } from '../../tool-names.js';
 import {
-  artifactReviewSubjectScope,
   createObligationAndAttempt,
   freezeReviewMaterial,
 } from '../../review/obligations/assurance.js';
+import { artifactReviewSubjectScopeFromSections } from '../../review/context/subject-scope.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
 } from '../../review/dispatch/dispatch-authority.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
-import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
+import { buildFrozenArtifactReviewMaterial } from '../../review/context/reviewer-context.js';
 import { buildChildSessionReviewInstruction } from '../../review/dispatch/child-session-instruction.js';
 import { repositoryEvidenceUnavailableField } from '../../review/observations/observation-access.js';
 import {
@@ -62,27 +69,13 @@ import {
 } from '../../review/evidence/reviewed-digest.js';
 import { buildHeuristicRiskWarning } from '../../proofgraph/claim-contract.js';
 import { assessMinimumTaskClass, declaredTaskClassFor } from '../../phase-tool-gate.js';
-import {
-  resolveRuntimeReviewPlatform,
-  resolveReviewOrchestrationMode,
-} from '../../review/dispatch/orchestration-mode.js';
+import { resolveReviewOrchestrationMode } from '../../review/dispatch/orchestration-mode.js';
 import { resolvePreImplementationChallengeClassification } from '../challenge/pre-implementation-challenge.js';
 import { projectPlanProofStatus } from '../../proofgraph/proof-summary-projectors.js';
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
 import { IntegrationInvariantError } from '../../errors.js';
-
-function findPriorPlanTargetPaths(
-  assurance: import('../../../state/schema.js').SessionState['reviewAssurance'],
-): string[] | undefined {
-  if (!assurance) return undefined;
-  const obligations = [...assurance.obligations].reverse();
-  const lastPlan = obligations.find((o) => o.obligationType === 'plan');
-  const paths = lastPlan?.metadata?.targetPaths;
-  return Array.isArray(paths) && paths.every((p: unknown) => typeof p === 'string')
-    ? paths
-    : undefined;
-}
+import { latestPlanTargetPaths } from '../../../verification/implementation-subject.js';
 
 /** Extract the first non-empty line of text, truncated to 120 characters. */
 function firstLine(text: string | undefined): string | undefined {
@@ -109,6 +102,7 @@ export function buildPlanReviewObligationInput(input: {
   iteration: number;
   planVersion: number;
   classificationFiles: readonly string[] | undefined;
+  targetPaths: readonly string[];
   provisionalScopeUnknown?: boolean | undefined;
   freeze: RepositoryAuthorityFreezeResult;
   planClaimDeclarations: PlanClaimDeclarations;
@@ -125,9 +119,14 @@ export function buildPlanReviewObligationInput(input: {
     planClaimDeclarations,
   } = input;
   const metadata: Record<string, unknown> = {};
-  if (classificationFiles && classificationFiles.length > 0) {
-    metadata.targetPaths = [...classificationFiles];
-  }
+  metadata.targetPaths = [...input.targetPaths];
+  const artifactReviewMaterial = buildFrozenArtifactReviewMaterial({
+    obligationType: 'plan',
+    state,
+    artifact: planEvidence.body,
+    planClaimDeclarations,
+    renderPlanClaimDeclarations,
+  });
   return {
     obligationType: 'plan',
     iteration,
@@ -137,18 +136,17 @@ export function buildPlanReviewObligationInput(input: {
     subjectDigest: planEvidence.digest,
     claimDeclarationsDigest: hashText(canonicalJsonStringify(planClaimDeclarations)),
     // Frozen review material: the exact plan artifact plus originating
-    // ticket context, canonicalized and digest-bound at creation time.
-    reviewMaterial: freezeReviewMaterial(
-      buildFrozenReviewMaterialContent({
-        obligationType: 'plan',
-        state,
-        artifact: planEvidence.body,
-        planClaimDeclarations,
-        renderPlanClaimDeclarations,
-      }),
+    // ticket context and the rendered claim declarations, canonicalized and
+    // digest-bound at creation time.
+    reviewMaterial: freezeReviewMaterial(artifactReviewMaterial.content, planEvidence.digest),
+    // The anchor whitelist is minted from the SAME subject markdown the
+    // reviewer evidence refs are indexed from, so a claims-section ref offered
+    // in the prompt can never be rejected as out-of-scope.
+    reviewSubjectScope: artifactReviewSubjectScopeFromSections(
+      'plan',
+      artifactReviewMaterial.subjectSectionPaths,
       planEvidence.digest,
     ),
-    reviewSubjectScope: artifactReviewSubjectScope('plan', planEvidence.body, planEvidence.digest),
     policySnapshot: state.policySnapshot,
     changedFiles: classificationFiles,
     declaredTaskClass: declaredTaskClassFor(state),
@@ -177,10 +175,19 @@ function partialClaimAcceptancePresentation(
   const rejected = diagnostics.rejectedClaims
     .map((claim) => `- ${claim.statement}\n  ${claim.reason}`)
     .join('\n');
+  const blockingCount = diagnostics.rejectedClaims.filter(
+    (claim) => claim.disposition === 'rejected_blocking',
+  ).length;
+  // The disposition decides the consequence: a session with only non-blocking
+  // rejections must not be told that approval is blocked.
+  const consequence =
+    blockingCount > 0
+      ? `${blockingCount} blocking declaration(s) prevent approval until corrected or explicitly withdrawn in a new plan revision.`
+      : 'The rejected declaration(s) are non-blocking; the plan and its accepted claims remain valid.';
   return {
     markdown:
       '## Plan submitted\n\n' +
-      `FlowGuard did not admit ${diagnostics.rejectedClaims.length} claim declaration(s) to the ProofGraph. Rejected critical claims block final evidence approval until corrected in a new plan revision.\n\n` +
+      `FlowGuard did not admit ${diagnostics.rejectedClaims.length} claim declaration(s) to the ProofGraph. ${consequence}\n\n` +
       '## Declarations not admitted\n\n' +
       rejected +
       '\n\n## Next action\n\n' +
@@ -228,7 +235,10 @@ export function buildPlanSubmissionResponse(
 function planRiskWarning(scope: PlanExecutionScope): ReturnType<typeof buildHeuristicRiskWarning> {
   return buildHeuristicRiskWarning({
     targetPaths: scope.args.targetPaths,
-    assessedTaskClass: assessMinimumTaskClass(scope.args.targetPaths ?? []).minimumTaskClass,
+    assessedTaskClass: assessMinimumTaskClass(
+      scope.args.targetPaths ?? [],
+      scope.state.policySnapshot.riskTriggerPaths,
+    ).minimumTaskClass,
     criticalClaimCount: (scope.args.claims ?? []).filter((claim) => claim.critical).length,
   });
 }
@@ -242,14 +252,9 @@ export function buildPlanReviewInstruction(input: {
   /** State whose declarations/graph the reviewer prompt must reflect (#762). */
   state: SessionState;
 }) {
-  const platform = resolveRuntimeReviewPlatform();
-  const mode = resolveReviewOrchestrationMode({
-    platform,
-    nativeReviewerAvailable: platform === 'unknown' ? false : true,
-  });
+  const mode = resolveReviewOrchestrationMode({ nativeStructuredReview: true });
   return buildChildSessionReviewInstruction({
     mode,
-    platform,
     authority: input.authority,
     iteration: input.iteration,
     planVersion: input.planVersion,
@@ -288,6 +293,7 @@ function convergedPlanResponse(input: ConvergedPlanReviewInput): Record<string, 
       : `Independent review converged at iteration ${iteration}. Workflow advanced to ${finalState.phase}.`,
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
+    ...forcedConvergenceResponseFields(revision, forcedConvergence),
     _audit: { transitions },
   };
 }
@@ -335,10 +341,9 @@ async function convergedPlanReviewCardResponse(
   );
   const taskTitle = firstLine(finalState.ticket?.text);
   const reviewCardInput = convergedReviewCardInput(input, taskTitle, reviewedIdentity);
-  // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   const reviewCard = buildPlanReviewCard(reviewCardInput);
   const presentationMarkdown = buildPlanReviewCard(reviewCardInput, {
-    glyphProfile: (await readConfig(scope.worktree)).presentation.opencode.glyphProfile,
+    glyphProfile: (await readConfig(scope.worktree)).presentation.glyphProfile,
   });
   const serializedState = JSON.stringify(finalState, null, 2) + '\n';
   const artifactErr = await materializeReviewCardArtifact(
@@ -358,8 +363,9 @@ async function convergedPlanReviewCardResponse(
       : `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
+    ...forcedConvergenceResponseFields(revision, forcedConvergence),
     reviewCard,
-    presentation: { markdown: presentationMarkdown },
+    presentation: differencedCardPresentation(presentationMarkdown, reviewCard),
     _audit: { transitions },
   };
   if (artifactErr) response.artifactWarning = artifactErr;
@@ -385,13 +391,9 @@ async function persistNonConvergedPlanReview(
   iteration: number,
 ): Promise<string> {
   const nextPlanVersion = revision.history.length + 1;
-  const priorTargetPaths = findPriorPlanTargetPaths(finalState.reviewAssurance);
-  const targetPaths = [
-    ...new Set([...(priorTargetPaths ?? []), ...(scope.args.targetPaths ?? [])]),
-  ];
+  const targetPaths = scope.args.targetPaths ?? latestPlanTargetPaths(finalState);
   const classification = await resolvePreImplementationChallengeClassification(
     finalState,
-    scope.worktree,
     targetPaths,
   );
   const resolvedTargetPaths =
@@ -404,6 +406,7 @@ async function persistNonConvergedPlanReview(
     revision,
     iteration,
     nextPlanVersion,
+    targetPaths,
     resolvedTargetPaths,
     provisionalScopeUnknown:
       classification.kind === 'available' ? classification.scopeUnknown : false,
@@ -445,6 +448,7 @@ async function mintPlanRevisionAttempt(input: {
   revision: PlanRevisionResult;
   iteration: number;
   nextPlanVersion: number;
+  targetPaths: readonly string[];
   resolvedTargetPaths: readonly string[];
   provisionalScopeUnknown: boolean;
 }): Promise<
@@ -486,6 +490,7 @@ async function mintPlanRevisionAttempt(input: {
       iteration,
       planVersion: nextPlanVersion,
       classificationFiles: resolvedTargetPaths,
+      targetPaths: input.targetPaths,
       provisionalScopeUnknown,
       freeze,
       planClaimDeclarations: finalState.plan?.claimDeclarations ?? emptyClaimDeclarations('plan'),
@@ -522,7 +527,9 @@ function nonConvergedPlanResponse(
   });
   return {
     phase: finalState.phase,
-    status: `Independent review iteration ${nextIteration}/${scope.maxPlanReviewIterations}. Verdict: ${revision.verdict}.`,
+    status: `Plan revised (v${nextPlanVersion}) after changes_requested. Independent review iteration ${nextIteration}/${scope.maxPlanReviewIterations} is pending; dispatch the reviewer per reviewInvocation.`,
+    agentInstruction:
+      'Dispatch the flowguard-reviewer subagent for the pending plan review attempt before calling flowguard_status or submitting any verdict. Do not treat the previous changes_requested verdict as the result of this review.',
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: nextIteration,
     revisionDelta: revision.revisionDelta,
@@ -550,12 +557,32 @@ export async function persistPlanReview(
     >,
   ) => SessionState,
 ): Promise<string> {
-  const nextState = buildReviewedPlanState(scope, revision, effectiveFindings, consumedAssurance);
+  const reviewedState = buildReviewedPlanState(
+    scope,
+    revision,
+    effectiveFindings,
+    consumedAssurance,
+  );
+  const preparation = prepareAutomaticPlanApproval(reviewedState, scope);
+  if (preparation.kind === 'blocked') {
+    return persistBlockedAutomaticPlanApproval({
+      state: reviewedState,
+      scope,
+      block: preparation.block,
+    });
+  }
+  const baselineBlock = await automaticPlanBaselineBlock(reviewedState, scope, preparation);
+  if (baselineBlock !== null) return baselineBlock;
+  const nextState = preparation.state;
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
   const advanced = autoAdvance(nextState, evalFn, scope.ctx);
   // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
+  }
+  // The protected evidence-approval denial carries no state: nothing is persisted.
+  if (advanced.kind === 'blocked') {
+    return formatAutoAdvanceBlocked(advanced);
   }
   const { state: finalState, evalResult: ev, transitions } = advanced;
   const selfReview = scope.state.selfReview;

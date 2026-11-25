@@ -32,7 +32,7 @@ import {
 
 /** Immutable compatibility contract for executable session authority. */
 export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v3' as const;
-export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v10' as const;
+export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v11' as const;
 export const CURRENT_STATE_DIGEST_FORMAT = 'state-digest.v2' as const;
 export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
 
@@ -87,19 +87,10 @@ export type Phase = z.infer<typeof Phase>;
 
 // ─── Task Risk Classification ────────────────────────────────────────────────
 
-/** Specific authority affected by a HIGH-RISK implementation change. */
-export const RiskTrigger = z.enum([
-  'state_integrity',
-  'audit_authority',
-  'identity_boundary',
-  'approval_authority',
-  'policy_authority',
-  'migration',
-  'distribution_integrity',
-  'command_contract',
-  'ceremony_only',
-]);
-export type RiskTrigger = z.infer<typeof RiskTrigger>;
+// Canonical vocabulary lives in the leaf module `risk-trigger.ts`; imported for
+// local use and re-exported so existing schema consumers keep their import path.
+import { RiskTrigger } from './risk-trigger.js';
+export { RiskTrigger };
 
 /**
  * Exact verification basis of one reduced-ceremony decision: the frozen active
@@ -313,6 +304,11 @@ const PendingTransitionAuditOperation = PendingAuditOperationBase.extend({
   transition: Transition.extend({
     chainIndex: z.number().int().nonnegative(),
     autoAdvanced: z.boolean(),
+    /**
+     * Resolved session-principal identity (optional, never null). Absence is
+     * the frozen semantic for machine-only transitions and pre-G15 states.
+     */
+    actorInfo: ActorInfoSchema.optional(),
   }),
 });
 
@@ -346,6 +342,20 @@ export const PendingAuditOperation = z
   ])
   .readonly();
 export type PendingAuditOperation = z.infer<typeof PendingAuditOperation>;
+
+/** Position-bound receipt for canonical evidence retired from the state outbox. */
+export const AuditOutboxCheckpoint = z
+  .object({
+    version: z.literal(1),
+    reconciledCount: z.number().int().nonnegative(),
+    lastOperationId: z.string().uuid(),
+    auditSequence: z.number().int().positive(),
+    chainHash: z.string().regex(/^[a-f0-9]{64}$/),
+    auditEventDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict()
+  .readonly();
+export type AuditOutboxCheckpoint = z.infer<typeof AuditOutboxCheckpoint>;
 
 // ─── Session State ────────────────────────────────────────────────────────────
 
@@ -415,10 +425,12 @@ export const SessionState = z
     /** Last transition (from → to via event). Null before first transition. */
     transition: Transition.nullable(),
     /**
-     * State-owned audit outbox. Operations remain after reconciliation as
-     * durable correlation evidence; their status is monotonic.
+     * State-owned audit outbox. Unresolved operations are never discarded.
+     * Verified historical reconciled events live in canonical audit.jsonl.
      */
     pendingAuditOperations: z.array(PendingAuditOperation),
+    /** Canonical chain anchor for the last retired reconciled operation. */
+    auditOutboxCheckpoint: AuditOutboxCheckpoint.optional(),
     /** Error state. Non-null triggers ERROR event in guard evaluation. */
     error: ErrorInfo.nullable(),
     /** Session creation timestamp (set once by init()). */

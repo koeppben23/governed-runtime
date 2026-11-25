@@ -19,7 +19,13 @@ function requirement(providerId: string, localId: string): CounterexampleRequire
 function extractedResult(
   providerId: string,
   format: string,
-  assertions: Array<{ localId: string; status: string; providerId?: string }>,
+  assertions: Array<{
+    localId: string;
+    status: string;
+    providerId?: string;
+    /** Deliberately mismatched nested identity provider, for the integrity contract. */
+    nestedProviderId?: string;
+  }>,
   bindingCapability: 'assertion' | 'aggregate' | 'check_only' = 'assertion',
 ): AssertionExtractionResult {
   return {
@@ -30,7 +36,10 @@ function extractedResult(
     bindingCapability,
     reportDigests: ['abc123'],
     assertions: assertions.map((a) => ({
-      assertion: { providerId: a.providerId ?? providerId, localId: a.localId },
+      assertion: {
+        providerId: a.nestedProviderId ?? a.providerId ?? providerId,
+        localId: a.localId,
+      },
       providerId: a.providerId ?? providerId,
       status: a.status as 'passed' | 'failed' | 'errored' | 'skipped',
       testName: a.localId,
@@ -47,6 +56,41 @@ function extractedResult(
 }
 
 describe('bindAssertionEvidence', () => {
+  it.each([
+    ['passed', 'failed'],
+    ['failed', 'passed'],
+    ['passed', 'passed'],
+  ])(
+    'rejects duplicate assertion identity for statuses %s/%s without selecting by order',
+    (first, second) => {
+      const extraction = extractedResult('junit', 'junit_xml', [
+        { localId: 'Test#reject', status: first },
+        { localId: 'Test#reject', status: second },
+      ]);
+      const before = structuredClone(extraction);
+      expect(
+        bindAssertionEvidence({
+          requirement: requirement('junit', 'Test#reject'),
+          checkId: 'test',
+          extraction,
+        }),
+      ).toMatchObject({ status: 'rejected', reasonCode: 'assertion_identity_ambiguous' });
+      expect(extraction).toEqual(before);
+    },
+  );
+
+  it('rejects a nested identity provider mismatch even if the evidence provider matches', () => {
+    const extraction = extractedResult('junit', 'junit_xml', [
+      { localId: 'Test#reject', status: 'passed', nestedProviderId: 'pytest' },
+    ]);
+    expect(
+      bindAssertionEvidence({
+        requirement: requirement('junit', 'Test#reject'),
+        checkId: 'test',
+        extraction,
+      }),
+    ).toMatchObject({ status: 'rejected', reasonCode: 'provider_mismatch' });
+  });
   it('exact match → bound', () => {
     const req = requirement('pytest', 'tests/test_user.py::test_create');
     const extraction = extractedResult('pytest', 'pytest_json', [
@@ -331,7 +375,7 @@ describe('bindAssertionEvidence diagnostics contract', () => {
     expect(result.status).toBe('rejected');
     if (result.status === 'rejected') {
       expect(result.reasonCode).toBe('provider_mismatch');
-      expect(result.detail).toContain("assertion belongs to 'jest'");
+      expect(result.detail).toContain("belongs to provider 'jest'");
     }
   });
 

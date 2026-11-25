@@ -27,7 +27,9 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
       'Implementation is blocked while {count} authorized host mutation episode(s) lack completion outcomes.',
     recoverySteps: [
       'Wait for the authorized host tool call to complete',
-      'If the host call was interrupted and its outcome can never be observed, resolve it with flowguard_reconcile_mutation_episode({ hostCallId }) and re-apply the implementation work',
+      'If an edit call already returned normally with an error, retry /implement: the runtime re-reads the exact host outcome before recording evidence',
+      'If the outcome is truly unknown, stop the original host process and restart the runtime; only a later lease generation may resolve it with flowguard_reconcile_mutation_episode({ hostCallId }) before fresh worktree evidence is recorded',
+      'A tool or shell exit does not prove that background processes can no longer write; stop outstanding writers before recording implementation evidence',
     ],
   },
   {
@@ -36,11 +38,12 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Evidence approval is blocked while {count} host mutation episode(s) are unbound to implementation evidence.',
     recoverySteps: [
-      'Run /request-changes to return to IMPLEMENTATION',
-      'Record a fresh implementation with /implement',
-      'Re-run required checks and obtain a review for the fresh implementation digest',
+      'Inspect /status for each unbound mutation episode and its exact outcome',
+      'For known outcomes, use /request-changes, then /implement to bind a fresh implementation',
+      'Unknown outcomes cannot be cleared by /request-changes: restart the exact host so a later runtime lease generation supersedes the authorizing epoch, then call flowguard_reconcile_mutation_episode({ hostCallId }) for each unknown episode',
+      'Re-run the required checks and obtain a fresh independent review for the new implementation digest',
     ],
-    quickFixCommand: '/request-changes',
+    quickFixCommand: '/status',
   },
   {
     code: 'MUTATION_EPISODE_CONTROL_PLANE_MUTATED',
@@ -49,7 +52,7 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
       'The git control plane (.git config/hooks/HEAD) changed since the session baseline was captured. The repository effect of a host mutation is not covered by the implementation subject, so recording fails closed.',
     recoverySteps: [
       'Restore the git control plane to its baseline state',
-      'Or start a fresh /hydrate session so a new baseline is established',
+      'For new work, independently prepare a trustworthy pre-change worktree, then follow the documented host session-start procedure in a distinct host session; do not reset the existing binding',
       'Re-apply the implementation work and record fresh evidence with /implement',
     ],
   },
@@ -60,7 +63,7 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
       'The git control plane (.git config/hooks/HEAD) could not be read for evidence binding. Recording fails closed because a host mutation effect cannot be verified against the baseline.',
     recoverySteps: [
       'Verify the .git directory is present and readable',
-      'Restore or re-initialize the git repository, then start a fresh /hydrate session',
+      'Restore the original git control plane from trusted evidence; if new work is necessary, prepare its pre-change baseline outside this session and use a distinct host session with its documented start procedure',
     ],
   },
   {

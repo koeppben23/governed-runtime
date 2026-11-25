@@ -169,6 +169,27 @@ describe('phase-aware mandates rendering', () => {
     expectAnchors(concise);
   });
 
+  it('keeps the methodological-depth checklist in concise plan and implementation projections', () => {
+    for (const phase of ['PLAN', 'IMPLEMENTATION'] as const) {
+      const concise = renderMandates({ mandatesVerbosity: 'concise' }, phase);
+      expect(concise, `${phase} concise omitted the implementation checklist`).toContain(
+        '## 9. Implementation Checklist',
+      );
+      expect(concise).toContain('Increase methodological depth, not task scope or complexity.');
+    }
+
+    const checklist = MANDATES_SECTION_DEFINITIONS.find(
+      (section) => section.id === 'implementation-checklist',
+    );
+    expect(checklist).toBeDefined();
+    for (const phase of ['INVESTIGATION', 'REVIEW'] as const) {
+      expect(
+        renderMandates({ mandatesVerbosity: 'concise' }, phase),
+        `${phase} concise must not include the implementation checklist content`,
+      ).not.toContain(checklist!.content);
+    }
+  });
+
   it('composes concise verbosity with phase filtering without alternate rule text', () => {
     const investigation = renderMandates({ mandatesVerbosity: 'concise' }, 'INVESTIGATION');
     expectAnchors(investigation, ['OUTPUT_CONTRACTS', 'REVIEW_OBLIGATIONS']);
@@ -272,8 +293,13 @@ describe('phase-aware mandates rendering', () => {
   it('keeps permanent reviewer instructions compact and projects criteria into task contracts', () => {
     expect(renderReviewerPrompt('plan')).toBe(renderReviewerPrompt('implementation'));
     expect(renderReviewerCriteria('plan')).toContain('### For Plans');
+    expect(renderReviewerCriteria('plan')).toContain('Counterexample sufficiency');
+    expect(renderReviewerCriteria('plan')).toContain('targeted faulty variant');
     expect(renderReviewerCriteria('implementation')).toContain('### For Implementations');
     expect(renderReviewerCriteria('adr')).toContain('### For Architecture Decisions');
+    expect(renderReviewerCriteria('content')).toContain('Missing-change rule');
+    expect(renderReviewerCriteria('content')).toContain('only as observed evidenceLocations');
+    expect(renderReviewerCriteria('content')).toContain('belongs in scopeCreep');
     expect(REVIEWER_AGENT).not.toContain('### For Plans');
     expect(REVIEWER_AGENT).not.toContain('### For Implementations');
     expect(REVIEWER_AGENT).not.toContain('### For Architecture Decisions');

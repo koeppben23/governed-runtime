@@ -8,7 +8,7 @@ import type { SessionState } from '../../../state/schema.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import type { ReviewAttempt, ReviewObligation } from '../../../state/evidence.js';
 import { IntegrationInvariantError } from '../../errors.js';
-import { formatBlocked } from '../../blocked-result.js';
+import { formatBlocked, unableReviewDiagnostics } from '../../blocked-result.js';
 import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
 
 export async function handleUnableToReview(input: {
@@ -34,6 +34,7 @@ export async function handleUnableToReview(input: {
     },
   };
   await writeStateWithArtifacts(input.runtime.sessDir, finalState);
+  const unableFindings = input.reviewedState.implReviewFindings.at(-1);
   return JSON.stringify(
     enrichWithWorkflowDirective(
       JSON.parse(
@@ -41,6 +42,9 @@ export async function handleUnableToReview(input: {
           obligationId: input.obligationId,
           retryObligationId: input.retryObligation.obligationId,
           retryAttemptId: input.retryAttempt.attemptId,
+          ...(unableFindings?.overallVerdict === 'unable_to_review'
+            ? unableReviewDiagnostics(unableFindings)
+            : {}),
         }),
       ),
       finalState,

@@ -78,7 +78,11 @@ export function contentDigestOf(bytes: Buffer): string {
 /**
  * The exact response string the observation tool delivers. Deterministic field
  * order; binary content is base64-encoded so the delivered payload round-trips
- * byte-exactly.
+ * byte-exactly. UTF-8 text carries `lineCount` ({@link lineCountOfUtf8}), the
+ * exact bound the evidence binder applies to `line`/`endLine` citations, so the
+ * reviewer never has to guess the citable range. Binary content has no lines
+ * and no `lineCount`. The tool and the parent replay build the response here,
+ * so `responseDigest` covers the field on both sides.
  */
 export function buildObservationToolResponse(input: {
   readonly path: string;
@@ -90,6 +94,7 @@ export function buildObservationToolResponse(input: {
     path: input.path,
     revision: input.revision,
     representation: input.representation,
+    ...(input.representation === 'utf8_text' ? { lineCount: lineCountOfUtf8(input.content) } : {}),
     content: input.content,
   });
 }

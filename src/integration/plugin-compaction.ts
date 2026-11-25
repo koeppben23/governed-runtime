@@ -10,7 +10,7 @@
  * @version v1
  */
 
-import { readState } from '../adapters/persistence.js';
+import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
 import { serializeError } from '../logging/error-serialize.js';
 import { PHASE_LABELS } from '../presentation/phase-labels.js';
 import { renderCompactionMandatesSummary } from '../rendering/mandates-renderer.js';
@@ -19,7 +19,7 @@ import { renderCompactionMandatesSummary } from '../rendering/mandates-renderer.
  * Dependencies for the compaction hook.
  */
 export interface CompactionDeps {
-  getSessionDir(sessionId: string): string | null;
+  resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   log: {
     info(service: string, message: string, extra?: Record<string, unknown>): void;
     warn(service: string, message: string, extra?: Record<string, unknown>): void;
@@ -92,11 +92,17 @@ export async function buildCompactionContext(
   sessionId: string,
 ): Promise<string | null> {
   try {
-    const sessDir = deps.getSessionDir(sessionId);
-    if (!sessDir) return null;
+    const resolution = await deps.resolveSessionAuthority(sessionId);
+    if (resolution.status === 'unavailable') {
+      deps.log.warn('compaction', 'Skipping FlowGuard compaction context', {
+        sessionId,
+        code: resolution.code,
+      });
+      return null;
+    }
+    if (resolution.status === 'absent') return null;
 
-    const state = await readState(sessDir);
-    if (!state) return null;
+    const { state } = resolution;
 
     const obligations = state.reviewAssurance?.obligations ?? [];
     const pendingObligations = obligations.filter(

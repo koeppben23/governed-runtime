@@ -26,6 +26,11 @@
  * Net effect: it is impossible for the test suite to write into the real
  * `~/.config/opencode`, and a regression is surfaced as an immediate, localized
  * throw rather than a silent leak.
+ *
+ * The OpenCode host-lifecycle service record is isolated for the same reason:
+ * tests must never read, probe or restart the developer's real Desktop service.
+ * The override points at a per-test-file path that does not exist unless a test
+ * explicitly creates it.
  */
 
 import { mkdtempSync } from 'node:fs';
@@ -36,4 +41,11 @@ process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
 
 if (!process.env.OPENCODE_CONFIG_DIR) {
   process.env.OPENCODE_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'fg-test-config-'));
+}
+
+if (!process.env.FLOWGUARD_OPENCODE_SERVICE_RECORD) {
+  process.env.FLOWGUARD_OPENCODE_SERVICE_RECORD = join(
+    process.env.OPENCODE_CONFIG_DIR,
+    'opencode-service.json',
+  );
 }

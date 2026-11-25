@@ -136,6 +136,9 @@ function hydrateReviewBudgetArgs(policy: HydrateConfig['policy']): Partial<Hydra
 
 function hydrateGovernanceArgs(policy: HydrateConfig['policy']): Partial<HydratePolicyOptions> {
   return {
+    ...(policy.riskTriggerPaths !== undefined
+      ? { configRiskTriggerPaths: policy.riskTriggerPaths }
+      : {}),
     ...(policy.minimumActorAssuranceForApproval !== undefined
       ? { configMinimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval }
       : {}),

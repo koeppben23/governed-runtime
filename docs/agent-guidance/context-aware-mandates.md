@@ -38,6 +38,10 @@ wording, but it must preserve Red Lines, Tool Error Stop, SSOT/single authority,
 fail-closed/no-silent-fallback semantics, Evidence Markers, Phase Gates, Review
 Obligations, Output Contracts, and Verification Policy.
 
+`concise` does not widen section scope. The Implementation Checklist remains limited to
+`PLAN` and `IMPLEMENTATION`, where it carries the methodological-depth requirement, and
+is never added to the persistent kernel or review-only projections.
+
 ## Recovery Projections
 
 Compaction context and `flowguard_status` are recovery and presentation helpers. They do

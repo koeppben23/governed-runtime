@@ -6,19 +6,15 @@
  * @test-policy HAPPY, BAD
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   hasText,
+  validateArchitectureCallShape,
   validateInitialSubmissionGate,
   buildArchitectureReviewInstruction,
 } from './architecture/architecture-shared.js';
 import type { SessionState, Phase } from '../../state/schema.js';
 import type { ReviewDispatchAuthority } from '../review/dispatch/dispatch-authority.js';
-
-vi.mock('../review/dispatch/orchestration-mode.js', () => ({
-  resolveRuntimeReviewPlatform: vi.fn(() => 'opencode'),
-  resolveReviewOrchestrationMode: vi.fn(() => 'host_structured'),
-}));
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 
@@ -118,6 +114,40 @@ describe('hasText', () => {
   });
 });
 
+// ─── validateArchitectureCallShape ────────────────────────────────────────────
+
+describe('validateArchitectureCallShape — recovery-named call forms', () => {
+  it('accepts the canonical revision form: verdict + revised body + claims, no title', () => {
+    expect(
+      validateArchitectureCallShape({
+        reviewVerdict: 'changes_requested',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        claims: [],
+      }),
+    ).toBeNull();
+  });
+
+  it('accepts the canonical initial submission and approval forms', () => {
+    expect(
+      validateArchitectureCallShape({
+        title: 'ADR-001',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        claims: [],
+      }),
+    ).toBeNull();
+    expect(validateArchitectureCallShape({ reviewVerdict: 'accept' })).toBeNull();
+  });
+
+  it('still rejects title combined with a verdict', () => {
+    const blocked = validateArchitectureCallShape({
+      title: 'ADR-001',
+      reviewVerdict: 'changes_requested',
+      adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+    });
+    expect(blocked).toContain('ADR_SUBMISSION_MIXED_INPUTS');
+  });
+});
+
 // ─── validateInitialSubmissionGate ─────────────────────────────────────────────
 
 describe('validateInitialSubmissionGate', () => {
@@ -181,9 +211,16 @@ describe('buildArchitectureReviewInstruction', () => {
     expect(result).not.toHaveProperty('reviewerTaskPrompt');
     expect(result).toMatchObject({
       mode: 'host_structured',
-      platform: 'opencode',
       status: 'pending_review',
-      reviewerSubagentType: 'flowguard-reviewer',
+      reviewerAgent: 'flowguard-reviewer',
+      action: 'call_subagent',
+      transport: 'native_subagent',
+      subagent: {
+        tool: 'subagent',
+        agent: 'flowguard-reviewer',
+        background: false,
+        findingsAuthority: 'blocked_pending_native_capture',
+      },
       authority: 'review_obligation_evidence_binding',
       obligationId: authority.obligation.obligationId,
       reviewAttemptId: authority.attempt.attemptId,

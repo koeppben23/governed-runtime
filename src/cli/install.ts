@@ -37,14 +37,12 @@ export {
   computeMandatesDigest,
   resolveOpencodeConfigPath,
 } from './install-helpers.js';
-export { mergeReviewerTaskPermission } from './install-json.js';
 export { hasNonFlowGuardInstructions, FLOWGUARD_INSTRUCTION_ENTRIES } from './install-types.js';
 export { doctor } from './doctor-command.js';
 export { checkLastSessionHandshake } from './doctor-handshake.js';
 export { checkPluginActivation } from './doctor-plugin.js';
 export { checkShippedExecutables } from './doctor-executables.js';
 export { install } from './install-command.js';
-export { detectPackageManager } from './install-helpers-rollback.js';
 export { uninstall } from './uninstall-command.js';
 export { parseArgs } from './install-args.js';
 export { formatResult, formatDoctor } from './install-output.js';

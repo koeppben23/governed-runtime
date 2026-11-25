@@ -23,6 +23,7 @@
  */
 
 import { z } from 'zod';
+import { RepositoryPathSchema } from './evidence-findings.js';
 
 /**
  * An immutable record of one FlowGuard-observed mutation report.
@@ -56,7 +57,7 @@ export const MutationAttempt = z
     /** SHA-256 of the canonical projection consumed by the evaluator. */
     projectionDigest: z.string().regex(/^[a-f0-9]{64}$/),
     /** Repository-relative path to the saved report. */
-    reportPath: z.string().min(1),
+    reportPath: RepositoryPathSchema,
     /** Provider version stamped on this evidence record. */
     providerVersion: z.string().min(1),
   })

@@ -24,7 +24,73 @@ const repositoryRelation = {
   evidenceLocations: [{ path: 'docs/evidence.md', revision: 'base' as const, line: 2 }],
 };
 
+const DUE_DATE_RELATION = {
+  subjectAnchors: [
+    {
+      kind: 'repository_location' as const,
+      location: {
+        path: 'src/main/java/com/example/taskmanager/dto/CreateTaskRequest.java',
+        revision: 'head' as const,
+      },
+    },
+  ],
+  evidenceLocations: [
+    {
+      path: 'src/main/java/com/example/taskmanager/service/TaskService.java',
+      revision: 'head' as const,
+    },
+  ],
+};
+
 describe('review/enforcement/findings-consistency', () => {
+  it('PASS: a missing-change finding is anchored at the changed file and cites unchanged files as evidence', () => {
+    const changedOnly = {
+      kind: 'repository_change' as const,
+      paths: [
+        'src/main/java/com/example/taskmanager/dto/CreateTaskRequest.java',
+        'src/main/java/com/example/taskmanager/model/Task.java',
+      ],
+      revisions: ['base', 'head'] as const,
+    };
+    expect(
+      validateReviewFindingsScope({
+        findings: [{ relation: DUE_DATE_RELATION }],
+        reviewSubjectScope: changedOnly,
+        repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it('BAD: an unchanged-file anchor stays out of scope even with valid evidence', () => {
+    const changedOnly = {
+      kind: 'repository_change' as const,
+      paths: [
+        'src/main/java/com/example/taskmanager/dto/CreateTaskRequest.java',
+        'src/main/java/com/example/taskmanager/model/Task.java',
+      ],
+      revisions: ['base', 'head'] as const,
+    };
+    const relation = {
+      subjectAnchors: [
+        {
+          kind: 'repository_location' as const,
+          location: {
+            path: 'src/main/java/com/example/taskmanager/service/TaskService.java',
+            revision: 'head' as const,
+          },
+        },
+      ],
+      evidenceLocations: DUE_DATE_RELATION.evidenceLocations,
+    };
+    expect(
+      validateReviewFindingsScope({
+        findings: [{ relation }],
+        reviewSubjectScope: changedOnly,
+        repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+      }),
+    ).toMatchObject({ ok: false, code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE' });
+  });
+
   it('rejects accept with blocking findings', () => {
     expect(
       validateReviewFindingsConsistency({ overallVerdict: 'accept', blockingIssueCount: 1 }),
@@ -281,7 +347,10 @@ describe('review/enforcement/findings-consistency', () => {
           reviewSubjectScope: REPOSITORY_SCOPE,
           repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
-      ).toMatchObject({ code: 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY' });
+      ).toMatchObject({
+        code: 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY',
+        details: { outOfScopeFindingIndexes: [0] },
+      });
     });
 
     it.each(['/etc/passwd', 'file:///tmp/evidence.ts'])(
@@ -300,7 +369,10 @@ describe('review/enforcement/findings-consistency', () => {
             reviewSubjectScope: REPOSITORY_SCOPE,
             repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
           }),
-        ).toMatchObject({ code: 'REVIEW_EVIDENCE_LOCATION_INVALID' });
+        ).toMatchObject({
+          code: 'REVIEW_EVIDENCE_LOCATION_INVALID',
+          details: { outOfScopeFindingIndexes: [0] },
+        });
       },
     );
 
@@ -311,7 +383,10 @@ describe('review/enforcement/findings-consistency', () => {
           reviewSubjectScope: REPOSITORY_SCOPE,
           repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
-      ).toMatchObject({ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' });
+      ).toMatchObject({
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
+        details: { outOfScopeFindingIndexes: [0] },
+      });
       expect(
         validateReviewFindingsScope({
           findings: [
@@ -327,7 +402,33 @@ describe('review/enforcement/findings-consistency', () => {
           reviewSubjectScope: REPOSITORY_SCOPE,
           repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
-      ).toMatchObject({ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' });
+      ).toMatchObject({
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
+        details: { outOfScopeFindingIndexes: [0] },
+      });
+    });
+
+    it('reports the positional index of a structurally invalid finding', () => {
+      expect(
+        validateReviewFindingsScope({
+          findings: [
+            { relation: repositoryRelation },
+            {
+              relation: {
+                ...repositoryRelation,
+                subjectAnchors: [
+                  { kind: 'not_an_anchor' },
+                ] as unknown as typeof repositoryRelation.subjectAnchors,
+              },
+            },
+          ],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+        }),
+      ).toMatchObject({
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
+        details: { outOfScopeFindingIndexes: [1] },
+      });
     });
 
     it('rejects repository locations at revisions unavailable to the scope', () => {

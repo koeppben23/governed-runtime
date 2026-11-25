@@ -164,6 +164,7 @@ describe('buildWhyDocument', () => {
     const blocker: BlockedProjection = {
       blocked: true,
       reasonCode: 'PROOFGRAPH_CRITICAL_FACT_REQUIRED',
+      mutationEpisodes: [],
       reasonText: 'registry-verbatim interpolated message',
       recoveryHint: null,
       missingEvidence: [],
@@ -191,6 +192,7 @@ describe('buildWhyDocument', () => {
     const blocker: BlockedProjection = {
       blocked: true,
       reasonCode: 'DISCOVERY_DRIFT_BLOCKED',
+      mutationEpisodes: [],
       reasonText: 'registry-verbatim interpolated message',
       recoveryHint: null,
       missingEvidence: [],
@@ -222,6 +224,7 @@ describe('buildWhyDocument', () => {
       blocked: true,
       reasonCode: 'DISCOVERY_DRIFT_BLOCKED',
       reasonText: 'discovery drift blocked',
+      mutationEpisodes: [],
       recoveryHint: null,
       missingEvidence: [],
       nextResolvableCommand: null,

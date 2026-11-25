@@ -46,7 +46,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     category: 'precondition',
     messageTemplate: 'Explicit policy mode violates central minimum: {message}',
     recoverySteps: [
-      'Use /hydrate with a policyMode that satisfies the central minimum',
+      "For a new workflow, follow the installed host integration's documented session-start procedure with a policy mode that satisfies the central minimum",
       'Or remove explicit policyMode and allow central minimum to apply',
     ],
   },
@@ -91,9 +91,10 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'NO_ACTIVE_CHECKS',
     category: 'precondition',
-    messageTemplate: 'No validation checks configured. Set activeChecks via /hydrate.',
+    messageTemplate:
+      'No validation checks configured. Configure activeChecks before starting a new governed session.',
     recoverySteps: [
-      'Configure a profile with activeChecks during /hydrate',
+      'Configure a profile with activeChecks before preparing a new session; an existing session retains its frozen checks',
       'Ensure discovery finds verificationCandidates with commands (e.g., package.json scripts)',
     ],
   },
@@ -101,9 +102,12 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'NO_SESSION',
     category: 'precondition',
-    messageTemplate: 'No FlowGuard session found. Run /hydrate first to bootstrap a session.',
-    recoverySteps: ['Run /hydrate to create a new FlowGuard session'],
-    quickFixCommand: '/hydrate',
+    messageTemplate:
+      "No FlowGuard session found. Follow the installed host integration's documented session-start procedure.",
+    recoverySteps: [
+      'For a genuinely uninitialized session, use the documented host start procedure; it may call flowguard_hydrate to prepare workflow state where supported',
+      'If an existing session or activation binding is missing, damaged or unavailable, stop and restore trustworthy authority; do not recreate it',
+    ],
   },
 
   {
@@ -398,6 +402,60 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     quickFixCommand: '/implement',
   },
   {
+    code: 'IMPLEMENTATION_BASELINE_PREEXISTING',
+    category: 'precondition',
+    messageTemplate:
+      'No implementation changes are attributable: {paths} were already dirty at session start ({capturedAt}) and are excluded from implementation evidence.',
+    recoverySteps: [
+      'Preserve the current worktree diff as a patch outside the worktree',
+      'Restore the worktree to a clean state before starting the next FlowGuard session',
+      'Start a new host session with a clean pre-change baseline and complete plan approval',
+      'Apply the preserved patch only during the new IMPLEMENTATION phase, then run /implement',
+    ],
+  },
+  {
+    code: 'IMPLEMENTATION_BASELINE_UNAVAILABLE',
+    category: 'precondition',
+    messageTemplate:
+      'The implementation baseline could not capture pre-existing dirty files; implementation evidence cannot be attributed safely.',
+    recoverySteps: [
+      'Restore a clean worktree and start a new FlowGuard session',
+      'Do not record the full worktree as implementation evidence when the baseline is unavailable',
+    ],
+  },
+  {
+    code: 'PLAN_TARGETS_PREEXISTING_DIRTY',
+    category: 'precondition',
+    messageTemplate:
+      'Plan targets {paths} were already dirty when the session started ({capturedAt}); they cannot become implementation evidence in this session.',
+    recoverySteps: [
+      'Preserve the worktree diff as a patch outside the worktree',
+      'Restore the worktree to a clean state and start a new host session',
+      'Submit and approve the plan with a clean baseline',
+      'Apply the preserved patch only during the new IMPLEMENTATION phase',
+    ],
+  },
+  {
+    code: 'PLAN_TARGET_PATH_INVALID',
+    category: 'precondition',
+    messageTemplate: 'Plan target {path} is not a valid repository-relative file path.',
+    recoverySteps: [
+      'Correct the plan target to a repository-relative path within the worktree',
+      'Do not use absolute paths or paths that escape the repository root',
+    ],
+  },
+  {
+    code: 'PLAN_TARGETS_DIRTY_AT_APPROVAL',
+    category: 'precondition',
+    messageTemplate:
+      'Plan targets {paths} are dirty at approval; implementation evidence would not be attributable to the new plan.',
+    recoverySteps: [
+      'Preserve the worktree diff as a patch outside the worktree',
+      'Restore the worktree to a clean state and start a new host session',
+      'Submit and approve the plan with a clean baseline',
+    ],
+  },
+  {
     code: 'IMPLEMENTATION_REWORK_REQUIRED',
     category: 'precondition',
     messageTemplate:
@@ -439,9 +497,9 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'FlowGuard plugin enforcement hooks are not active. Tools run but mandatory review orchestration is unavailable.',
     recoverySteps: [
-      'Verify ~/.config/opencode/plugins/flowguard-audit.ts exists',
-      'Run npm install in ~/.config/opencode',
-      'Restart OpenCode after installing FlowGuard',
+      'Verify the FlowGuard plugin is installed in the host plugin directory',
+      'Install the plugin with the host-documented FlowGuard installation flow',
+      'Reload the installed plugins; installation does not activate governance',
       'Run flowguard doctor to verify plugin importability and handshake',
       'Check session state for pluginHandshakeAt timestamp',
     ],
@@ -454,7 +512,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Re-run the command to create a fresh review obligation and retry orchestration',
       'If repeated failures: run flowguard doctor to verify plugin installation',
-      'Check network connectivity to the OpenCode SDK (session.create/prompt)',
+      'Check network connectivity to the host model transport',
       'Ensure the FlowGuard tool output format matches the expected contract',
     ],
   },
@@ -466,7 +524,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Review orchestration failed on {attempts} consecutive attempts. Manual intervention required.',
     recoverySteps: [
       'Run flowguard doctor to verify plugin installation and reviewer agent availability',
-      'Check network connectivity and OpenCode SDK health',
+      'Check network connectivity and host model transport health',
       'Use /abort to terminate this session and start fresh if infrastructure cannot be repaired',
     ],
   },
@@ -485,11 +543,44 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'SESSION_DIR_NOT_FOUND',
     category: 'precondition',
     messageTemplate:
-      'FlowGuard session directory expected at {sessDir} but not found on disk. Run /hydrate to initialize the session in this workspace.',
+      'FlowGuard session directory expected at {sessDir} but not found on disk. Missing bound authority must not be recreated by hydrate or Start.',
     recoverySteps: [
-      'Run /hydrate to recreate or bind a valid FlowGuard session.',
+      'Stop and restore the original bound session from a trusted backup; preserve activation and audit evidence.',
       'Verify the workspace/session directory still exists and is writable.',
-      'Restart OpenCode if the sidecar session points to stale workspace state.',
+      'Do not reset the binding, synthesize state or activate a replacement as recovery for this authority failure.',
+    ],
+  },
+
+  {
+    code: 'SESSION_OVERRIDE_MISMATCH',
+    category: 'precondition',
+    messageTemplate:
+      'FLOWGUARD_SESSION_DIR resolves to "{override}" but the canonical authority derives "{expected}". The override is an assertion, not a session authority.',
+    recoverySteps: [
+      'Unset FLOWGUARD_SESSION_DIR or point it at the canonical session directory derived from the worktree, fingerprint, and host session id',
+      'Do not use the override to select a different workspace or host session',
+    ],
+  },
+
+  {
+    code: 'SESSION_OVERRIDE_UNRESOLVABLE',
+    category: 'precondition',
+    messageTemplate:
+      'FLOWGUARD_SESSION_DIR cannot be resolved to an existing path and is not accepted as a session authority.',
+    recoverySteps: [
+      'Unset FLOWGUARD_SESSION_DIR or fix the path so it names the canonical session directory',
+      'Only verified absence permits the documented host session-start procedure; unavailable or damaged authority must be restored, not initialized again',
+    ],
+  },
+
+  {
+    code: 'TERMINAL_STATE_MUTATION_DENIED',
+    category: 'precondition',
+    messageTemplate:
+      'Hydrate cannot change the claimed task class of a terminal session (phase {phase}, current {currentTaskClass}, requested {requestedTaskClass}). Terminal sessions are read-only.',
+    recoverySteps: [
+      'Reload the terminal session without a claimedTaskClass argument',
+      'For a different task class, use a distinct host session and its documented start procedure; hydrate does not restart the old terminal workflow',
     ],
   },
 ];

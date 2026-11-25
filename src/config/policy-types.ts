@@ -124,6 +124,7 @@ export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEv
  * - How actors are classified in the audit trail
  */
 export interface FlowGuardPolicy {
+  readonly riskTriggerPaths: import('../state/risk-trigger-paths.js').RiskTriggerPaths;
   /** Policy mode identifier. */
   readonly mode: PolicyMode;
 

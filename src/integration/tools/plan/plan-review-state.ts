@@ -13,11 +13,13 @@
 
 import { IntegrationInvariantError } from '../../errors.js';
 import { formatBlocked } from '../../blocked-result.js';
+import { unableReviewDiagnostics } from '../../blocked-result.js';
 import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../../state/evidence.js';
 import { resolvePlanReviewCompletion } from '../../../state/evidence-plan.js';
+import { DISCARDED_REVIEW_DRAFT, reviewExhaustsBudget } from '../../../state/evidence-review.js';
 import { resolveStructuredEffectiveFindings } from '../../review/validation/review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
@@ -25,7 +27,7 @@ import {
   consumeReviewObligation,
   findLatestObligation,
 } from '../../review/obligations/assurance.js';
-import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { ensureReviewAssurance, isOpenReviewObligation } from '../../../state/review-dispatch.js';
 import type { PlanArgs, PlanExecutionScope, PlanRevisionResult } from './plan-types.js';
 import {
   appendClaimSubmissionHistory,
@@ -34,14 +36,11 @@ import {
   submittedPlanClaimDeclarations,
 } from './plan-submission-state.js';
 
-function findUnconsumedPlanObligation(state: SessionState) {
+function findOpenPlanObligation(state: SessionState) {
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   const pendingObligation = [...assuranceBase.obligations]
     .reverse()
-    .find(
-      (item) =>
-        item.obligationType === 'plan' && item.status !== 'consumed' && item.consumedAt == null,
-    );
+    .find((item) => item.obligationType === 'plan' && isOpenReviewObligation(item));
   return { assuranceBase, pendingObligation };
 }
 
@@ -54,7 +53,7 @@ export function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
       'plan review finding resolution requires plan and self-review state',
     );
   }
-  const { assuranceBase, pendingObligation } = findUnconsumedPlanObligation(scope.state);
+  const { assuranceBase, pendingObligation } = findOpenPlanObligation(scope.state);
   const expectedIteration = pendingObligation?.iteration ?? selfReview.iteration;
   const expectedPlanVersion = pendingObligation?.planVersion ?? plan.history.length + 1;
   const resolved = resolveStructuredEffectiveFindings({
@@ -92,6 +91,7 @@ export function blockedInvalidPlanFindings(
   if (effectiveFindings.overallVerdict === 'unable_to_review') {
     return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
       obligationId: obligationId ?? 'unknown',
+      ...unableReviewDiagnostics(effectiveFindings),
     });
   }
   if (effectiveFindings.overallVerdict !== args.reviewVerdict) {
@@ -101,6 +101,16 @@ export function blockedInvalidPlanFindings(
     });
   }
   return null;
+}
+
+/**
+ * True when the verdict submitted with this call consumes the last allowed
+ * review iteration. The accompanying revision then belongs to a review that
+ * will never happen: it must not become the current approval authority.
+ */
+export function planReviewExhaustsBudget(scope: PlanExecutionScope): boolean {
+  const iteration = scope.state.selfReview?.iteration ?? 0;
+  return reviewExhaustsBudget(scope.args.reviewVerdict, iteration, scope.maxPlanReviewIterations);
 }
 
 export function applyPlanRevision(
@@ -126,6 +136,20 @@ export function applyPlanRevision(
   if (!revisedBody) return formatBlocked('REVISED_PLAN_REQUIRED');
   if (!scope.args.claims) {
     return formatBlocked('REVISED_PLAN_CLAIMS_REQUIRED');
+  }
+
+  // Review exhaustion: the negative verdict is recorded, but the revision it
+  // carries was never reviewed and must not replace the reviewed plan. Only
+  // the last reviewed digest stays approvable (plain or override).
+  if (planReviewExhaustsBudget(scope)) {
+    return {
+      currentPlan,
+      history,
+      revisionDelta: 'none',
+      prevDigest,
+      verdict,
+      discardedDraft: DISCARDED_REVIEW_DRAFT,
+    };
   }
 
   const predecessorVersion = currentPlan.planVersion;
@@ -158,23 +182,41 @@ export function buildReviewedPlanState(
   const existingReviewFindings = scope.state.plan?.reviewFindings;
   const newReviewFindings = [...(existingReviewFindings ?? []), effectiveFindings];
   const nextIteration = selfReview.iteration + 1;
+  const discarded = revision.discardedDraft !== undefined;
+  const reviewedPlan = scope.state.plan;
 
   return {
     ...scope.state,
-    plan: {
-      current: revision.currentPlan,
-      history: revision.history,
-      reviewFindings: newReviewFindings,
-      claimDeclarations: submittedPlanClaimDeclarations(scope),
-      claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
-      claimSubmissionHistory: appendClaimSubmissionHistory(scope, revision.currentPlan.planVersion),
-      reviewCompletion: resolvePlanReviewCompletion(
-        nextIteration,
-        scope.maxPlanReviewIterations,
-        revision.revisionDelta,
-        revision.verdict,
-      ),
-    },
+    plan: discarded
+      ? {
+          // The reviewed plan, its lineage and its claim declarations stay
+          // untouched: the submitted draft was never reviewed and is not
+          // adopted as an approval authority.
+          current: revision.currentPlan,
+          history: revision.history,
+          reviewFindings: newReviewFindings,
+          claimDeclarations: reviewedPlan?.claimDeclarations,
+          claimSubmissionDiagnostics: reviewedPlan?.claimSubmissionDiagnostics,
+          claimSubmissionHistory: reviewedPlan?.claimSubmissionHistory,
+          reviewCompletion: 'review_exhausted',
+        }
+      : {
+          current: revision.currentPlan,
+          history: revision.history,
+          reviewFindings: newReviewFindings,
+          claimDeclarations: submittedPlanClaimDeclarations(scope),
+          claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
+          claimSubmissionHistory: appendClaimSubmissionHistory(
+            scope,
+            revision.currentPlan.planVersion,
+          ),
+          reviewCompletion: resolvePlanReviewCompletion(
+            nextIteration,
+            scope.maxPlanReviewIterations,
+            revision.revisionDelta,
+            revision.verdict,
+          ),
+        },
     selfReview: {
       iteration: nextIteration,
       reviewCycle: scope.state.reviewCycles.plan,

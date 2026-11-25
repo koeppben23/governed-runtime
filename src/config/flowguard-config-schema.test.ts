@@ -20,6 +20,29 @@ import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { HOST_IDS } from '../shared/hosts.js';
 
 describe('FlowGuardConfigSchema', () => {
+  it.each([undefined, {}, { autonomousActivation: {} }])(
+    'defaults autonomous activation to disabled for %j',
+    (governance) => {
+      const config = FlowGuardConfigSchema.parse({ schemaVersion: 'v1', governance });
+      expect(config.governance.autonomousActivation).toEqual({
+        enabled: false,
+        minimumActorAssurance: 'idp_verified',
+      });
+    },
+  );
+  it('uses the canonical assurance vocabulary and rejects misspelled permission fields', () => {
+    for (const autonomousActivation of [
+      { enabled: 'true' },
+      { minimumActorAssurance: 'human' },
+      { enable: true },
+    ])
+      expect(
+        FlowGuardConfigSchema.safeParse({
+          schemaVersion: 'v1',
+          governance: { autonomousActivation },
+        }).success,
+      ).toBe(false);
+  });
   // ── HAPPY ──────────────────────────────────────────────────────────────
 
   it('parses a minimal valid config (schemaVersion only)', () => {
@@ -119,30 +142,52 @@ describe('FlowGuardConfigSchema', () => {
     }
   });
 
-  describe('presentation.opencode.glyphProfile', () => {
+  describe('presentation.glyphProfile', () => {
     it('defaults to unicode', () => {
       const result = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1' });
       expect(result.success).toBe(true);
-      expect(result.data?.presentation.opencode.glyphProfile).toBe('unicode');
+      expect(result.data?.presentation.glyphProfile).toBe('unicode');
     });
 
-    it('accepts unicode and ascii', () => {
+    it('accepts unicode and ascii under the neutral key', () => {
       for (const glyphProfile of ['unicode', 'ascii'] as const) {
         const result = FlowGuardConfigSchema.safeParse({
           schemaVersion: 'v1',
-          presentation: { opencode: { glyphProfile } },
+          presentation: { glyphProfile },
         });
         expect(result.success).toBe(true);
-        expect(result.data?.presentation.opencode.glyphProfile).toBe(glyphProfile);
+        expect(result.data?.presentation.glyphProfile).toBe(glyphProfile);
       }
     });
 
-    it('rejects an unsupported glyph profile', () => {
+    it('rejects the earlier installer key even with a valid or matching neutral value', () => {
+      for (const glyphProfile of ['unicode', 'ascii'] as const) {
+        for (const neutral of [{}, { glyphProfile }]) {
+          const result = FlowGuardConfigSchema.safeParse({
+            schemaVersion: 'v1',
+            presentation: { ...neutral, opencode: { glyphProfile } },
+          });
+          expect(result.success).toBe(false);
+        }
+      }
+    });
+
+    it('rejects conflicting neutral and earlier-installer values', () => {
       const result = FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',
-        presentation: { opencode: { glyphProfile: 'emoji' } },
+        presentation: { glyphProfile: 'ascii', opencode: { glyphProfile: 'unicode' } },
       });
       expect(result.success).toBe(false);
+    });
+
+    it('rejects an unsupported glyph profile under either key', () => {
+      for (const presentation of [
+        { glyphProfile: 'emoji' },
+        { opencode: { glyphProfile: 'emoji' } },
+      ]) {
+        const result = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1', presentation });
+        expect(result.success).toBe(false);
+      }
     });
   });
 
@@ -835,6 +880,21 @@ describe('FlowGuardConfigSchema', () => {
       expect((result.data as Record<string, unknown>)['unknownField']).toBeUndefined();
     }
   });
+
+  it('defaults the reviewer execution deadline and bounds it', () => {
+    const reviewer = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1' }).data!.reviewer;
+    expect(reviewer).toEqual({ executionTimeoutMs: 600_000 });
+    for (const executionTimeoutMs of [1000, 1_800_000])
+      expect(
+        FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1', reviewer: { executionTimeoutMs } })
+          .success,
+      ).toBe(true);
+    for (const executionTimeoutMs of [999, 1_800_001, 1.5, '600000'])
+      expect(
+        FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1', reviewer: { executionTimeoutMs } })
+          .success,
+      ).toBe(false);
+  });
 });
 
 // =============================================================================
@@ -1066,5 +1126,41 @@ describe('FlowGuardConfigSchema boundaries', () => {
     expect(partial.data!.archive.redaction.allowRawExport).toBe(false);
     expect(partial.data!.archive.redaction.maxAuditEvents).toBe(10_000);
     expect(parse({ schemaVersion: 'v1' }).data!.archive.redaction.allowRawExport).toBe(false);
+  });
+
+  it('rejects a config written by an earlier installer instead of dropping retired default keys', () => {
+    const result = parse({
+      schemaVersion: 'v1',
+      reviewer: {
+        outputTokenMax: 'host',
+        toolTimeoutMs: 30_000,
+        reviewTimeoutMs: 480_000,
+        serializationTimeoutMs: 60_000,
+        executionTimeoutMs: 120_000,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it.each([
+    ['outputTokenMax', 'host'],
+    ['outputTokenMax', 65_536],
+    ['outputTokenMax', 'host '],
+    ['toolTimeoutMs', 30_000],
+    ['toolTimeoutMs', 45_000],
+    ['reviewTimeoutMs', 480_000],
+    ['reviewTimeoutMs', 80_000],
+    ['serializationTimeoutMs', 60_000],
+    ['serializationTimeoutMs', '60000'],
+  ])('rejects retired reviewer key %s=%j including former defaults', (key, value) => {
+    const result = parse({ schemaVersion: 'v1', reviewer: { [key]: value } });
+    expect(result.success).toBe(false);
+    expect(result.error!.issues).toContainEqual(
+      expect.objectContaining({ code: 'unrecognized_keys', path: ['reviewer'], keys: [key] }),
+    );
+  });
+
+  it('still rejects unknown reviewer keys', () => {
+    expect(parse({ schemaVersion: 'v1', reviewer: { maxOutputTokens: 1 } }).success).toBe(false);
   });
 });

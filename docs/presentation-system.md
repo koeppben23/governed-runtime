@@ -113,9 +113,9 @@ never appear un-normalized in user-facing output.
 ## 7. Symbol Set
 
 The symbols below are the canonical Unicode vocabulary for review artifacts,
-including `reviewCard`. OpenCode may render the separate transient
-`presentation.markdown` field with the `presentation.opencode.glyphProfile`
-ASCII profile when configured. That fallback changes only renderer-owned status
+including `reviewCard`. A host may render the separate transient
+`presentation.markdown` field with the `presentation.glyphProfile` ASCII profile
+when configured. That fallback changes only renderer-owned status
 and action markers; it does not transliterate arbitrary Markdown, embedded
 artifact content, or user-authored text. `reviewCard` remains Unicode and must
 be displayed verbatim. It is sanctioned host-compatibility output for hosts
@@ -284,11 +284,18 @@ Default `/status` uses `detail: 'summary'`:
 - Evidence section compressed to a compact notice only when evidence
   incompleteness causes `NOT_VERIFIED`.
 - ProofGraph summary counts only; no per-claim list unless diagnostic mode.
-- Available actions hidden (use `/why` for explanation).
-- One primary next action in the conclusion.
+- The phase-admissible command list is hidden (use `/why` for explanation).
+- One primary next action in the conclusion, or one explicit decision with all
+  canonical choices when the directive is `CHOOSE_FLOW`. The `CHOOSE_FLOW`
+  decision uses the same three options as `/start`; `/task` is described as
+  recommended but is never preselected or executed automatically.
 
 At `detail: 'explanation'` and higher, the full Evidence section and
-Available actions list return.
+the "Commands allowed by phase (prerequisites still apply)" list return.
+This list projects `allowedCommands` from machine phase admissibility only;
+it does not evaluate command prerequisites or authorize execution. The directive,
+blocker and conclusion supply current action/recovery guidance, so an open
+mutation episode can block `/implement` even though it remains phase-admissible.
 
 At `detail: 'diagnostic'`, reason codes, canonical messages, and full
 ProofGraph diagnostic detail are visible.

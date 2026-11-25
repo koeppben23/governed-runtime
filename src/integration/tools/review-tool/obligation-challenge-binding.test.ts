@@ -100,6 +100,22 @@ function findingsWith(challenge: Record<string, unknown>): ReviewFindings {
 describe('validateSubmittedReviewFindings — content challenge binding (B3/B5)', () => {
   const state = makeState('PEER_REVIEW_COMPLETE');
 
+  it('reports unable_to_review before consumed evidence reuse', () => {
+    const obligation = {
+      ...reviewObligation(),
+      status: 'consumed' as const,
+      consumedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const findings = {
+      ...findingsWith(contentChallenge()),
+      overallVerdict: 'unable_to_review' as const,
+      challenges: [],
+    };
+    const result = validateSubmittedReviewFindings(state, findings, obligation);
+    expect(result).toContain('SUBAGENT_UNABLE_TO_REVIEW');
+    expect(result).not.toContain('SUBAGENT_EVIDENCE_REUSED');
+  });
+
   it('rejects a content challenge citing a fabricated (non-canonical) digest', () => {
     const result = validateSubmittedReviewFindings(
       state,

@@ -7,31 +7,34 @@
  * Task before/after boundary.
  */
 
-import type { ReviewObligationType } from '../../../state/evidence.js';
+import type { ReviewFindings, ReviewObligationType } from '../../../state/evidence.js';
 import type { ReviewInvocationEvidence } from '../../../state/evidence-review-invocation.js';
+import { NativeSubagentCaptureProvenance } from '../../../state/evidence-review-invocation.js';
 import {
   appendInvocationEvidence,
   consumeReviewObligation,
   buildInvocationEvidence,
   fulfillObligation,
+  blockObligationWithInvocation,
   hasEvidenceReuse,
 } from '../obligations/assurance.js';
-import {
-  completeReviewDispatch,
-  ensureReviewAssurance,
-  rebindReviewDispatchHostCall,
-} from '../../../state/review-dispatch.js';
+import { completeReviewDispatch, ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { updateAttemptStatus } from '../obligations/attempt-lifecycle.js';
 import { hasAuthorizedDispatch } from '../../../state/review-dispatch.js';
 import { updateObligation } from '../obligations/obligation-state.js';
 import type { ReviewerSuccessResult } from '../types.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import type { SessionState } from '../../../state/schema.js';
+import {
+  captureMatchesFindings,
+  hasCaptureLineage,
+} from '../../../state/review-message-capture.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from '../pipeline-types.js';
 import {
   validatePreBindFindings,
   type PreBindFindingsResult,
 } from '../observations/pre-bind-findings.js';
+import { mintHostFindingIds } from './finding-identity.js';
 
 type AuditableEvidenceRecordResult = Extract<EvidenceRecordResult, 'fulfilled' | 'reused'>;
 
@@ -40,30 +43,26 @@ type SdkEvidenceParams = {
   obligationType: ReviewObligationType;
   sessionId: string;
   childSessionId: string;
-  /** Bound host call identity (child session) whose dispatch this evidence closes. */
+  /** Native host call identity of the authorized dispatch this evidence closes. */
   hostCallId: string;
-  /**
-   * Pre-release host call identity the dispatch was authorized under when it
-   * differs from the final child session identity (native Task call ID). The
-   * binding mutation rebinds the authorized dispatch to `hostCallId`.
-   */
-  authorizedHostCallId?: string;
   attemptId: string;
   promptHash: string;
   findingsHash: string;
   invokedAt: string;
   fulfilledAt: string;
+  /** Absolute dispatch deadline; checked inside the binding mutation. */
+  deadlineAt?: string;
+  /** Synchronous watchdog fence, checked while holding the persistence lock. */
+  executionFailed?: () => boolean;
   reviewerResult: Omit<
     Pick<
       ReviewerSuccessResult,
-      | 'sessionId'
-      | 'reviewOutputMode'
-      | 'structuredOutputUsed'
-      | 'reviewAssuranceLevel'
-      | 'findings'
+      'sessionId' | 'reviewOutputMode' | 'capture' | 'reviewAssuranceLevel' | 'findings'
     >,
     'findings'
   > & { findings: Record<string, unknown> };
+  /** Current terminal-capture proof; every new invocation is generation 6. */
+  nativeProvenance: NonNullable<ReviewInvocationEvidence['nativeProvenance']>;
   semanticIntents?: (
     result: AuditableEvidenceRecordResult,
     state: SessionState,
@@ -75,6 +74,7 @@ type MutationFlags = {
   reused: boolean;
   missing: boolean;
   lineageUnavailable: boolean;
+  executionExpired: boolean;
   preBindFailure?: Exclude<PreBindFindingsResult, { readonly ok: true }>;
 };
 
@@ -84,6 +84,7 @@ export type SdkEvidenceRecordResult =
 function buildReviewInvocation(
   params: SdkEvidenceParams,
   obligation: { mandateDigest: string; criteriaVersion: string },
+  findings: ReviewFindings,
 ): ReviewInvocationEvidence {
   return buildInvocationEvidence({
     obligationId: params.obligationId,
@@ -97,7 +98,9 @@ function buildReviewInvocation(
     invokedAt: params.invokedAt,
     fulfilledAt: params.fulfilledAt,
     attemptId: params.attemptId,
-    capturedRawFindings: params.reviewerResult.findings,
+    capturedRawFindings: findings,
+    capture: params.reviewerResult.capture,
+    nativeProvenance: params.nativeProvenance,
   });
 }
 
@@ -117,10 +120,9 @@ function resolveEvidenceLineage(
     attempt.obligationType === obligation.obligationType &&
     attempt.subjectDigest === obligation.subjectDigest &&
     attempt.status === 'created' &&
-    attempt.childSessionId === undefined;
+    attempt.childSessionId === params.childSessionId;
   if (!lineageMatches || !attempt) return null;
-  const authorizedHostCallId = params.authorizedHostCallId ?? params.hostCallId;
-  if (!hasAuthorizedDispatch(assurance, authorizedHostCallId, attempt.attemptId)) {
+  if (!hasAuthorizedDispatch(assurance, params.hostCallId, attempt.attemptId)) {
     return null;
   }
   return { attemptId: attempt.attemptId };
@@ -133,12 +135,81 @@ function settleBoundEvidence(
   invocationId: string,
   now: string,
 ): ReturnType<typeof ensureReviewAssurance> {
-  const unableToReview =
-    params.obligationType === 'review' &&
-    params.reviewerResult.findings.overallVerdict === 'unable_to_review';
-  return unableToReview
-    ? consumeReviewObligation(assurance, obligation, now, invocationId)
-    : fulfillObligation(assurance, params.obligationId, invocationId, now);
+  const unableToReview = params.reviewerResult.findings.overallVerdict === 'unable_to_review';
+  if (!unableToReview) {
+    return fulfillObligation(assurance, params.obligationId, invocationId, now);
+  }
+  // Standalone peer review has exactly one pass: the unreviewable evidence is
+  // consumed and cannot pass review. Consumption presupposes fulfillment: the
+  // obligation records its invocation lineage and fulfilledAt first, in the
+  // same transition, so the persisted state satisfies the assurance invariant.
+  if (params.obligationType === 'review') {
+    return consumeReviewObligation(
+      fulfillObligation(assurance, params.obligationId, invocationId, now),
+      obligation,
+      now,
+      invocationId,
+    );
+  }
+  // Implementation review keeps the fulfilled path: the tool layer consumes the
+  // bound unable verdict and mints an explicit fresh successor attempt.
+  if (params.obligationType === 'implement') {
+    return fulfillObligation(assurance, params.obligationId, invocationId, now);
+  }
+  // Plan/architecture: a verdict can never repair an unreviewable frozen
+  // artifact, and leaving the obligation open deadlocks the review loop
+  // (continuation expects a verdict that validation forbids). Close it
+  // deterministically with its invocation retained; a fresh submission mints a
+  // new obligation through the standard blocked-obligation recovery.
+  return blockObligationWithInvocation(
+    assurance,
+    params.obligationId,
+    invocationId,
+    'SUBAGENT_UNABLE_TO_REVIEW',
+    now,
+  );
+}
+
+function provenanceMatchesCapture(
+  provenance: SdkEvidenceParams['nativeProvenance'],
+  capture: SdkEvidenceParams['reviewerResult']['capture'],
+): boolean {
+  return (
+    provenance.requestMessageId === capture.requestMessageId &&
+    provenance.responseMessageId === capture.responseMessageId &&
+    provenance.requestDigest === capture.requestDigest &&
+    provenance.payloadDigest === capture.payloadDigest &&
+    provenance.assistantMessageIds[0] === capture.assistantMessageIds[0] &&
+    provenance.model.providerID === capture.model.providerID &&
+    provenance.model.modelID === capture.model.modelID &&
+    provenance.model.variant === capture.model.variant
+  );
+}
+
+function validCapture(params: SdkEvidenceParams, flags: MutationFlags): boolean {
+  const valid =
+    hasCaptureLineage({ ...params, capture: params.reviewerResult.capture }) &&
+    captureMatchesFindings(params.reviewerResult.capture, params.reviewerResult.findings) &&
+    NativeSubagentCaptureProvenance.safeParse(params.nativeProvenance).success &&
+    provenanceMatchesCapture(params.nativeProvenance, params.reviewerResult.capture) &&
+    params.nativeProvenance.nativeCallId === params.hostCallId;
+  if (!valid) flags.lineageUnavailable = true;
+  return valid;
+}
+
+function hasExpiredReviewerExecution(params: SdkEvidenceParams, now: string): boolean {
+  return (
+    params.executionFailed?.() === true ||
+    (params.deadlineAt !== undefined && Date.parse(now) >= Date.parse(params.deadlineAt))
+  );
+}
+
+function reuseBlocked(state: SessionState, params: SdkEvidenceParams): SessionState {
+  return updateObligation(state, params.obligationId, (item) => ({
+    ...item,
+    status: 'blocked',
+    blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+  }));
 }
 
 function applyEvidenceMutation(
@@ -148,6 +219,7 @@ function applyEvidenceMutation(
   flags: MutationFlags,
 ): SessionState {
   const assurance = ensureReviewAssurance(state.reviewAssurance);
+  if (!validCapture(params, flags)) return state;
   const obligation = assurance.obligations.find(
     (item) => item.obligationId === params.obligationId,
   );
@@ -155,13 +227,13 @@ function applyEvidenceMutation(
     flags.missing = true;
     return state;
   }
+  if (hasExpiredReviewerExecution(params, now)) {
+    flags.executionExpired = true;
+    return state;
+  }
   if (hasEvidenceReuse(assurance.invocations, params.childSessionId, params.findingsHash)) {
     flags.reused = true;
-    return updateObligation(state, params.obligationId, (item) => ({
-      ...item,
-      status: 'blocked',
-      blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
-    }));
+    return reuseBlocked(state, params);
   }
   const lineage = resolveEvidenceLineage(assurance, obligation, params);
   if (!lineage) {
@@ -184,7 +256,10 @@ function applyEvidenceMutation(
     return state;
   }
 
-  const invocation = buildReviewInvocation(params, obligation);
+  // Identity is minted once at the authoritative binding boundary. Replays
+  // read the persisted invocation; they never mint replacement identities.
+  const findingsWithIdentity = mintHostFindingIds(params.reviewerResult.findings as ReviewFindings);
+  const invocation = buildReviewInvocation(params, obligation, findingsWithIdentity);
   const boundAssurance = updateAttemptStatus(
     assurance,
     lineage.attemptId,
@@ -194,13 +269,10 @@ function applyEvidenceMutation(
   );
   // Attempt binding, invocation evidence, and dispatch completion are ONE
   // mutation: the ledger can never diverge from evidence.
-  const withBoundDispatch = params.authorizedHostCallId
-    ? rebindReviewDispatchHostCall(boundAssurance, params.authorizedHostCallId, params.hostCallId)
-    : boundAssurance;
   const withInvocation = {
     ...state,
     reviewAssurance: completeReviewDispatch(
-      appendInvocationEvidence(withBoundDispatch, invocation),
+      appendInvocationEvidence(boundAssurance, invocation),
       params.hostCallId,
       params.fulfilledAt,
     ),
@@ -218,6 +290,7 @@ function applyEvidenceMutation(
 }
 
 function resultFromFlags(flags: MutationFlags): SdkEvidenceRecordResult {
+  if (flags.executionExpired) return 'execution_expired';
   if (flags.preBindFailure) return flags.preBindFailure;
   if (flags.missing) return 'missing';
   if (flags.lineageUnavailable) return 'lineage_unavailable';
@@ -230,7 +303,12 @@ export async function recordEvidenceOrBlockReuse(
   sessDir: string,
   params: SdkEvidenceParams,
 ): Promise<SdkEvidenceRecordResult> {
-  const flags: MutationFlags = { reused: false, missing: false, lineageUnavailable: false };
+  const flags: MutationFlags = {
+    reused: false,
+    missing: false,
+    lineageUnavailable: false,
+    executionExpired: false,
+  };
   await deps.updateReviewAssurance(
     sessDir,
     (state, now) => applyEvidenceMutation(state, now, params, flags),
@@ -239,6 +317,7 @@ export async function recordEvidenceOrBlockReuse(
       return typeof result !== 'string' ||
         result === 'missing' ||
         result === 'lineage_unavailable' ||
+        result === 'execution_expired' ||
         !params.semanticIntents
         ? []
         : params.semanticIntents(result, state, now);

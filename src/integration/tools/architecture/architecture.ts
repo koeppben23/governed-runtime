@@ -29,8 +29,8 @@ export const architecture: ToolDefinition = {
   description:
     'Submit an Architecture Decision Record (ADR) OR record the independent reviewer verdict. Two modes:\n' +
     'Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts the review flow.\n' +
-    "Mode B (review verdict): provide reviewVerdict only ('accept' or 'changes_requested'). " +
-    "If 'changes_requested', also provide revised adrText.\n" +
+    "Mode B (review verdict): approve with reviewVerdict ('accept') alone; revise with " +
+    "'changes_requested' plus the revised adrText and claims, WITHOUT title.\n" +
     `Review is performed by the ${REVIEWER_SUBAGENT_TYPE} and the host captures its structured findings. ` +
     'FlowGuard resolves those captured findings automatically — submit the verdict only and never reviewer findings. ' +
     'There is no self-review fallback and reviewer unavailability always fails closed. ' +
@@ -72,7 +72,7 @@ export const architecture: ToolDefinition = {
       .boolean()
       .optional()
       .describe(
-        'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
+        'Set to true ONLY after a real reviewer-subagent spawn failure (reviewer subagent fails, agent ' +
           'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
           'and recovery guidance. It never enables self-review and never approves the ADR.',
       ),
@@ -80,7 +80,7 @@ export const architecture: ToolDefinition = {
       .literal('retry_transport')
       .optional()
       .describe(
-        'Typed transport-recovery intent. ONLY when the authorized native reviewer Task release ' +
+        'Typed transport-recovery intent. ONLY when the authorized native reviewer subagent release ' +
           'was technically interrupted or yielded no bindable evidence: re-emits the pending ' +
           'review dispatch for the current attempt, or re-arms a fresh attempt on the SAME frozen ' +
           'ADR subject after a released dispatch. Never a verdict, never approval, and never a ' +

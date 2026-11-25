@@ -9,12 +9,19 @@ agent: build
 
 Resolve an interrupted host mutation dispatch so the session can recover fail-closed.
 
+For a regular failed OpenCode \`edit\`, retry \`/implement\` first: its runtime
+boundary can observe the stored error without unknown-outcome resolution.
+
 ## Preconditions
 
 1. \`flowguard_status\` shows one or more host mutation episodes in state
    \`dispatch_authorized\`.
 2. The host call outcome is truly unobservable (the host process died between the
    Before- and After-hook). Never use this command to bypass a known outcome.
+3. A new runtime holds a later lease generation after the original holder died.
+   A plugin reload, different runtime ID, or stale heartbeat does not fence a live holder.
+4. Outstanding shell/background writers have been stopped separately; lease
+   fencing does not prove process-tree quiescence.
 
 ## Steps
 

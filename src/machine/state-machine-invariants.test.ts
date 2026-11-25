@@ -40,11 +40,12 @@ const ALL_COMMANDS: Command[] = Object.values(Command);
 const POLICY_MODES = ['solo', 'team', 'team-ci', 'regulated'] as const;
 
 describe('state machine invariants', () => {
-  describe('HAPPY/CORNER — terminal phases block mutating commands', () => {
+  describe('HAPPY/CORNER — terminal phases block flow commands, keep recovery escapes', () => {
+    const ESCAPES: readonly Command[] = [Command.HYDRATE, Command.ABORT];
     for (const phase of TERMINAL_PHASES) {
-      it(`${phase} blocks all commands`, () => {
+      it(`${phase} blocks flow commands but allows /hydrate and /abort`, () => {
         for (const cmd of ALL_COMMANDS) {
-          expect(isCommandAllowed(phase, cmd)).toBe(false);
+          expect(isCommandAllowed(phase, cmd), `${cmd} in ${phase}`).toBe(ESCAPES.includes(cmd));
         }
       });
     }

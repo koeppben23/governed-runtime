@@ -47,7 +47,7 @@ async function checkObligationHandshake(
       file: pointerPath,
       status: 'error',
       detail:
-        'Pending review obligation without plugin handshake — plugin enforcement hooks are not active. Restart OpenCode and verify flowguard-audit plugin loads.',
+        'Pending review obligation without plugin handshake — plugin enforcement hooks are not active. Use /reload in OpenCode V2 and verify the native FlowGuard plugin loads; installation does not activate governance.',
     });
   } else {
     checks.push({

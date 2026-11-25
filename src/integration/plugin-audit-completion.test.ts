@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
 import { writeState } from '../adapters/persistence.js';
-import { makeState } from '../fixtures.js';
+import { makePolicySnapshot, makeState } from '../fixtures.js';
 import {
   buildTransitionBody,
   finalizeWithTimestampEvidence,
@@ -12,6 +12,7 @@ import {
 } from '../audit/types.js';
 import type { PendingAuditOperation, SessionState } from '../state/schema.js';
 import { runAudit, type AuditDeps } from './plugin-audit.js';
+import { resolvedAuthority } from './plugin-audit-test-helpers.js';
 
 const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const COMPLETED_AT = '2026-05-15T12:00:00.000Z';
@@ -45,7 +46,7 @@ function completedState(): SessionState {
   };
   return {
     ...state,
-    policySnapshot: { ...state.policySnapshot, mode: 'team' },
+    policySnapshot: makePolicySnapshot({ ...state.policySnapshot, mode: 'team' }),
     pendingAuditOperations: [operation],
   };
 }
@@ -53,7 +54,6 @@ function completedState(): SessionState {
 async function completionDeps(state: SessionState): Promise<{ deps: AuditDeps; sessDir: string }> {
   const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-completion-'));
   sessionDirs.push(sessDir);
-  await writeState(sessDir, state);
   const terminalOperation = state.pendingAuditOperations.find(
     (operation): operation is Extract<PendingAuditOperation, { kind: 'transition' }> =>
       operation.kind === 'transition' && operation.transition.to === 'COMPLETE',
@@ -79,6 +79,9 @@ async function completionDeps(state: SessionState): Promise<{ deps: AuditDeps; s
     });
     await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(body, 'genesis'));
   }
+  // Persist the reconciled fixture only after seeding its canonical audit
+  // evidence; the writer now rejects a reconciled outbox without a trail.
+  await writeState(sessDir, state);
   const appendAndTrack = vi.fn(async (event: { chainHash?: string }) => {
     const persisted = await appendAuditEvent(sessDir, event as EventBody);
     event.chainHash = persisted.chainHash;
@@ -86,8 +89,7 @@ async function completionDeps(state: SessionState): Promise<{ deps: AuditDeps; s
   return {
     sessDir,
     deps: {
-      resolveFingerprint: vi.fn().mockResolvedValue('fp-abc'),
-      getSessionDir: vi.fn().mockReturnValue(sessDir),
+      resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state, sessDir)),
       resolveSessionPolicy: vi.fn().mockResolvedValue({
         policy: {
           audit: { emitToolCalls: true, emitTransitions: true, enableChainHash: true },
@@ -103,7 +105,6 @@ async function completionDeps(state: SessionState): Promise<{ deps: AuditDeps; s
       nextDecisionSequence: vi.fn().mockResolvedValue(1),
       log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
       logError: vi.fn(),
-      cachedFingerprint: 'fp-abc',
       mode: 'team',
     },
   };
@@ -150,7 +151,7 @@ describe('plugin audit completion idempotency', () => {
       const operation = state.pendingAuditOperations[0]!;
       const invalid = {
         ...state,
-        policySnapshot: { ...state.policySnapshot, mode: 'regulated' as const },
+        policySnapshot: makePolicySnapshot({ ...state.policySnapshot, mode: 'regulated' as const }),
         pendingAuditOperations:
           authority === 'missing'
             ? []
@@ -190,7 +191,7 @@ describe('plugin audit completion idempotency', () => {
       throw new TypeError('expected terminal transition operation');
     const invalid = {
       ...state,
-      policySnapshot: { ...state.policySnapshot, mode: 'regulated' as const },
+      policySnapshot: makePolicySnapshot({ ...state.policySnapshot, mode: 'regulated' as const }),
       pendingAuditOperations: [
         {
           ...operation,

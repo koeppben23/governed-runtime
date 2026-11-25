@@ -292,8 +292,14 @@ export function computeStateDigest(state: SessionState): string {
   return hashText(`state-digest.v2:${canonicalJsonStringify(authorityState(state))}`);
 }
 
-function authorityState(state: SessionState): Omit<SessionState, 'pendingAuditOperations'> {
-  const { pendingAuditOperations: _operations, ...authority } = state;
+function authorityState(
+  state: SessionState,
+): Omit<SessionState, 'pendingAuditOperations' | 'auditOutboxCheckpoint'> {
+  const {
+    pendingAuditOperations: _operations,
+    auditOutboxCheckpoint: _checkpoint,
+    ...authority
+  } = state;
   return authority;
 }
 
@@ -349,6 +355,7 @@ function addTransitionOperations(
   transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
 ): SessionState {
   const mutationDigest = hashText(canonicalJsonStringify(transitions));
+  const actorInfo = next.actorInfo;
   const operations: PendingAuditOperation[] = transitions.map((transition, chainIndex) => {
     const operationId = crypto.randomUUID();
     const normalizedTransition: Extract<
@@ -361,6 +368,7 @@ function addTransitionOperations(
       at: transition.at,
       chainIndex,
       autoAdvanced: chainIndex > 0,
+      ...(actorInfo !== undefined ? { actorInfo } : {}),
     };
     const body = buildTransitionBody({
       flowguardSessionId: next.flowguardSessionId,
@@ -377,6 +385,7 @@ function addTransitionOperations(
         autoAdvanced: normalizedTransition.autoAdvanced,
         chainIndex: normalizedTransition.chainIndex,
       },
+      ...(actorInfo !== undefined ? { actorInfo } : {}),
       occurredAt: transition.at,
       prevHash: 'genesis',
     });

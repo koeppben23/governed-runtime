@@ -20,7 +20,10 @@ import {
   hasCurrentArchitectureApprovalCertificate,
   hasCurrentPlanApprovalCertificate,
 } from '../../state/proofgraph-approval.js';
+import { planApprovalContextOf } from '../../state/proofgraph-approval-context.js';
 import type { ReviewBinding } from '../../state/proofgraph-approval.js';
+import { claimOccurrences } from '../../state/proofgraph-claim-set.js';
+import { assessProofGraphEvidence } from '../../audit/proofgraph/evidence-integrity.js';
 
 /** Digest binding of one human approval certificate. */
 export interface ApprovalCertificateProjection {
@@ -30,7 +33,8 @@ export interface ApprovalCertificateProjection {
   readonly claimDeclarationsDigest: string;
   readonly decisionAttestationDigest: string;
   readonly approvedAt: string;
-  readonly approvedBy: string;
+  /** Explicit-decision actor id; null for a policy-automatic approval (no person exists). */
+  readonly approvedBy: string | null;
   /** Number of declarations bound by this certificate. */
   readonly declaredClaimCount: number;
   readonly binding: 'current' | 'stale_or_unbound';
@@ -74,22 +78,31 @@ function bindingStatus(current: boolean): 'current' | 'stale_or_unbound' {
   return current ? 'current' : 'stale_or_unbound';
 }
 
-function planCertificateProjection(
-  plan: SessionState['plan'],
-): ApprovalCertificateProjection | null {
+function planCertificateProjection(state: SessionState): ApprovalCertificateProjection | null {
+  const plan = state.plan;
   const certificate = plan?.approvalCertificate;
   if (!certificate || !plan) return null;
+  const attestation = certificate.approvalAttestation;
   return {
     ...certificate,
+    // A malformed in-memory certificate never fabricates an approver; the
+    // binding status below still reports the certificate as unbound.
+    approvedBy:
+      attestation?.kind === 'explicit_decision'
+        ? attestation.decision.decisionIdentity.actorId
+        : null,
     declaredClaimCount: plan.claimDeclarations?.claims.length ?? 0,
     binding: bindingStatus(
-      hasCurrentPlanApprovalCertificate({
-        current: plan.current,
-        ...(plan.claimDeclarations !== undefined
-          ? { claimDeclarations: plan.claimDeclarations }
-          : {}),
-        approvalCertificate: certificate,
-      }),
+      hasCurrentPlanApprovalCertificate(
+        {
+          current: plan.current,
+          ...(plan.claimDeclarations !== undefined
+            ? { claimDeclarations: plan.claimDeclarations }
+            : {}),
+          approvalCertificate: certificate,
+        },
+        planApprovalContextOf(state),
+      ),
     ),
   };
 }
@@ -116,7 +129,7 @@ function architectureCertificateProjection(
 
 function certificateProjection(state: SessionState): ApprovalCertificateProjection[] {
   const certificates: ApprovalCertificateProjection[] = [];
-  const planProjection = planCertificateProjection(state.plan);
+  const planProjection = planCertificateProjection(state);
   if (planProjection) certificates.push(planProjection);
   const architectureProjection = architectureCertificateProjection(state.architecture);
   if (architectureProjection) certificates.push(architectureProjection);
@@ -131,15 +144,23 @@ function certificateProjection(state: SessionState): ApprovalCertificateProjecti
  * defaulting to a proven-looking value.
  */
 export function buildProofApprovalProjection(state: SessionState): ProofApprovalProjection {
-  const evaluated = new Map(
-    state.proofGraph.claims.map((claim) => [claim.claimId, claim] as const),
-  );
+  const projection = assessProofGraphEvidence(state.proofGraph, {
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
+    implementationDigest: state.implementation?.digest,
+  }).projection;
+  const occurrences = claimOccurrences(projection.claims);
+  const sourceOccurrences = claimOccurrences(state.proofContract?.claims ?? []);
+  const evaluated = new Map(projection.claims.map((claim) => [claim.claimId, claim] as const));
   const claims = (state.proofContract?.claims ?? []).map((claim) => ({
     claimId: claim.claimId,
     statement: claim.statement,
     signalClass: claim.signalClass,
     critical: claim.critical,
-    verificationState: evaluated.get(claim.claimId)?.verificationState ?? null,
+    verificationState:
+      occurrences.get(claim.claimId) === 1 && sourceOccurrences.get(claim.claimId) === 1
+        ? (evaluated.get(claim.claimId)?.verificationState ?? null)
+        : null,
     certificateId:
       claim.provenance?.kind === 'canonical_authority'
         ? (claim.provenance.approval?.certificateId ?? null)

@@ -193,6 +193,65 @@ const AUDIT_DETAIL_STRING_ALLOW_LIST = new Set([
   'errorMessage',
 ]);
 
+/**
+ * Diagnostic host/state projection allow-list. These values are technical
+ * identities and enums required to correlate sessions and parts. They are not
+ * free text. Actor/person-bearing fields stay masked unless an explicit
+ * session-state redactor handles them.
+ */
+const DIAGNOSTIC_STRING_ALLOW_LIST = new Set([
+  ...EXPORT_BASE_STRING_ALLOW_LIST,
+  'role',
+  'tool',
+  'agent',
+  'status',
+  'providerID',
+  'modelID',
+  'variant',
+  'sessionID',
+  'sessionId',
+  'messageID',
+  'messageId',
+  'partID',
+  'partId',
+  'callID',
+  'callId',
+  'parentID',
+  'parentId',
+  'attemptId',
+  'obligationId',
+  'dispatchId',
+  'activationId',
+  'generation',
+  'policyDigest',
+  'subjectDigest',
+  'sha256',
+  'mime',
+]);
+
+const DIAGNOSTIC_SENSITIVE_KEYS = new Set([
+  'text',
+  'content',
+  'prompt',
+  'output',
+  'input',
+  'arguments',
+  'args',
+  'result',
+  'message',
+  'error',
+  'path',
+  'directory',
+  'worktree',
+  'command',
+  'url',
+  'title',
+  'detail',
+  'reason',
+  'description',
+  'summary',
+]);
+
 // ─── Public Redaction Functions ──────────────────────────────────────────
 
 export function redactReviewReport(
@@ -262,6 +321,27 @@ function maskIdentityFromSource(
   if (typeof srcRecord.displayName === 'string')
     resultRecord.displayName = stableMask(srcRecord.displayName, mode);
   if (typeof srcRecord.email === 'string') resultRecord.email = stableMask(srcRecord.email, mode);
+}
+
+/**
+ * Redact a diagnostic payload (host transcript, session graph, timeline) while
+ * preserving native technical identities. Unknown/free-text fields are masked.
+ * This is the only host-payload redactor; callers must not write raw host bytes
+ * to disk first.
+ */
+export function redactDiagnosticPayload(
+  payload: Record<string, unknown>,
+  mode: RedactionMode,
+): Record<string, unknown> {
+  if (mode === 'none') return payload;
+  const out = structuredClone(payload);
+
+  return redactUnknownStrings(
+    out,
+    mode,
+    DIAGNOSTIC_STRING_ALLOW_LIST,
+    DIAGNOSTIC_SENSITIVE_KEYS,
+  ) as Record<string, unknown>;
 }
 
 export function redactAuditDetail(

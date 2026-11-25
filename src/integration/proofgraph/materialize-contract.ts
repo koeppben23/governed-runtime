@@ -13,13 +13,39 @@ import {
   hasCurrentPlanApprovalCertificate,
   type PlanClaimDeclaration,
 } from '../../state/proofgraph-approval.js';
+import { planApprovalContextOf } from '../../state/proofgraph-approval-context.js';
 import type { SessionState } from '../../state/schema.js';
+import {
+  certifiedClaimDigest,
+  requiredEvidenceForDeclaration,
+} from '../../state/proofgraph-claim-certification.js';
 import {
   resolveVerifiedMutationAttempt,
   resolveVerifiedMutationVerdicts,
 } from './mutation-provider.js';
 
 const EMPTY_CONTRACT: ProofContract = { version: 'contract.v2', claims: [] };
+
+function missingImplementationContract(): MaterializedPlanContract {
+  return { contract: EMPTY_CONTRACT, coverage: [{ cause: 'missing_implementation' }] };
+}
+
+function certifiedPlanOrigin(declaration: PlanClaimDeclaration) {
+  return {
+    authoritySectionId: declaration.authoritySectionId,
+    expectedCheckId: declaration.expectedCheckId,
+    ...(declaration.expectedAssertion !== undefined
+      ? { expectedAssertion: { ...declaration.expectedAssertion } }
+      : {}),
+    ...(declaration.structuralSurface !== undefined
+      ? { structuralSurface: declaration.structuralSurface }
+      : {}),
+    ...(declaration.mutationProfile !== undefined
+      ? { mutationProfile: declaration.mutationProfile }
+      : {}),
+    digest: certifiedClaimDigest(declaration),
+  };
+}
 
 export type MaterializedPlanContract = {
   readonly contract: ProofContract;
@@ -60,21 +86,6 @@ function evidenceRefs(
     });
   }
   return refs;
-}
-
-function requiredEvidence(declaration: PlanClaimDeclaration) {
-  const positive: NonNullable<ProofContract['claims'][number]['requiredEvidence']>['positive'] = [
-    'executed_test',
-  ];
-  if (declaration.structuralSurface) {
-    positive.push(
-      declaration.structuralSurface === 'config-defaults'
-        ? 'schema_compare'
-        : 'structural_assertion',
-    );
-  }
-  if (declaration.mutationProfile) positive.push('fault_injection');
-  return { positive, adversarial: declaration.critical ? ['counterexample' as const] : [] };
 }
 
 function isAggregateCounterexampleAttempt(
@@ -150,6 +161,28 @@ export async function materializeApprovedPlanContract(
   return (await materializeApprovedPlanContractResult(state, worktree)).contract;
 }
 
+/**
+ * Keep only adversarial attempts that are not already bound as positive
+ * evidence. A shared attempt is recorded as an explicit coverage gap and never
+ * bound as adversarial evidence; the evaluator fails the claim closed either
+ * way.
+ */
+function independentAdversarialAttempts(
+  expectedAttempts: SessionState['validationAttempts'],
+  counterexampleAttempts: SessionState['validationAttempts'],
+  claimId: string,
+  coverage: ProofContractCoverage[],
+): SessionState['validationAttempts'] {
+  const positiveAttemptIds = new Set(expectedAttempts.map((attempt) => attempt.attemptId));
+  const adversarialAttempts = counterexampleAttempts.filter(
+    (attempt) => !positiveAttemptIds.has(attempt.attemptId),
+  );
+  if (adversarialAttempts.length !== counterexampleAttempts.length) {
+    coverage.push({ claimId, cause: 'evidence_role_collision' });
+  }
+  return adversarialAttempts;
+}
+
 /** Materialize the contract and persistable causes for coverage gaps. */
 export async function materializeApprovedPlanContractResult(
   state: SessionState,
@@ -164,14 +197,10 @@ export async function materializeApprovedPlanContractResult(
   if (certificate.kind !== 'valid') {
     return { contract: EMPTY_CONTRACT, coverage: [{ cause: certificate.cause }] };
   }
-  if (!implementationDigest) {
-    return { contract: EMPTY_CONTRACT, coverage: [{ cause: 'missing_implementation' }] };
-  }
+  if (!implementationDigest) return missingImplementationContract();
   const mutationVerdicts = await resolveVerifiedMutationVerdicts(worktree, state.mutationAttempts);
-
   const attempts = state.validationAttempts.filter(
-    (attempt) =>
-      attempt.scope === 'implementation' && attempt.implementationDigest === implementationDigest,
+    (a) => a.scope === 'implementation' && a.implementationDigest === implementationDigest,
   );
   const coverage: ProofContractCoverage[] = [];
   const claims = declarations.claims.map((declaration) => {
@@ -196,12 +225,19 @@ export async function materializeApprovedPlanContractResult(
       attempts,
     );
     if (cxGap) coverage.push(cxGap);
+    const adversarialAttempts = independentAdversarialAttempts(
+      expectedAttempts,
+      counterexampleAttempts,
+      declaration.claimId,
+      coverage,
+    );
     return {
       claimId: declaration.claimId,
       statement: declaration.statement,
       signalClass: 'fact' as const,
       critical: declaration.critical,
       claimScope: declaration.claimScope,
+      certifiedPlan: certifiedPlanOrigin(declaration),
       provenance: {
         kind: 'canonical_authority' as const,
         authorityId: 'plan',
@@ -214,12 +250,15 @@ export async function materializeApprovedPlanContractResult(
         },
       },
       evidenceRefs: evidenceRefs(expectedAttempts, declaration, mutationAttempt),
-      counterexampleRefs: counterexampleAttempts.map((attempt) => ({
+      counterexampleRefs: adversarialAttempts.map((attempt) => ({
         kind: 'validation_attempt' as const,
         attemptId: attempt.attemptId,
       })),
       counterexampleRequirement: declaration.counterexampleRequirement,
-      requiredEvidence: requiredEvidence(declaration),
+      ...(declaration.coversRiskTriggers !== undefined
+        ? { coversRiskTriggers: [...declaration.coversRiskTriggers] }
+        : {}),
+      requiredEvidence: requiredEvidenceForDeclaration(declaration),
     };
   });
   return { contract: { version: 'contract.v2', claims }, coverage };
@@ -237,15 +276,22 @@ function validateApprovedPlanCertificate(state: SessionState): CertificateValida
   const certificate = plan?.approvalCertificate;
   // The certificate is the PLAN_REVIEW approval. A later implementation-review
   // decision is unrelated, and a certificate for another plan digest is stale.
-  if (!certificate) return { kind: 'invalid', cause: 'missing_certificate' };
-  if (state.phase !== 'IMPL_REVIEW' || !plan) {
-    return { kind: 'invalid', cause: 'invalid_certificate' };
-  }
-  return hasCurrentPlanApprovalCertificate({
-    current: plan.current,
-    ...(plan.claimDeclarations !== undefined ? { claimDeclarations: plan.claimDeclarations } : {}),
-    approvalCertificate: certificate,
-  })
+  //
+  // WHEN materialization may run is owned by the post-validation entry
+  // authority (`materializePostValidationContract`: IMPL_REVIEW or a
+  // reduced-ceremony EVIDENCE_REVIEW). This authority owns only the binding:
+  // the certificate must authorize the exact current plan declaration set.
+  if (!certificate || !plan) return { kind: 'invalid', cause: 'missing_certificate' };
+  return hasCurrentPlanApprovalCertificate(
+    {
+      current: plan.current,
+      ...(plan.claimDeclarations !== undefined
+        ? { claimDeclarations: plan.claimDeclarations }
+        : {}),
+      approvalCertificate: certificate,
+    },
+    planApprovalContextOf(state),
+  )
     ? { kind: 'valid', certificate }
     : { kind: 'invalid', cause: 'invalid_certificate' };
 }

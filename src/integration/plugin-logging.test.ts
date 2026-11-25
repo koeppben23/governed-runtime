@@ -34,11 +34,7 @@ function loggingConfig(overrides: Partial<TestLoggingConfig> = {}): TestLoggingC
   };
 }
 
-const mockClient = {
-  app: {
-    log: vi.fn().mockResolvedValue(undefined),
-  },
-};
+const mockClient = vi.fn<LogSink>().mockResolvedValue(undefined);
 
 const TEST_DIR = '/tmp/flowguard-wiring-test';
 
@@ -56,7 +52,7 @@ describe('buildLogSinks', () => {
       const { sinks } = buildLogSinks(config, mockClient, null);
 
       expect(sinks).toHaveLength(1);
-      expect(mockClient.app.log).not.toHaveBeenCalled();
+      expect(mockClient).not.toHaveBeenCalled();
     });
 
     it('creates both sinks when mode=both', () => {
@@ -133,11 +129,14 @@ describe('buildLogSinks', () => {
       expect(sinks).toHaveLength(1);
     });
 
-    it('handles client without app.log', () => {
+    it('reports unavailable native V2 UI logging explicitly', () => {
       const config = { logging: loggingConfig({ mode: 'ui' }) };
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       const { sinks } = buildLogSinks(config, undefined, TEST_DIR);
 
       expect(sinks).toHaveLength(0);
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining('UI logging is unavailable'));
+      stderr.mockRestore();
     });
 
     it('handles retentionDays from config', () => {
@@ -192,9 +191,9 @@ describe('UI sink error observability', () => {
     message: 'hello',
   };
 
-  // HAPPY: successful client.app.log produces no stderr output
+  // HAPPY: successful explicit UI sink produces no stderr output
   it('HAPPY — successful log does not write to stderr', async () => {
-    const client = { app: { log: vi.fn().mockResolvedValue(undefined) } };
+    const client = vi.fn<LogSink>().mockResolvedValue(undefined);
     const { sinks } = buildLogSinks(uiConfig, client, null);
 
     expect(sinks).toHaveLength(1);
@@ -204,16 +203,12 @@ describe('UI sink error observability', () => {
     await new Promise((r) => setTimeout(r, 10));
 
     expect(stderrSpy).not.toHaveBeenCalled();
-    expect(client.app.log).toHaveBeenCalledWith({
-      body: { service: 'test', level: 'info', message: 'hello' },
-    });
+    expect(client).toHaveBeenCalledWith(testEntry);
   });
 
-  // BAD: rejecting client.app.log emits warning to stderr
+  // BAD: rejecting explicit UI sink emits warning to stderr
   it('BAD — rejecting log writes warning to stderr', async () => {
-    const client = {
-      app: { log: vi.fn().mockRejectedValue(new Error('connection lost')) },
-    };
+    const client = vi.fn<LogSink>().mockRejectedValue(new Error('connection lost'));
     const { sinks } = buildLogSinks(uiConfig, client, null);
 
     expect(sinks).toHaveLength(1);
@@ -229,9 +224,7 @@ describe('UI sink error observability', () => {
 
   // CORNER: stderr warnings stop after the limit (3 failures) per 5-min window
   it('CORNER — suppresses stderr after 3 failures to prevent flooding', async () => {
-    const client = {
-      app: { log: vi.fn().mockRejectedValue(new Error('broken')) },
-    };
+    const client = vi.fn<LogSink>().mockRejectedValue(new Error('broken'));
     const { sinks } = buildLogSinks(uiConfig, client, null);
     const sink = sinks[0];
 
@@ -250,9 +243,7 @@ describe('UI sink error observability', () => {
 
   // EDGE: non-Error rejection (e.g. string) is still reported
   it('EDGE — non-Error rejection is reported via stderr', async () => {
-    const client = {
-      app: { log: vi.fn().mockRejectedValue('raw string rejection') },
-    };
+    const client = vi.fn<LogSink>().mockRejectedValue('raw string rejection');
     const { sinks } = buildLogSinks(uiConfig, client, null);
 
     await expect(sinks[0]!(testEntry)).rejects.toThrow('UI log sink failure');
@@ -264,9 +255,9 @@ describe('UI sink error observability', () => {
     expect(written).toContain('(1 total)');
   });
 
-  // EDGE: extra field in LogEntry is forwarded to client.app.log body
-  it('EDGE — log entry with extra field includes it in the body', async () => {
-    const client = { app: { log: vi.fn().mockResolvedValue(undefined) } };
+  // EDGE: forward the LogEntry itself without an SDK request envelope
+  it('EDGE — log entry with extra field preserves the complete entry', async () => {
+    const client = vi.fn<LogSink>().mockResolvedValue(undefined);
     const { sinks } = buildLogSinks(uiConfig, client, null);
 
     const entryWithExtra: LogEntry = {
@@ -278,25 +269,14 @@ describe('UI sink error observability', () => {
     await sinks[0]!(entryWithExtra);
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(client.app.log).toHaveBeenCalledWith({
-      body: {
-        service: 'audit',
-        level: 'warn',
-        message: 'integrity check',
-        extra: { chain: 'ok', duration: 42 },
-      },
-    });
+    expect(client).toHaveBeenCalledWith(entryWithExtra);
     expect(stderrSpy).not.toHaveBeenCalled();
   });
 
   // EDGE: independent sink instances have independent failure counters
   it('EDGE — separate buildLogSinks calls get independent failure counters', async () => {
-    const client1 = {
-      app: { log: vi.fn().mockRejectedValue(new Error('fail-1')) },
-    };
-    const client2 = {
-      app: { log: vi.fn().mockRejectedValue(new Error('fail-2')) },
-    };
+    const client1 = vi.fn<LogSink>().mockRejectedValue(new Error('fail-1'));
+    const client2 = vi.fn<LogSink>().mockRejectedValue(new Error('fail-2'));
 
     const { sinks: sinks1 } = buildLogSinks(uiConfig, client1, null);
     const { sinks: sinks2 } = buildLogSinks(uiConfig, client2, null);
@@ -317,9 +297,7 @@ describe('UI sink error observability', () => {
 
   // G10: UI sink rejection is centrally counted via createLogger's sinkFailuresTotal
   it('G10 — UI sink rejection increments central sinkFailuresTotal', async () => {
-    const client = {
-      app: { log: vi.fn().mockRejectedValue(new Error('ui failure')) },
-    };
+    const client = vi.fn<LogSink>().mockRejectedValue(new Error('ui failure'));
     const { sinks } = buildLogSinks(uiConfig, client, null);
     expect(sinks).toHaveLength(1);
 

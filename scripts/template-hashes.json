@@ -1,9 +1,9 @@
 {
-  "toolWrapper": "d226008372fe59034590eead8ceae63d797c9c2bbd6402d632adeeb2a203514a",
-  "pluginWrapper": "7810a13de154b7b4c9c3f33fd4a2932d35f73db576705959f6c2d9bdda9b1313",
+  "pluginWrapper": "6e50fa4f867c2cda7300cf13f065c4ee060b7a01e5d4c5322207014bffe8f466",
+  "tuiPluginWrapper": "aed94297149517f4645f8947fafee5724fd982b020855d4e6977a7281bdc2cbf",
+  "guiPluginBundle": "be36e16f0c9893b9a7d0bf9377f3792354a56b37551f53be89146ae400d74170",
   "flowguardMandatesKernel": "e2ba50d1d8728a88896afdb7d67d622e7a2827dd009c54dbc67b4906255aa3f3",
-  "reviewerAgent": "af7c0e89331017abd4604364c38f4979920d6c71940388f14ebb389b3f7e27d7",
-  "opencodeJsonTemplate": "1fc84e2ee553df018b6ee1af2c2beeaf9b11f86f82f43ee0019e09afa5afd45b",
+  "reviewerAgent": "5d9871e14a5f93e9dbb5efe830c75eca5c29a5c7fdba8e3d8e1faf15dba2a16d",
   "packageJsonTemplate": "9a09254c6abceacb655020b9c03b4a25bf7f5fa60b7e336fb36aa31e093ffc09",
-  "commands": "aa938a5c213ac0a7d8de63fe2b8de134075f3ee365f06f70a17d1fabbc411f16"
+  "commands": "87cff7a43ce65c1e97df07d74cd89ca786fe8ae8a7ce5b6837714761a753c582"
 }

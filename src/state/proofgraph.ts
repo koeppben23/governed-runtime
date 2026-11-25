@@ -34,6 +34,7 @@ import {
   Freshness,
 } from './proofgraph-primitives.js';
 import { AssertionIdentity } from './assertion-identity.js';
+import { SpecificRiskTrigger } from './risk-trigger.js';
 
 // ─── Evidence Attestation ───────────────────────────────────────────────────
 
@@ -129,6 +130,26 @@ const proofClaimBase = {
   requiredEvidence: RequiredEvidence.optional(),
   /** Optional counterexample requirement (assertion-level). */
   counterexampleRequirement: CounterexampleRequirement.optional(),
+  /**
+   * Specific risk triggers this claim explicitly covers for the current
+   * implementation. Coverage is DECLARED, never inferred from claim text, and
+   * only a gate-eligible (critical, certificate-authorized `fact`) claim can
+   * satisfy the final trigger requirement. `ceremony_only` is not coverable.
+   */
+  coversRiskTriggers: z.array(SpecificRiskTrigger).optional(),
+  /** Certified plan-only origin; manual/advisory claims carry no plan authority. */
+  certifiedPlan: z
+    .object({
+      authoritySectionId: z.string().min(1),
+      expectedCheckId: z.string().min(1),
+      expectedAssertion: AssertionIdentity.optional(),
+      structuralSurface: z.string().min(1).optional(),
+      mutationProfile: z.string().min(1).optional(),
+      digest: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .strict()
+    .readonly()
+    .optional(),
   /** Optional confidence in [0, 1] for advisory (non-fact) signals. */
   confidence: z.number().min(0).max(1).optional(),
 } as const;
@@ -163,6 +184,9 @@ export const AssertionBindingReasonCodeSchema = z.enum([
   'check_only_evidence',
   'provider_mismatch',
   'assertion_mismatch',
+  'assertion_identity_ambiguous',
+  'evidence_role_collision',
+  'counterexample_conflict',
   'aggregate_check_mismatch',
   'aggregate_candidate_mismatch',
   'aggregate_scope_unattested',

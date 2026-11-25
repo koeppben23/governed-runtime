@@ -23,32 +23,50 @@ import type { AuditDeps } from './plugin-audit.js';
 import type { PluginWorkspace } from './plugin-workspace.js';
 import { createSessionState } from './review/enforcement/enforcement.js';
 import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
-import { writeState } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { createTestWorkspace } from './test-helpers.js';
-import { formatAutoAdvanceOverflow } from './tools/helpers.js';
+import { formatAutoAdvanceOverflow } from '../rails/auto-advance-overflow.js';
+import {
+  absentAuthority,
+  resolvedAuthority,
+  unavailableAuthority,
+} from './plugin-audit-test-helpers.js';
 
 const SESSION_ID = crypto.randomUUID();
+
+/** Mock authority mirroring the canonical file-backed resolution for a real sessDir. */
+async function authorityAt(sessDir: string) {
+  const state = await readState(sessDir);
+  return state === null ? absentAuthority(sessDir) : resolvedAuthority(state, sessDir);
+}
 
 function makeRuntime(
   overrides: Omit<Partial<FlowGuardPluginRuntime>, 'ws'> & { ws?: Partial<PluginWorkspace> } = {},
 ): FlowGuardPluginRuntime {
   const base = {
     ws: {
-      getSessionDir: vi.fn().mockReturnValue(null),
+      resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
       getEnforcementState: vi.fn(() => createSessionState()),
       invalidateChainState: vi.fn(),
+      releaseEnforcementState: vi.fn(),
       runSerializedForSession: vi.fn(async (_sid: string, fn: () => Promise<void>) => fn()),
       updateReviewAssurance: vi.fn(),
       ...(overrides.ws ?? {}),
     },
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     adapterLog: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    riskDeps: { getSessionDir: vi.fn(), getWorktreeRoot: vi.fn() },
-    discoveryHealthDeps: { getSessionDir: vi.fn(), getWorkspaceDir: vi.fn() },
+    riskDeps: {
+      resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
+      getWorktreeRoot: vi.fn(),
+    },
+    discoveryHealthDeps: {
+      resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
+      getWorkspaceDir: vi.fn(),
+    },
     orchestratorDeps: {} as FlowGuardPluginRuntime['orchestratorDeps'],
     auditDeps: makeAuditDeps(),
-    toolTraceIds: new Map<string, string>(),
+    toolLatencyStarts: new Map<string, number>(),
     activeCommandScopes: new Map<string, 'check'>(),
     checkReworkContinuations: new Set<string>(),
     logError: vi.fn(),
@@ -61,8 +79,7 @@ function makeRuntime(
 
 function makeAuditDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
   return {
-    resolveFingerprint: vi.fn(async () => 'fp-abc'),
-    getSessionDir: vi.fn(() => null),
+    resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
     resolveSessionPolicy: vi.fn(async () => {
       throw new Error('no audit policy');
     }),
@@ -72,7 +89,6 @@ function makeAuditDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
     nextDecisionSequence: vi.fn(async () => 1),
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
     logError: vi.fn(),
-    cachedFingerprint: 'fp-abc',
     mode: 'solo',
     ...overrides,
   };
@@ -152,7 +168,9 @@ describe('toolAfter — audit block output mutation', () => {
   it('mutates the output on an audit block for flowguard tools', async () => {
     const runtime = makeRuntime({
       auditDeps: makeAuditDeps({
-        getSessionDir: vi.fn(() => '/tmp/fake-sess'),
+        resolveSessionAuthority: vi
+          .fn()
+          .mockResolvedValue(resolvedAuthority(makeState('PLAN'), '/tmp/fake-sess')),
         resolveSessionPolicy: vi.fn(async () => {
           throw new Error('disk full');
         }),
@@ -215,7 +233,7 @@ describe('toolAfter — audit block output mutation', () => {
 describe('handlePluginEvent', () => {
   it('ignores unknown event types', async () => {
     const runtime = makeRuntime();
-    await handlePluginEvent(runtime, { type: 'unrelated.event' });
+    await handlePluginEvent(runtime, { type: 'unrelated.event' }, SESSION_ID);
     expect(runtime.ws.invalidateChainState).not.toHaveBeenCalled();
   });
 
@@ -223,19 +241,17 @@ describe('handlePluginEvent', () => {
     const runtime = makeRuntime();
     runtime.activeCommandScopes.set(SESSION_ID, 'check');
     runtime.checkReworkContinuations.add(SESSION_ID);
-    runtime.toolTraceIds.set(`${SESSION_ID}:bash`, 'trace-1');
-    runtime.toolTraceIds.set('other-session:bash', 'trace-2');
 
-    await handlePluginEvent(runtime, {
-      type: 'session.deleted',
-      properties: { info: { id: SESSION_ID } },
-    });
+    await handlePluginEvent(
+      runtime,
+      { type: 'session.deleted', data: { sessionID: SESSION_ID } },
+      SESSION_ID,
+    );
 
     expect(runtime.ws.invalidateChainState).toHaveBeenCalledWith(SESSION_ID);
+    expect(runtime.ws.releaseEnforcementState).toHaveBeenCalledWith(SESSION_ID);
     expect(runtime.activeCommandScopes.has(SESSION_ID)).toBe(false);
     expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(false);
-    expect(runtime.toolTraceIds.has(`${SESSION_ID}:bash`)).toBe(false);
-    expect(runtime.toolTraceIds.get('other-session:bash')).toBe('trace-2');
   });
 
   it('emits a session error audit when the session mapping exists', async () => {
@@ -249,11 +265,22 @@ describe('handlePluginEvent', () => {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         }),
       );
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
-      await handlePluginEvent(runtime, {
-        type: 'session.error',
-        properties: { sessionID: SESSION_ID, errorMessage: 'host stalled' },
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
       });
+      await handlePluginEvent(
+        runtime,
+        {
+          type: 'session.execution.failed',
+          data: {
+            sessionID: SESSION_ID,
+            hostEventId: 'failure-root',
+            hostCreatedAt: 100,
+            error: { type: 'unknown', message: 'host stalled' },
+          },
+        },
+        SESSION_ID,
+      );
       const entries = await fs.readdir(sessDir);
       expect(entries).toContain('audit.jsonl');
       const events = await readAuditTrail(sessDir);
@@ -266,13 +293,58 @@ describe('handlePluginEvent', () => {
     }
   });
 
-  it('skips the session error audit when no mapping exists', async () => {
+  it('surfaces an unpersistable governed session error instead of dropping its audit', async () => {
     const runtime = makeRuntime();
-    await handlePluginEvent(runtime, {
-      type: 'session.error',
-      properties: { sessionID: SESSION_ID, errorMessage: 'host stalled' },
-    });
-    expect(runtime.log.warn).not.toHaveBeenCalled();
+    await expect(
+      handlePluginEvent(
+        runtime,
+        {
+          type: 'session.execution.failed',
+          data: {
+            sessionID: SESSION_ID,
+            hostEventId: 'failure-root',
+            hostCreatedAt: 100,
+            error: { type: 'unknown', message: 'host stalled' },
+          },
+        },
+        SESSION_ID,
+      ),
+    ).rejects.toThrow();
+    expect(runtime.log.warn).toHaveBeenCalledWith(
+      'event',
+      'governed event handler failed',
+      expect.objectContaining({ eventType: 'session.execution.failed' }),
+    );
+  });
+
+  it('persists a delegated-session error in the governed root trail with its native identity', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-child-error');
+      await fs.mkdir(sessDir, { recursive: true });
+      await writeState(sessDir, makeState('PLAN'));
+      const resolve = vi.fn(() => authorityAt(sessDir));
+      const runtime = makeRuntime({ ws: { resolveSessionAuthority: resolve } });
+      await handlePluginEvent(
+        runtime,
+        {
+          type: 'session.execution.failed',
+          data: {
+            sessionID: 'child',
+            hostEventId: 'failure-child',
+            hostCreatedAt: 100,
+            error: { type: 'unknown', message: 'child stalled' },
+          },
+        },
+        SESSION_ID,
+      );
+      expect(resolve).toHaveBeenCalledWith(SESSION_ID);
+      expect((await readAuditTrail(sessDir))[0]).toMatchObject({
+        detail: { code: 'SESSION_ERROR', nativeSessionId: 'child' },
+      });
+    } finally {
+      await ws.cleanup();
+    }
   });
 });
 
@@ -290,7 +362,9 @@ describe('handleCompaction', () => {
       const sessDir = path.join(ws.tmpDir, 'sess-compact');
       await fs.mkdir(sessDir, { recursive: true });
       await writeState(sessDir, makeState('PLAN'));
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
+      });
       const output = { context: [] as string[] };
       await handleCompaction(runtime, { sessionID: SESSION_ID }, output);
       expect(output.context.length).toBeGreaterThan(0);
@@ -313,7 +387,9 @@ describe('afterhook — /check rework-continuation latch', () => {
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-impl');
       await writeState(sessDir, activeReworkState());
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       await updateCheckReworkContinuation(runtime, 'flowguard_review_implementation', SESSION_ID);
       expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(true);
@@ -327,7 +403,9 @@ describe('afterhook — /check rework-continuation latch', () => {
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-impl');
       await writeState(sessDir, activeReworkState());
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
+      });
       await updateCheckReworkContinuation(runtime, 'flowguard_review_implementation', SESSION_ID);
       expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(false);
     } finally {
@@ -340,7 +418,9 @@ describe('afterhook — /check rework-continuation latch', () => {
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-impl');
       await writeState(sessDir, activeReworkState());
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       await updateCheckReworkContinuation(runtime, 'flowguard_review_implementation', SESSION_ID);
       expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(true);
@@ -362,5 +442,140 @@ describe('afterhook — /check rework-continuation latch', () => {
     } finally {
       await ws.cleanup();
     }
+  });
+});
+
+describe('toolAfter - diagnostic latency fields on tool.execute.after', () => {
+  const ALLOWED_FIELDS = new Set([
+    'tool',
+    'callId',
+    'beforeToAfterMs',
+    'durationUnavailable',
+    'hostToolOutcome',
+    'hostToolCode',
+    'statusProjection',
+  ]);
+
+  function afterLogFields(runtime: FlowGuardPluginRuntime): Record<string, unknown> {
+    const call = vi
+      .mocked(runtime.log.info)
+      .mock.calls.find(
+        ([service, message]) => service === 'hook' && message === 'tool.execute.after',
+      );
+    expect(call, 'tool.execute.after must still be logged exactly as one line').toBeDefined();
+    const fields = call?.[2] ?? {};
+    for (const key of Object.keys(fields)) expect(ALLOWED_FIELDS.has(key), key).toBe(true);
+    return fields;
+  }
+
+  function primedRuntime(callID: string): FlowGuardPluginRuntime {
+    const runtime = makeRuntime();
+    runtime.toolLatencyStarts.set(`${SESSION_ID}\u0000${callID}`, performance.now());
+    return runtime;
+  }
+
+  it('HAPPY: a host tool gets a measured duration and an unknown outcome (text result)', async () => {
+    const runtime = primedRuntime('c-read');
+    await toolAfter(
+      runtime,
+      { tool: 'read', sessionID: SESSION_ID, callID: 'c-read', args: {} },
+      hookOutput('plain text'),
+    );
+    const fields = afterLogFields(runtime);
+    expect(Object.keys(fields).sort()).toEqual([
+      'beforeToAfterMs',
+      'callId',
+      'hostToolOutcome',
+      'tool',
+    ]);
+    expect(fields.beforeToAfterMs).toBeGreaterThanOrEqual(0);
+    expect(fields.hostToolOutcome).toBe('unknown');
+    expect(runtime.toolLatencyStarts.size).toBe(0);
+  });
+
+  it('BAD: JSON text from a host tool is never classified as a FlowGuard outcome', async () => {
+    const runtime = primedRuntime('c-bash');
+    await toolAfter(
+      runtime,
+      { tool: 'read', sessionID: SESSION_ID, callID: 'c-bash', args: {} },
+      hookOutput('{"error":true,"code":"FAKE"}'),
+    );
+    expect(afterLogFields(runtime).hostToolOutcome).toBe('unknown');
+  });
+
+  it('HAPPY: a returned flowguard_status result names its projection', async () => {
+    const runtime = primedRuntime('c-status');
+    await toolAfter(
+      runtime,
+      {
+        tool: 'flowguard_status',
+        sessionID: SESSION_ID,
+        callID: 'c-status',
+        args: { whyBlocked: true },
+      },
+      hookOutput('{"phase":"PLAN"}'),
+    );
+    const fields = afterLogFields(runtime);
+    expect(fields.hostToolOutcome).toBe('flowguard_returned');
+    expect(fields.statusProjection).toBe('whyBlocked');
+    expect(fields.hostToolCode).toBeUndefined();
+  });
+
+  it('BAD: a FlowGuard blocked result carries its code, before further after-hook processing', async () => {
+    const runtime = primedRuntime('c-blocked');
+    await toolAfter(
+      runtime,
+      { tool: 'flowguard_status', sessionID: SESSION_ID, callID: 'c-blocked', args: {} },
+      hookOutput('{"error":true,"code":"NO_SESSION"}'),
+    );
+    const fields = afterLogFields(runtime);
+    expect(fields.hostToolOutcome).toBe('flowguard_blocked');
+    expect(fields.hostToolCode).toBe('NO_SESSION');
+    expect(fields.statusProjection).toBe('full');
+  });
+
+  it('BAD: an unreadable FlowGuard payload stays unknown, never returned', async () => {
+    const runtime = primedRuntime('c-garbled');
+    await toolAfter(
+      runtime,
+      { tool: 'flowguard_status', sessionID: SESSION_ID, callID: 'c-garbled', args: {} },
+      hookOutput('not json'),
+    );
+    expect(afterLogFields(runtime).hostToolOutcome).toBe('unknown');
+  });
+
+  it('BAD: a missing start is reported as unavailable, never as zero', async () => {
+    const runtime = makeRuntime();
+    await toolAfter(
+      runtime,
+      { tool: 'read', sessionID: SESSION_ID, callID: 'c-none', args: {} },
+      hookOutput('ok'),
+    );
+    const fields = afterLogFields(runtime);
+    expect(fields.beforeToAfterMs).toBeUndefined();
+    expect(fields.durationUnavailable).toBe('start_not_observed');
+  });
+
+  it('EDGE: a throwing input accessor never changes the hook result', async () => {
+    const runtime = primedRuntime('c-throw');
+    const input = { tool: 'flowguard_status', sessionID: SESSION_ID, callID: 'c-throw' };
+    Object.defineProperty(input, 'args', {
+      get() {
+        throw new Error('hostile accessor');
+      },
+    });
+    const output = hookOutput('{"phase":"PLAN"}');
+    await expect(toolAfter(runtime, input, output)).resolves.toBeUndefined();
+    // Reference: the same call with readable args yields the same hook result.
+    const reference = hookOutput('{"phase":"PLAN"}');
+    await toolAfter(
+      makeRuntime(),
+      { tool: 'flowguard_status', sessionID: SESSION_ID, callID: 'c-throw', args: {} },
+      reference,
+    );
+    expect(output.output).toBe(reference.output);
+    const fields = afterLogFields(runtime);
+    expect(fields.statusProjection).toBeUndefined();
+    expect(fields.beforeToAfterMs).toBeGreaterThanOrEqual(0);
   });
 });

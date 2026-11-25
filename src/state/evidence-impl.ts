@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { RepositoryPathSchema } from './evidence-findings.js';
 import { LoopVerdict, RevisionDelta } from './evidence-primitives.js';
 
 /** Evidence produced by /implement — what files were changed. */
@@ -19,19 +20,18 @@ export const ImplEvidence = z
      * requires fresh checks.
      */
     implementationId: z.string().uuid(),
-    changedFiles: z.array(z.string()),
-    domainFiles: z.array(z.string()),
+    changedFiles: z.array(RepositoryPathSchema),
+    domainFiles: z.array(RepositoryPathSchema),
     /**
      * Content-bound digest of the change: hashes the CURRENT content of each changed
      * file (path + git blob hash), so two different edits to the same file set produce
-     * different digests. (Legacy sessions hashed only the sorted file-name list.)
+     * different digests.
      */
     digest: z.string().min(1),
     /**
      * Optional content digest of the captured unified diff (`implementation-diff.*.patch`).
-     * Binds the human-readable change artifact into the evidence. Optional for
-     * backward compatibility: sessions recorded before this field, or where no diff
-     * could be captured, omit it.
+     * Binds the human-readable change artifact into the evidence. Absent only
+     * when no unified diff could be captured for this recording.
      */
     diffDigest: z.string().min(1).optional(),
     executedAt: z.string().datetime(),

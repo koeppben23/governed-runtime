@@ -22,6 +22,7 @@ import {
   type ReviewObligation,
 } from './state/evidence-review.js';
 import type { ReviewInvocationEvidence } from './state/evidence-review-invocation.js';
+import { computePolicySnapshotHash } from './state/evidence-policy.js';
 import type {
   TicketEvidence,
   ArchitectureDecision,
@@ -40,8 +41,25 @@ import { IMPL_REVIEW_CONVERGED, SELF_REVIEW_CONVERGED } from './state/evidence-t
 import { deriveVerificationCandidateId } from './state/candidate-identity.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
 import { POLICY_DIGEST_VERSION } from './state/evidence-identifiers.js';
+import {
+  emptyClaimDeclarations,
+  PlanApprovalCertificate,
+  type PlanClaimDeclaration,
+  type ReviewBinding,
+} from './state/proofgraph-approval.js';
+import { planApprovalContextOf } from './state/proofgraph-approval-context.js';
+import { planApprovalCertificateIdentity } from './state/proofgraph-plan-certificate.js';
+import {
+  certifiedClaimDigest,
+  requiredEvidenceForDeclaration,
+} from './state/proofgraph-claim-certification.js';
+import type { DeclaredClaim } from './state/proofgraph.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
 import { hashText } from './shared/hashing.js';
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from './review-invocation-test-helpers.js';
 
 export {
   IMPL_REVIEW_CONVERGED,
@@ -69,9 +87,9 @@ export const BINDING: BindingInfo = {
   resolvedAt: FIXED_TIME,
 };
 
-export const POLICY_SNAPSHOT: PolicySnapshot = {
+const POLICY_SNAPSHOT_FIELDS: Omit<PolicySnapshot, 'hash'> = {
+  riskTriggerPaths: [],
   mode: 'team',
-  hash: 'a'.repeat(64),
   hashVersion: POLICY_DIGEST_VERSION,
   resolvedAt: FIXED_TIME,
   requestedMode: 'team',
@@ -111,14 +129,20 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   },
 };
 
-export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = {
-  ...POLICY_SNAPSHOT,
+/** Author a current snapshot; overrides must never inherit a stale policy hash. */
+export function makePolicySnapshot(overrides: Partial<PolicySnapshot> = {}): PolicySnapshot {
+  const snapshot = { ...POLICY_SNAPSHOT_FIELDS, hash: '', ...overrides };
+  return { ...snapshot, hash: computePolicySnapshotHash(snapshot) };
+}
+
+export const POLICY_SNAPSHOT = makePolicySnapshot();
+export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = makePolicySnapshot({
   mode: 'regulated',
   requestedMode: 'regulated',
   allowSelfApproval: false,
   minimumActorAssuranceForApproval: 'best_effort',
   enforceRiskClassification: true,
-};
+});
 
 export const DECISION_IDENTITY_INITIATOR: DecisionIdentity = {
   actorId: 'initiator-1',
@@ -228,6 +252,20 @@ const PLAN_REVIEW_CAPTURED_FINDINGS = capturedFindingsFor({
   sessionId: 'child-session-1',
 });
 
+const ARCHITECTURE_REVIEW_CAPTURE = messageCaptureFixture({
+  childSessionId: 'child-session-1',
+  obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+  findings: ARCHITECTURE_REVIEW_CAPTURED_FINDINGS,
+});
+
+const PLAN_REVIEW_CAPTURE = messageCaptureFixture({
+  childSessionId: 'child-session-1',
+  obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+  findings: PLAN_REVIEW_CAPTURED_FINDINGS,
+});
+
 /**
  * Canonical bound architecture review evidence for approve-path tests: a
  * consumed architecture obligation for exactly the ARCHITECTURE_DECISION
@@ -282,7 +320,11 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'native_task_structured_followup',
+      invocationMode: 'native_subagent_message_json',
+      transportVersion: 6,
+      capture: ARCHITECTURE_REVIEW_CAPTURE,
+      // Dispatch hostCallId of attempt eeeeeeee is 'child-session-1'.
+      nativeProvenance: nativeProvenanceFixture(ARCHITECTURE_REVIEW_CAPTURE, 'child-session-1'),
       hostVisible: true,
       transcriptNavigable: true,
       promptHash: 'a'.repeat(64),
@@ -294,9 +336,8 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       consumedByObligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       capturedVerdict: 'accept',
       capturedRawFindings: ARCHITECTURE_REVIEW_CAPTURED_FINDINGS,
-      reviewOutputMode: 'structured_output',
-      structuredOutputUsed: true,
-      reviewAssuranceLevel: 'structured_high',
+      reviewOutputMode: 'validated_json',
+      reviewAssuranceLevel: 'host_message_validated',
     },
   ],
   attempts: [
@@ -385,7 +426,11 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'native_task_structured_followup',
+      invocationMode: 'native_subagent_message_json',
+      transportVersion: 6,
+      capture: PLAN_REVIEW_CAPTURE,
+      // Dispatch hostCallId of attempt ffffffff is 'child-session-1'.
+      nativeProvenance: nativeProvenanceFixture(PLAN_REVIEW_CAPTURE, 'child-session-1'),
       hostVisible: true,
       transcriptNavigable: true,
       promptHash: 'b'.repeat(64),
@@ -397,9 +442,8 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       consumedByObligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       capturedVerdict: 'accept',
       capturedRawFindings: PLAN_REVIEW_CAPTURED_FINDINGS,
-      reviewOutputMode: 'structured_output',
-      structuredOutputUsed: true,
-      reviewAssuranceLevel: 'structured_high',
+      reviewOutputMode: 'validated_json',
+      reviewAssuranceLevel: 'host_message_validated',
     },
   ],
   attempts: [
@@ -556,6 +600,28 @@ export const IMPL_EVIDENCE: ImplEvidence = {
   executedAt: FIXED_TIME,
 };
 
+/**
+ * Digest-bound risk assessment for the canonical IMPL_EVIDENCE revision.
+ *
+ * `/implement` always records an implementation risk assessment; final evidence
+ * approval requires one bound to the current implementation digest. Ceremony-only
+ * triggers keep the canonical fixture free of a specific critical-claim demand.
+ */
+export const CURRENT_IMPL_RISK_ASSESSMENT: NonNullable<
+  SessionState['implementationRiskAssessment']
+> = {
+  computedMinimumTaskClass: 'STANDARD',
+  effectiveTaskClass: 'STANDARD',
+  declaredTaskClass: null,
+  declarationKind: 'absent',
+  ticketDigest: null,
+  touchedSurfaces: [...IMPL_EVIDENCE.changedFiles],
+  riskTriggers: ['ceremony_only'],
+  assessedFrom: 'implementation_changed_files',
+  assessedFileCount: IMPL_EVIDENCE.changedFiles.length,
+  implementationDigest: IMPL_EVIDENCE.digest,
+};
+
 /** Converged implementation review bound to the current implementation digest. */
 export const APPROVED_IMPL_REVIEW: ImplReviewResult = {
   iteration: 1,
@@ -614,11 +680,144 @@ export const FROZEN_IMPLEMENTATION_BASE = {
   objectSha: 'd'.repeat(40),
 };
 
+// ─── Plan Approval Certificate ────────────────────────────────────────────────
+
+export interface PlanApprovalCertificateOverrides {
+  readonly kind?: 'explicit_decision' | 'policy_auto';
+  readonly decision?: ReviewDecision;
+  readonly approvedAt?: string;
+  readonly authorityDigest?: string;
+  readonly claimDeclarationsDigest?: string;
+  readonly planVersion?: number;
+  readonly planRecordDigest?: string;
+  readonly reviewBinding?: ReviewBinding;
+}
+
+/**
+ * Build a schema-valid plan approval certificate for the given state: the
+ * attestation digest is recomputed canonically, the session/policy context is
+ * taken from the state, and the explicit decision time equals `approvedAt`.
+ * Tests that need a deliberately invalid certificate build it raw.
+ */
+export function makePlanApprovalCertificate(
+  state: SessionState,
+  overrides: PlanApprovalCertificateOverrides = {},
+): PlanApprovalCertificate {
+  const plan = state.plan;
+  if (!plan) throw new Error('makePlanApprovalCertificate requires a plan in state');
+  const context = planApprovalContextOf(state);
+  const approvedAt = overrides.approvedAt ?? FIXED_TIME;
+  const kind = overrides.kind ?? 'explicit_decision';
+  const common = {
+    flowguardSessionId: context.flowguardSessionId,
+    bindingDigest: context.bindingDigest,
+    policyHash: context.policyHash,
+    policyHashVersion: context.policyHashVersion,
+  };
+  const approvalAttestation =
+    kind === 'policy_auto'
+      ? { kind: 'policy_auto' as const, decidedAt: approvedAt, ...common }
+      : {
+          kind: 'explicit_decision' as const,
+          decision: overrides.decision ?? { ...REVIEW_APPROVE, decidedAt: approvedAt },
+          ...common,
+        };
+  const authorityDigest = overrides.authorityDigest ?? plan.current.digest;
+  const claimDeclarationsDigest =
+    overrides.claimDeclarationsDigest ??
+    hashText(canonicalJsonStringify(plan.claimDeclarations ?? emptyClaimDeclarations('plan')));
+  const planVersion = overrides.planVersion ?? plan.current.planVersion;
+  const planRecordDigest = overrides.planRecordDigest ?? plan.current.recordDigest;
+  const reviewBinding: ReviewBinding = overrides.reviewBinding ?? {
+    kind: 'current_review',
+    reviewObligationId: '00000000-0000-4000-8000-000000000765',
+    reviewEvidenceDigest: 'review-evidence-digest',
+    reviewedSubjectDigest: plan.current.digest,
+  };
+  const decisionAttestationDigest = hashText(canonicalJsonStringify(approvalAttestation));
+  return PlanApprovalCertificate.parse({
+    schemaVersion: 'plan-approval-certificate.v1',
+    flow: 'plan',
+    authorityDigest,
+    claimDeclarationsDigest,
+    decisionAttestationDigest,
+    approvedAt,
+    certificateId: planApprovalCertificateIdentity({
+      authorityDigest,
+      claimDeclarationsDigest,
+      decisionAttestationDigest,
+      planVersion,
+      planRecordDigest,
+      reviewBinding,
+      approvedAt,
+    }),
+    planVersion,
+    planRecordDigest,
+    reviewBinding,
+    approvalAttestation,
+  });
+}
+
+/**
+ * Materialize a certificate-bound plan claim exactly as the product
+ * materializer does: the certified origin digest is recomputed from the
+ * declaration so gate bindings verify. Tests must not hand-copy the digest.
+ */
+export function materializedPlanClaim(
+  declaration: PlanClaimDeclaration,
+  certificate: PlanApprovalCertificate,
+): DeclaredClaim {
+  return {
+    claimId: declaration.claimId,
+    statement: declaration.statement,
+    signalClass: 'fact',
+    critical: declaration.critical,
+    claimScope: declaration.claimScope,
+    provenance: {
+      kind: 'canonical_authority',
+      authorityId: 'plan',
+      digest: certificate.authorityDigest,
+      approval: {
+        certificateId: certificate.certificateId,
+        claimDeclarationsDigest: certificate.claimDeclarationsDigest,
+        decisionAttestationDigest: certificate.decisionAttestationDigest,
+        declarationId: declaration.claimId,
+      },
+    },
+    evidenceRefs: [],
+    counterexampleRefs: [],
+    ...(declaration.counterexampleRequirement !== undefined
+      ? { counterexampleRequirement: declaration.counterexampleRequirement }
+      : {}),
+    ...(declaration.coversRiskTriggers !== undefined
+      ? { coversRiskTriggers: [...declaration.coversRiskTriggers] }
+      : {}),
+    requiredEvidence: requiredEvidenceForDeclaration(declaration),
+    certifiedPlan: {
+      authoritySectionId: declaration.authoritySectionId,
+      expectedCheckId: declaration.expectedCheckId,
+      ...(declaration.expectedAssertion !== undefined
+        ? { expectedAssertion: { ...declaration.expectedAssertion } }
+        : {}),
+      ...(declaration.structuralSurface !== undefined
+        ? { structuralSurface: declaration.structuralSurface }
+        : {}),
+      ...(declaration.mutationProfile !== undefined
+        ? { mutationProfile: declaration.mutationProfile }
+        : {}),
+      digest: certifiedClaimDigest(declaration),
+    },
+  };
+}
+
 // ─── State Factory ────────────────────────────────────────────────────────────
 
 /**
  * Create a minimal valid SessionState at any phase.
  * Override fields via the partial parameter.
+ * Policy overrides AUTHOR a new fixture policy with its matching hash. To model
+ * on-disk policy tampering use {@link withTamperedPolicySnapshot}; a
+ * `policySnapshot` override can never express a digest mismatch.
  */
 export function makeState(
   phase: Phase = 'READY',
@@ -661,12 +860,11 @@ export function makeState(
     activeProfile: null,
     activeChecks: ['test', 'lint'],
     implementationBaseline: {
-      dirtyFiles: null,
+      dirtyFiles: [],
       capturedAt: FIXED_TIME,
       controlPlaneMarker: 'test-control-plane-marker',
     },
     proofGraph: { version: 'proofgraph.v2', claims: [], evaluatedAt: FIXED_TIME },
-    policySnapshot: POLICY_SNAPSHOT,
     initiatedBy: 'initiator-1',
     initiatedByIdentity: DECISION_IDENTITY_INITIATOR,
     transition: null,
@@ -677,7 +875,25 @@ export function makeState(
     pendingSystemWork: null,
     regulatedArchiveStatus: null,
     ...overrides,
+    // An explicitly undefined snapshot models a corrupted state (fail-closed
+    // tests); otherwise overrides author a snapshot with its matching hash.
+    ...('policySnapshot' in overrides && overrides.policySnapshot === undefined
+      ? { policySnapshot: undefined as never }
+      : { policySnapshot: makePolicySnapshot(overrides.policySnapshot) }),
   };
+}
+
+/**
+ * Model on-disk policy tampering: change frozen policy fields WITHOUT
+ * recomputing the recorded digest, so the canonical persistence boundary must
+ * classify the result as an integrity mismatch. The explicit tamper helper is
+ * the only fixture path that produces a digest mismatch.
+ */
+export function withTamperedPolicySnapshot(
+  state: SessionState,
+  edits: Partial<Omit<PolicySnapshot, 'hash'>>,
+): SessionState {
+  return { ...state, policySnapshot: { ...state.policySnapshot, ...edits } };
 }
 export function makeProgressedState(phase: Phase): SessionState {
   switch (phase) {
@@ -744,6 +960,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         reviewDecision: REVIEW_APPROVE,
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implValidation: VALIDATION_PASSED,
         verificationCandidates: VERIFICATION_CANDIDATES,
         implReview: IMPL_REVIEW_CONVERGED,
@@ -758,6 +975,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         reviewDecision: REVIEW_APPROVE,
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implValidation: VALIDATION_PASSED,
         verificationCandidates: VERIFICATION_CANDIDATES,
         implReview: IMPL_REVIEW_CONVERGED,

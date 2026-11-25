@@ -45,7 +45,10 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ToolDefinition } from './tools/helpers.js';
 import { FIXED_SESSION_UUID } from '../fixtures.js';
 
@@ -114,14 +117,13 @@ vi.mock('../adapters/workspace/index.js', async (importOriginal) => {
     ...original,
     archiveSession: vi.fn(original.archiveSession),
     verifyArchive: vi.fn(original.verifyArchive),
+    verifyCompletionExport: vi.fn(original.verifyCompletionExport),
   };
 });
 
 const regulatedArchiveMock = vi.hoisted(() => ({
   archiveRegulatedEvidence: vi.fn(),
   archiveCompletionExport: vi.fn(),
-  archiveFileName: (sessionId: string, regulatedEvidence = false) =>
-    `${regulatedEvidence ? 'regulated-' : ''}${sessionId}.tar.gz`,
 }));
 
 vi.mock('../adapters/workspace/archive.js', () => regulatedArchiveMock);
@@ -165,6 +167,13 @@ beforeEach(async () => {
       )
     ).verifyArchive,
   );
+  vi.mocked(workspaceMock.verifyCompletionExport).mockImplementation(
+    (
+      await vi.importActual<typeof import('../adapters/workspace/index.js')>(
+        '../adapters/workspace/index.js',
+      )
+    ).verifyCompletionExport,
+  );
   vi.mocked(regulatedArchive.archiveRegulatedEvidence).mockImplementation(
     (
       await vi.importActual<typeof import('../adapters/workspace/archive.js')>(
@@ -182,7 +191,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -211,7 +220,7 @@ function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void 
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,

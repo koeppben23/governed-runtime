@@ -16,6 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Readable } from 'node:stream';
+import { MAX_HOOK_PAYLOAD_BYTES } from './shared/limits.js';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -38,12 +39,33 @@ vi.mock('../adapters/workspace/index.js', () => ({
   computeFingerprint: (...args: unknown[]) => mockComputeFingerprint(...args),
 }));
 
+// Mock git root resolution (H8: payload cwd is never a filesystem authority).
+const mockResolveRoot = vi.fn();
+
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/git.js')>();
+  return { ...actual, resolveRoot: (...args: unknown[]) => mockResolveRoot(...args) };
+});
+
 // Mock audit persistence.
 const mockAppendAuditEvent = vi.fn();
 
 vi.mock('../adapters/persistence-audit.js', () => ({
   appendAuditEvent: (...args: unknown[]) => mockAppendAuditEvent(...args),
 }));
+
+// Mock the bounded transport ingestion-failure ledger.
+const mockAppendHookIngestFailure = vi.hoisted(() =>
+  vi.fn(async (..._args: unknown[]) => ({ recorded: true })),
+);
+
+vi.mock('../adapters/persistence-hook-ingest.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/persistence-hook-ingest.js')>();
+  return {
+    ...actual,
+    appendHookIngestFailure: (...args: unknown[]) => mockAppendHookIngestFailure(...args),
+  };
+});
 
 // Mock session-resolver (not used by handleSessionStart, but imported by module).
 const mockResolveSession = vi.fn();
@@ -65,7 +87,7 @@ vi.mock('./shared/obligation-tracker.js', () => ({
     reviewAssurance?: { obligations?: Array<{ status: string; consumedAt: string | null }> };
   }) =>
     (state.reviewAssurance?.obligations ?? []).filter(
-      (ob) => ob.status !== 'consumed' && ob.consumedAt == null,
+      (ob) => (ob.status === 'pending' || ob.status === 'fulfilled') && ob.consumedAt == null,
     ),
 }));
 
@@ -105,9 +127,20 @@ beforeEach(async () => {
     sessionDir: (...args: unknown[]) => mockSessionDir(...args),
     computeFingerprint: (...args: unknown[]) => mockComputeFingerprint(...args),
   }));
+  vi.doMock('../adapters/git.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../adapters/git.js')>();
+    return { ...actual, resolveRoot: (...args: unknown[]) => mockResolveRoot(...args) };
+  });
   vi.doMock('../adapters/persistence-audit.js', () => ({
     appendAuditEvent: (...args: unknown[]) => mockAppendAuditEvent(...args),
   }));
+  vi.doMock('../adapters/persistence-hook-ingest.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../adapters/persistence-hook-ingest.js')>();
+    return {
+      ...actual,
+      appendHookIngestFailure: (...args: unknown[]) => mockAppendHookIngestFailure(...args),
+    };
+  });
   vi.doMock('./shared/session-resolver.js', () => ({
     resolveSession: (...args: unknown[]) => mockResolveSession(...args),
   }));
@@ -123,7 +156,7 @@ beforeEach(async () => {
       reviewAssurance?: { obligations?: Array<{ status: string; consumedAt: string | null }> };
     }) =>
       (state.reviewAssurance?.obligations ?? []).filter(
-        (ob) => ob.status !== 'consumed' && ob.consumedAt == null,
+        (ob) => (ob.status === 'pending' || ob.status === 'fulfilled') && ob.consumedAt == null,
       ),
   }));
 
@@ -132,6 +165,9 @@ beforeEach(async () => {
   handlePreToolUse = mod.handlePreToolUse;
   handleHttpRequest = mod.handleHttpRequest;
   readHttpHookServerConfig = mod.readHttpHookServerConfig;
+
+  mockResolveRoot.mockReset();
+  mockResolveRoot.mockResolvedValue('/tmp/project');
 });
 
 afterEach(() => {
@@ -142,6 +178,7 @@ afterEach(() => {
   delete process.env['FLOWGUARD_HOOK_HOST'];
   delete process.env['FLOWGUARD_HOOK_PORT'];
   delete process.env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
+  delete process.env['FLOWGUARD_SESSION_DIR'];
   process.exitCode = undefined;
   for (const listener of process.listeners('SIGINT') as NodeJS.SignalsListener[]) {
     if (!signalListenerBaseline.sigint.includes(listener)) process.off('SIGINT', listener);
@@ -235,6 +272,52 @@ describe('handleSessionStart', () => {
           enforcementLevel: 'hook_gated',
         }),
       );
+    });
+  });
+
+  describe('H8 cwd binding', () => {
+    it('bootstraps the git-resolved worktree root, not the raw payload cwd', async () => {
+      mockResolveRoot.mockResolvedValue('/canonical/project');
+      mockEnsureWorkspace.mockResolvedValue(undefined);
+      mockResolveSession.mockResolvedValue({
+        ok: true,
+        sessionDir: '/workspace/sessions/fp/sess_test_123',
+        state: { flowguardSessionId: '00000000-0000-4000-8000-000000000004', phase: 'READY' },
+      });
+      mockAppendAuditEvent.mockResolvedValue(undefined);
+
+      await handleSessionStart(validPayload);
+
+      expect(mockResolveRoot).toHaveBeenCalledWith('/tmp/project');
+      expect(mockEnsureWorkspace).toHaveBeenCalledWith('/canonical/project');
+    });
+
+    it('rejects bootstrap when the cwd is not a git worktree', async () => {
+      mockResolveRoot.mockRejectedValue(new Error('not a git repository'));
+
+      const result = await handleSessionStart(validPayload);
+
+      expect(result).toEqual({
+        decision: 'allow',
+        reason: 'workspace bootstrap failed (non-blocking)',
+      });
+      expect(mockEnsureWorkspace).not.toHaveBeenCalled();
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('skips bootstrap under the explicit session-dir override', async () => {
+      process.env['FLOWGUARD_SESSION_DIR'] = '/override/dir';
+      mockResolveSession.mockResolvedValue({
+        ok: true,
+        sessionDir: '/override/dir',
+        state: { flowguardSessionId: '00000000-0000-4000-8000-000000000005', phase: 'READY' },
+      });
+      mockAppendAuditEvent.mockResolvedValue(undefined);
+
+      await handleSessionStart(validPayload);
+
+      expect(mockResolveRoot).not.toHaveBeenCalled();
+      expect(mockEnsureWorkspace).not.toHaveBeenCalled();
     });
   });
 
@@ -339,6 +422,54 @@ describe('handlePreToolUse', () => {
     expect(result.decision).toBe('deny');
     expect(result.code).toBe('REVIEW_OBLIGATION_UNRESOLVED');
     expect(result.reason).toContain('11111111-1111-4111-8111-111111111111');
+  });
+
+  it('HAPPY: allows mutating host tools when only terminal obligations remain', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: {
+        phase: 'IMPLEMENTATION',
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: '22222222-2222-4222-8222-222222222222',
+              status: 'blocked',
+              consumedAt: null,
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await handlePreToolUse(validPayload);
+
+    expect(result).toEqual({ decision: 'allow' });
+  });
+
+  it('BAD: denies mutating host tools while an integrity incident (evidence reuse) is unresolved', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: {
+        phase: 'IMPLEMENTATION',
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: '33333333-3333-4333-8333-333333333333',
+              status: 'blocked',
+              blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+              consumedAt: null,
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await handlePreToolUse(validPayload);
+
+    expect(result.decision).toBe('deny');
+    expect(result.code).toBe('INTEGRITY_INCIDENT_MUTATION_DENIED');
   });
 
   it('HAPPY: allows non-mutating resolution tools without session resolution', async () => {
@@ -448,7 +579,7 @@ describe('handleHttpRequest', () => {
     { label: 'missing content type', headers: { 'content-type': '' } },
     { label: 'wrong content type', headers: { 'content-type': 'text/json' } },
   ])('BAD: $label returns 415 before state resolution', async ({ headers }) => {
-    const req = makeRequest({ body: '{}', headers });
+    const req = makeRequest({ url: '/hooks/post-tool-use', body: '{}', headers });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
@@ -501,26 +632,143 @@ describe('handleHttpRequest', () => {
     expect(mockAppendAuditEvent).not.toHaveBeenCalled();
   });
 
-  it('BAD: invalid JSON returns 400', async () => {
-    const req = makeRequest({ body: '{not-json}' });
+  it('BAD: invalid JSON returns 400 and records a transport ingestion failure', async () => {
+    const req = makeRequest({ url: '/hooks/post-tool-use', body: '{not-json}' });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(400);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Invalid JSON in request body' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Invalid JSON in request body',
+      auditFailureRecorded: true,
+    });
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_PAYLOAD_INVALID',
+        observedBytes: Buffer.byteLength('{not-json}'),
+        observedPrefix: Buffer.from('{not-json}'),
+      }),
+    );
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 
   it.each(['[]', 'null', '"string"'])('BAD: non-object JSON body %s returns 400', async (body) => {
-    const req = makeRequest({ body });
+    const req = makeRequest({ url: '/hooks/post-tool-use', body });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(400);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Request body must be a JSON object' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Request body must be a JSON object',
+      auditFailureRecorded: true,
+    });
     expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it('BAD: post-tool-use validation failure is recorded with the observed raw bytes', async () => {
+    const body = JSON.stringify({ foo: 'bar' });
+    const req = makeRequest({ url: '/hooks/post-tool-use', body });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      decision: 'allow',
+      reason: 'audit skipped: HOOK_PAYLOAD_INVALID',
+      auditFailureRecorded: true,
+    });
+    // The transport already read and parsed the body: the observed raw bytes
+    // are preserved instead of claiming an unavailable digest.
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_PAYLOAD_INVALID',
+        observedBytes: Buffer.byteLength(body),
+        observedPrefix: Buffer.from(body),
+      }),
+    );
+    expect(mockAppendAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('BAD: post-tool-use invalid content type is recorded with an unavailable digest', async () => {
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: '{}',
+      headers: { 'content-type': 'text/json' },
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(415);
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Content-Type must be application/json',
+      auditFailureRecorded: true,
+    });
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_PAYLOAD_INVALID',
+        observedBytes: null,
+        observedPrefix: null,
+      }),
+    );
+  });
+
+  it('BAD: a single oversized chunk observes its bytes but retains only the cap prefix', async () => {
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: 'y'.repeat(MAX_HOOK_PAYLOAD_BYTES + 64 * 1024),
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(413);
+    const [failure] = mockAppendHookIngestFailure.mock.calls[0] as [
+      { observedBytes: number; observedPrefix: Buffer },
+    ];
+    expect(failure.observedBytes).toBe(MAX_HOOK_PAYLOAD_BYTES + 64 * 1024);
+    expect(Buffer.isBuffer(failure.observedPrefix)).toBe(true);
+    expect(failure.observedPrefix.byteLength).toBe(MAX_HOOK_PAYLOAD_BYTES);
+  });
+
+  it('BAD: a stream failure after observed chunks preserves their bytes', async () => {
+    const req = new Readable({
+      read() {
+        this.push('{"tool_name":"Bash"');
+        this.destroy(new Error('connection reset'));
+      },
+    }) as Readable & {
+      method?: string;
+      url?: string;
+      headers: Record<string, string>;
+      rawHeaders: string[];
+    };
+    req.method = 'POST';
+    req.url = '/hooks/post-tool-use';
+    req.headers = {
+      authorization: `Bearer ${TEST_HOOK_TOKEN}`,
+      'content-type': 'application/json',
+    };
+    req.rawHeaders = [];
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(400);
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_STDIN_INVALID',
+        observedBytes: Buffer.byteLength('{"tool_name":"Bash"'),
+        observedPrefix: Buffer.from('{"tool_name":"Bash"'),
+      }),
+    );
   });
 
   it('HAPPY: /hooks/post-tool-use appends a tool_call audit event', async () => {
@@ -804,7 +1052,7 @@ describe('handleHttpRequest', () => {
       session_id: 'sess_test_123',
       cwd: '/tmp/project',
     });
-    const req = makeRequest({ body, contentLength: '1048576' });
+    const req = makeRequest({ body, contentLength: String(MAX_HOOK_PAYLOAD_BYTES) });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
@@ -814,25 +1062,171 @@ describe('handleHttpRequest', () => {
   });
 
   it('BAD: rejects Content-Length over the hook body limit with 413', async () => {
-    const req = makeRequest({ body: '{}', contentLength: '1048577' });
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: '{}',
+      contentLength: String(MAX_HOOK_PAYLOAD_BYTES + 1),
+    });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(413);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Request body too large' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Request body too large',
+      auditFailureRecorded: true,
+    });
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 
   it('BAD: rejects streamed bodies over the hook body limit with 413', async () => {
-    const req = makeRequest({ body: 'x'.repeat(1_048_577) });
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: 'x'.repeat(MAX_HOOK_PAYLOAD_BYTES + 1),
+    });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(413);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Request body too large' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Request body too large',
+      auditFailureRecorded: true,
+    });
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_STDIN_INVALID',
+        observedBytes: MAX_HOOK_PAYLOAD_BYTES + 1,
+      }),
+    );
     expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  // D1 (#1027): Claude Code treats non-2xx HTTP hook responses as non-blocking.
+  // Every authenticated pre-tool-use transport/validation failure must therefore
+  // be delivered as a protocol-correct HTTP 2xx DENY. Transport failures on the
+  // non-blocking informational routes keep their status codes.
+  describe('D1: pre-tool-use transport failures are host-observable DENY', () => {
+    function expectPreToolUseDeny(
+      res: ReturnType<typeof makeResponse>,
+      expectedCode: string,
+    ): void {
+      expect(res.status).toBe(200);
+      expect(res.headers['Content-Type']).toBe('application/json');
+      const body = JSON.parse(res.body);
+      expect(body.decision).toBe('deny');
+      expect(body.code).toBe(expectedCode);
+      expect(body.hookSpecificOutput).toEqual(
+        expect.objectContaining({
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: expect.stringContaining(expectedCode),
+        }),
+      );
+    }
+
+    it.each([
+      { label: 'missing content type', headers: { 'content-type': '' } },
+      { label: 'wrong content type', headers: { 'content-type': 'text/json' } },
+    ])('BAD: $label returns 200 host-observable DENY', async ({ headers }) => {
+      const req = makeRequest({ body: '{}', headers });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expectPreToolUseDeny(res, 'HOOK_PAYLOAD_INVALID');
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('BAD: Content-Length over the hook body limit returns 200 host-observable DENY', async () => {
+      const req = makeRequest({
+        body: '{}',
+        contentLength: String(MAX_HOOK_PAYLOAD_BYTES + 1),
+      });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expectPreToolUseDeny(res, 'HOOK_STDIN_INVALID');
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('BAD: streamed body over the hook body limit returns 200 host-observable DENY', async () => {
+      const req = makeRequest({ body: 'x'.repeat(MAX_HOOK_PAYLOAD_BYTES + 1) });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expectPreToolUseDeny(res, 'HOOK_STDIN_INVALID');
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('HAPPY: streamed body exactly at the hook body limit is not rejected as oversized', async () => {
+      const payload = JSON.stringify({
+        tool_name: 'Read',
+        tool_input: {},
+        session_id: 's1',
+        cwd: '/tmp',
+      });
+      const body = payload + ' '.repeat(MAX_HOOK_PAYLOAD_BYTES - payload.length);
+      const req = makeRequest({ body });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({ decision: 'allow' });
+    });
+
+    it.each(['{not-json}', '[]', 'null', '"string"'])(
+      'BAD: malformed body %s returns 200 host-observable DENY',
+      async (body) => {
+        const req = makeRequest({ body });
+        const res = makeResponse();
+
+        await handleHttpRequest(req as never, res as never);
+
+        expectPreToolUseDeny(res, 'HOOK_PAYLOAD_INVALID');
+        expect(mockResolveSession).not.toHaveBeenCalled();
+      },
+    );
+
+    it('BAD: body read failure returns 200 host-observable DENY', async () => {
+      const req = makeRequest({ body: '' });
+      Object.defineProperty(req, Symbol.asyncIterator, {
+        value: () => {
+          throw new Error('read exploded');
+        },
+      });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expectPreToolUseDeny(res, 'HOOK_STDIN_INVALID');
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('BAD: unauthenticated pre-tool-use still returns 401 (trust boundary unchanged)', async () => {
+      const req = makeRequest({ body: '{}', headers: { authorization: '' } });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expect(res.status).toBe(401);
+      expect(JSON.parse(res.body)).toEqual({ error: 'Unauthorized' });
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('BAD: non-POST pre-tool-use still returns 405 before route resolution', async () => {
+      const req = makeRequest({ method: 'GET', url: '/hooks/pre-tool-use', body: '' });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expect(res.status).toBe(405);
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
   });
 });
 

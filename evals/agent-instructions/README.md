@@ -14,7 +14,10 @@ Missing or unsupported host metadata fails closed.
 Materialization and live behavior are separate assurance dimensions:
 
 - **OpenCode** materialization uses the production managed-mandate renderer, digest,
-  managed artifact builder, and production `mergeOpencodeJson` path.
+  managed artifact builder, native plugin/agent/command templates and obsolete-install
+  preflight. Existing customer config bytes remain untouched; no global instruction
+  source or permission rewrite is added. Obsolete FlowGuard registration is rejected,
+  not converted.
 - **Claude Code** materialization uses the production Claude plugin-template generator.
 - **Codex** materialization uses the production Codex plugin-template generator plus an
   isolated marketplace registration matching the production registration contract.
@@ -22,10 +25,11 @@ Materialization and live behavior are separate assurance dimensions:
 The deterministic harness proves that those host-specific files are materialized from
 production code and that the runner/reporting machinery behaves correctly. It does **not**
 prove native host load, model-context visibility, hook trust, or model compliance.
-In particular, the full installed `flowguard-mandates.md` is wired as an OpenCode
-instruction source; Claude Code and Codex use their own plugin adapter surfaces. Their
-plugin materialization must therefore not be cited as evidence that the full v5 mandate
-body was injected into a model context. Native load and behavioral compliance remain
+In particular, materializing `flowguard-mandates.md` and the native OpenCode plugin
+does not activate governance or wire a global instruction source. Claude Code and Codex
+use their own plugin adapter surfaces. Materialization on any host must not be cited
+as evidence that the full v5 mandate body was injected into a model context.
+Native load and behavioral compliance remain
 `NOT_VERIFIED` until observed with the matching real host/provider.
 
 ## Structure

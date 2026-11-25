@@ -83,12 +83,117 @@ function artifactRelation(artifactDigest: string, evidenceLocations: unknown[] =
   };
 }
 
+function repositoryChangeFixture(): { obligation: ReviewObligation; attempt: ReviewAttempt } {
+  const changedFiles = [
+    'src/main/java/com/example/taskmanager/dto/CreateTaskRequest.java',
+    'src/main/java/com/example/taskmanager/model/Task.java',
+  ];
+  const obligation = createReviewObligation({
+    obligationType: 'review',
+    reviewCycle: 1,
+    iteration: 1,
+    planVersion: 1,
+    now: NOW,
+    subjectDigest: SUBJECT,
+    reviewMaterial: freezeReviewMaterial('frozen review material', SUBJECT),
+    reviewSubjectScope: {
+      kind: 'repository_change',
+      paths: changedFiles,
+      revisions: ['base', 'head'],
+    },
+    changedFiles,
+    repositoryAuthority: {
+      kind: 'candidate_pair' as const,
+      base: {
+        kind: 'commit' as const,
+        repositoryIdentity: REPOSITORY_IDENTITY,
+        objectSha: BASE_SHA,
+      },
+      head: {
+        kind: 'commit' as const,
+        repositoryIdentity: REPOSITORY_IDENTITY,
+        objectSha: HEAD_SHA,
+      },
+    },
+  });
+  const minted = appendObligationWithAttempt(ensureReviewAssurance(undefined), obligation, NOW);
+  const attempt = minted.assurance.attempts.find((item) => item.attemptId === minted.attemptId);
+  if (!attempt) throw new Error('FAIL_CLOSED: fixture attempt missing');
+  return { obligation, attempt };
+}
+
+function repositoryRelation(subjectPath: string, evidencePath: string) {
+  return {
+    subjectAnchors: [
+      { kind: 'repository_location', location: { path: subjectPath, revision: 'head' } },
+    ],
+    evidenceLocations: [{ path: evidencePath, revision: 'head' }],
+  };
+}
+
 describe('validatePreBindFindings', () => {
   it('admits findings with no relations against the frozen attempt', () => {
     const { obligation, attempt } = planFixture();
 
     const result = validatePreBindFindings({
       findings: { blockingIssues: [], majorRisks: [] },
+      obligation,
+      attempt,
+      childSessionId: CHILD,
+    });
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('reports the frozen allowed subject paths for a missing-change finding anchored outside the changed files', () => {
+    const { obligation, attempt } = repositoryChangeFixture();
+    const changed = 'src/main/java/com/example/taskmanager/dto/CreateTaskRequest.java';
+    const unchanged = 'src/main/java/com/example/taskmanager/service/TaskService.java';
+
+    const result = validatePreBindFindings({
+      findings: {
+        blockingIssues: [
+          {
+            severity: 'critical',
+            message: 'The introduced dueDate is not processed by TaskService.',
+            relation: repositoryRelation(unchanged, unchanged),
+          },
+        ],
+        majorRisks: [],
+      },
+      obligation,
+      attempt,
+      childSessionId: CHILD,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+      details: {
+        findingIndex: '0',
+        allowedSubjectPaths: [changed, 'src/main/java/com/example/taskmanager/model/Task.java'],
+      },
+    });
+  });
+
+  it('admits a missing-change finding anchored at the changed location that introduces it', () => {
+    const { obligation, attempt } = repositoryChangeFixture();
+    const changed = 'src/main/java/com/example/taskmanager/dto/CreateTaskRequest.java';
+
+    const result = validatePreBindFindings({
+      findings: {
+        blockingIssues: [
+          {
+            severity: 'critical',
+            message: 'The introduced dueDate is not processed by TaskService.',
+            // Evidence-bearing unchanged files are checked by the observation
+            // authority; the scope layer only requires the subject anchor to
+            // sit in the reviewed change.
+            relation: { ...repositoryRelation(changed, changed), evidenceLocations: [] },
+          },
+        ],
+        majorRisks: [],
+      },
       obligation,
       attempt,
       childSessionId: CHILD,

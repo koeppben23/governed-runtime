@@ -104,43 +104,46 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### 1. Bootstrap
 
-Every governed session starts with explicit hydration:
+OpenCode governance starts only through explicit native activation:
 
 ```
-/hydrate
+/start
 ```
 
-The system establishes workspace binding (OpenCode session to git worktree via repository fingerprint), runs a 6-collector discovery pipeline (repo metadata, stack detection, topology analysis, surface detection, bounded code-surface analysis, domain signals), resolves the FlowGuard profile via repository signals and discovery results, creates an immutable policy snapshot, writes discovery and profile-resolution snapshots, and initializes canonical state in the workspace registry. If prerequisites are missing, execution **blocks** with a reason code.
+For a fresh authorized start, the existing internal `hydrateWorkflow()` preparation establishes workspace binding (OpenCode session to git worktree via repository fingerprint), runs discovery, resolves the FlowGuard profile, freezes policy and initializes canonical state. The native Start path commits scoped activation and confirms its audit. Policy-authorized autonomous activation uses `StartGovernance`, not prompt text or direct hydrate. Missing prerequisites **block** with a reason code. ACTIVE/ACTIVATING repeats reuse their exact binding; missing or damaged authority is never recreated. `/hydrate` remains an authorized reload, including read-only terminal reload, not activation or restart.
 
 ### 2. Governed Command Surface
 
-Nineteen installed core FlowGuard commands cover workflow, diagnostics, and operations:
+The installed FlowGuard command catalog (templates plus native callbacks) covers workflow, diagnostics, and operations:
 
-| Command                             | Purpose                                                                                                             |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `/hydrate`                          | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                               |
-| `/status`                           | Show current phase, blockers, evidence, context, and readiness projections                                          |
-| `/finish`                           | Read-only Finish Card: overall readiness, evidence, and non-normative next-action guidance before export/PR/archive |
-| `/help`                             | Read-only context-sensitive guidance for the current workflow situation                                             |
-| `/commands`                         | Read-only list of context-relevant commands; `--all` shows the complete reference                                   |
-| `/ticket`                           | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs.      |
-| `/plan`                             | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.                 |
-| `/architecture`                     | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**.  |
-| `/review`                           | Generate peer or content-aware review. Completed reviews display a **Review Report Card**.         |
-| `/review-decision`                  | Record human verdict at User Gates (approve / changes_requested / reject)                                           |
-| `/implement`                        | Execute implementation, record evidence, run review loop                                                            |
-| `/export`                           | Materialize the required verifiable export; the workflow reaches COMPLETE only after export evidence is persisted   |
-| `/resolve-implementation-challenge` | Record advisory evidence addressing an implementation review challenge                                              |
-| `/override-approve`                 | Accept an exhausted review gate with an explicit, recorded governance override                                      |
-| `/reconcile-mutation-episode`       | Resolve a host mutation episode whose outcome can never be observed; forces a fresh worktree recapture              |
-| `/validate`                         | Record validation checks (test quality, rollback safety); validation runs automatically (compatibility surface)     |
-| `/continue`                         | Compatibility routing — advance the workflow on explicit request, not workflow guidance                             |
-| `/abort`                            | Emergency session termination                                                                                       |
-| `/archive`                          | Archive a completed session as `.tar.gz`                                                                            |
+| Command                             | Purpose                                                                                                                       |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `/hydrate`                          | Reload an authorized session; no activation, restart or repair of missing authority                                           |
+| `/status`                           | Show current phase, blockers, evidence, context, and readiness projections                                                    |
+| `/finish`                           | Read-only Finish Card: overall readiness, evidence, and non-normative next-action guidance before export/PR/archive           |
+| `/help`                             | Read-only context-sensitive guidance for the current workflow situation                                                       |
+| `/commands`                         | Read-only list of context-relevant commands; `--all` shows the complete reference                                             |
+| `/ticket`                           | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs.                |
+| `/plan`                             | Generate implementation plan with independent review. Converged plans display a **Plan Review Card**.                         |
+| `/architecture`                     | Submit Architecture Decision Record with independent review. Converged ADRs display an **Architecture Review Card**.          |
+| `/review`                           | Generate peer or content-aware review. Completed reviews display a **Review Report Card**.                                    |
+| `/review-decision`                  | Record human verdict at User Gates (approve / changes_requested / reject)                                                     |
+| `/implement`                        | Execute implementation, record evidence, run review loop                                                                      |
+| `/export`                           | Materialize the required verifiable export; the workflow reaches COMPLETE only after export evidence is persisted             |
+| `/resolve-implementation-challenge` | Record advisory evidence addressing an implementation review challenge                                                        |
+| `/override-approve`                 | Accept an exhausted review gate with an explicit, recorded governance override                                                |
+| `/reconcile-mutation-episode`       | Resolve a host mutation episode whose outcome can never be observed; forces a fresh worktree recapture                        |
+| `/validate`                         | Record validation checks (test quality, rollback safety); validation runs automatically (compatibility surface)               |
+| `/continue`                         | Read-only routing: report the canonical next action without executing checks, reviews or transitions                          |
+| `/check`                            | Native ACTIVE-root check/review turn with explicit scope, build-agent execution and scope/agent cleanup; not a VALIDATE alias |
+| `/abort`                            | Emergency session termination                                                                                                 |
+| `/archive`                          | Archive a completed session as `.tar.gz`                                                                                      |
 
-Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
+Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/why`) provide user-facing entry points to canonical activation, decision and tool operations. `/check` is the native scoped operation listed above, not a tool alias. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
 
-Each command is tied to phase admissibility rules, evidence requirements, and state transitions.
+Mutating commands retain their phase, evidence and policy guards. Read-only commands
+report state without performing transitions; native `/check` admission belongs to
+its ACTIVE-root callback, not to the catalogue's machine-command projection.
 
 ### 3. Phase Workflow
 
@@ -148,7 +151,7 @@ The platform offers **three independent flows** starting from a shared READY ent
 
 ```mermaid
 flowchart LR
-    HYD[/hydrate/] --> READY
+    START[Explicit /start or authorized StartGovernance] --> READY
     READY --> TICKET
     READY --> ARCH[ARCHITECTURE]
     READY --> PEER_REVIEW
@@ -178,18 +181,24 @@ digest-stop convergence:
   Consequences honesty, MADR structure)
 - **IMPL_REVIEW phase** — implementation review loop (`obligationType: 'implement'`)
 
-The FlowGuard plugin deterministically invokes the `flowguard-reviewer` subagent
-via the OpenCode SDK client (`session.create()` + `session.prompt()` with
-`json_schema` structured output) — no LLM decision is involved for invocation.
+The parent follows the returned `reviewInvocation` using OpenCode V2's native
+`subagent` tool. FlowGuard deterministically authorizes the exact pending
+obligation/attempt before dispatch, binds the actual host-created
+`flowguard-reviewer` child and injects the frozen canonical prompt. It does not
+create a hidden SDK reviewer child. After normal completion, an exclusive
+same-child, tool-free JSON serialization window is validated before generation-6
+invocation/evidence can bind to the obligation. Native model/variant selection is
+preserved; no forced structured-output tool substitutes for evidence validation.
 Self-review is **never** accepted as review evidence in the current release;
 strict orchestration failures BLOCK fail-closed.
 
-Author and reviewer artifacts are stored separately (append-only). 4-level plugin
-enforcement via `tool.execute.before/after` hooks physically blocks progression:
+Author and reviewer artifacts are stored separately (append-only). Native
+`execute.before`/`execute.after` hooks, plus reviewer context/model boundaries and
+canonical evidence guards, enforce identity, prompt and findings checks:
 
 - **L1** (`SUBAGENT_REVIEW_NOT_INVOKED`) — binary gate: subagent must have been called
 - **L2** (`SUBAGENT_SESSION_MISMATCH`) — `reviewedBy.sessionId` matches actual subagent session
-- **L3** (`SUBAGENT_PROMPT_EMPTY`, `SUBAGENT_PROMPT_MISSING_CONTEXT`) — prompt integrity
+- **Dispatch prompt integrity** — the frozen canonical prompt and actual child binding are validated before release; provenance failure blocks with `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`
 - **L4** (`SUBAGENT_FINDINGS_VERDICT_MISMATCH`, `SUBAGENT_FINDINGS_ISSUES_MISMATCH`) — findings integrity
 
 Each subagent call satisfies exactly one pending review obligation; the three
@@ -283,12 +292,12 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **6. Logging**             | Structured logging (logger interface + factories)                                                                                                        | `logging/logger.ts`                                                             |
 | **7. Audit**               | Hash chain, query, summary, completeness matrix                                                                                                          | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts`   |
 | **8. Discovery**           | Repo discovery (6 collectors + orchestrator + Zod types)                                                                                                 | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts`  |
-| **9. Archive**             | Archive manifest types, verification                                                                                                                     | `archive/types.ts`                                                              |
+| **9. Archive**             | Archive manifest types and verification schemas; verification implementation in the adapter layer                                                        | `archive/types.ts`, `adapters/workspace/archive-*.ts`                           |
 | **10. Integration**        | Host integration surfaces, including OpenCode custom tools + plugin (thin wrappers)                                                                      | `integration/tools.ts`, `plugin.ts`, `index.ts`                                 |
 | **11. CLI**                | Installer (install/uninstall/doctor)                                                                                                                     | `cli/install.ts`, `cli/templates.ts`                                            |
 | **12. CLI (experimental)** | Headless wrappers: `flowguard run`, `flowguard serve` — for non-interactive CI/CD use. Not for production; use `opencode run`/`opencode serve` directly. | `cli/run.ts`                                                                    |
 
-Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine -> State. Discovery and Archive are peer layers used by Adapters and Integration. Logging is a cross-cutting utility available to the plugin layer. No circular dependencies.
+Dependencies flow **inward**: `cli` and `integration` compose `rails`, `adapters`, `machine`, and `state`; `rails` orchestrates `machine`; `machine` reads and writes `state`. Discovery and Archive are peer layers used by Adapters and Integration. Logging is a cross-cutting utility. The exact allowed directions are owned by `MODULE_DEPENDENCY_POLICY` (`src/architecture/support/module-dependency-policy.ts`); no circular dependencies exist.
 
 ### Distribution Model
 
@@ -302,12 +311,19 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 
 ### OpenCode Integration
 
-- **20 Integration Tools** (`src/integration/tools/`) — bridge between LLM and state machine, installed as thin wrappers. The canonical list lives in `src/integration/tool-names.ts` (`TOOL_FLOWGUARD_*` constants). 18 are exposed via MCP (`src/mcp-server/server.ts`); see `docs/mcp-tool-surface.md` for the two asymmetric exclusions.
-- **27 Installed Command Definitions** (`.opencode/commands/*.md`) backed by 26 templates. Templates live in `src/templates/commands/`. Includes 13 workflow commands, 7 operational tools, 4 product aliases, and 3 action variants. Canonical registry: `src/integration/installed-commands.ts`.
-- **1 Review Agent** (`.opencode/agents/flowguard-reviewer.md`) — hidden subagent for mandatory independent adversarial review. The agent body is rendered programmatically from `src/templates/mandates.ts` at install time; there is no static asset of this name in the source tree.
-- **1 Audit Plugin** (`src/integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
-- **`flowguard-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json` (or `opencode.jsonc` when present)
+- **Native integration tools** (`src/integration/tools/`) — exposed through V2 plugin registrations, not a second file-based tool discovery path. The canonical list lives in `src/integration/tool-names.ts`; see `docs/mcp-tool-surface.md` for the separately scoped MCP surface.
+- **Installed command definitions** — canonical metadata in `src/integration/installed-commands.ts`, with Markdown templates from `src/templates/commands/` and native callbacks for activation/decisions. Native commands are not installed as prompt aliases. Counts are generated in `docs/_inventory.generated.md`.
+- **Review agent** (`.opencode/agents/flowguard-reviewer.md`) — visible native subagent for independent review. Its installed body is rendered from `src/templates/mandates.ts`; there is no static source asset of this name.
+- **Audit plugin** (`src/integration/plugin.ts`) — native `Plugin.define` entrypoint and event recording through `execute.after` and canonical audit paths.
+- **Managed mandates** — rendered from `src/templates/mandates.ts` and injected only into the verified ACTIVE scope; installation and INACTIVE sessions receive no governance mandates.
 - **Profile Rules** — tech-stack-specific guidance delivered via tool returns, not file-based instructions
+
+These are source architecture claims, not full installed-host certification.
+CLI candidate parity, ACTIVE/reviewer acceptance and Desktop acceptance remain
+separate evidence scopes. V2 documentation-drift coverage is **NOT_VERIFIED**;
+the retained V1 host/docs baseline is historical only. Unsupported old FlowGuard
+configuration keys now fail explicitly; see
+[manual recovery](docs/configuration.md#breaking-change-manual-configuration-recovery).
 
 ---
 
@@ -403,12 +419,12 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Central Policy Source:** Optional explicit central minimum via `FLOWGUARD_POLICY_PATH` (file-based, fail-closed when configured)
 - **Built-in Profiles:** 4 (`baseline`, `typescript`, `backend-java`, `frontend-angular` — IDs as declared in `src/config/profile.ts`)
 - **Discovery Collectors:** 6 (repo-metadata, stack-detection, topology, surface-detection, code-surface-analysis, domain-signals)
-- **Archive Verification:** Enumerated finding codes in `src/archive/types.ts`; emitted by `verifyArchive()` in `src/adapters/workspace/archive.ts`
+- **Archive Verification:** Enumerated finding codes in `src/archive/types.ts`; emitted by `verifyArchive()` in `src/adapters/workspace/archive-verify-chain.ts`
 - **Reason Codes:** 30+ with recovery guidance (canonical registry in `src/config/reasons.ts` and `src/config/reasons-*.ts`)
 - **Evidence Types:** Zod-validated schemas across `src/state/evidence-*.ts` plus discovery schemas under `src/discovery/` and `src/state/discovery-schemas.ts`
 - **Framework Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)
 - **Test Coverage:** Unit project enforces 80% (branches/lines/functions/statements); integration project enforces 70% (see `vitest.config.ts`)
-- **Mutation Testing:** StrykerJS (v9.6.1) on 68 security-critical files spanning adapters, audit, config, hooks, identity, integration (incl. review enforcement and orchestrator), machine, and rails; CI enforces an 80% break threshold (see `stryker.conf.json`)
+- **Mutation Testing:** StrykerJS (v9.6.1) on 116 security-critical files spanning adapters, audit, config, hooks, identity, integration (incl. review enforcement and orchestrator), machine, and rails; CI enforces an 80% break threshold (see `stryker.conf.json`)
 - **API Reference:** TypeDoc-generated at [koeppben23.github.io/governed-runtime](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
 - **Self-Hosted:** Runs locally — offline-capable / local-first by default; network-dependent features (remote JWKS, `/review url=...`, TSA timestamping) are opt-in and documented
 

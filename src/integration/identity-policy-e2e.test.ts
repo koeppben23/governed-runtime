@@ -33,9 +33,13 @@ import {
   withTestEnv,
 } from './test-helpers.js';
 import { hydrate, ticket, plan, decision, status } from './tools/index.js';
+import { makePolicySnapshot } from '../fixtures.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { getPolicyPreset } from '../config/policy.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -153,7 +157,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   const wsSpy = await import('../adapters/workspace/index.js');
   vi.mocked(wsSpy.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
   vi.mocked(wsSpy.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
@@ -205,7 +209,7 @@ async function executeDecision(args: {
   verdict: 'approve' | 'changes_requested' | 'reject';
   rationale: string;
 }): Promise<Awaited<ReturnType<typeof decision.execute>>> {
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: args.verdict,
@@ -577,10 +581,10 @@ describe('identity-policy-e2e', () => {
       // This simulates a scenario where the snapshot differs from mode defaults
       const patchedState = {
         ...state!,
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...state!.policySnapshot,
           minimumActorAssuranceForApproval: 'idp_verified' as const,
-        },
+        }),
       };
       await writeState(sessDir, patchedState);
 

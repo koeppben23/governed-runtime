@@ -98,7 +98,6 @@ export function formatDoctor(checks: DoctorCheck[], host: InstallPlatform): stri
     modified: 'MODIFIED',
     unmanaged: 'UNMANAGED',
     version_mismatch: 'VERSION',
-    instruction_missing: 'INSTR_MISSING',
     error: 'ERROR',
     warn: 'WARN',
     info: 'NOTE',
@@ -175,6 +174,8 @@ Commands:
   uninstall   Remove FlowGuard files
   doctor      Verify installation is correct and complete
   inspect     Show session compliance status (read-only)
+  debug-export
+              Create a bounded, read-only diagnostic snapshot
   run         Execute FlowGuard commands in headless mode
   serve       Start a supported host server for headless operation
 
@@ -188,6 +189,9 @@ Options:
   --checksums-file Path to checksums.sha256 (defaults to tarball-adjacent checksums.sha256)
   --allow-unverified-tarball
                    Supply-chain opt-out: install without tarball integrity verification (not recommended)
+  --restart-host   Restart the exact running OpenCode service after an applied install (default)
+  --no-restart-host
+                   Verify the host read-only; never restart it automatically
 
 Examples:
   npx --package ./flowguard-core-${v}.tgz flowguard install --core-tarball ./flowguard-core-${v}.tgz

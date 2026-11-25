@@ -19,9 +19,13 @@ working tree — it operates independently of Development changes on `main`.
 ## Prerequisites (run before the demo)
 
 ```bash
-# From demos/java-task-manager/
-../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+# From demos/java-task-manager/ (repo-scoped: isolated to the demo workspaces)
+../../run-demo-setup.sh --install --install-scope repo --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 # Open /tmp/flowguard-demos/java-task-manager in OpenCode Desktop
+# Alternative: omit --install-scope repo to install globally (~/.config/opencode,
+# commands in every project). The installer verifies and restarts the exact
+# OpenCode service after the applied install; use /reload only if it reports
+# HOST_RESTART_REQUIRED. Installation does not activate governance.
 ```
 
 ---
@@ -331,6 +335,28 @@ covers it.
 
 ---
 
+### Step 12 — ISO/IEC 27001:2022 Evidence Projection (post-export)
+
+> The FlowGuard workflow is already complete. This optional closing step reads
+> the verified `/export` package through the existing
+> `flowguard inspect --iso27001-mapping` CLI. It does not call a model, does not
+> change the session, and does not create new evidence. The mapping is a
+> synthetic demo input, not an organization-specific Statement of Applicability
+> or approval.
+
+| Action                                             | What I Say                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `./run-iso-mapping.sh --session <host-session-id>` | "Jetzt lese ich das bereits verifizierte Export-Paket mit einem Bash-Kommando gegen ein synthetisches ISO-27001-Demo-Mapping. Der Wrapper ruft nur den installierten `flowguard inspect`-Pfad auf — kein weiterer LLM-Aufruf, kein Netzwerkzugriff und keine Änderung am Export."                                                                                                                  |
+| Show the two generated reports                     | "Die Ausgabe liegt unter `/tmp/flowguard-iso-reports/<host-session-id>/`: `iso27001-report.json` für Maschinen und `iso27001-report.md` für Architekten, Auditoren und Security-Verantwortliche. Beide werden aus demselben verifizierten Paket erzeugt; der Wrapper prüft, dass Report-, Mapping- und Paket-Digest in beiden Dateien übereinstimmen."                                             |
+| Point out the actual control statuses              | "Ich lese die Statuswerte aus dem Report, nicht aus einer Erfolgsmeldung: `EVIDENCE_LINKED_VERIFIED`, `EVIDENCE_PRESENT_UNVERIFIED`, `EVIDENCE_MISSING` und `NOT_VERIFIED` bleiben sichtbar. Ein fehlender Nachweis ist ein gültiges Ergebnis; der Report wird trotzdem mit Exit 0 geschrieben."                                                                                                   |
+| Explain the A.8.29 example                         | "A.8.29 ist hier bewusst als technische Zuordnung des funktionalen 404-Regressionstests markiert. Der Test ist eine konkrete, gebundene JUnit-Assertion, aber kein Nachweis vollständiger Security-Test-Abdeckung. Der Report trägt die Einschränkung `TEST_SEMANTIC_APPROPRIATENESS_NOT_ASSESSED`; `EVIDENCE_LINKED_VERIFIED` bedeutet nur, dass die konfigurierte technische Regel erfüllt ist." |
+| State the boundary                                 | "Das ist Evidence-to-Control-Mapping, keine ISO-27001-Konformitätsbewertung. Die Organisation muss SoA, Anwendbarkeit, Risikobehandlung und Wirksamkeit weiterhin selbst verantworten. Der Report enthält bewusst keine Zertifizierungs-, Audit- oder Konformitätsaussage."                                                                                                                        |
+
+The host-session ID is the OpenCode session identity from the live evidence
+checklist — not the internal FlowGuard session ID. The demo mapping lives next
+to the wrapper in the prepared workspace. The wrapper supports only explicit
+`--session`; it never guesses the latest session.
+
 ### Summary Slide
 
 Ich habe den Regressionstest im Seed bewusst disabled, weil FlowGuard zurecht keinen
@@ -467,18 +493,23 @@ The card also shows the findings grouped by severity and the evidence block
 FlowGuard ships near-synonym commands; the script picks one of each on purpose.
 If someone in the audience knows the other name, this is why both exist:
 
-- **`/check` vs `/validate`:** both are compatibility-only surfaces that call
-  `flowguard_run_check` (`/check` is the generic surface, `/validate` the
-  phase-specific variant). The canonical walkthrough does not type them:
-  validation runs automatically in-flow through the `flowguard_run_check`
-  evidence path.
+- **`/check` vs `/validate`:** `/check` is a native scoped verification/review
+  turn for an ACTIVE root; it runs under the build agent, waits, clears scope
+  and restores the prior agent. It is not a VALIDATE alias. `/validate` is the
+  explicit baseline-validation template using `flowguard_run_check`. The
+  canonical walkthrough does not type either: validation runs automatically
+  in-flow through that same guarded execution-evidence path.
 - **`/export` vs `/archive`:** `/export` is the canonical completion step at
   EXPORT_READY (tool `flowguard_export`). It materializes and verifies the
-  required package, persists `ExportCompletionEvidence`, and only then reaches
-  COMPLETE; a blocked or failed export stays in EXPORT_READY. `/archive` is an
-  operational action for **terminal** sessions only and defaults to a redacted
+  required package as `export-{sessionId}.tar.gz`, persists
+  `ExportCompletionEvidence`, and only then reaches COMPLETE; a blocked or
+  failed export stays in EXPORT_READY. `/archive` is an
+  operational action for **terminal** sessions only, writes
+  `{sessionId}.tar.gz`, and defaults to a redacted
   sharing archive (`integrityCapability: not_verifiable`,
-  `verificationStatus: not_run`). They are **not** synonyms.
+  `verificationStatus: not_run`). The distinct file names keep the verified
+  completion export intact across any later archiving. They are **not**
+  synonyms.
 - **`/finish` vs `/status`:** both are read-only and call `flowguard_status`.
   `/status` returns the status projection; `/finish` additionally derives the
   pre-export Finish Card (`overallStatus`, non-normative `actionGuidance`, exit

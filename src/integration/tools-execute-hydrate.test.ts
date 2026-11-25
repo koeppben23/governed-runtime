@@ -45,6 +45,7 @@ import {
   VALIDATION_PASSED,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
+  makePolicySnapshot,
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { GitError } from '../adapters/git-command.js';
@@ -659,6 +660,20 @@ describe('hydrate', () => {
       expect(stateAfter!.policySnapshot.mode).toBe(stateBefore!.policySnapshot.mode);
     });
 
+    it('re-hydrating with a lower claim never lowers the persisted escalation', async () => {
+      await hydrateSession({ claimedTaskClass: 'HIGH-RISK' });
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      expect((await readState(sessDir))!.claimedTaskClass).toBe('HIGH-RISK');
+
+      const result = await hydrateSession({ claimedTaskClass: 'TRIVIAL' });
+
+      expect(result.error).toBeUndefined();
+      expect((await readState(sessDir))!.claimedTaskClass).toBe('HIGH-RISK');
+    });
+
     it('idempotent hydrate preserves workspace metadata', async () => {
       await hydrateSession();
       await hydrateSession();
@@ -711,10 +726,10 @@ describe('hydrate', () => {
       const stateBefore = await readState(sessDir);
       await writeState(sessDir, {
         ...stateBefore!,
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...stateBefore!.policySnapshot,
           policyVersion: '2026.04',
-        },
+        }),
       });
 
       const centralPath = `${ws.tmpDir}/central-policy.json`;
@@ -939,10 +954,17 @@ describe('hydrate', () => {
 
   describe('EDGE', () => {
     it('works with repo without remote (path-based fingerprint)', async () => {
-      vi.mocked(gitMock.remoteOriginUrl).mockResolvedValueOnce(null);
-      const result = await hydrateSession();
-      expect(result.phase).toBe('READY');
-      expect(result.error).toBeUndefined();
+      // A remote-less repository must yield the same path-based fingerprint for
+      // both authority resolutions (pre-lock candidate + under-lock TOCTOU).
+      const remoteMock = vi.mocked(gitMock.remoteOriginUrl);
+      remoteMock.mockResolvedValue(null);
+      try {
+        const result = await hydrateSession();
+        expect(result.phase).toBe('READY');
+        expect(result.error).toBeUndefined();
+      } finally {
+        remoteMock.mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl);
+      }
     });
 
     it('two sessions in same workspace have independent state', async () => {
@@ -1090,6 +1112,162 @@ describe('hydrate', () => {
       expect(state!.initiatedBy).toBe(state!.actorInfo!.id);
       expect(state!.binding.hostSessionId).not.toBe(state!.actorInfo!.id);
       expect(state!.binding.hostSessionId).not.toBe(state!.initiatedBy);
+    });
+  });
+
+  // =============================================================================
+  // D6 (#1034): terminal hydrate is strictly read-only
+  // =============================================================================
+
+  describe('terminal hydrate read-only contract (D6)', () => {
+    async function terminalSessionDir(): Promise<string> {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const live = await readState(sessDir);
+      // Seed a schema-valid terminal state while preserving the live binding
+      // and resolved policy snapshot so hydrate resolves normally.
+      await writeState(sessDir, {
+        ...makeProgressedState('COMPLETE'),
+        binding: live!.binding,
+        policySnapshot: live!.policySnapshot,
+        ...(live!.claimedTaskClass !== undefined
+          ? { claimedTaskClass: live!.claimedTaskClass }
+          : {}),
+      });
+      return sessDir;
+    }
+
+    it('HAPPY: reloads a terminal session without rewriting state or audit', async () => {
+      const sessDir = await terminalSessionDir();
+      const statePath = path.join(sessDir, 'session-state.json');
+      const stateBefore = await fs.readFile(statePath, 'utf8');
+      const auditBefore = JSON.stringify(await readAuditTrail(sessDir));
+
+      const result = parseToolResult(await hydrate.execute({ policyMode: 'solo' }, ctx));
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('COMPLETE');
+      expect(result.terminalReload).toBe(true);
+      expect(await fs.readFile(statePath, 'utf8')).toBe(stateBefore);
+      expect(JSON.stringify(await readAuditTrail(sessDir))).toBe(auditBefore);
+    });
+
+    it('HAPPY: an equal or lower claimedTaskClass on a terminal session is a no-op', async () => {
+      await hydrateSession({ claimedTaskClass: 'STANDARD' });
+      const sessDir = await terminalSessionDir();
+      const statePath = path.join(sessDir, 'session-state.json');
+      const stateBefore = await fs.readFile(statePath, 'utf8');
+
+      const lower = parseToolResult(
+        await hydrate.execute({ policyMode: 'solo', claimedTaskClass: 'TRIVIAL' }, ctx),
+      );
+      const equal = parseToolResult(
+        await hydrate.execute({ policyMode: 'solo', claimedTaskClass: 'STANDARD' }, ctx),
+      );
+
+      expect(lower.error).toBeUndefined();
+      expect(lower.terminalReload).toBe(true);
+      expect(equal.error).toBeUndefined();
+      expect(equal.terminalReload).toBe(true);
+      expect(await fs.readFile(statePath, 'utf8')).toBe(stateBefore);
+    });
+
+    it('BAD: raising claimedTaskClass on a terminal session is denied read-only', async () => {
+      const sessDir = await terminalSessionDir();
+      const statePath = path.join(sessDir, 'session-state.json');
+      const stateBefore = await fs.readFile(statePath, 'utf8');
+      const auditBefore = JSON.stringify(await readAuditTrail(sessDir));
+
+      const result = parseToolResult(
+        await hydrate.execute({ policyMode: 'solo', claimedTaskClass: 'HIGH-RISK' }, ctx),
+      );
+
+      expect(isBlockedResult(result)).toBe(true);
+      expect(result.code).toBe('TERMINAL_STATE_MUTATION_DENIED');
+      expect(await fs.readFile(statePath, 'utf8')).toBe(stateBefore);
+      expect(JSON.stringify(await readAuditTrail(sessDir))).toBe(auditBefore);
+    });
+
+    it('HAPPY: a malformed repository config cannot break a read-only terminal reload', async () => {
+      const sessDir = await terminalSessionDir();
+      const statePath = path.join(sessDir, 'session-state.json');
+      const stateBefore = await fs.readFile(statePath, 'utf8');
+      const repoConfig = path.join(ws.tmpDir, '.opencode', 'flowguard.json');
+      await fs.mkdir(path.dirname(repoConfig), { recursive: true });
+      await fs.writeFile(repoConfig, '{not valid json', 'utf8');
+      try {
+        const result = parseToolResult(await hydrate.execute({ policyMode: 'solo' }, ctx));
+
+        // The read-only shortcut runs before any config read: the malformed
+        // repository config is irrelevant and nothing is rewritten.
+        expect(result.error).toBeUndefined();
+        expect(result.phase).toBe('COMPLETE');
+        expect(result.terminalReload).toBe(true);
+        expect(await fs.readFile(statePath, 'utf8')).toBe(stateBefore);
+      } finally {
+        await fs.rm(repoConfig, { force: true });
+      }
+    });
+  });
+
+  // D4 (#1033): canonical session-authority binding
+  // =============================================================================
+
+  describe('canonical session authority binding (D4)', () => {
+    async function canonicalSessionDir(): Promise<string> {
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      return resolveSessionDir(fp.fingerprint, ctx.sessionID);
+    }
+
+    it('BAD: rejects a forged persisted worktree binding instead of reloading it', async () => {
+      await hydrateSession();
+      const sessDir = await canonicalSessionDir();
+      const persisted = await readState(sessDir);
+      expect(persisted).not.toBeNull();
+      await writeState(sessDir, {
+        ...persisted!,
+        binding: { ...persisted!.binding, worktree: '/other/worktree' },
+      });
+
+      const result = parseToolResult(await hydrate.execute({ policyMode: 'solo' }, ctx));
+
+      expect(isBlockedResult(result)).toBe(true);
+      expect(result.code).toBe('WORKTREE_MISMATCH');
+    });
+
+    it('BAD: rejects a claimed workspace fingerprint that does not match the canonical projection', async () => {
+      const foreignCtx = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: ctx.sessionID,
+        workspaceFingerprint: 'f'.repeat(24),
+      });
+
+      const result = parseToolResult(await hydrate.execute({ policyMode: 'solo' }, foreignCtx));
+
+      expect(isBlockedResult(result)).toBe(true);
+      expect(result.code).toBe('SESSION_BINDING_MISMATCH');
+    });
+
+    it('HAPPY: canonicalizes a subdirectory context to the worktree-root session', async () => {
+      const subdir = path.join(ws.tmpDir, 'src');
+      await fs.mkdir(subdir, { recursive: true });
+      const subCtx = createToolContext({
+        worktree: subdir,
+        directory: subdir,
+        sessionID: ctx.sessionID,
+      });
+
+      const result = parseToolResult(await hydrate.execute({ policyMode: 'solo' }, subCtx));
+
+      expect(result.phase).toBe('READY');
+      const sessDir = await canonicalSessionDir();
+      await expect(fs.access(path.join(sessDir, 'session-state.json'))).resolves.toBeUndefined();
     });
   });
 });

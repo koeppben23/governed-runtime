@@ -51,7 +51,7 @@ export async function resolveAttemptByCapability(input: {
     return null;
   }
   for (const entry of entries) {
-    // OpenCode may place child-session transport artifacts beside FlowGuard
+    // A host may place child-session transport artifacts beside FlowGuard
     // session directories. Only directories can own session-state.json.
     if (!entry.isDirectory()) continue;
     const sessDir = sessionDir(input.fingerprint, entry.name);

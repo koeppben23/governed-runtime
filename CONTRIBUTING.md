@@ -1,6 +1,12 @@
 # Contributing to FlowGuard
 
-Thank you for your interest in contributing to FlowGuard!
+> **Proprietary repository.** FlowGuard is proprietary software. This guide is
+> for contributors who have prior written permission from the copyright holder.
+> Do not submit unsolicited code or open pull requests without that permission.
+> Nothing in this document grants a license to the Work.
+
+This guide describes the development and pull-request workflow for authorized
+contributors.
 
 ## Project Overview
 
@@ -27,7 +33,7 @@ integration/  -> rails/  -> machine/  -> state/
 
 The diagram shows the intended direction for new code, not the enforced set:
 top-level module directions are owned exclusively by `MODULE_DEPENDENCY_POLICY`
-(`src/architecture/__tests__/module-dependency-policy.ts`), and the observed
+(`src/architecture/support/module-dependency-policy.ts`), and the observed
 module graph must match that policy exactly — including zero module cycles (see
 [Architecture Rules](#architecture-rules)).
 
@@ -49,6 +55,13 @@ Test selection, layers, and the executable verification surface are owned by
 [docs/testing-strategy.md](docs/testing-strategy.md); `package.json` is the
 executable script authority. Coverage thresholds are 80% across branches,
 lines, functions, and statements; run the gate with `npm run test:coverage`.
+
+Test placement follows the same authority split: production-module suites
+co-locate with the unit under test. Classified test-support trees
+(`src/architecture/`, `src/documentation/`, `src/security/`, `src/fixtures/`)
+may use `__tests__/` for suites, and keep shared support modules outside it,
+typically under `support/`. The rules and their guards are documented in
+[docs/testing-strategy.md](docs/testing-strategy.md#test-placement-rules).
 
 ### Test Naming Conventions
 
@@ -213,6 +226,9 @@ Run this protected-main release procedure:
 1. Start from current `main`: `git switch main && git pull --ff-only origin main`.
 2. Create `release/vX.Y.Z` and integrate the release candidate from `develop`.
 3. Prepare files without committing or tagging: `npm run release:prepare -- X.Y.Z`.
+   The cut creates an empty `[Unreleased]` section; add a truthful entry about the
+   completed release preparation before committing. Release PRs have no changelog
+   exemption; do not claim publication before the protected release completes.
 4. Update release-pinned documentation tests when the changelog cut moves entries out of `[Unreleased]`.
 5. Run `npm run release:verify` and the required contributor checks.
 6. Commit with hooks enabled: `git commit -m "chore(release): cut vX.Y.Z"`.
@@ -347,7 +363,7 @@ Recommended GitHub Project fields:
 | `Risk Class`         | `TRIVIAL`, `STANDARD`, `HIGH-RISK`                                                          |
 | `Touched Surface`    | `Docs`, `CLI`, `Policy`, `State`, `Audit`, `Archive`, `Release`, `Installer`, `CI`, `Tests` |
 | `Docs Required`      | `Yes`, `No`, `Unknown`                                                                      |
-| `Changelog Required` | `Yes`, `No`, `Unknown`                                                                      |
+| `Changelog Required` | `Yes` (every PR)                                                                            |
 | `Verification Level` | `Targeted`, `Full`, `Release`                                                               |
 | `Release Impact`     | `None`, `Patch`, `Minor`, `Major`, `RC`                                                     |
 | `Status`             | `Backlog`, `Ready`, `In Progress`, `Review`, `Blocked`, `Done`                              |
@@ -362,23 +378,26 @@ semantics, install/upgrade/release steps, error codes, recovery guidance, or
 support expectations change. Update developer docs when architecture boundaries,
 SSOT ownership, test strategy, release process, or contribution workflow changes.
 
-If docs are not updated, the PR must state why no documentation change is needed.
+Every affected user/developer document must be updated in the same PR.
+If no document is affected, record the impact assessment; do not add a
+meaningless cosmetic change. Contradictory or stale affected docs block merge.
 
 ### Changelog Contract
 
-Update `CHANGELOG.md` for release-relevant changes:
+**Every PR MUST update `CHANGELOG.md` under `[Unreleased]`.** This includes
+docs-only, test, refactor, CI, formatting, removal and internal cleanup changes;
+there is no "not needed" exception. Entries must describe completed changes
+truthfully, without asserting unverified product or host support.
 
-- user-visible behavior
-- CLI, API, or config changes
-- policy or governance semantics
-- release, install, upgrade, or rollback behavior
-- security or fail-closed behavior
-- error or recovery text
-- meaningful test or quality gate changes
-
-`CHANGELOG.md` is not required for typo-only docs, formatting, internal-only
-cleanup without behavior change, or test refactors without new release-relevant
-coverage. If not updated, the PR must state why no changelog entry is needed.
+Run `npm run check:pr-documentation -- <base-sha> <head-sha>` against the PR
+commits. It compares committed changelog entries against the merge base and
+requires a new or revised nonempty entry in a known Unreleased category;
+historical-only edits, deletions and formatting do not qualify. The `doc-drift`
+job runs it and `npm run check:doc-drift`, and blocks through the required
+`ci-gate`. In addition, reviewers must establish semantic
+alignment of code, tests, docs, CLI/help, templates, shipped artifacts and
+changelog on the final merge candidate against current `develop`. A green
+structural check does not prove semantic consistency.
 
 ### High-Risk Contract
 
@@ -392,6 +411,9 @@ High-risk work must include:
 - fail-closed behavior preservation
 - no duplicate runtime authority
 - negative-path tests
+- for security-relevant fixes, an attacker-negative reproduction or an explicit
+  not-applicable explanation (the PR template records this as a review contract;
+  it is not a separate CI gate)
 - docs and changelog decision
 - rollback or recovery notes
 
@@ -423,7 +445,7 @@ See [Conventional Commits](#conventional-commits) section above.
 Import rules must stay aligned with `npm run test:architecture`.
 
 The positive authority for top-level module direction is
-`src/architecture/__tests__/module-dependency-policy.ts` (`MODULE_DEPENDENCY_POLICY`):
+`src/architecture/support/module-dependency-policy.ts` (`MODULE_DEPENDENCY_POLICY`):
 the exact set of governed modules each governed module may import. The observed
 import graph and the policy must match in both directions, so both an unapproved
 direction and a stale policy edge fail. Add a new direction to the policy file in
@@ -436,7 +458,7 @@ Fine-grained boundaries are additionally enforced by
 
 1. **`state/`** may only import the listed shared primitives (canonicalization,
    hashing, actor assurance) and owns its evidence discriminators
-2. **Leaf modules** (`archive/types`, `discovery/types`) must not import other FF modules
+2. **Restricted boundary modules**: `archive/types` may import only `shared`; `discovery/types` may import only `shared` and `state` — both carry dedicated rules
 3. **`rails/`** must not import node built-ins directly (I/O is handled by adapters)
 4. **`integration/tools/`** must not import integration composition (`plugin.ts`, `plugin-*`; `plugin-helpers.ts` is a root authority)
 5. **`integration/review/`** may import `review/**`, root authorities and lower layers; it must not import `tools/**`, composition, or host/runtime wiring
@@ -532,4 +554,6 @@ describe('Performance', () => {
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same license as the project.
+Contributions are accepted only from authorized contributors under a separate
+written agreement with the copyright holder. Nothing in this document grants a
+license to the Work. See [LICENSE](LICENSE).

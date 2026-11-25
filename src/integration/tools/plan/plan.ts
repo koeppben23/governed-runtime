@@ -6,13 +6,13 @@
  *
  * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
  * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. The HOST captures the reviewer's structured findings into
+ * via the reviewer subagent. The HOST captures the reviewer's structured findings into
  * the review assurance evidence; the agent never resubmits findings.
  *
  * Flow:
  * 1. Primary agent drafts plan, submits to FlowGuard
  * 2. FlowGuard returns next-action instructing subagent invocation
- * 3. Primary agent calls flowguard-reviewer subagent via Task tool
+ * 3. Primary agent calls flowguard-reviewer subagent via reviewer subagent
  * 4. Host captures the reviewer's structured findings into invocation evidence
  * 5. Primary agent submits the review verdict ONLY (reviewVerdict)
  * 6. FlowGuard resolves the host-captured findings, validates the binding, and
@@ -33,6 +33,7 @@
  */
 
 import { z } from 'zod';
+import { latestPlanTargetPaths } from '../../../verification/implementation-subject.js';
 
 import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
@@ -45,15 +46,17 @@ import {
 } from '../../review/validation/review-validation-failure.js';
 import {
   withMutableSessionTransaction,
-  formatAutoAdvanceOverflow,
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from '../helpers.js';
+import { formatAutoAdvanceFailure } from '../../../rails/auto-advance-overflow.js';
 import type { SessionState } from '../../../state/schema.js';
+import type { ReviewFindings } from '../../../state/evidence.js';
 import { evaluate } from '../../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../../machine/commands.js';
 import { autoAdvance } from '../../../rails/types.js';
 import { PlanClaimDeclarationInput as PlanClaimDeclarationSchema } from '../../../state/proofgraph-approval.js';
+import { PLAN_CLAIM_GUIDANCE } from '../../../templates/plan-claim-guidance.js';
 import { findLatestObligation } from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
@@ -64,9 +67,11 @@ import {
   buildPlanEvidence,
   buildPlanSubmissionState,
   createPlanReviewAttempt,
+  submittedPlanClaimDeclarations,
 } from './plan-submission-state.js';
 import {
   applyPlanRevision,
+  planReviewExhaustsBudget,
   blockedInvalidPlanFindings,
   buildReviewedPlanState,
   consumePlanObligation,
@@ -92,6 +97,7 @@ import {
 } from './plan-route.js';
 import { attemptIncoherentCaptureRetry } from '../incoherent-capture-recovery.js';
 import { classifyPlanClaimSubmission } from './plan-claim-submission.js';
+import { runPlanPreflight, type PlanPreflightResult } from './plan-preflight.js';
 import {
   buildPlanSubmissionResponse as buildSubmissionResponse,
   persistPlanReview as persistReview,
@@ -186,41 +192,85 @@ function classificationScopeUnknown(classification: ChallengeClassification): bo
   return classification.kind === 'available' ? classification.scopeUnknown : false;
 }
 
-async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> {
-  const planBody = normalizeReviewArtifactText(scope.args.planText ?? '');
-  if (!planBody) return formatBlocked('EMPTY_PLAN');
+function formatPlanPreflight(result: PlanPreflightResult): string | null {
+  if (result.kind === 'ok') return null;
+  return formatBlocked(
+    result.code,
+    { detail: result.reason },
+    { planPreflightDiagnostics: result.diagnostics },
+  );
+}
 
+function submissionPreflight(scope: PlanExecutionScope, planBody: string): string | null {
+  return formatPlanPreflight(
+    runPlanPreflight({
+      planText: planBody,
+      currentClaims: submittedPlanClaimDeclarations(scope)?.claims ?? [],
+      priorClaims: scope.state.plan?.claimDeclarations?.claims ?? [],
+      verificationCandidates: scope.state.verificationCandidates ?? [],
+    }),
+  );
+}
+
+type PreflightObligation = {
+  readonly obligationId: string;
+  readonly iteration: number;
+  readonly planVersion: number;
+};
+
+function revisionPreflight(
+  scope: PlanExecutionScope,
+  findings: ReviewFindings,
+  obligation: PreflightObligation | null | undefined,
+): string | null {
+  if (findings.blockingIssues.length > 0 && !obligation) {
+    return formatBlocked(
+      'PLAN_REVIEW_FEEDBACK_UNAVAILABLE',
+      { detail: 'the bound review obligation is unavailable for this revision' },
+      {
+        planPreflightDiagnostics: [
+          {
+            field: 'reviewFeedback.obligation',
+            detail: 'the open review obligation could not be identified',
+          },
+        ],
+      },
+    );
+  }
+  return formatPlanPreflight(
+    runPlanPreflight({
+      planText: normalizeReviewArtifactText(scope.args.planText ?? ''),
+      currentClaims: submittedPlanClaimDeclarations(scope)?.claims ?? [],
+      priorClaims: scope.state.plan?.claimDeclarations?.claims ?? [],
+      verificationCandidates: scope.state.verificationCandidates ?? [],
+      priorBlockingFindings: findings.blockingIssues,
+      ...(obligation ? { reviewObligation: obligation } : {}),
+    }),
+  );
+}
+
+function submissionEvidence(
+  scope: PlanExecutionScope,
+  planBody: string,
+): { readonly planVersion: number; readonly planEvidence: ReturnType<typeof buildPlanEvidence> } {
   const predecessorVersion = scope.state.plan?.current.planVersion;
   const planVersion = predecessorVersion ? predecessorVersion + 1 : 1;
-
   const planEvidence = buildPlanEvidence(planBody, scope, {
     planVersion,
     supersedesRecordDigest: scope.state.plan?.current.recordDigest ?? null,
     originatingReviewObligationId: originatingPlanReviewObligationId(scope),
     revisionReason: scope.state.plan ? 'Revision after changes requested' : null,
   });
-  const classification = await resolvePreImplementationChallengeClassification(
-    scope.state,
-    scope.worktree,
-    scope.args.targetPaths,
-  );
-  const attempt = await createPlanReviewAttempt(
-    scope,
-    planEvidence,
-    planVersion,
-    classificationFiles(classification),
-    classificationScopeUnknown(classification),
-  );
-  if (attempt.kind === 'blocked') return attempt.message;
-  const nextState = buildPlanSubmissionState(scope, planEvidence, planVersion, attempt);
-  const evalFn = (s: SessionState) => evaluate(s, scope.policy);
-  const advanced = autoAdvance(nextState, evalFn, scope.ctx);
-  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
-  if (advanced.kind === 'overflow') {
-    return formatAutoAdvanceOverflow(advanced);
-  }
-  const { state: finalState, transitions } = advanced;
+  return { planVersion, planEvidence };
+}
 
+async function persistPlanSubmission(
+  scope: PlanExecutionScope,
+  finalState: SessionState,
+  planEvidence: ReturnType<typeof buildPlanEvidence>,
+  planVersion: number,
+  transitions: unknown,
+): Promise<string> {
   await writeStateWithArtifacts(scope.sessDir, finalState);
   const authority = resolvePlanDispatchAuthority(finalState, planVersion);
   if (authority.kind === 'blocked') {
@@ -237,10 +287,48 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
-/**
- * The review obligation whose changes_requested verdict triggered this revision,
- * so the plan record digest proves which obligation caused it.
- */
+async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> {
+  const planBody = normalizeReviewArtifactText(scope.args.planText ?? '');
+  if (!planBody) return formatBlocked('EMPTY_PLAN');
+
+  const admission = admitPlanRevision(scope);
+  if (typeof admission === 'string') return admission;
+  scope = admission;
+
+  const preflight = submissionPreflight(scope, planBody);
+  if (preflight !== null) return preflight;
+
+  const { planVersion, planEvidence } = submissionEvidence(scope, planBody);
+  const classification = await classifyPlanSubmission(scope);
+  const attempt = await createPlanReviewAttempt(
+    scope,
+    planEvidence,
+    planVersion,
+    classificationFiles(classification),
+    classificationScopeUnknown(classification),
+  );
+  if (attempt.kind === 'blocked') return attempt.message;
+  const nextState = buildPlanSubmissionState(scope, planEvidence, planVersion, attempt);
+  const advanced = autoAdvance(nextState, (s) => evaluate(s, scope.policy), scope.ctx);
+  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
+  if (advanced.kind !== 'advanced') return formatAutoAdvanceFailure(advanced);
+  return persistPlanSubmission(
+    scope,
+    advanced.state,
+    planEvidence,
+    planVersion,
+    advanced.transitions,
+  );
+}
+
+function classifyPlanSubmission(scope: PlanExecutionScope) {
+  return resolvePreImplementationChallengeClassification(
+    scope.state,
+    scope.args.targetPaths ?? latestPlanTargetPaths(scope.state),
+  );
+}
+
+/** The obligation whose changes_requested verdict caused this revision. */
 function originatingPlanReviewObligationId(scope: PlanExecutionScope): string | null {
   return (
     [...(scope.state.reviewAssurance?.obligations ?? [])]
@@ -251,28 +339,40 @@ function originatingPlanReviewObligationId(scope: PlanExecutionScope): string | 
   );
 }
 
+async function blockedPlanReviewResponse(
+  scope: PlanExecutionScope,
+  failure: Parameters<typeof formatReviewValidationFailure>[1],
+  obligationId: string | undefined,
+): Promise<string> {
+  const retry = await attemptIncoherentCaptureRetry({
+    failure,
+    state: scope.state,
+    sessDir: scope.sessDir,
+    obligationId,
+    now: scope.ctx.now(),
+    buildResponse: (state, authority) =>
+      planInstructionResponse(
+        { ...scope, state },
+        authority,
+        'Incoherent reviewer capture detected; a fresh review attempt was re-armed on the same frozen plan subject.',
+      ),
+  });
+  return retry.kind !== 'not_applicable'
+    ? retry.response
+    : formatReviewValidationFailure(getAdapterLogger(), failure);
+}
+
 async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
   if (!scope.state.selfReview) return formatBlocked('NO_SELF_REVIEW');
   if (!scope.state.plan) return formatBlocked('NO_PLAN');
 
   const lookup = resolveEffectivePlanFindings(scope);
-  if (lookup.resolved.kind === 'blocked') {
-    const retry = await attemptIncoherentCaptureRetry({
-      failure: lookup.resolved.failure,
-      state: scope.state,
-      sessDir: scope.sessDir,
-      obligationId: lookup.pendingObligation?.obligationId,
-      now: scope.ctx.now(),
-      buildResponse: (state, authority) =>
-        planInstructionResponse(
-          { ...scope, state },
-          authority,
-          'Incoherent reviewer capture detected; a fresh review attempt was re-armed on the same frozen plan subject.',
-        ),
-    });
-    if (retry.kind !== 'not_applicable') return retry.response;
-    return formatReviewValidationFailure(getAdapterLogger(), lookup.resolved.failure);
-  }
+  if (lookup.resolved.kind === 'blocked')
+    return blockedPlanReviewResponse(
+      scope,
+      lookup.resolved.failure,
+      lookup.pendingObligation?.obligationId,
+    );
   logStructuredResolutionDiagnostics(getAdapterLogger(), lookup.resolved.diagnostics);
   const effectiveFindings = lookup.resolved.effectiveFindings;
   const blocked = blockedInvalidPlanFindings(
@@ -281,6 +381,17 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
     lookup.pendingObligation?.obligationId,
   );
   if (blocked) return blocked;
+
+  // An exhausting verdict must be recorded even if the un-reviewed draft's
+  // claims would be rejected: the draft is never adopted, but dropping the
+  // verdict would leave the bounded review loop without its terminal state.
+  if (shouldAdmitRevision(scope)) {
+    const admission = admitPlanRevision(scope);
+    if (typeof admission === 'string') return admission;
+    scope = admission;
+    const preflight = revisionPreflight(scope, effectiveFindings, lookup.pendingObligation);
+    if (preflight !== null) return preflight;
+  }
 
   const revision = applyPlanRevision(scope, lookup.pendingObligation?.obligationId);
   if (typeof revision === 'string') return revision;
@@ -302,6 +413,26 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
 
 // ---- tool definition ----
 
+function shouldAdmitRevision(scope: PlanExecutionScope): boolean {
+  return !planReviewExhaustsBudget(scope) && hasFreshRevisionClaims(scope);
+}
+
+function admitPlanRevision(scope: PlanExecutionScope): PlanExecutionScope | string {
+  const admission = classifyPlanClaimSubmission(scope.args, scope.state, scope.ctx.digest);
+  if (admission.kind === 'blocked') return admission.message;
+  return {
+    ...scope,
+    args: admission.args,
+    ...(admission.diagnostics ? { claimSubmissionDiagnostics: admission.diagnostics } : {}),
+  };
+}
+
+function hasFreshRevisionClaims(scope: PlanExecutionScope): boolean {
+  return (
+    classifyPlanCall(scope.args, scope.input).kind === 'revision' && scope.args.claims !== undefined
+  );
+}
+
 export const plan: ToolDefinition = {
   description:
     'Submit a plan OR record an independent reviewer verdict. Two modes:\n' +
@@ -322,12 +453,7 @@ export const plan: ToolDefinition = {
         'Plan body text (markdown). Required for Mode A (initial submission) ' +
           "and when reviewVerdict is 'changes_requested' (revised plan).",
       ),
-    claims: z
-      .array(PlanClaimDeclarationSchema)
-      .optional()
-      .describe(
-        'Pre-evidence claims made by this plan version. Each names its governing plan section and expected implementation check.',
-      ),
+    claims: z.array(PlanClaimDeclarationSchema).optional().describe(PLAN_CLAIM_GUIDANCE),
     reviewVerdict: z
       .enum(['accept', 'changes_requested'])
       .optional()
@@ -342,7 +468,7 @@ export const plan: ToolDefinition = {
       .boolean()
       .optional()
       .describe(
-        'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
+        'Set to true ONLY after a real reviewer-subagent spawn failure (reviewer subagent fails, agent ' +
           'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
           'and recovery guidance. It never enables self-review and never approves the plan.',
       ),
@@ -350,7 +476,7 @@ export const plan: ToolDefinition = {
       .literal('retry_transport')
       .optional()
       .describe(
-        'Typed transport-recovery intent. ONLY when the authorized native reviewer Task release ' +
+        'Typed transport-recovery intent. ONLY when the authorized native reviewer subagent release ' +
           'was technically interrupted or yielded no bindable evidence: re-emits the pending ' +
           'review dispatch for the current attempt, or re-arms a fresh attempt on the SAME frozen ' +
           'plan subject after a released dispatch. Never a verdict, never approval, and never a ' +
@@ -360,8 +486,9 @@ export const plan: ToolDefinition = {
       .array(z.string())
       .optional()
       .describe(
-        'File paths targeted by this plan. Required when the policy mandates review challenges. ' +
-          'Provides the changed-file evidence that challenge obligations bind against.',
+        'Repository-relative file paths targeted by this plan, distinct from Discovery risk paths. ' +
+          'Used for review classification and baseline overlap checks at approval; unknown scope with dirt blocks. ' +
+          'A revision replaces supplied targets or retains prior targets when omitted.',
       ),
   },
   async execute(args, context) {
@@ -371,7 +498,7 @@ export const plan: ToolDefinition = {
           args as PlanArgs,
           mutableSession.state,
         );
-        let scope: PlanExecutionScope = {
+        const scope: PlanExecutionScope = {
           ...mutableSession,
           args: typedArgs,
           context,
@@ -382,19 +509,6 @@ export const plan: ToolDefinition = {
         // any lifecycle routing can re-emit a review instruction.
         const shapeBlocked = validatePlanCallShape(scope);
         if (shapeBlocked) return shapeBlocked;
-        const claimClassification = classifyPlanClaimSubmission(
-          scope.args,
-          scope.state,
-          scope.ctx.digest,
-        );
-        if (claimClassification.kind === 'blocked') return claimClassification.message;
-        scope = {
-          ...scope,
-          args: claimClassification.args,
-          ...(claimClassification.diagnostics
-            ? { claimSubmissionDiagnostics: claimClassification.diagnostics }
-            : {}),
-        };
         if (scope.input.isInitialSubmission) {
           const routed = await routeInitialPlanCall(scope);
           if (routed !== null) return routed;

@@ -22,12 +22,17 @@ import type { InstructionHost, InstructionSurface, RunnerConfig } from '../schem
 import type { WorkspaceSnapshot } from '../assertions.js';
 import { buildMandatesContent } from '../../../src/rendering/mandates-renderer.js';
 import { computeMandatesDigest } from '../../../src/cli/install-helpers.js';
-import { mergeOpencodeJson } from '../../../src/cli/install-json.js';
+import { assertNativeOpenCodeInstallTarget } from '../../../src/cli/install-ownership.js';
 import {
   CLAUDE_CODE_PLUGIN_DIR,
   claudeCodePluginFiles,
   CODEX_PLUGIN_NAME,
   codexPluginFiles,
+  PLUGIN_RELATIVE_PATH,
+  PLUGIN_WRAPPER,
+  REVIEWER_AGENT_FILENAME,
+  REVIEWER_AGENT,
+  COMMANDS,
 } from '../../../src/cli/templates.js';
 import { PACKAGE_VERSION } from '../../../src/shared/package-version.js';
 
@@ -220,13 +225,20 @@ async function materializeInstructionSurface(
 
   if (instructionHost === 'opencode') {
     const mandatesDir = join(workspaceRoot, '.opencode');
+    await assertNativeOpenCodeInstallTarget(mandatesDir, [workspaceRoot, mandatesDir]);
     mkdirSync(mandatesDir, { recursive: true });
     writeFileSync(
       join(mandatesDir, 'flowguard-mandates.md'),
       buildMandatesContent(PACKAGE_VERSION(), computeMandatesDigest()),
       'utf-8',
     );
-    await mergeOpencodeJson(join(workspaceRoot, 'opencode.json'), 'repo');
+    writeTemplateTree(mandatesDir, {
+      [PLUGIN_RELATIVE_PATH]: PLUGIN_WRAPPER,
+      [`agents/${REVIEWER_AGENT_FILENAME}`]: REVIEWER_AGENT,
+      ...Object.fromEntries(
+        Object.entries(COMMANDS).map(([name, content]) => [`commands/${name}`, content]),
+      ),
+    });
     return null;
   }
 

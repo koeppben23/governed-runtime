@@ -51,7 +51,8 @@ Same as `README.md`, plus:
 
   After the merge, build the tarball from `develop` as usual.
 
-- JDK 21+, Node.js 22+, OpenCode CLI (`opencode`) in PATH.
+- JDK 21+, Node.js 22.22.2 (from `.node-version`), npm 10.x, and the OpenCode V2
+  candidate CLI (`opencode`) in PATH; see [prerequisites](README.md#prerequisites).
 
 ## Setup — Two Workspaces, One Seed
 
@@ -60,9 +61,16 @@ session or execute either scenario; the runtime preflight below is required
 after `/start` in each fresh workspace.
 
 ```bash
-# From demos/java-task-manager/
-../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+# From demos/java-task-manager/ (repo-scoped: both A/B workspaces stay isolated)
+../../run-demo-setup.sh --install --install-scope repo --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 ```
+
+The default install scope is global (`~/.config/opencode`); the explicit
+`--install-scope repo` above keeps both A/B workspaces self-contained. With a
+global install, V2 watches plugin/config changes; the OpenCode V2 host command `/reload`
+forces rediscovery.
+Installation does not activate governance. Keep the workspace configs below as
+the authoritative per-workspace policy.
 
 The root runner prepares every installable live demo and creates the two A/B
 workspaces from the same seed:
@@ -208,7 +216,7 @@ and determine the real member name first:
 # --verify-session output (hostSessionId: ...) or the structured
 # flowguard_status({}) response (hostSessionId).
 SESSION_ID="<hostSessionId from run-reduced-ceremony-demo-setup.sh --verify-session>"
-PKG=$(find "$HOME/.config/opencode/workspaces" -type f -name "$SESSION_ID.tar.gz" -print -quit)
+PKG=$(find "$HOME/.config/opencode/workspaces" -type f -name "export-$SESSION_ID.tar.gz" -print -quit)
 MEMBER=$(tar -tzf "$PKG" | grep '/audit/audit.jsonl$' | head -n 1)
 tar -xOzf "$PKG" "$MEMBER" | grep reduced_ceremony_applied
 ```

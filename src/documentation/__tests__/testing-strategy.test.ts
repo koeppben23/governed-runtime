@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import {
   MUTATION_AUTHORITY_INVENTORY,
   type RequiredAuthorityEntry,
-} from '../../architecture/__tests__/mutation-authority-inventory.js';
+} from '../../architecture/support/mutation-authority-inventory.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');
@@ -128,6 +128,18 @@ describe('documentation/testing-strategy', () => {
     expect(workflow).not.toMatch(/^\s*pull_request:/m);
     expect(workflow).toContain('workflow_dispatch');
     expect(workflow).toContain('schedule:');
+  });
+
+  it('HAPPY: pins the mutation cadence to the workflow schedule', () => {
+    const workflow = readRepoFile('.github/workflows/mutation.yml');
+    const docs = readRepoFile('docs/testing-strategy.md');
+    const branchProtection = readRepoFile('.github/BRANCH-PROTECTION.md');
+
+    // The workflow cron is the schedule authority; the docs and branch
+    // protection must describe the same cadence (weekly, Mondays 02:00 UTC).
+    expect(workflow).toContain("cron: '0 2 * * 1'");
+    expect(docs).toContain('weekly/release/manual');
+    expect(branchProtection).toContain('weekly/release');
   });
 
   it('HAPPY: documents the per-profile admission policy', () => {

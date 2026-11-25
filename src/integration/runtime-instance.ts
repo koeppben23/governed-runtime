@@ -12,12 +12,15 @@
 
 import { randomUUID } from 'node:crypto';
 
-let runtimeInstanceId: string | null = null;
+// Native plugin reload can evaluate another bundled copy of this module in the
+// SAME process. The identity belongs to that process, not a module generation.
+const RUNTIME_INSTANCE = Symbol.for('@flowguard/core/runtime-instance');
+const processRuntime = globalThis as typeof globalThis & { [RUNTIME_INSTANCE]?: string };
 
 /** Lazily minted, stable for the lifetime of this process. */
 export function getRuntimeInstanceId(): string {
-  runtimeInstanceId ??= randomUUID();
-  return runtimeInstanceId;
+  processRuntime[RUNTIME_INSTANCE] ??= randomUUID();
+  return processRuntime[RUNTIME_INSTANCE];
 }
 
 /**
@@ -25,6 +28,6 @@ export function getRuntimeInstanceId(): string {
  * new id automatically; this is never called from production code paths.
  */
 export function resetRuntimeInstanceIdForTest(next?: string): string {
-  runtimeInstanceId = next ?? randomUUID();
-  return runtimeInstanceId;
+  processRuntime[RUNTIME_INSTANCE] = next ?? randomUUID();
+  return processRuntime[RUNTIME_INSTANCE];
 }

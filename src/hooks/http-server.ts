@@ -17,6 +17,16 @@
  * - POST /hooks/stop           → Cleanup and review check
  * - GET  /health               → Server liveness check
  *
+ * Fail-closed transport (PreToolUse only): Claude Code treats non-2xx HTTP hook
+ * responses as non-blocking, so every handler-reachable pre-tool-use validation
+ * or body-read failure after authentication, method, and route resolution
+ * (content type, body read, oversized payload, malformed JSON) is delivered as
+ * HTTP 200 with a protocol DENY body. Authentication (401), method (405),
+ * unknown route (404), an unreachable server, client disconnect, and timeout
+ * cannot be converted into a DENY from inside the server and remain documented
+ * non-blocking residual risks; the informational routes keep their status
+ * codes. See docs/platform-limitations.md (Gap 3).
+ *
  * Configuration:
  * - FLOWGUARD_HOOK_PORT (env): port number (default: 18462)
  * - FLOWGUARD_HOOK_HOST (env): bind address (default: 127.0.0.1)
@@ -35,9 +45,19 @@ import { detectPlatform } from './shared/platform-detect.js';
 import { formatDenyOutput } from './shared/stdout-writer.js';
 import { validateToolHookPayload, validateSessionPayload } from './shared/stdin-reader.js';
 import {
+  headerValues,
+  jsonResponse,
+  protocolDenyEventFor,
+  readHookPayloadOrRespond,
+  type HookPayloadRead,
+  type IngestFailureSink,
+} from './shared/http-transport.js';
+import { appendHookIngestFailure } from '../adapters/persistence-hook-ingest.js';
+import {
   isMutatingHostTool,
   isHostToolAllowedInPhase,
   isSubagentAuthorized,
+  hostMutationIntegrityGate,
 } from './shared/phase-gate.js';
 import {
   assessObligationEscalation,
@@ -46,6 +66,7 @@ import {
 } from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { ensureWorkspace } from '../adapters/workspace/index.js';
+import { resolveRoot } from '../adapters/git.js';
 import type { AuditEventBody } from '../state/evidence-audit.js';
 import type { HookEventName, HttpHookResponse } from './shared/types.js';
 
@@ -53,7 +74,6 @@ import type { HookEventName, HttpHookResponse } from './shared/types.js';
 
 const DEFAULT_PORT = 18462;
 const DEFAULT_HOST = '127.0.0.1';
-export const MAX_HOOK_BODY_BYTES = 1_048_576;
 const MINIMUM_HOOK_TOKEN_LENGTH = 32;
 
 export type HttpHookServerConfig =
@@ -127,55 +147,6 @@ let serverConfig: HttpHookServerConfig | undefined;
 
 // ─── Request Handling ────────────────────────────────────────────────────────
 
-class BodyTooLargeError extends Error {
-  constructor() {
-    super(`request body exceeds ${MAX_HOOK_BODY_BYTES} bytes`);
-    this.name = 'BodyTooLargeError';
-  }
-}
-
-function contentLengthExceedsLimit(req: IncomingMessage): boolean {
-  const raw = req.headers['content-length'];
-  if (typeof raw !== 'string') return false;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > MAX_HOOK_BODY_BYTES;
-}
-
-export async function readBody(req: IncomingMessage): Promise<string> {
-  if (contentLengthExceedsLimit(req)) throw new BodyTooLargeError();
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for await (const chunk of req) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
-    total += buffer.byteLength;
-    if (total > MAX_HOOK_BODY_BYTES) throw new BodyTooLargeError();
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks).toString('utf-8');
-}
-
-function jsonResponse(res: ServerResponse, status: number, body: unknown): void {
-  const json = JSON.stringify(body);
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(json),
-  });
-  res.end(json);
-}
-
-function headerValues(req: IncomingMessage, name: string): string[] {
-  const values: string[] = [];
-  const rawHeaders = req.rawHeaders ?? [];
-  for (let index = 0; index < rawHeaders.length; index += 2) {
-    if (rawHeaders[index]?.toLowerCase() === name) values.push(rawHeaders[index + 1] ?? '');
-  }
-  if (values.length > 0) return values;
-
-  const value = req.headers[name];
-  if (typeof value === 'string') return [value];
-  return Array.isArray(value) ? value : [];
-}
-
 function secureTokenEquals(actual: string, expected: string): boolean {
   const actualBuffer = Buffer.from(actual, 'utf8');
   const expectedBuffer = Buffer.from(expected, 'utf8');
@@ -194,17 +165,29 @@ function isAuthorizedHookRequest(req: IncomingMessage, token: string): boolean {
   return bearerToken !== undefined && secureTokenEquals(bearerToken, token);
 }
 
-function hasJsonContentType(req: IncomingMessage): boolean {
-  const contentTypes = headerValues(req, 'content-type');
-  const [contentType] = contentTypes;
-  if (contentTypes.length !== 1 || contentType === undefined) return false;
-  const [mediaType] = contentType.split(';', 1);
-  return mediaType !== undefined && mediaType.trim().toLowerCase() === 'application/json';
-}
-
 function log(message: string): void {
   process.stderr.write(`[FlowGuard HTTP Hook] ${message}\n`);
 }
+
+/**
+ * Record an unattributable PostToolUse ingestion failure in the bounded,
+ * non-audit transport ledger. Never throws; returns whether it was persisted.
+ */
+const recordHttpIngestFailure: IngestFailureSink = async (failure) => {
+  const result = await appendHookIngestFailure({
+    transport: 'http_hook',
+    event: 'PostToolUse',
+    reasonCode: failure.reasonCode,
+    observedBytes: failure.observedBytes,
+    observedPrefix: failure.observedPrefix,
+  });
+  log(
+    result.recorded
+      ? `WARN: transport ingestion failure recorded (${failure.reasonCode}); NOT a tool-call audit event`
+      : `WARN: transport ingestion failure NOT recorded (${failure.reasonCode}, ${result.reason ?? 'unknown'}); NOT a tool-call audit event`,
+  );
+  return result.recorded;
+};
 
 // ─── Hook Handlers ───────────────────────────────────────────────────────────
 
@@ -232,6 +215,14 @@ export async function handlePreToolUse(
     return { decision: 'deny', code: resolution.code, reason: resolution.reason };
   }
 
+  const integrity = hostMutationIntegrityGate(
+    toolNameLower,
+    resolution.state,
+    tool_input,
+    resolution.sessionDir,
+  );
+  if (integrity.kind === 'blocked')
+    return { decision: 'deny', code: integrity.code, reason: integrity.reason };
   const unresolved = unresolvedBlockingObligations(resolution.state);
   if (unresolved.length > 0) {
     return {
@@ -249,8 +240,31 @@ export async function handlePreToolUse(
   return { decision: 'allow' };
 }
 
-async function handlePostToolUse(payload: Record<string, unknown>): Promise<HttpHookResponse> {
-  const validated = validateToolHookPayload(payload);
+async function handlePostToolUse(
+  payload: Record<string, unknown>,
+  ingestion?: HookPayloadRead,
+): Promise<HttpHookResponse> {
+  let validated: ReturnType<typeof validateToolHookPayload>;
+  try {
+    validated = validateToolHookPayload(payload);
+  } catch (err) {
+    // The transport read and parsed the body, so the observed raw bytes are
+    // available: record them instead of claiming an unavailable digest.
+    const recorded = await recordHttpIngestFailure({
+      reasonCode: 'HOOK_PAYLOAD_INVALID',
+      observedBytes: ingestion?.observedBytes ?? null,
+      observedPrefix: ingestion?.observedPrefix ?? null,
+    });
+    log(
+      `WARN: post-tool-use validation failed (${err instanceof Error ? err.message : String(err)}); ` +
+        `transport ingestion failure ${recorded ? 'recorded' : 'NOT recorded'}; NOT a tool-call audit event`,
+    );
+    return {
+      decision: 'allow',
+      reason: 'audit skipped: HOOK_PAYLOAD_INVALID',
+      auditFailureRecorded: recorded,
+    };
+  }
   const { tool_name, tool_input, session_id, cwd } = validated;
   const platform = detectPlatform(payload);
 
@@ -306,11 +320,20 @@ export async function handleSessionStart(
   const { session_id, cwd } = validated;
   const platform = detectPlatform(payload);
 
-  try {
-    await ensureWorkspace(cwd);
-  } catch (err) {
-    log(`WARN: workspace-bootstrap-failed: ${err instanceof Error ? err.message : String(err)}`);
-    return { decision: 'allow', reason: 'workspace bootstrap failed (non-blocking)' };
+  // Workspace bootstrap runs only on the git-resolved worktree root; the raw
+  // payload cwd is never a filesystem authority. An active
+  // FLOWGUARD_SESSION_DIR override skips bootstrap entirely: the resolver only
+  // accepts an override that equals the authority-derived session directory, so
+  // the workspace already exists.
+  const envOverride = process.env['FLOWGUARD_SESSION_DIR'];
+  if (envOverride === undefined || envOverride.length === 0) {
+    try {
+      const worktreeRoot = await resolveRoot(cwd);
+      await ensureWorkspace(worktreeRoot);
+    } catch (err) {
+      log(`WARN: workspace-bootstrap-failed: ${err instanceof Error ? err.message : String(err)}`);
+      return { decision: 'allow', reason: 'workspace bootstrap failed (non-blocking)' };
+    }
   }
 
   // Resolve the governed session. Audit v3 events require the explicit
@@ -364,10 +387,7 @@ async function handleStop(payload: Record<string, unknown>): Promise<HttpHookRes
   }
 
   const { state, sessionDir: sessDir } = resolution;
-  const pendingObligations =
-    state.reviewAssurance?.obligations.filter(
-      (ob) => ob.status !== 'consumed' && ob.consumedAt == null,
-    ) ?? [];
+  const pendingObligations = unresolvedBlockingObligations(state);
 
   if (pendingObligations.length > 0) {
     log(
@@ -424,7 +444,10 @@ function truncateInput(input: Record<string, unknown>): Record<string, unknown> 
 
 interface HookRoute {
   readonly event: HookEventName;
-  readonly handle: (payload: Record<string, unknown>) => Promise<HttpHookResponse>;
+  readonly handle: (
+    payload: Record<string, unknown>,
+    ingestion?: HookPayloadRead,
+  ) => Promise<HttpHookResponse>;
 }
 
 const ROUTES: Record<string, HookRoute> = {
@@ -436,51 +459,15 @@ const ROUTES: Record<string, HookRoute> = {
 
 // ─── Server ──────────────────────────────────────────────────────────────────
 
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-async function readRequestBodyOrRespond(
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<string | undefined> {
-  try {
-    return await readBody(req);
-  } catch (err) {
-    if (err instanceof BodyTooLargeError) {
-      jsonResponse(res, 413, { error: 'Request body too large' });
-      return undefined;
-    }
-    jsonResponse(res, 400, { error: 'Failed to read request body' });
-    return undefined;
-  }
-}
-
-function parseJsonObjectOrRespond(
-  body: string,
-  res: ServerResponse,
-): Record<string, unknown> | undefined {
-  try {
-    const parsed: unknown = JSON.parse(body);
-    if (!isJsonObject(parsed)) {
-      jsonResponse(res, 400, { error: 'Request body must be a JSON object' });
-      return undefined;
-    }
-    return parsed;
-  } catch {
-    jsonResponse(res, 400, { error: 'Invalid JSON in request body' });
-    return undefined;
-  }
-}
-
 async function dispatchHookRoute(
   url: string,
   route: HookRoute,
   payload: Record<string, unknown>,
   res: ServerResponse,
+  ingestion?: HookPayloadRead,
 ): Promise<void> {
   try {
-    const result = await route.handle(payload);
+    const result = await route.handle(payload, ingestion);
 
     // For pre-tool-use denials, also include the hookSpecificOutput format
     // so Claude Code can interpret it directly.
@@ -540,18 +527,15 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     return;
   }
 
-  if (!hasJsonContentType(req)) {
-    jsonResponse(res, 415, { error: 'Content-Type must be application/json' });
-    return;
-  }
+  const read = await readHookPayloadOrRespond(
+    req,
+    res,
+    protocolDenyEventFor(route.event),
+    route.event === 'PostToolUse' ? recordHttpIngestFailure : undefined,
+  );
+  if (read === undefined) return;
 
-  const body = await readRequestBodyOrRespond(req, res);
-  if (body === undefined) return;
-
-  const payload = parseJsonObjectOrRespond(body, res);
-  if (payload === undefined) return;
-
-  await dispatchHookRoute(url, route, payload, res);
+  await dispatchHookRoute(url, route, read.payload, res, read);
 }
 
 const server = createServer(handleHttpRequest);

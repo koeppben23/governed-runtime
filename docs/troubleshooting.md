@@ -38,12 +38,18 @@ flowguard doctor
 **Solution:**
 
 ```bash
-# Create or restore a session
+# OpenCode V2: explicit start for a verified new/inactive root
 /start
 
 # Or check if session exists
 ls ~/.config/opencode/workspaces/*/sessions/
 ```
+
+For Claude Code and Codex, follow the installed Start skill: it calls
+`mcp__flowguard__flowguard_hydrate` to prepare or reload the workflow. The shared
+`NO_SESSION` reason does not impose OpenCode's native activation protocol on
+those MCP hosts. Missing or damaged existing authority must be restored from
+trusted evidence, not recreated through any start path.
 
 ### Phase Not Advancing
 
@@ -71,6 +77,30 @@ ls ~/.config/opencode/workspaces/*/sessions/
 
 `/review` is **not** a status command — it is the entry point of the peer
 review flow (READY only). Use `/status` or `/why` instead.
+
+### Implementation blocked by an open host mutation
+
+`MUTATION_EPISODE_UNRESOLVED` means an authorized host mutation has no recorded
+completion. `/why` reports the exact `hostCallId` under
+`whyBlocked.mutationEpisodes`; it does not query or modify host/session state.
+`nextResolvableCommand: null` means no unconditional progress recommendation is
+available, not that conditional recovery commands are forbidden.
+
+- If the tool is still executing, wait for its completion.
+- If a regular OpenCode `edit` already failed, retry `/implement`. Its Before
+  boundary re-reads the exact host error and closes the episode before the tool
+  rechecks its prerequisites. This automatic error path is admitted only for
+  `edit`, not arbitrary shell or file tools.
+- If the result is truly unknown, stop the original host process and restart.
+  Only a later lease generation may run `/reconcile-mutation-episode`; then
+  capture fresh implementation, checks and review. A stale heartbeat or plugin
+  reload cannot fence a live holder.
+- A cleanup/interrupted part remains unknown even when it has an end timestamp.
+  Shell/background writers require separate termination: neither a shell exit
+  nor runtime fencing proves descendant quiescence (MUT5 / #1173).
+
+See the [MUT4 host verification record](development/mut4-host-completion.md) for
+the pinned-host reproduction and negative-path contract.
 
 ### External Reviewer Evidence Not Accepted
 
@@ -124,67 +154,149 @@ Legacy `location` text is not accepted.
    ```bash
    cat ~/.config/opencode/flowguard.json
    ```
-2. Recreate session with correct mode:
+2. Existing sessions retain their frozen policy. For new work, prepare a
+   trustworthy pre-change worktree and use a distinct host session with explicit
+   activation; do not recreate an existing binding:
    ```bash
-   /hydrate policyMode=regulated
+   /start regulated
    ```
 
+## Native OpenCode installer recovery
+
+CLI installation errors are separate from the governance reason registry below.
+`OPENCODE_FRESH_INSTALL_REQUIRED` rejects obsolete or duplicate FlowGuard
+installation/ownership formats: archive the old installation and evidence
+byte-for-byte, confirm ownership before removing obsolete registrations, and
+install V2 fresh. `--force` does not migrate formats. `OPENCODE_CONFIG_INVALID`
+means the installer could not safely inspect OpenCode JSON/JSONC; preserve and
+repair that file before retrying. Neither error authorizes deletion of audit
+history or customer configuration.
+
+Unsupported keys in FlowGuard's separate `flowguard.json` are a breaking config
+change, not an OpenCode JSON/JSONC error. Back up and manually correct the file
+using [configuration recovery](./configuration.md#breaking-change-manual-configuration-recovery).
+`install --force` does not normalize or delete old keys. ACTIVE config failures
+remain `CONFIG_INVALID`; no session-state or audit reset is authorized.
+
 ## Error Codes
+
+### Plan claim admission and review cost
+
+Blocking claim declarations return `PLAN_CLAIM_SUBMISSION_REJECTED` before a new
+plan version or independent review is created. Read `claimSubmissionDiagnostics`
+and the reported phase, correct the exact rejected fields, and resubmit the
+complete plan and claim set in the current `TICKET` or `PLAN` step. Do not restart
+the session for a correctable declaration error or automatically remove/downgrade
+critical claims. An explicit `claims: []` is withdrawal only when no required
+ProofGraph authority is lost, not the default repair. Noncritical declarations can also
+be blocking when their contract is incomplete; only canonically non-blocking
+rejections permit partial acceptance.
+
+For `specific_behavior`, an `aggregate_check` counterexample is insufficient.
+An assertion counterexample needs the exact provider/local identity and a check
+identity different from `expectedCheckId`. Inspect the active candidates: `build`
+and `test` are distinct check identities even when their commands overlap. An
+accepted declaration is admission, not executed proof or successful falsification.
+
+For already persisted rejection diagnostics at `PLAN_REVIEW`, request changes
+(`changes_requested`) to return to `PLAN` before submitting the corrected plan.
+At `EVIDENCE_REVIEW`, changes requested returns to `IMPLEMENTATION`; there is no
+admissible in-session path to plan revision. Follow the explicit
+[new-session authority recovery](proofgraph.md#recovery-when-approved-claims-must-change):
+retain and explicitly abort the old session, prepare the trusted pre-change base,
+start a different host binding, obtain a new certificate, and reapply changes only
+in the newly authorized implementation step with fresh evidence. `/hydrate` in
+the old terminal binding is read-only; a dirty-worktree restart can exclude the
+old changes as baseline rather than certify them. Existing reviewer continuations and transport recovery retain
+their authority and do not create a new plan version through claim admission.
 
 All BLOCKED responses carry a `code`, a `reason`, and a `recovery` array. The
 canonical registry is in `src/config/reasons.ts`. Every code listed below is a
 real, registered reason.
 
+### Pre-existing worktree changes at plan approval or implementation
+
+A plan target that was already dirty when the session started is baseline, not
+implementation evidence. The same is true if it is dirty at approval. Cleaning
+and re-applying the same bytes in the same session does not change the captured
+baseline hash, so a new session is required.
+
+Only declared targets determine this overlap check; Discovery risk paths classify
+the review but are not implicit implementation targets. In-worktree aliases are
+compared canonically. Absolute/escaping targets fail with `PLAN_TARGET_PATH_INVALID`.
+With no declared targets, any baseline/current dirt blocks approval because its
+unrelatedness cannot be established. A missing baseline capture blocks approval
+even without targets, implementation recording and later subject re-attestation;
+it never authorizes full-worktree attribution.
+
+- `PLAN_TARGETS_PREEXISTING_DIRTY` — the target path was captured in
+  `implementationBaseline.dirtyFiles` at session start.
+- `PLAN_TARGETS_DIRTY_AT_APPROVAL` — the target path is dirty now.
+- `IMPLEMENTATION_BASELINE_UNAVAILABLE` — the baseline dirty-file capture is
+  unavailable; implementation evidence cannot be attributed safely.
+- `IMPLEMENTATION_BASELINE_PREEXISTING` — all changed files are pre-existing dirty
+  files unchanged since session start.
+
+Recovery: preserve the worktree diff as a patch outside the worktree, restore a
+clean worktree before starting a new host session, complete plan approval there,
+and apply the patch only during the new `IMPLEMENTATION` phase. Do not commit or
+stash inside the active session: the control-plane marker includes `HEAD`.
+
 ### Session & State
 
-| Code                                      | Description                                                                                | Solution                                                                                                                                                                                                  |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NO_SESSION`                              | No session exists for the current workspace                                                | Run `/hydrate` first                                                                                                                                                                                      |
-| `MISSING_SESSION_ID`                      | Tool call missing session id                                                               | Re-invoke via OpenCode (the runtime injects sessionId)                                                                                                                                                    |
-| `MISSING_WORKTREE`                        | Workspace fingerprint cannot be resolved                                                   | Run from inside a git worktree                                                                                                                                                                            |
-| `INVALID_FINGERPRINT`                     | Workspace fingerprint missing or malformed (expected 24 hex chars)                         | Run `flowguard doctor`                                                                                                                                                                                    |
-| `CONFIG_MISSING`                          | Config file is absent                                                                      | Re-run `flowguard install` for this workspace                                                                                                                                                             |
-| `CONFIG_INVALID`                          | Config file failed schema validation                                                       | Restore from a trusted backup or re-install                                                                                                                                                               |
-| `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` | Runtime is on the FlowGuard deny-list of runtimes known not to resolve `instructions[]`    | Switch to an OpenCode runtime not on the deny-list; verify the mandate path is in `instructions[]`; FlowGuard cannot verify activation automatically                                                      |
-| `SCHEMA_VALIDATION_FAILED`                | Persisted session state failed an incompatible schema or evidence contract                 | Restore the previous artifact, archive or complete the session, then upgrade and start a new session                                                                                                      |
-| `SESSION_ERROR`                           | Session error received from host runtime                                                   | Check OpenCode logs for root cause; start a new session                                                                                                                                                   |
-| `SESSION_LOCK_CONTENDED`                  | Session write lock could not be acquired (a concurrent operation held it past the timeout) | Wait for the concurrent FlowGuard operation to finish and re-run `/hydrate`; remove a stale `session-state.json.lock` only after confirming no live process holds it                                      |
-| `LOCK_TIMEOUT_EXHAUSTED`                  | Session write lock retries exhausted after all attempts                                    | Retry the interrupted FlowGuard command (e.g., `/check` for the same check kind); run `/status --why-blocked` to inspect session state; if persistent, check session directory for stale lock diagnostics |
-| `REVIEWER_INVOCATION_EXHAUSTED`           | All reviewer subagent retry attempts failed                                                | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output                                                                                            |
-| `TSA_TIMESTAMP_ASSURANCE_FAILED`          | Timestamp authority assurance failed                                                       | Check TSA endpoint availability, trust anchors, and timestamp policy configuration                                                                                                                        |
+| Code                             | Description                                                                                        | Solution                                                                                                                                                                                                                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NO_SESSION`                     | No session exists for the current workspace                                                        | Follow the installed host's documented start procedure: native activation for OpenCode V2, installed MCP Start skill for Claude/Codex. Missing or damaged existing authority must be restored, not recreated.                                                                                |
+| `MISSING_SESSION_ID`             | Tool call missing session id                                                                       | Re-invoke via OpenCode (the runtime injects sessionId)                                                                                                                                                                                                                                       |
+| `MISSING_WORKTREE`               | Workspace fingerprint cannot be resolved                                                           | Run from inside a git worktree                                                                                                                                                                                                                                                               |
+| `INVALID_FINGERPRINT`            | Workspace fingerprint missing or malformed (expected 24 hex chars)                                 | Run `flowguard doctor`                                                                                                                                                                                                                                                                       |
+| `CONFIG_MISSING`                 | Config file is absent                                                                              | Re-run `flowguard install` for this workspace                                                                                                                                                                                                                                                |
+| `CONFIG_INVALID`                 | Config file failed schema validation                                                               | Back up the reported file, manually correct only invalid fields and preserve unrelated supported settings; see [manual configuration recovery](./configuration.md#breaking-change-manual-configuration-recovery). Do not delete the config; `install --force` does not migrate it.           |
+| `SCHEMA_VALIDATION_FAILED`       | Persisted session state failed an incompatible schema or evidence contract                         | Follow the operator recovery tree in [Upgrade and Rollback](./upgrade-rollback.md#operator-recovery-for-incompatible-persisted-state): complete an active session or archive a terminal one with the release that wrote it, then upgrade; never edit persisted state                         |
+| `SESSION_STATE_INCOMPATIBLE`     | Persisted session state predates the current schema hard cut and is rejected at the read preflight | Same operator recovery tree: complete an active session or archive a terminal one with the release that wrote it, then upgrade and start a fresh session; archive restore does not make the old session readable                                                                             |
+| `SESSION_ERROR`                  | Session error received from host runtime                                                           | Check OpenCode logs for root cause; start a new session                                                                                                                                                                                                                                      |
+| `SESSION_LOCK_CONTENDED`         | Session write lock could not be acquired (a concurrent operation held it past the timeout)         | Wait for the concurrent FlowGuard operation to finish and re-run `/hydrate`. The runtime reclaims a lock whose owner is provably gone (dead process, previous boot, reused PID) automatically; remove `session-state.json.lock` manually only after confirming a live process still holds it |
+| `LOCK_TIMEOUT_EXHAUSTED`         | Session write lock retries exhausted after all attempts                                            | Retry the interrupted FlowGuard command (e.g., `/check` for the same check kind); run `/status --why-blocked` to inspect session state; if persistent, check session directory for stale lock diagnostics                                                                                    |
+| `REVIEWER_INVOCATION_EXHAUSTED`  | All reviewer subagent retry attempts failed                                                        | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output                                                                                                                                                                               |
+| `TSA_TIMESTAMP_ASSURANCE_FAILED` | Timestamp authority assurance failed                                                               | Check TSA endpoint availability, trust anchors, and timestamp policy configuration                                                                                                                                                                                                           |
 
 ### Command & Phase
 
-| Code                       | Description                                                              | Solution                                                                       |
-| -------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `COMMAND_BLOCKED`          | Command input or required dependency was blocked before execution        | Fix the blocked input or dependency and retry the command                      |
-| `COMMAND_NOT_ALLOWED`      | Command is not in the allowed-phase set for current phase                | Check `docs/commands.md` "Allowed in" for the command                          |
-| `COMMAND_SCOPE_DENIED`     | Tool was invoked outside the active explicit command's permitted scope   | Report the command result and wait for the user to invoke the next command     |
-| `WRONG_PHASE`              | Tool requires a specific phase precondition                              | Run `/status` to see the current phase, then `/continue`                       |
-| `HOST_TOOL_PHASE_DENIED`   | Mutating host tool (bash/write/edit) blocked in investigation-only phase | Use read-only tools (read, glob, grep) during TICKET/PLAN/ARCHITECTURE phases  |
-| `HOST_TOOL_UNKNOWN_DENIED` | Unknown host tool denied by default                                      | Use an explicitly supported host tool or extend the canonical allow-list first |
-| `INVALID_VERDICT`          | `/review-decision` verdict is not approve/changes_requested/reject       | Pass a valid verdict literal                                                   |
-| `INVALID_TRANSITION`       | Topology event not valid for current phase                               | Run `/status` and `/why` for diagnostic explanation                            |
+| Code                           | Description                                                                      | Solution                                                                                                                                                                                                                                                           |
+| ------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `COMMAND_BLOCKED`              | Command input or required dependency was blocked before execution                | Fix the blocked input or dependency and retry the command                                                                                                                                                                                                          |
+| `COMMAND_NOT_ALLOWED`          | Command is not in the allowed-phase set for current phase                        | Check `docs/commands.md` "Allowed in" for the command                                                                                                                                                                                                              |
+| `COMMAND_SCOPE_DENIED`         | Tool was invoked outside the active explicit command's permitted scope           | Report the command result and wait for the user to invoke the next command                                                                                                                                                                                         |
+| `WRONG_PHASE`                  | Tool requires a specific phase precondition                                      | Run `/status` to see the current phase, then `/continue`                                                                                                                                                                                                           |
+| `HOST_TOOL_PHASE_DENIED`       | Mutating host tool (bash/write/edit) blocked in investigation-only phase         | Use read-only tools (read, glob, grep) during TICKET/PLAN/ARCHITECTURE phases                                                                                                                                                                                      |
+| `HOST_TOOL_UNKNOWN_DENIED`     | Unknown host tool denied by default                                              | Use an explicitly supported host tool or extend the canonical allow-list first                                                                                                                                                                                     |
+| `GOVERNANCE_AUTHORITY_BLOCKED` | Activation history, generation or native delegation cannot be verified           | Preserve the private enrollment/journal and workflow evidence. Resolve the reported storage or scope conflict; missing authority is not deactivation and hydrate cannot recreate it.                                                                               |
+| `GOVERNANCE_NOT_ACTIVE`        | A productive FlowGuard operation was invoked without authorized activation       | Ordinary native host work remains available. Run `/start` in the root session to start governance. The native command channel is recorded as `host_command` with the resolved actor and is not a verified-human claim; prompts, tools and hydrate cannot activate. |
+| `GOVERNANCE_END_UNSAFE`        | EndGovernance was requested before safe workflow/reviewer/mutation/audit closure | Finish or abort the workflow, resolve reviewer/mutation execution and audit operations, and recover any capacity lock before retrying `/end-governance`. `/finish` and `/abort` do not end governance implicitly.                                                  |
+| `START_ARGUMENTS_INVALID`      | `/start` received an argument other than one policy mode                         | Run `/start` without arguments or with exactly one of `solo`, `team`, `team-ci`, `regulated`                                                                                                                                                                       |
+| `INVALID_VERDICT`              | `/review-decision` verdict is not approve/changes_requested/reject               | Pass a valid verdict literal                                                                                                                                                                                                                                       |
+| `INVALID_TRANSITION`           | Topology event not valid for current phase                                       | Run `/status` and `/why` for diagnostic explanation                                                                                                                                                                                                                |
 
 ### Validation Evidence
 
-| Code                                    | Description                                                                                                                           | Solution                                                                                                                             |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `VALIDATION_EVIDENCE_REQUIRED`          | Policy requires validation evidence but no Discovery-derived verification commands are active                                         | Re-run discovery and `/hydrate` to detect repo-native checks, or set `validationEvidence.allowNoCommands=true` (governance approval) |
-| `VALIDATION_EVIDENCE_UNVERIFIED`        | Policy requires validation evidence but Discovery is not trustworthy (NOT_VERIFIED)                                                   | Run `/hydrate` to restore healthy Discovery and clear any blocked discovery health gate before retrying VALIDATION                   |
-| `VALIDATION_EVIDENCE_STACK_NO_COMMANDS` | Discovery detected a technology stack but derived no verification commands; VALIDATION will not pass vacuously (mis-detection hazard) | Re-run `/hydrate` so repo-native checks are detected, or set `validationEvidence.allowNoCommands=true` (governance approval)         |
+| Code                                    | Description                                                                                                                           | Solution                                                                                                                                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `VALIDATION_EVIDENCE_REQUIRED`          | Policy requires validation evidence but no Discovery-derived verification commands are active                                         | Inspect frozen discovery and checks. New discovery requires explicit activation in a distinct host session at a trustworthy pre-change baseline; hydrate does not recollect existing sessions.               |
+| `VALIDATION_EVIDENCE_UNVERIFIED`        | Policy requires validation evidence but Discovery is not trustworthy (NOT_VERIFIED)                                                   | Restore original trustworthy Discovery artifacts, then use authorized `/hydrate` to re-evaluate the health gate and drift. It does not recreate missing evidence.                                            |
+| `VALIDATION_EVIDENCE_STACK_NO_COMMANDS` | Discovery detected a technology stack but derived no verification commands; VALIDATION will not pass vacuously (mis-detection hazard) | Inspect frozen discovery and stack commands. New collection requires a distinct explicitly activated host session with the correct pre-change baseline; do not silently change the current policy or checks. |
 
 ### Evidence Integrity
 
-| Code                                | Description                                                     | Solution                                                                                       |
-| ----------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `EVIDENCE_ARTIFACT_MISSING`         | Required derived ticket/plan artifact missing                   | Restore session directory from trusted archive before continuing                               |
-| `EVIDENCE_ARTIFACT_MISMATCH`        | Derived artifact hash inconsistent with current ticket/plan     | Restore artifacts from trusted archive or regenerate from trusted state                        |
-| `EVIDENCE_ARTIFACT_IMMUTABLE`       | Attempt to overwrite an already-versioned append-only artifact  | Do not retry the same submission with different content; re-run the tool                       |
-| `REVIEW_CARD_ARTIFACT_WRITE_FAILED` | Review card materialization failed (presentation artifact only) | Check filesystem permissions/disk space; runtime transition not affected                       |
-| `REVIEW_CARD_ARTIFACT_IMMUTABLE`    | Review card artifact already exists with different content      | Expected — cards are immutable per content digest; a revised card uses a new digest-based path |
-| `EMPTY_TICKET`                      | `/ticket` text is empty after trim                              | Provide a substantive ticket description                                                       |
-| `EMPTY_PLAN`                        | `/plan` text is empty after trim                                | Provide a substantive plan                                                                     |
+| Code                                | Description                                                                  | Solution                                                                                            |
+| ----------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `EVIDENCE_ARTIFACT_MISSING`         | Required derived ticket/plan artifact missing                                | Restore session directory from trusted archive before continuing                                    |
+| `EVIDENCE_ARTIFACT_MISMATCH`        | Derived artifact hash inconsistent with current ticket/plan                  | Restore artifacts from trusted archive or regenerate from trusted state                             |
+| `EVIDENCE_ARTIFACT_IMMUTABLE`       | Attempt to overwrite an already-versioned append-only artifact               | Do not retry the same submission with different content; re-run the tool                            |
+| `EXPORT_READY_APPROVAL_UNVERIFIED`  | A newly persisted `EXPORT_READY` state does not clear the evidence preflight | Recompute evidence for the current revision and apply the approval through the protected transition |
+| `REVIEW_CARD_ARTIFACT_WRITE_FAILED` | Review card materialization failed (presentation artifact only)              | Check filesystem permissions/disk space; runtime transition not affected                            |
+| `REVIEW_CARD_ARTIFACT_IMMUTABLE`    | Review card artifact already exists with different content                   | Expected — cards are immutable per content digest; a revised card uses a new digest-based path      |
+| `EMPTY_TICKET`                      | `/ticket` text is empty after trim                                           | Provide a substantive ticket description                                                            |
+| `EMPTY_PLAN`                        | `/plan` text is empty after trim                                             | Provide a substantive plan                                                                          |
 
 ### Independent Review (subagent)
 
@@ -197,15 +309,14 @@ real, registered reason.
 | `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | L4 — submitted overallVerdict differs from actual subagent verdict | Submit the findings exactly as returned by the orchestrator |
 | `SUBAGENT_FINDINGS_ISSUES_MISMATCH` | L4 — submitted blockingIssues count differs from actual count | Submit the findings exactly as returned |
 | `SUBAGENT_VERDICT_FINDINGS_INCOHERENT` | Captured review is self-contradictory: `accept` verdict with blocking issues | Return a non-accept verdict, or reclassify/resolve the blocking issues, then re-review |
-| `SUBAGENT_EVIDENCE_REUSED` | One-shot review evidence reused for a second obligation | Submit a substantively-new artifact for a fresh review obligation |
-| `MAX_REVIEW_ITERATIONS_REACHED` | Retained; no longer emitted — loop force-converges to the review gate | Use `/review-decision` (approve / request-changes / reject) at the gate |
+| `SUBAGENT_EVIDENCE_REUSED` | One-shot review evidence reused for a second obligation | Submit a substantively-new artifact for a fresh review obligation; reduced ceremony stays withheld for this session (start a fresh governed session to restore it) |
 | `SUBAGENT_UNABLE_TO_REVIEW` | Reviewer declared the artifact unreviewable; obligation consumed | Address the reviewer's reason or substantially revise; do not retry the same artifact |
 | `SUBAGENT_TYPE_UNAUTHORIZED` | Non-reviewer subagent type blocked by FlowGuard governance (defense-in-depth) | Only `flowguard-reviewer` subagent type is authorized; do not spawn other subagents |
 | `SUBAGENT_CONTEXT_UNVERIFIABLE` | Strict enforcement cannot validate obligation context from tool output | Re-run the tool that produced the review obligation |
 | `REVIEW_FINDINGS_REQUIRED` | Mode B verdict submitted without `reviewFindings` | Include the structured `reviewFindings` object |
 | `REVIEW_FINDINGS_SESSION_MISMATCH` | Findings came from a different session than the current FlowGuard session | Use findings produced for the current session |
 | `REVIEW_FINDINGS_HASH_MISMATCH` | Findings hash does not match the review obligation | Re-run the review for the current obligation |
-| `REVIEW_GENERATION_MISMATCH` | Review obligation was created under stale reviewer criteria or mandate generation | Re-hydrate or start a fresh review cycle; do not execute or attest the stale obligation |
+| `REVIEW_GENERATION_MISMATCH` | Review obligation was created under stale reviewer criteria or mandate generation | Use a currently admissible originating review command to create a fresh obligation; do not execute or attest the stale obligation. Hydrate does not replace it. |
 | `REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED` | Reviewer finding has no valid structured subject anchor | Anchor the finding to the reviewed change or artifact section |
 | `REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY` | Finding evidence path escapes the repository | Remove parent-directory traversal that would leave the repository |
 | `REVIEW_EVIDENCE_LOCATION_INVALID` | Finding evidence location is not a valid repository location | Use repository-relative evidence paths at the frozen base or head revision |
@@ -213,7 +324,8 @@ real, registered reason.
 | `REVIEW_REPOSITORY_REVISION_UNAVAILABLE` | Finding cites a repository revision unavailable to the reviewed subject | Use only the frozen base or head revision |
 | `REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED` | Pre-mutation implementation base could not be frozen before IMPLEMENTATION entry | Ensure a git repository with a resolvable identity and at least one commit |
 | `REVIEW_OBSERVATION_CAPABILITY_UNKNOWN` | Observation capability is unknown or its attempt is not usable | Use exactly the observationCapability from the canonical reviewer prompt for this attempt |
-| `REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE` | Revision has no frozen repository authority for this obligation | Repository evidence is unavailable; do not substitute worktree reads |
+| `REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE` | The obligation carries no frozen repository authority, so no revision is observable | Repository evidence is unavailable; do not substitute worktree reads |
+| `REVIEW_OBSERVATION_REVISION_NOT_OFFERED` | The requested revision is not offered by this obligation (for example `base` in a plan or architecture review); the message names the offered revision(s) | Repeat the observation with an offered revision; the rejection says nothing about the offered revisions |
 | `REVIEW_OBSERVATION_INVALID_ARGS` | flowguard_observe_repository arguments are invalid | Provide capability, revision ("base" | "head"), and a repository-relative path |
 | `REVIEW_OBSERVATION_PATH_INVALID` | Observation path is not repository-relative | Use a repository-relative POSIX path |
 | `REVIEW_OBSERVATION_UNAVAILABLE` | Frozen repository object cannot be acquired for observation | Immutable acquisition has no mutable fallback; the location cannot become evidence |
@@ -236,15 +348,23 @@ real, registered reason.
 | `REVIEW_EVIDENCE_NOT_OBSERVED` | evidenceLocations have no matching authoritative repository observation for this reviewer attempt | Cite only locations obtained via flowguard_observe_repository during the attempt; start a fresh review otherwise |
 | `REVIEWER_CONTEXT_UNAVAILABLE` | Canonical reviewer context could not be materialized; no review attempt was created | Restore the persisted Discovery basis or workspace fingerprint, then re-run the review |
 | `INVALID_REVIEW_TOOL_SEQUENCE` | Review tool call sequence is invalid (e.g. reviewerUnavailable after spawn) | Follow invocation sequence; do not submit reviewerUnavailable when a host-observed reviewer invocation exists |
-| `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE` | Configured reviewer model does not support required structured output | Configure the flowguard-reviewer agent to use a structured-output-capable model, then re-run the originating command |
-| `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE` | Reviewer Thinking Mode conflicts with the host-required structured-output tool | Configure flowguard-reviewer with `reasoningEffort: none`, then re-run the originating command |
-| `HOST_STRUCTURED_OUTPUT_REQUIRED` | Host did not deliver required structured output for the reviewer child session | Ensure the host supports session.prompt with format: json_schema; re-run the originating command |
-| `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION` | Host structured output violates the reviewer findings contract | Re-run the originating command to authorize a fresh reviewer attempt; do not repair findings outside the host-observed transaction |
-| `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read | Re-hydrate; if persistent, restore from archive |
+| `HOST_STRUCTURED_OUTPUT_REQUIRED` | The correlated assistant response is not one complete strict JSON object | Inspect the contract diagnostic; do not extract JSON from prose or submit copied findings |
+| `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION` | The correlated JSON violates ReviewerFindingsInput | Follow bounded capture recovery; never repair reviewer semantics outside the capture transaction |
+| `REVIEWER_CAPTURE_PROVENANCE_INVALID` | Request/response identity, model selection, tool-free execution or successful completion cannot be proved | Resolve the exact execution outcome; do not accept stale or concurrent messages or bypass the capture fence |
+| `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read | Restore the original session and review assurance from trusted evidence; hydrate cannot recreate missing authority. |
 | `REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE` | Invocation does not establish coherent persisted attempt lineage | Re-invoke the reviewer; the stale invocation is retained for audit |
 | `REVIEW_ATTEMPT_NOT_FOUND` | Attempt referenced by invocation was not found in assurance state | Verify the attempt exists with flowguard_status; re-invoke reviewer if corrupt |
 | `REVIEW_ASSURANCE_UNAVAILABLE` | Review assurance state missing; cannot reject an incoherent attempt | Ensure the session has an active review obligation with an attempt |
 | `REVIEW_ATTEMPT_UNAVAILABLE` | No attempt can currently bind reviewer evidence; the frozen material is intact | Re-run the originating command for the same frozen subject; an obligation with no bindable attempt is closed deterministically so the next submission mints a fresh obligation |
+| `REVIEW_CAPACITY_NOT_LOCKED` | No recoverable terminal reviewer capacity lock exists | Run `/status`; use `reviewRecovery: "retry_transport"` for an unknown execution outcome, or inspect the durable review lineage |
+| `REVIEW_CAPACITY_RECOVERY_UNSAFE` | The terminal capacity lock has no exact safe-release lineage, or the lock/lineage changed | Keep the lock and blocked obligation unchanged; use `retry_transport` for unknown outcomes or EndGovernance after safe workflow closure |
+| `REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND` | A previous reviewer exhausted its execution capacity; no new review may start in the same user turn | Report the blocked review and stop. Run `/recover-capacity` to release a proven terminal reviewer closure lock, then issue a new explicit review command. An unknown reviewer outcome is recovered in a later turn through `retry_transport`. Do not switch review tools |
+| `REVIEWER_STEP_BUDGET_EXHAUSTED` | The reviewer child reached its configured host step budget before structured findings could be captured; a plausible final text at the limit is not accepted | Terminal capacity closure: the exact dispatch is `outcome_unknown`, the attempt is `stale`, and the obligation is blocked with this code. Do not invoke the reviewer subagent again, resubmit the artifact, or start another review in this turn. Run `/recover-capacity` after its lineage is durable, then issue a new explicit review command (for a plan review: `/plan` again) |
+| `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` | The reviewer execution was interrupted, failed or could not be proven complete; no evidence was bound | Do not start another reviewer subagent in this turn. In a later user turn call the originating review tool with `reviewRecovery: "retry_transport"`: FlowGuard interrupts the stale child, proves a stable idle boundary and reopens the same frozen obligation for one fresh attempt within its budget. Unprovable settlement keeps it blocked |
+| `REVIEWER_OUTPUT_TRUNCATED` | The reviewer child stopped at the host output limit (`finish: "length"` / `MessageOutputLengthError`) before a final answer; the truncated review is never serialized | Terminal capacity closure: the exact dispatch is `outcome_unknown`, the attempt is `stale`, and the obligation is blocked with this code. Do not invoke the reviewer subagent again, resubmit the artifact, or start another review in this turn. Run `/recover-capacity` after its lineage is durable, then issue a new explicit review command (for a plan review: `/plan` again) |
+| `REVIEWER_TASK_INCOMPLETE` | The reviewer child finished (`stop`) without a non-blank final answer | While the attempt budget allows, FlowGuard re-arms a fresh attempt on the same frozen obligation and answers with a `reviewRetry` envelope (invoke the reviewer subagent again). The blocked code itself means no fresh attempt was authorized: do not invoke the reviewer subagent again; stop and re-run the originating command (for `/plan`: submit the current plan again), which re-arms a still-pending obligation or mints a fresh one when the exhausted budget closed it |
+| `REVIEWER_TASK_ABORTED` | The reviewer task was aborted (`MessageAbortedError`), possibly by the user; it is never restarted automatically | If intended, nothing to do; otherwise re-run the originating command to re-arm a fresh attempt |
+| `REVIEWER_COMPLETION_UNVERIFIABLE` | Host-recorded messages cannot prove reviewer completion (unreadable, host error, more steps than the limit, tool call or no `stop` in the last step); the review cannot be accepted | Do not consume the result as findings; re-run the originating command when host evidence is available, or report the blocker |
 | `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE` | Reviewer child session completed without host-owned execution provenance | Re-run the originating FlowGuard command; do not reuse the prior reviewer output or submit copied findings |
 | `REVIEW_DISPATCH_PERSISTENCE_FAILED` | Durable reviewer dispatch could not be persisted before the host release; reviewer NOT executed | Retry the originating command; ensure the session state is writable; do not submit fabricated findings |
 | `REVIEW_SUBJECT_CHANGED_WHILE_PENDING` | Submitted artifact revision does not match the frozen subject of the pending review obligation | Submit the same revision to continue the active review, or wait for the obligation to settle before reviewing a changed revision |
@@ -254,7 +374,7 @@ real, registered reason.
 
 | Code                                  | Description                                       | Solution                                                                                |
 | ------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `ENVELOPE_CAPTURE_FAILED`             | Reviewer Task tool produced no bindable output    | Re-invoke the reviewer subagent; verify it is reachable                                 |
+| `ENVELOPE_CAPTURE_FAILED`             | Reviewer subagent produced no bindable output     | Re-invoke the reviewer subagent; verify it is reachable                                 |
 | `ENVELOPE_PAYLOAD_NOT_FOUND`          | Reviewer output contained no extractable JSON     | Re-invoke the reviewer and ensure it returns ONLY the ReviewFindings JSON               |
 | `ENVELOPE_PAYLOAD_AMBIGUOUS`          | Multiple JSON candidates in reviewer output       | Re-invoke the reviewer and ensure exactly one JSON object is returned                   |
 | `ENVELOPE_SCHEMA_INVALID`             | Reviewer output failed schema validation          | Re-invoke the reviewer with the canonical prompt; check all required fields are present |
@@ -276,16 +396,16 @@ real, registered reason.
 
 ### Configuration & Central Policy
 
-| Code                                  | Description                                                    | Solution                                   |
-| ------------------------------------- | -------------------------------------------------------------- | ------------------------------------------ |
-| `CENTRAL_POLICY_PATH_EMPTY`           | `FLOWGUARD_POLICY_PATH` set but empty                          | Unset or point to a valid policy file      |
-| `CENTRAL_POLICY_MISSING`              | Central policy file does not exist                             | Verify the path                            |
-| `CENTRAL_POLICY_UNREADABLE`           | Central policy file cannot be read                             | Check file permissions                     |
-| `CENTRAL_POLICY_INVALID_JSON`         | Central policy is not valid JSON                               | Validate JSON                              |
-| `CENTRAL_POLICY_INVALID_SCHEMA`       | Central policy schema check failed                             | Validate against the policy schema         |
-| `CENTRAL_POLICY_INVALID_MODE`         | Central policy `minimumMode` is not one of solo/team/regulated | Use a valid mode literal                   |
-| `EXPLICIT_WEAKER_THAN_CENTRAL`        | Explicit `--policy-mode` weaker than central minimum           | Use a mode at or above the central minimum |
-| `EXISTING_POLICY_WEAKER_THAN_CENTRAL` | Persisted session policy weaker than current central minimum   | Re-hydrate the session                     |
+| Code                                  | Description                                                    | Solution                                                                                                                   |
+| ------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `CENTRAL_POLICY_PATH_EMPTY`           | `FLOWGUARD_POLICY_PATH` set but empty                          | Unset or point to a valid policy file                                                                                      |
+| `CENTRAL_POLICY_MISSING`              | Central policy file does not exist                             | Verify the path                                                                                                            |
+| `CENTRAL_POLICY_UNREADABLE`           | Central policy file cannot be read                             | Check file permissions                                                                                                     |
+| `CENTRAL_POLICY_INVALID_JSON`         | Central policy is not valid JSON                               | Validate JSON                                                                                                              |
+| `CENTRAL_POLICY_INVALID_SCHEMA`       | Central policy schema check failed                             | Validate against the policy schema                                                                                         |
+| `CENTRAL_POLICY_INVALID_MODE`         | Central policy `minimumMode` is not one of solo/team/regulated | Use a valid mode literal                                                                                                   |
+| `EXPLICIT_WEAKER_THAN_CENTRAL`        | Explicit `--policy-mode` weaker than central minimum           | Use a mode at or above the central minimum                                                                                 |
+| `EXISTING_POLICY_WEAKER_THAN_CENTRAL` | Persisted session policy weaker than current central minimum   | Preserve the frozen policy; restore compatible central policy or explicitly activate a distinct host session for new work. |
 
 ### Archive
 
@@ -303,27 +423,42 @@ steps, and quick fixes remain in `src/config/reasons.ts`.
 
 ```text
 ABORTED
+ACTIVE_SESSION
 ACTOR_ASSURANCE_INSUFFICIENT
 ACTOR_CLAIM_EXPIRED
 ACTOR_CLAIM_INVALID
 ACTOR_CLAIM_MISSING
 ACTOR_CLAIM_PATH_EMPTY
 ACTOR_CLAIM_UNREADABLE
+ACTOR_IDENTITY_UNAVAILABLE
 ACTOR_IDP_CONFIG_REQUIRED
+ACTOR_IDP_INVALID
 ACTOR_IDP_MODE_REQUIRED
 ADR_APPROVE_WITH_TEXT
 ADR_REVIEW_IN_PROGRESS
 ADR_SUBMISSION_MIXED_INPUTS
+ARCHITECTURE_CLAIM_INVALID
 ARCHITECTURE_REVIEW_COMPLETION_REQUIRED
 ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION
 ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED
 ARCHITECTURE_REVIEW_LOOP_REQUIRED
 ARCHITECTURE_REVIEW_OVERRIDE_SUBJECT_MISMATCH
+ARCHIVE_CONTRACT_INCOMPATIBLE
+ARCHIVE_CONTRACT_INVALID
+ARCHIVE_CONTRACT_UNKNOWN
+ARCHIVE_FAILED
+ARCHIVE_MAPPING_UNKNOWN
+ARCHIVE_POLICY_CONFLICT
+ARCHIVE_UNREADABLE
 ARTIFACT_SCHEMA_VALIDATION_FAILED
+AUDIT_EVIDENCE_MISSING
+AUDIT_INVALID
+AUDIT_MISSING
 AUDIT_PERSISTENCE_FAILED
 AUDIT_SESSION_AUTHORITY_UNAVAILABLE
 AUDIT_TERMINAL_TRANSITION_AUTHORITY_UNAVAILABLE
 AUDIT_TRANSITION_EVIDENCE_GAP
+AUDIT_UNREADABLE
 AUTO_ADVANCE_OVERFLOW
 CENTRAL_POLICY_INVALID_JSON
 CENTRAL_POLICY_INVALID_MODE
@@ -336,11 +471,16 @@ CHECK_NOT_ACTIVE
 COMMAND_BLOCKED
 COMMAND_NOT_ALLOWED
 COMMAND_SCOPE_DENIED
+CONFIG_INVALID
+CONFIG_MISSING
+CONFIG_WRITE_FAILED
 CONTENT_ANALYSIS_REQUIRED
 CONTINUE_AMBIGUOUS
 CONTINUE_UNKNOWN_PHASE
+DECISION_BINDING_STALE
 DECISION_IDENTITY_REQUIRED
 DECISION_RECEIPT_ACTOR_MISSING
+DIRECT_WRITE_REQUIRES_PREPARE
 DISCOVERY_DRIFT_BLOCKED
 DISCOVERY_HEALTH_DEGRADED
 DISCOVERY_HEALTH_UNAVAILABLE
@@ -349,6 +489,7 @@ DISCOVERY_RESULT_MISSING
 EMPTY_ADR_TEXT
 EMPTY_ADR_TITLE
 EMPTY_PLAN
+EMPTY_SESSION_DIR
 EMPTY_TICKET
 ENVELOPE_CAPTURE_FAILED
 ENVELOPE_CLIENT_REFERENCE_INVALID
@@ -365,11 +506,15 @@ EVIDENCE_ARTIFACT_MISMATCH
 EVIDENCE_ARTIFACT_MISSING
 EXISTING_POLICY_WEAKER_THAN_CENTRAL
 EXPLICIT_WEAKER_THAN_CENTRAL
+EXPORT_READY_APPROVAL_UNVERIFIED
 FINGERPRINT_FAILED
 FOUR_EYES_ACTOR_MATCH
 GIT_COMMAND_FAILED
 GIT_NOT_FOUND
 GIT_TIMEOUT
+GOVERNANCE_AUTHORITY_BLOCKED
+GOVERNANCE_END_UNSAFE
+GOVERNANCE_NOT_ACTIVE
 GOVERNANCE_OVERRIDE_NOT_REQUIRED
 GOVERNANCE_OVERRIDE_RATIONALE_REQUIRED
 GOVERNANCE_OVERRIDE_REQUIRED
@@ -385,25 +530,36 @@ IMPLEMENTATION_CHALLENGE_ALREADY_RESOLVED
 IMPLEMENTATION_CHALLENGE_NOT_FAILED
 IMPLEMENTATION_CHALLENGE_UNKNOWN
 IMPLEMENTATION_EVIDENCE_EMPTY
-IMPLEMENTATION_REWORK_REQUIRED
+IMPLEMENTATION_BASELINE_PREEXISTING
+IMPLEMENTATION_BASELINE_UNAVAILABLE
 IMPLEMENTATION_EVIDENCE_REQUIRED
 IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED
 IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH
-IMPLEMENTATION_VALIDATION_ATTEMPT_DUPLICATE
+IMPLEMENTATION_REWORK_REQUIRED
 IMPLEMENTATION_VALIDATION_ATTEMPT_DIGEST_MISMATCH
+IMPLEMENTATION_VALIDATION_ATTEMPT_DUPLICATE
 IMPLEMENTATION_VALIDATION_ATTEMPT_FAILED
 IMPLEMENTATION_VALIDATION_ATTEMPT_UNKNOWN
 IMPLEMENTATION_VALIDATION_ATTEMPT_WRONG_SCOPE
 IMPLEMENT_REVIEW_LOOP_REQUIRED
 IMPL_VALIDATION_EVIDENCE_REQUIRED
+INIT_FAILED
+INTEGRITY_INCIDENT_MUTATION_DENIED
 INTERNAL_ERROR
 INVALID_ARCHITECTURE_TOOL_SEQUENCE
 INVALID_FINGERPRINT
 INVALID_IMPLEMENT_TOOL_SEQUENCE
 INVALID_PLAN_TOOL_SEQUENCE
+INVALID_POLICY_DIGEST
+INVALID_POLICY_DIGEST_VERSION
+INVALID_POLICY_MODE
 INVALID_PROFILE
+INVALID_REVIEW_TOOL_SEQUENCE
+INVALID_SESSION_ID
 INVALID_TRANSITION
 INVALID_VERDICT
+INVENTORY_UNREADABLE
+LOCK_TIMEOUT
 LOCK_TIMEOUT_EXHAUSTED
 MCP_RATE_LIMITED
 MCP_TOOL_TIMEOUT
@@ -416,8 +572,8 @@ MUTATION_EPISODE_ALREADY_RESOLVED
 MUTATION_EPISODE_BINDING_REQUIRED
 MUTATION_EPISODE_CONTROL_PLANE_MUTATED
 MUTATION_EPISODE_CONTROL_PLANE_UNAVAILABLE
-MUTATION_EPISODE_NOT_FOUND
 MUTATION_EPISODE_LEASE_UNAVAILABLE
+MUTATION_EPISODE_NOT_FOUND
 MUTATION_EPISODE_REPLAY_BLOCKED
 MUTATION_EPISODE_RESOLVED
 MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE
@@ -430,19 +586,32 @@ NO_IMPLEMENTATION
 NO_PLAN
 NO_SELF_REVIEW
 NO_SESSION
-OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED
+NO_WORKTREE
 ORCHESTRATION_PERMANENTLY_FAILED
+OUTBOX_ORDER_CONFLICT
 PARSE_FAILED
 PLAN_APPROVE_WITH_TEXT
+PLAN_CLAIM_LINEAGE_INVALID
+PLAN_CLAIM_LINEAGE_REQUIRED
+PLAN_CLAIM_SUBMISSION_REJECTED
+PLAN_CRITICAL_CLAIM_DOWNGRADE_FORBIDDEN
+PLAN_EVIDENCE_DESIGN_INVALID
+PLAN_EVIDENCE_DESIGN_REQUIRED
+PLAN_FINDING_RESOLUTION_INVALID
+PLAN_FINDING_RESOLUTION_REQUIRED
 PLAN_REQUIRED
- MAX_REVIEW_ITERATIONS_REACHED
 PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION
 PLAN_REVIEW_EVIDENCE_REQUIRED
+PLAN_REVIEW_FEEDBACK_UNAVAILABLE
 PLAN_REVIEW_IN_PROGRESS
 PLAN_REVIEW_LOOP_REQUIRED
 PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH
 PLAN_SUBMISSION_REQUIRED
+PLAN_TARGETS_DIRTY_AT_APPROVAL
+PLAN_TARGETS_PREEXISTING_DIRTY
+PLAN_TARGET_PATH_INVALID
 PLUGIN_ENFORCEMENT_UNAVAILABLE
+POLICY_SNAPSHOT_INTEGRITY_MISMATCH
 POLICY_SNAPSHOT_MISSING
 PROFILE_RESOLUTION_PERSIST_FAILED
 PROOFGRAPH_AGGREGATE_CAPABILITY_MISSING
@@ -451,17 +620,21 @@ PROOFGRAPH_AGGREGATE_EXTRACTION_MISSING
 PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED
 PROOFGRAPH_ASSERTION_BINDING_UNAVAILABLE
 PROOFGRAPH_ASSERTION_EVIDENCE_MISSING
+PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS
 PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH
 PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH
 PROOFGRAPH_CERTIFICATE_INVALID
+PROOFGRAPH_CERTIFIED_CLAIM_MISMATCH
 PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE
 PROOFGRAPH_CLAIM_EVIDENCE_UNRESOLVED
 PROOFGRAPH_CLAIM_NOT_DECLARED
 PROOFGRAPH_CLAIM_UNSATISFIABLE
+PROOFGRAPH_COUNTEREXAMPLE_CONFLICT
 PROOFGRAPH_COUNTEREXAMPLE_OBSERVED
-PROOFGRAPH_CRITICAL_FACT_REQUIRED
 PROOFGRAPH_CRITICAL_FACTS_UNPROVEN
+PROOFGRAPH_CRITICAL_FACT_REQUIRED
 PROOFGRAPH_EVALUATION_UNAVAILABLE
+PROOFGRAPH_EVIDENCE_ROLE_COLLISION
 PROOFGRAPH_EVIDENCE_STALE
 PROOFGRAPH_MUTATION_ATTEMPT_UNRESOLVED
 PROOFGRAPH_MUTATION_NO_IMPLEMENTATION
@@ -470,48 +643,66 @@ PROOFGRAPH_MUTATION_REPORT_INVALID
 PROOFGRAPH_MUTATION_REPORT_MISSING
 PROOFGRAPH_PROVIDER_EXECUTION_ERROR
 PROOFGRAPH_RISK_ASSESSMENT_STALE
+PROOFGRAPH_RISK_TRIGGER_UNCOVERED
 READ_FAILED
 REGULATED_ACTOR_UNKNOWN
+RESTART_CYCLE_ITERATION_MISMATCH
+REVIEWER_CAPTURE_PROVENANCE_INVALID
+REVIEWER_COMPLETION_UNVERIFIABLE
+REVIEWER_CONTEXT_UNAVAILABLE
+REVIEWER_INVOCATION_EXHAUSTED
+REVIEWER_EXECUTION_OUTCOME_UNKNOWN
+REVIEWER_OUTPUT_TRUNCATED
+REVIEWER_STEP_BUDGET_EXHAUSTED
+REVIEWER_TASK_ABORTED
+REVIEWER_TASK_INCOMPLETE
+REVIEWER_UNAVAILABLE_STRICT
 REVIEW_ASSURANCE_STATE_UNAVAILABLE
+REVIEW_ASSURANCE_UNAVAILABLE
+REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING
 REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE
 REVIEW_ATTEMPT_NOT_FOUND
 REVIEW_ATTEMPT_UNAVAILABLE
-REVIEW_ASSURANCE_UNAVAILABLE
 REVIEW_BRANCH_PROVENANCE_MISSING
 REVIEW_CARD_ARTIFACT_IMMUTABLE
+REVIEW_CAPACITY_NOT_LOCKED
+REVIEW_CAPACITY_RECOVERY_UNSAFE
+REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND
 REVIEW_CARD_ARTIFACT_WRITE_FAILED
 REVIEW_CONTENT_SOURCE_INCOMPLETE
+REVIEW_DISPATCH_PERSISTENCE_FAILED
 REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY
 REVIEW_EVIDENCE_LOCATION_INVALID
 REVIEW_EVIDENCE_NOT_OBSERVED
-REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE
-REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED
-REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED
 REVIEW_FINDINGS_HASH_MISMATCH
 REVIEW_FINDINGS_REQUIRED
 REVIEW_FINDINGS_SESSION_MISMATCH
+REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE
+REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED
 REVIEW_GENERATION_MISMATCH
+REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED
 REVIEW_ITERATION_MISMATCH
 REVIEW_MATERIAL_INTEGRITY_FAILED
 REVIEW_MODE_SELF_NOT_ALLOWED
 REVIEW_OBLIGATION_AMBIGUOUS
+REVIEW_OBLIGATION_ID_REQUIRED
+REVIEW_OBLIGATION_INPUT_MISMATCH
+REVIEW_OBLIGATION_NOT_FOUND
+REVIEW_OBLIGATION_UNRESOLVED
 REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE
 REVIEW_OBSERVATION_CAPABILITY_UNKNOWN
 REVIEW_OBSERVATION_INVALID_ARGS
 REVIEW_OBSERVATION_OVERSIZED
 REVIEW_OBSERVATION_PATH_INVALID
+REVIEW_OBSERVATION_REVISION_NOT_OFFERED
 REVIEW_OBSERVATION_UNAVAILABLE
 REVIEW_OBSERVATION_UNSUPPORTED_ENTRY
-REVIEW_OBLIGATION_ID_REQUIRED
-REVIEW_OBLIGATION_INPUT_MISMATCH
-REVIEW_OBLIGATION_NOT_FOUND
-REVIEW_OBLIGATION_UNRESOLVED
 REVIEW_PLAN_VERSION_MISMATCH
 REVIEW_REPOSITORY_IDENTITY_MISSING
 REVIEW_REPOSITORY_REVISION_UNAVAILABLE
-REVIEW_DISPATCH_PERSISTENCE_FAILED
 REVIEW_SELF_APPROVAL_DENIED
 REVIEW_STATE_INCOMPLETE
+REVIEW_SUBJECT_CHANGED_WHILE_PENDING
 REVIEW_SUBJECT_DIGEST_MISMATCH
 REVIEW_SUBJECT_NOT_MATERIALIZED
 REVIEW_SUBJECT_SCOPE_UNAVAILABLE
@@ -520,40 +711,43 @@ REVIEW_TRANSPORT_EVIDENCE_INVALID
 REVIEW_URL_CONTENT_ENCODING_INVALID
 REVIEW_VERDICT_EVIDENCE_MISSING
 REVIEW_VERDICT_MISMATCH
-REVIEW_SUBJECT_CHANGED_WHILE_PENDING
-RESTART_CYCLE_ITERATION_MISMATCH
-REVIEWER_CONTEXT_UNAVAILABLE
-INVALID_REVIEW_TOOL_SEQUENCE
-REVIEWER_INVOCATION_EXHAUSTED
-REVIEWER_UNAVAILABLE_STRICT
 REVISED_PLAN_CLAIMS_REQUIRED
 REVISED_PLAN_REQUIRED
 RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE
 RISK_GATE_BLOCKED
 SCHEMA_VALIDATION_FAILED
+SESSION_AUTHORITY_UNAVAILABLE
+SESSION_BINDING_MISMATCH
 SESSION_DIR_INVALID
+SESSION_DIR_NAME_INVALID
 SESSION_DIR_NOT_FOUND
 SESSION_ERROR
 SESSION_LOCK_CONTENDED
+SESSION_OVERRIDE_MISMATCH
+SESSION_OVERRIDE_UNRESOLVABLE
+SESSION_STATE_DIRECT_WRITE_DENIED
+SESSION_STATE_INCOMPATIBLE
+START_ARGUMENTS_INVALID
+STATE_INCOMPATIBLE
+STATE_INTEGRITY_MISMATCH
 STATE_MISSING
+STATE_MISSING_WITH_AUDIT
 STATE_UNREADABLE
 STRICT_REVIEW_ORCHESTRATION_FAILED
-STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE
-STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE
-SUBAGENT_CONTEXT_UNVERIFIABLE
-SUBAGENT_EVIDENCE_MISSING
-SUBAGENT_EVIDENCE_REUSED
-SUBAGENT_FINDINGS_ISSUES_MISMATCH
-SUBAGENT_FINDINGS_VERDICT_MISMATCH
-SUBAGENT_MANDATE_MISSING
-SUBAGENT_MANDATE_MISMATCH
 SUBAGENT_CHALLENGE_CONTRADICTED
 SUBAGENT_CHALLENGE_COUNT_INCOHERENT
 SUBAGENT_CHALLENGE_EVIDENCE_MISSING
 SUBAGENT_CHALLENGE_INSUBSTANTIAL
 SUBAGENT_CHALLENGE_KIND_INCOHERENT
 SUBAGENT_CHALLENGE_NOT_DISTINCT
+SUBAGENT_CONTEXT_UNVERIFIABLE
+SUBAGENT_EVIDENCE_MISSING
+SUBAGENT_EVIDENCE_REUSED
+SUBAGENT_FINDINGS_ISSUES_MISMATCH
+SUBAGENT_FINDINGS_VERDICT_MISMATCH
 SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED
+SUBAGENT_MANDATE_MISMATCH
+SUBAGENT_MANDATE_MISSING
 SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED
 SUBAGENT_RESOLUTION_VERDICT_DUPLICATE
 SUBAGENT_RESOLUTION_VERDICT_INCOHERENT
@@ -561,31 +755,35 @@ SUBAGENT_RESOLUTION_VERDICT_UNEXPECTED
 SUBAGENT_RESOLUTION_VERDICT_UNKNOWN
 SUBAGENT_REVIEW_NOT_INVOKED
 SUBAGENT_REVIEW_REQUIRED
-TSA_TIMESTAMP_ASSURANCE_FAILED
 SUBAGENT_SESSION_MISMATCH
 SUBAGENT_TYPE_UNAUTHORIZED
 SUBAGENT_UNABLE_TO_REVIEW
 SUBAGENT_VERDICT_FINDINGS_INCOHERENT
 SYSTEM_WORK_STATE_UNREADABLE
+TERMINAL_STATE_MUTATION_DENIED
 TICKET_REFERENCE_WITHOUT_CONTENT
 TICKET_REQUIRED
 TICKET_RISK_DECLARATION_INCONSISTENT
 TICKET_RISK_DECLARATION_INVALID
 TICKET_SOURCE_CONFLICT
+TICKET_SOURCE_ORIGIN_CONFLICT
 TICKET_SOURCE_UNREADABLE
 TOOL_ERROR
-UNSUPPORTED_ASSERTION_CAPABILITY
+TSA_TIMESTAMP_ASSURANCE_FAILED
 VALIDATION_EVIDENCE_REQUIRED
 VALIDATION_EVIDENCE_STACK_NO_COMMANDS
 VALIDATION_EVIDENCE_UNVERIFIED
 VALIDATION_INCOMPLETE
 VALIDATION_SUBJECT_CHANGED
+VERIFICATION_REPORT_ISOLATION_FAILED
 VERIFICATION_SUBJECT_CHANGED
 VERIFIED_ACTOR_REQUIRED
-CONFIG_INVALID
-CONFIG_MISSING
-CONFIG_WRITE_FAILED
+WORKSPACE_IDENTITY_CHANGED
+WORKSPACE_MISMATCH
+WORKSPACE_NOT_INITIALIZED
+WORKSPACE_UNRESOLVED
 WORKTREE_MISMATCH
+WORKTREE_RESOLUTION_FAILED
 WRITE_FAILED
 WRONG_PHASE
 ```
@@ -607,23 +805,23 @@ canonical and additive: `message` is the interpolated registry message and
 `headline` is carried as an additive field. Keep this table in sync with
 `REASON_COPY` — the drift test enforces it.
 
-| Code                                    | Headline                                                                        | Explanation                                                                                                                                                                                 |
-| --------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VALIDATION_EVIDENCE_REQUIRED`          | Validation evidence is required before VALIDATION can pass                      | Policy requires Discovery-derived verification commands to be active and executed. VALIDATION must not pass vacuously under this policy.                                                    |
-| `VALIDATION_EVIDENCE_UNVERIFIED`        | Validation evidence is unverified, so VALIDATION stays blocked                  | Discovery is not trustworthy enough to confirm whether verification commands exist. VALIDATION is blocked fail-closed instead of asserting false certainty.                                 |
-| `VALIDATION_EVIDENCE_STACK_NO_COMMANDS` | A detected stack produced no verification commands, so VALIDATION stays blocked | Discovery found a technology stack but derived no verification commands from it. A stack with zero active checks is treated as a mis-detection hazard, not a verified no-commands property. |
-| `PROOFGRAPH_CERTIFICATE_INVALID`        | Evidence approval is blocked by a missing or stale plan certificate             | The plan approval certificate is missing, stale, or does not bind the current plan version.                                                                                                 |
-| `PROOFGRAPH_EVALUATION_UNAVAILABLE`     | Evidence approval is blocked because critical claims have no proof evaluation   | Certificate-authorized critical plan claims have no persisted ProofGraph evaluation. Evidence approval cannot proceed on un-evaluated claims.                                               |
-| `PROOFGRAPH_RISK_ASSESSMENT_STALE`      | Evidence approval is blocked by a stale implementation risk assessment          | The implementation risk assessment is missing, stale, or predates trigger classification. Record a fresh assessment before approving.                                                       |
-| `PROOFGRAPH_CRITICAL_FACT_REQUIRED`     | Evidence approval requires a critical, certificate-authorized fact claim        | The declared risk triggers require at least one critical, certificate-authorized fact claim to be recorded and proven before approval.                                                      |
-| `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN`    | Evidence approval is blocked because critical fact claims are not proven        | One or more critical, certificate-authorized fact claims are not yet PROVEN in the persisted ProofGraph.                                                                                    |
-| `VALIDATION_SUBJECT_CHANGED`            | The validation subject changed while checks were running                        | The plan or implementation under validation changed during the check run, so the results cannot be bound to a stable subject digest. Re-run the check against the current subject.          |
-| `VERIFICATION_SUBJECT_CHANGED`          | The execution subject changed during verification                               | The execution subject changed during the verification phase, so evidence cannot be bound to a stable subject. Re-capture discovery and re-execute verification.                             |
-| `FOUR_EYES_ACTOR_MATCH`                 | Four-eyes review required: a different reviewer must approve                    | The session initiator cannot approve their own work. A different person with reviewer permissions must provide the review decision.                                                         |
-| `REVIEW_SUBJECT_SCOPE_UNAVAILABLE`      | The review scope is not verifiable for this obligation                          | The review obligation has no frozen reviewed-file scope, so scope verification is unavailable. Re-run the review to create an obligation with a verifiable frozen scope.                    |
-| `DISCOVERY_DRIFT_BLOCKED`               | Discovery drift blocks mutating tools                                           | The discovery surface drifted from the persisted binding and the onDrift policy blocks mutating tools. Reconcile drift before continuing.                                                   |
-| `DISCOVERY_HEALTH_UNAVAILABLE`          | Discovery evidence is unavailable; mutating tools are blocked                   | Policy requires healthy Discovery before mutating tools may run. Restore Discovery evidence and run hydration to re-establish health.                                                       |
-| `DISCOVERY_HEALTH_DEGRADED`             | Discovery is degraded; mutating tools are blocked                               | Discovery is available but degraded, and the onDegraded policy blocks mutating tools. Resolve the degraded collectors and re-run hydration.                                                 |
+| Code                                    | Headline                                                                        | Explanation                                                                                                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VALIDATION_EVIDENCE_REQUIRED`          | Validation evidence is required before VALIDATION can pass                      | Policy requires Discovery-derived verification commands to be active and executed. VALIDATION must not pass vacuously under this policy.                                                     |
+| `VALIDATION_EVIDENCE_UNVERIFIED`        | Validation evidence is unverified, so VALIDATION stays blocked                  | Discovery is not trustworthy enough to confirm whether verification commands exist. VALIDATION is blocked fail-closed instead of asserting false certainty.                                  |
+| `VALIDATION_EVIDENCE_STACK_NO_COMMANDS` | A detected stack produced no verification commands, so VALIDATION stays blocked | Discovery found a technology stack but derived no verification commands from it. A stack with zero active checks is treated as a mis-detection hazard, not a verified no-commands property.  |
+| `PROOFGRAPH_CERTIFICATE_INVALID`        | Evidence approval is blocked by a missing or stale plan certificate             | The plan approval certificate is missing, stale, or does not bind the current plan version.                                                                                                  |
+| `PROOFGRAPH_EVALUATION_UNAVAILABLE`     | Evidence approval is blocked because critical claims have no proof evaluation   | Certificate-authorized critical plan claims have no unique, correctly bound source and usable ProofGraph evaluation. Missing, duplicated or mismatched identities cannot authorize approval. |
+| `PROOFGRAPH_RISK_ASSESSMENT_STALE`      | Evidence approval is blocked by a stale implementation risk assessment          | The implementation risk assessment is missing, stale, or predates trigger classification. Record a fresh assessment before approving.                                                        |
+| `PROOFGRAPH_CRITICAL_FACT_REQUIRED`     | Evidence approval requires a critical, certificate-authorized fact claim        | The declared risk triggers require at least one critical, certificate-authorized fact claim to be recorded and proven before approval.                                                       |
+| `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN`    | Evidence approval is blocked because critical fact claims are not proven        | One or more critical, certificate-authorized fact claims are not yet PROVEN in the persisted ProofGraph.                                                                                     |
+| `VALIDATION_SUBJECT_CHANGED`            | The validation subject changed while checks were running                        | The plan or implementation under validation changed during the check run, so the results cannot be bound to a stable subject digest. Re-run the check against the current subject.           |
+| `VERIFICATION_SUBJECT_CHANGED`          | The execution subject changed during verification                               | The execution subject changed during the verification phase, so evidence cannot be bound to a stable subject. Re-capture discovery and re-execute verification.                              |
+| `FOUR_EYES_ACTOR_MATCH`                 | Four-eyes review required: a different reviewer must approve                    | The session initiator cannot approve their own work. A different person with reviewer permissions must provide the review decision.                                                          |
+| `REVIEW_SUBJECT_SCOPE_UNAVAILABLE`      | The review scope is not verifiable for this obligation                          | The review obligation has no frozen reviewed-file scope, so scope verification is unavailable. Re-run the review to create an obligation with a verifiable frozen scope.                     |
+| `DISCOVERY_DRIFT_BLOCKED`               | Discovery drift blocks mutating tools                                           | The discovery surface drifted from the persisted binding and the onDrift policy blocks mutating tools. Reconcile drift before continuing.                                                    |
+| `DISCOVERY_HEALTH_UNAVAILABLE`          | Discovery evidence is unavailable; mutating tools are blocked                   | Policy requires healthy Discovery before mutating tools may run. Restore Discovery evidence and run hydration to re-establish health.                                                        |
+| `DISCOVERY_HEALTH_DEGRADED`             | Discovery is degraded; mutating tools are blocked                               | Discovery is available but degraded, and the onDegraded policy blocks mutating tools. Resolve the degraded collectors and re-run hydration.                                                  |
 
 ## Debug Mode
 
@@ -708,14 +906,22 @@ npm run build && npm run test:smoke
 
 **Symptom:** ACP tests show as "skipped" in smoke output.
 
-**Cause:** ACP tests require `RUN_OPENCODE_ACP_TESTS=1` and the `opencode` CLI.
+**Cause:** ACP tests require `RUN_OPENCODE_ACP_TESTS=1` and the exact native CLI
+candidate declared in `.sdk-baselines/opencode/cli-candidate.json`.
 
 **Solution:**
 
 ```bash
-npm install -g opencode-ai
-RUN_OPENCODE_ACP_TESTS=1 npm run test:smoke
+# Optional: preinstall the exact native test candidate
+npm install -g @opencode/cli@2.2.5
+npm run build
+RUN_OPENCODE_ACP_TESTS=1 npm run test:acp
 ```
+
+Without a matching installed CLI, the smoke helper uses the declared candidate
+through `npm exec` with an isolated cache. An explicit `OPENCODE_CLI` must report
+the exact candidate version or the test fails. ACP smoke verifies native process
+lifecycle only, not a governed ACP conversation or full host certification.
 
 ### PERF Tests Flaky on CI
 

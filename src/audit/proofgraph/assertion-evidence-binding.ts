@@ -15,6 +15,7 @@ import type { AssertionExtractionResult } from '../../state/evidence-validation.
 import type { StructuredAssertionEvidence } from '../../state/evidence-validation.js';
 import type { AssertionBindingReasonCode } from '../../state/proofgraph.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
+import { assessAssertionEvidenceIntegrity } from '../../state/assertion-evidence-integrity.js';
 
 export type { AssertionBindingReasonCode };
 
@@ -75,6 +76,10 @@ function validatePreconditions(request: AssertionBindingRequest): AssertionBindi
   }
 
   if (!extraction || extraction.status !== 'extracted') {
+    const integrity = assessAssertionEvidenceIntegrity(extraction);
+    if (integrity.kind === 'invalid') {
+      return { status: 'rejected', reasonCode: integrity.code, detail: integrity.detail };
+    }
     return {
       status: 'rejected',
       reasonCode: 'evidence_missing',
@@ -105,8 +110,14 @@ function matchAssertion(
     };
   }
 
+  const integrity = assessAssertionEvidenceIntegrity(extraction);
+  if (integrity.kind === 'invalid') {
+    return { status: 'rejected', reasonCode: integrity.code, detail: integrity.detail };
+  }
   const assertion = extraction.assertions.find(
-    (a) => a.assertion.localId === requirement.assertion.localId,
+    (a) =>
+      a.assertion.providerId === requirement.assertion.providerId &&
+      a.assertion.localId === requirement.assertion.localId,
   );
 
   if (!assertion) {

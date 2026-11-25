@@ -14,13 +14,19 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { makeState } from '../../fixtures.js';
 import { SessionState, type PendingAuditOperation } from '../../state/schema.js';
+import type { ActorInfo } from '../../state/evidence.js';
 import {
   computeStateDigest,
   prepareAuditOperations,
   prepareStateWithAuditOperations,
 } from '../audit-outbox.js';
 import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
-import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
+import {
+  buildStateWriteBody,
+  buildTransitionBody,
+  CURRENT_AUDIT_FORMAT_VERSION,
+  type EventBody,
+} from '../../audit/types.js';
 import { buildSemanticAuditBody } from '../../audit/semantic-event.js';
 import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
@@ -126,6 +132,111 @@ describe('prepareStateWithAuditOperations', () => {
     });
 
     expect(computeCanonicalEventDigest(body)).toBe(op.auditEventDigest);
+  });
+
+  it('HAPPY: binds the session actor identity into the transition operation and its digest', async () => {
+    const actor: ActorInfo = {
+      id: 'jane',
+      email: 'jane@dev.io',
+      source: 'git',
+      assurance: 'best_effort',
+    };
+    const previous = makeState('TICKET', { id: SESSION_ID });
+    const next = makeState('PLAN', {
+      id: SESSION_ID,
+      actorInfo: actor,
+      transition: TICKET_TO_PLAN,
+    });
+
+    const prepared = await prepareStateWithAuditOperations(previous, next, undefined);
+    const op = requireTransition(prepared.pendingAuditOperations[0]!);
+    expect(op.transition.actorInfo).toEqual(actor);
+
+    const body = buildTransitionBody({
+      flowguardSessionId: prepared.flowguardSessionId,
+      hostSessionId: prepared.binding.hostSessionId,
+      phase: op.transition.to,
+      detail: {
+        operationId: op.operationId,
+        preStateDigest: op.preStateDigest,
+        mutationDigest: op.mutationDigest,
+        postStateDigest: op.postStateDigest,
+        from: op.transition.from,
+        to: op.transition.to,
+        event: op.transition.event,
+        autoAdvanced: op.transition.autoAdvanced,
+        chainIndex: op.transition.chainIndex,
+      },
+      actorInfo: actor,
+      occurredAt: op.transition.at,
+      prevHash: 'genesis',
+    });
+
+    expect(computeCanonicalEventDigest(body)).toBe(op.auditEventDigest);
+  });
+
+  it('CORNER: absent actorInfo keeps the transition body and digest actor-free', async () => {
+    const previous = makeState('TICKET', { id: SESSION_ID });
+    const next = makeState('PLAN', { id: SESSION_ID, transition: TICKET_TO_PLAN });
+
+    const prepared = await prepareStateWithAuditOperations(previous, next, undefined);
+    const op = requireTransition(prepared.pendingAuditOperations[0]!);
+    expect('actorInfo' in op.transition).toBe(false);
+
+    // v10 regression: an operation without actorInfo still parses through the
+    // current session schema with absence preserved.
+    const persistedOp = requireTransition(SessionState.parse(prepared).pendingAuditOperations[0]!);
+    expect('actorInfo' in persistedOp.transition).toBe(false);
+
+    const body = buildTransitionBody({
+      flowguardSessionId: prepared.flowguardSessionId,
+      hostSessionId: prepared.binding.hostSessionId,
+      phase: op.transition.to,
+      detail: {
+        operationId: op.operationId,
+        preStateDigest: op.preStateDigest,
+        mutationDigest: op.mutationDigest,
+        postStateDigest: op.postStateDigest,
+        from: op.transition.from,
+        to: op.transition.to,
+        event: op.transition.event,
+        autoAdvanced: op.transition.autoAdvanced,
+        chainIndex: op.transition.chainIndex,
+      },
+      occurredAt: op.transition.at,
+      prevHash: 'genesis',
+    });
+
+    expect('actorInfo' in body).toBe(false);
+    expect(computeCanonicalEventDigest(body)).toBe(op.auditEventDigest);
+
+    // Stronger v10 regression: a manually built pre-G15 transition body (no
+    // actorInfo) hashes to the same canonical event digest as the committed
+    // operation.
+    const preG15Body: EventBody = {
+      id: op.operationId,
+      flowguardSessionId: prepared.flowguardSessionId,
+      hostSessionId: prepared.binding.hostSessionId,
+      phase: op.transition.to,
+      event: `transition:${op.transition.event}`,
+      occurredAt: op.transition.at,
+      actor: 'machine',
+      auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
+      detail: {
+        operationId: op.operationId,
+        preStateDigest: op.preStateDigest,
+        mutationDigest: op.mutationDigest,
+        postStateDigest: op.postStateDigest,
+        from: op.transition.from,
+        to: op.transition.to,
+        event: op.transition.event,
+        autoAdvanced: op.transition.autoAdvanced,
+        chainIndex: op.transition.chainIndex,
+        kind: 'transition',
+      },
+      prevHash: 'genesis',
+    };
+    expect(computeCanonicalEventDigest(preG15Body)).toBe(op.auditEventDigest);
   });
 
   it('CORNER: records a same-phase authority write when the transition is unchanged', async () => {
@@ -280,6 +391,36 @@ describe('prepareStateWithAuditOperations', () => {
     expect(prepared.pendingAuditOperations[0]!.postStateDigest).toBe(
       prepared.pendingAuditOperations[1]!.postStateDigest,
     );
+  });
+
+  it('HAPPY: propagates the session actor identity across an auto-advance chain', async () => {
+    const actor: ActorInfo = {
+      id: 'jane',
+      email: 'jane@dev.io',
+      source: 'git',
+      assurance: 'best_effort',
+    };
+    const previous = makeState('TICKET', { id: SESSION_ID });
+    const next = makeState('PLAN_REVIEW', {
+      id: SESSION_ID,
+      actorInfo: actor,
+      transition: {
+        from: 'PLAN',
+        to: 'PLAN_REVIEW',
+        event: 'SELF_REVIEW_PENDING',
+        at: FIXED_AT,
+      },
+    });
+    const transitions = [
+      TICKET_TO_PLAN,
+      { from: 'PLAN', to: 'PLAN_REVIEW', event: 'SELF_REVIEW_PENDING', at: FIXED_AT },
+    ];
+
+    const prepared = await prepareStateWithAuditOperations(previous, next, transitions);
+    const ops = prepared.pendingAuditOperations.map(requireTransition);
+
+    expect(ops).toHaveLength(2);
+    for (const op of ops) expect(op.transition.actorInfo).toEqual(actor);
   });
 
   it('BAD: rejects invalid next state', async () => {

@@ -5,7 +5,14 @@
  * @version v1
  */
 
-import { COMMANDS, MANDATES_FILENAME, REVIEWER_AGENT_FILENAME } from './templates.js';
+import {
+  COMMANDS,
+  MANDATES_FILENAME,
+  REVIEWER_AGENT_FILENAME,
+  PLUGIN_RELATIVE_PATH,
+  TUI_PLUGIN_RELATIVE_PATH,
+  GUI_PLUGIN_RELATIVE_PATH,
+} from './templates.js';
 
 export type { PolicyMode } from '../config/policy-types.js';
 import type { PolicyMode } from '../config/policy-types.js';
@@ -14,7 +21,8 @@ export { PACKAGE_VERSION, resolvePackageRoot } from '../shared/package-version.j
 
 export type InstallScope = 'global' | 'repo';
 export type InstallPlatform = HostId;
-export type CliAction = 'install' | 'uninstall' | 'doctor' | 'run' | 'serve' | 'inspect';
+export type CliAction =
+  'install' | 'uninstall' | 'doctor' | 'run' | 'serve' | 'inspect' | 'debug-export';
 export type ScopeSource = 'default' | 'cli';
 
 export interface CliArgs {
@@ -27,6 +35,7 @@ export interface CliArgs {
   coreTarball?: string;
   checksumsFile?: string;
   allowUnverifiedTarball?: boolean;
+  restartHost?: boolean;
   logMode?: 'file' | 'console' | 'file+console';
 }
 
@@ -37,7 +46,7 @@ export interface FileOp {
 }
 
 export interface CliError {
-  code?: InstallErrorCode;
+  code?: CliErrorCode;
   message: string;
   recoveryContext?: { path?: string; target?: string };
 }
@@ -62,15 +71,7 @@ export interface ArtifactDetection {
 }
 
 export type DoctorStatus =
-  | 'ok'
-  | 'missing'
-  | 'modified'
-  | 'unmanaged'
-  | 'version_mismatch'
-  | 'instruction_missing'
-  | 'error'
-  | 'warn'
-  | 'info';
+  'ok' | 'missing' | 'modified' | 'unmanaged' | 'version_mismatch' | 'error' | 'warn' | 'info';
 
 export interface DoctorCheck {
   file: string;
@@ -84,8 +85,9 @@ export const BUILD_INFO_CHECK = 'build-info';
 
 export const FLOWGUARD_OWNED_FILES = [
   MANDATES_FILENAME,
-  'tools/flowguard.ts',
-  'plugins/flowguard-audit.ts',
+  PLUGIN_RELATIVE_PATH,
+  TUI_PLUGIN_RELATIVE_PATH,
+  GUI_PLUGIN_RELATIVE_PATH,
   `agents/${REVIEWER_AGENT_FILENAME}`,
   `subagents/${REVIEWER_AGENT_FILENAME}`,
   ...Object.keys(COMMANDS).map((name) => `commands/${name}`),
@@ -124,10 +126,74 @@ export type InstallErrorCode =
   | 'CONFIG_INCOMPATIBLE_FLAGS'
   | 'ALREADY_INSTALLED'
   | 'MANAGED_ARTIFACT_CONFLICT'
-  | 'LEGACY_INSTRUCTION_AMBIGUOUS'
+  | 'PARTIAL_INSTALL_CONFLICT'
+  | 'OPENCODE_FRESH_INSTALL_REQUIRED'
+  | 'OPENCODE_CONFIG_INVALID'
   | 'INSTALL_OWNERSHIP_UNAVAILABLE'
   | 'DEPENDENCY_INSTALL_FAILED'
   | 'INSTALL_LOCK_CONFLICT'
+  | 'HOST_SERVICE_RECORD_INVALID'
+  | 'HOST_SERVICE_UNSAFE_URL'
+  | 'HOST_SERVICE_STALE'
+  | 'HOST_RESTART_REQUIRED'
+  | 'HOST_RESTART_FAILED'
+  | 'HOST_PLUGIN_MISMATCH'
+  | 'HOST_COMMAND_MISSING'
+  | 'HOST_VERIFICATION_UNAVAILABLE'
   | 'REVIEWER_CONFIG_REJECTED'
   | 'REVIEWER_CONFIG_INVALID'
   | 'REVIEWER_TUNING_UNSUPPORTED';
+
+/**
+ * Internal installer classification codes carried by {@link CliInstallError}.
+ * They are closed-union typed so a failure can never acquire an ad-hoc code.
+ */
+export type CliInstallErrorCode =
+  | 'CODEX_MARKETPLACE_CORRUPTED'
+  | 'CODEX_MARKETPLACE_LOCKED'
+  | 'CODEX_MARKETPLACE_LOCK_OWNERSHIP_CHANGED'
+  | 'DEPENDENCY_CORE_MISSING'
+  | 'DEPENDENCY_INSTALL_FAILED'
+  | 'INSTALL_LOCK_CONFLICT'
+  | 'NON_OPENCODE_ARTIFACT_EXISTS'
+  | 'NON_OPENCODE_CONFIG_EXISTS'
+  | 'NON_OPENCODE_CONFIG_INVALID'
+  | 'OWNERSHIP_MANIFEST_INVALID'
+  | 'OWNERSHIP_MANIFEST_SCOPE_MISMATCH'
+  | 'PACKAGE_MANAGER_UNAVAILABLE'
+  | 'PRE_STATE_ENTRY_MISSING'
+  | 'ROLLBACK_DIRECTORY_NOT_EMPTY'
+  | 'ROLLBACK_REMOVE_SYMLINK'
+  | 'ROLLBACK_REMOVE_TYPE_CHANGED'
+  | 'ROLLBACK_RESTORE_SYMLINK'
+  | 'ROLLBACK_RESTORE_TYPE_CHANGED'
+  | 'ROLLBACK_SNAPSHOT_SYMLINK'
+  | 'ROLLBACK_TARGET_TYPE_MISMATCH'
+  | 'ROLLBACK_TARGET_TYPE_UNSUPPORTED'
+  | 'ROLLBACK_TREE_SYMLINK'
+  | 'ROLLBACK_TYPE_CONFLICT'
+  | 'TRANSACTION_CLEANUP_INCOMPLETE'
+  | 'TRANSACTION_CONFIG_TARGET_SYMLINK'
+  | 'TRANSACTION_ISOLATED_REPLACEMENT_MISSING'
+  | 'TRANSACTION_ISOLATION_AMBIGUOUS'
+  | 'TRANSACTION_JOURNAL_FILENAME_MISMATCH'
+  | 'TRANSACTION_JOURNAL_INCONSISTENT'
+  | 'TRANSACTION_JOURNAL_LOAD_FAILED'
+  | 'TRANSACTION_MULTIPLE_JOURNALS'
+  | 'TRANSACTION_ORPHANED_ARTIFACTS'
+  | 'TRANSACTION_PATH_OUTSIDE_TARGET'
+  | 'TRANSACTION_PATH_TYPE_MISMATCH'
+  | 'TRANSACTION_PATH_UNOWNED'
+  | 'TRANSACTION_PHASE_INVALID'
+  | 'TRANSACTION_RECOVERY_PHASE_UNSUPPORTED'
+  | 'TRANSACTION_RESTORE_AMBIGUOUS'
+  | 'TRANSACTION_RESTORE_VERIFICATION_FAILED'
+  | 'TRANSACTION_SAVE_OLD_AMBIGUOUS'
+  | 'TRANSACTION_STAGING_CORE_MISSING'
+  | 'TRANSACTION_STAGING_NODE_MODULES_MISSING'
+  | 'TRANSACTION_STAGING_NOT_DIRECTORY'
+  | 'TRANSACTION_STAGING_SYMLINK'
+  | 'TRANSACTION_SYMLINK_NOT_ALLOWED';
+
+/** Every typed CLI error code, from both installer error classes. */
+export type CliErrorCode = InstallErrorCode | CliInstallErrorCode;

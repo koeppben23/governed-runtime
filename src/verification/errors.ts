@@ -6,7 +6,9 @@
 
 /** Compile-time validated verification error codes. */
 export type VerificationErrorCode =
-  'VERIFICATION_PROVIDER_FORMAT_UNSUPPORTED' | 'VERIFICATION_PARSER_NOT_REGISTERED';
+  | 'VERIFICATION_PROVIDER_FORMAT_UNSUPPORTED'
+  | 'VERIFICATION_PARSER_NOT_REGISTERED'
+  | 'VERIFICATION_REPORT_ISOLATION_FAILED';
 
 /** Typed error shared by verification execution and extraction. */
 export class VerificationError extends Error {

@@ -64,16 +64,19 @@ const COLLECTOR_TIMEOUT_MS = 10_000;
  */
 function createDefaultReadFile(
   worktreePath: string,
+  signal?: AbortSignal,
 ): (relativePath: string) => Promise<string | undefined> {
   const resolvedRoot = nodePath.resolve(worktreePath);
   return async (relativePath: string): Promise<string | undefined> => {
+    signal?.throwIfAborted();
     try {
       const targetPath = nodePath.resolve(resolvedRoot, relativePath);
       if (!targetPath.startsWith(resolvedRoot + nodePath.sep) && targetPath !== resolvedRoot) {
         return undefined;
       }
-      return await fsReadFile(targetPath, 'utf8');
+      return await fsReadFile(targetPath, { encoding: 'utf8', signal });
     } catch {
+      signal?.throwIfAborted();
       return undefined;
     }
   };
@@ -96,12 +99,14 @@ export async function runDiscovery(
   input: CollectorInput,
   io: DiscoveryIoPort,
   timeoutMs: number = COLLECTOR_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<DiscoveryResult> {
+  signal?.throwIfAborted();
   return withSpan(
     'discovery.run',
     async () => {
       addFingerprint(input.fingerprint);
-      return runDiscoveryImpl(input, io, timeoutMs);
+      return runDiscoveryImpl({ ...input, ...(signal ? { signal } : {}) }, io, timeoutMs);
     },
     { 'flowguard.fingerprint': input.fingerprint },
   );
@@ -214,10 +219,11 @@ async function runDiscoveryImpl(
   io: DiscoveryIoPort,
   timeoutMs: number = COLLECTOR_TIMEOUT_MS,
 ): Promise<DiscoveryResult> {
-  // Enrich input with default readFile if not provided by caller
+  input.signal?.throwIfAborted();
+  // Enrich input with default readFile if not provided by caller.
   const enrichedInput: CollectorInput = input.readFile
     ? input
-    : { ...input, readFile: createDefaultReadFile(input.worktreePath) };
+    : { ...input, readFile: createDefaultReadFile(input.worktreePath, input.signal) };
 
   // Run all collectors in parallel with timeout budget and diagnostics
   const [metaRun, stackRun, topoRun, surfaceRun, codeSurfaceRun, domainRun] = await Promise.all([
@@ -228,6 +234,7 @@ async function runDiscoveryImpl(
     runCodeSurfaceCollector(enrichedInput, timeoutMs),
     runDomainSignalsCollector(enrichedInput, timeoutMs),
   ]);
+  input.signal?.throwIfAborted();
 
   // Collect diagnostics
   const diagnostics: DiscoveryResult['diagnostics'] = [

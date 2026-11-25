@@ -231,6 +231,8 @@ const IMPLEMENTATION_CHECKLIST = `## 9. Implementation Checklist
 - Read relevant code, tests, and docs before changing behavior.
 - Keep scope minimal and prefer extending existing paths.
 - Preserve SSOT and schema ownership.
+- For STANDARD and HIGH-RISK work, select concrete methods appropriate to the actual risks. Inspect authoritative raw evidence, set a quality bar that is both ambitious and observable, define concrete failure conditions, and prefer checks that could falsify the proposed solution.
+- Do not substitute role-playing, summaries, repeated successful checks, or self-assessment for verification. Increase methodological depth, not task scope or complexity.
 - Add meaningful risky-path and negative-path coverage.
 - Verify output contract, evidence markers (ASSUMPTION, NOT_VERIFIED, BLOCKED), required verification, and no SSOT drift before returning.`;
 
@@ -417,6 +419,7 @@ export const MANDATES_SECTION_DEFINITIONS = [
     content: IMPLEMENTATION_CHECKLIST,
     phases: ['PLAN', 'IMPLEMENTATION'],
     priority: 110,
+    concise: true,
   },
   {
     id: 'review-checklist',
@@ -519,47 +522,14 @@ export const FLOWGUARD_MANDATES_KERNEL = renderMandateDocument(
 );
 
 // ---------------------------------------------------------------------------
-// opencode.json skeleton
-// ---------------------------------------------------------------------------
-
-/**
- * Minimal OpenCode configuration template.
- *
- * Points OpenCode at the flowguard-mandates.md instruction file so FlowGuard
- * mandates are loaded automatically on every session.
- *
- * Includes agent configuration for the flowguard-reviewer subagent with
- * task permissions allowing the build agent to invoke it.
- *
- * @param instructionEntry - The instruction path (scope-dependent).
- */
-export const OPENCODE_JSON_TEMPLATE = (instructionEntry: string): string => `\
-{
-  "$schema": "https://opencode.ai/config.json",
-  "instructions": ["${instructionEntry}"],
-  "agent": {
-    "build": {
-      "permission": {
-        "task": {
-          "*": "deny",
-          "${REVIEWER_SUBAGENT_TYPE}": "allow"
-        }
-      }
-    }
-  }
-}
-`;
-
-// ---------------------------------------------------------------------------
 // package.json skeleton
 // ---------------------------------------------------------------------------
 
 /**
  * Returns a minimal `package.json` fragment declaring FlowGuard dependencies.
  *
- * Only zod and @flowguard/core are required. FlowGuard tools use plain
- * ToolDefinition objects that OpenCode discovers without a separate plugin SDK
- * dependency.
+ * The installed native plugin imports @flowguard/core; that package owns its
+ * pinned plugin/client API dependencies and all native tool registrations.
  *
  * @param version - The semver version of `@flowguard/core` to pin (e.g. `"1.2.3"`).
  * @returns A JSON string suitable for writing to `package.json`.

@@ -467,6 +467,8 @@ export interface CollectorInput {
   readonly packageFilePaths: readonly string[];
   /** Configuration files (full relative paths from worktree root). */
   readonly configFilePaths: readonly string[];
+  /** Optional cooperative cancellation for status-only rediscovery. */
+  readonly signal?: AbortSignal;
   /**
    * Optional file reader for manifest content extraction.
    * Accepts a relative path from worktree root, returns file content or undefined.

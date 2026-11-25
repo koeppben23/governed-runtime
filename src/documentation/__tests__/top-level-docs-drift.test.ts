@@ -18,6 +18,7 @@ import {
   INSTALLED_TEMPLATE_FILES,
   type InstalledCommandDefinition,
 } from '../../integration/installed-commands.js';
+import { COMMAND_CATALOG } from '../../integration/help/command-catalog.js';
 import { Command } from '../../machine/commands.js';
 import { TRANSITIONS, USER_GATES } from '../../machine/topology.js';
 import { Phase } from '../../state/schema.js';
@@ -61,9 +62,7 @@ function extractCommandList(content: string, label: RegExp): string[] {
 
 function extractProductIdentityCoreCommandTable(): string[] {
   const content = readDoc('PRODUCT_IDENTITY.md');
-  const section = content.match(
-    /Nineteen installed core FlowGuard commands[\s\S]*?\n\nProduct commands/,
-  );
+  const section = content.match(/### 2\. Governed Command Surface[\s\S]*?\n\nProduct commands/);
   expect(section, 'PRODUCT_IDENTITY.md must contain the core command table').toBeTruthy();
   return extractSlashCommands(section![0]);
 }
@@ -85,30 +84,43 @@ function isProductAlias(definition: InstalledCommandDefinition): boolean {
 
 const productAliasDefinitions = INSTALLED_COMMANDS.filter(isProductAlias);
 const productAliasTemplates = new Set<string>(
-  productAliasDefinitions.map((definition) => definition.templateFile),
+  productAliasDefinitions.flatMap((definition) =>
+    definition.templateFile === null ? [] : [definition.templateFile],
+  ),
 );
 
 describe('documentation/top-level-docs-drift', () => {
-  const installedCommands = INSTALLED_TEMPLATE_FILES.map((templateFile) =>
-    slash(templateFile.replace(/\.md$/, '')),
-  ).sort();
+  // Installed templates plus native/TUI/Desktop commands represented by the
+  // public documentation catalogue (registered by the host, never template-installed).
+  const installedCommands = [
+    ...new Set([
+      ...INSTALLED_TEMPLATE_FILES.map((templateFile) => slash(templateFile.replace(/\.md$/, ''))),
+      ...INSTALLED_COMMANDS.filter((definition) => definition.templateFile === null).map(
+        (definition) => definition.invocation,
+      ),
+      ...COMMAND_CATALOG.filter((entry) => entry.public).map((entry) => entry.invocation),
+    ]),
+  ].sort();
 
   const productAliasCommands = productAliasDefinitions
     .map((definition) => definition.invocation)
     .sort();
 
-  const coreInstalledCommands = INSTALLED_TEMPLATE_FILES.filter(
-    (templateFile) => !productAliasTemplates.has(templateFile),
-  )
-    .map((templateFile) => slash(templateFile.replace(/\.md$/, '')))
-    .sort();
+  const coreInstalledCommands = [
+    ...INSTALLED_TEMPLATE_FILES.filter(
+      (templateFile) => !productAliasTemplates.has(templateFile),
+    ).map((templateFile) => slash(templateFile.replace(/\.md$/, ''))),
+    ...INSTALLED_COMMANDS.filter(
+      (definition) => definition.templateFile === null && !isProductAlias(definition),
+    ).map((definition) => definition.invocation),
+  ].sort();
 
   const policyModeLabels = [SOLO_POLICY, TEAM_POLICY, TEAM_CI_POLICY, REGULATED_POLICY]
     .map((policy) => policy.mode)
     .sort();
 
   describe('HAPPY — canonical command and alias names', () => {
-    it('top-level docs mention only installed slash commands', () => {
+    it('top-level docs mention only catalogued slash commands', () => {
       for (const doc of TOP_LEVEL_DOCS) {
         const unknownCommands = extractSlashCommands(readDoc(doc)).filter(
           (command) => !installedCommands.includes(command),

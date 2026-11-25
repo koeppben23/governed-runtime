@@ -12,7 +12,11 @@ import { z } from 'zod';
 import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { withMutableSessionTransaction, formatAutoAdvanceOverflow } from '../helpers.js';
+import { withMutableSessionTransaction } from '../helpers.js';
+import {
+  formatAutoAdvanceBlocked,
+  formatAutoAdvanceOverflow,
+} from '../../../rails/auto-advance-overflow.js';
 import {
   executeReview,
   type PreparedReviewContent,
@@ -130,6 +134,14 @@ async function prepareReviewExecution(
   // the reviewer evidence is missing.
   const structured = prepareStructuredEvidenceSubmission(state, result, exec, materializedContent);
   if (structured) return structured;
+  // A named obligation completes only through its bound reviewer evidence. When
+  // none resolved and no dispatch/block message was produced, completing the
+  // report would record a review that never happened.
+  if (exec.args.reviewObligationId && missingResult.message === null) {
+    return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
+      obligationId: exec.args.reviewObligationId,
+    });
+  }
   return prepareMissingFindingsSubmission(result, refInput, missingResult, materializedContent);
 }
 
@@ -382,6 +394,9 @@ async function persistCompletedReview(
     );
     if (completion.kind === 'overflow') {
       return formatAutoAdvanceOverflow(completion.overflow);
+    }
+    if (completion.kind === 'blocked') {
+      return formatAutoAdvanceBlocked(completion.blocked);
     }
     return buildReviewCompletionResponse({
       sessDir,

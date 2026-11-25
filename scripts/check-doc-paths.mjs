@@ -35,7 +35,13 @@ import { maskFencedCodeBlocks } from './agent-instruction-linter-markdown.mjs';
 
 const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 
-const SCOPE_FILES = ['AGENTS.md', 'CONTRIBUTING.md', 'docs/testing-strategy.md'];
+const SCOPE_FILES = [
+  'AGENTS.md',
+  'CONTRIBUTING.md',
+  'SECURITY.md',
+  'docs/security-assurance.md',
+  'docs/testing-strategy.md',
+];
 const SCOPE_DIRS = ['docs/development', 'src'];
 const WALKED_AGENT_DIRS = new Set(['node_modules', '__tests__', '__fixtures__']);
 const PATH_PREFIXES = ['src/', 'scripts/', 'docs/', 'test/', '.github/'];

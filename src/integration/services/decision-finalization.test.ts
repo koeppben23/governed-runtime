@@ -28,6 +28,7 @@ import {
 } from '../../fixtures.js';
 import type { RailResult } from '../../rails/types.js';
 import type { AuditDeps } from '../plugin-audit.js';
+import { unavailableAuthority } from '../plugin-audit-test-helpers.js';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -47,8 +48,9 @@ import { executeRegulatedCompletion } from './regulated-completion.js';
 
 function completionDeps(): AuditDeps {
   return {
-    resolveFingerprint: vi.fn(async () => 'fp'),
-    getSessionDir: vi.fn(() => '/sess'),
+    // finalizeDecision never consults the session authority directly; the
+    // regulated completion dependency is mocked in this suite.
+    resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
     resolveSessionPolicy: vi.fn(),
     initChain: vi.fn(),
     invalidateChainState: vi.fn(),
@@ -56,7 +58,6 @@ function completionDeps(): AuditDeps {
     nextDecisionSequence: vi.fn(async () => 1),
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
     logError: vi.fn(),
-    cachedFingerprint: 'fp',
     mode: 'regulated',
   };
 }

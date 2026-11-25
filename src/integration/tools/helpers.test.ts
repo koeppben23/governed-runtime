@@ -3,20 +3,30 @@
  * @description Contract tests for the most widely consumed public functions
  * of helpers.ts. Covers the pure/deterministic functions used by 3+ callers.
  *
- * Functions requiring filesystem I/O or full session state are intentionally
- * left to integration-level tests.
+ * Session-absence tests mock persistence and authority resolution; full
+ * filesystem/session flows remain covered by the execution tests.
  *
  * @test-policy HAPPY, BAD, CORNER
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import { formatBlocked } from '../blocked-result.js';
-import { formatAutoAdvanceOverflow, getWorktree } from './helpers.js';
+import {
+  getWorktree,
+  requireState,
+  withMutableSession,
+  withMutableSessionTransaction,
+} from './helpers.js';
+import * as persistence from '../../adapters/persistence.js';
+import * as sessionAuthority from '../../adapters/session-authority.js';
+import * as persistenceLock from '../../adapters/persistence-lock.js';
+import { defaultReasonRegistry } from '../../config/reasons.js';
+import { IntegrationInvariantError } from '../errors.js';
 import { formatRailResult } from './helpers-rail-presentation.js';
 import { projectMarkdownHeadings } from '../../shared/markdown-sections.js';
 import { formatError } from './error-format.js';
-import type { RailResult, AutoAdvanceOverflow } from '../../rails/types.js';
+import type { RailResult } from '../../rails/types.js';
 import { makeProgressedState } from '../../fixtures.js';
 
 function parseJSON(s: string): Record<string, unknown> {
@@ -102,18 +112,6 @@ describe('formatBlocked', () => {
   });
 });
 
-describe('formatAutoAdvanceOverflow', () => {
-  it('formats overflow with phase and limit', () => {
-    const result = parseJSON(
-      formatAutoAdvanceOverflow({ phase: 'PLAN', limit: 10 } as AutoAdvanceOverflow),
-    );
-    expect(result.error).toBe(true);
-    const overflow = result.autoAdvanceOverflow as Record<string, unknown>;
-    expect(overflow.phase).toBe('PLAN');
-    expect(overflow.limit).toBe(10);
-  });
-});
-
 describe('formatError', () => {
   it('maps a plain Error to INTERNAL_ERROR', () => {
     const result = parseJSON(formatError(new Error('something broke')));
@@ -153,6 +151,43 @@ describe('formatError', () => {
     expect(message).toContain('+7 more');
     expect(message.length).toBeLessThan(600);
   });
+});
+
+describe('missing-session helper errors', () => {
+  it.each(['read', 'mutation', 'locked mutation'] as const)(
+    '%s uses the canonical host-neutral reason even before boundary formatting',
+    async (path) => {
+      vi.spyOn(persistence, 'readState').mockResolvedValue(null);
+      const authority = vi.spyOn(sessionAuthority, 'resolveSessionAuthority').mockResolvedValue({
+        status: 'absent',
+        sessDir: '/session',
+        worktreeRoot: '/worktree',
+        fingerprint: 'a'.repeat(24),
+      });
+      const lock = vi
+        .spyOn(persistenceLock, 'withSessionWriteLock')
+        .mockImplementation(async (_directory, fn) => fn());
+      const mutate = vi.fn();
+      const context = { sessionID: 'session', worktree: '/worktree', directory: '/worktree' };
+      const operation =
+        path === 'read'
+          ? requireState('/session')
+          : path === 'mutation'
+            ? withMutableSession(context)
+            : withMutableSessionTransaction(context, mutate);
+
+      await expect(operation).rejects.toBeInstanceOf(IntegrationInvariantError);
+      await expect(operation).rejects.toMatchObject({
+        code: 'NO_SESSION',
+        message: defaultReasonRegistry.format('NO_SESSION').reason,
+      });
+      expect(mutate).not.toHaveBeenCalled();
+      if (path === 'locked mutation') {
+        expect(lock).toHaveBeenCalledOnce();
+        expect(authority).toHaveBeenCalledTimes(2);
+      }
+    },
+  );
 });
 
 describe('getWorktree', () => {

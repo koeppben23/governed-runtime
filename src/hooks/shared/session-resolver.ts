@@ -3,20 +3,26 @@
  * @description Resolve session directory and read state for hook scripts.
  *
  * Resolution chain:
- * 1. FLOWGUARD_SESSION_DIR env var (explicit override — testing and CI)
- * 2. Compute fingerprint from cwd → derive session dir from fingerprint + session_id
+ * 1. `resolveSessionAuthority` — canonical git root from cwd, fingerprint,
+ *    session directory, state read, and worktree/fingerprint binding validation.
+ * 2. `FLOWGUARD_SESSION_DIR` (testing/CI) is an assertion, never a bypass: the
+ *    realpath-canonicalized override must equal the authority-derived session
+ *    directory, otherwise the hook fails closed before any state is trusted.
  *
- * Fail-closed: if state cannot be resolved or read, returns an explicit error
- * that the calling hook can use to deny tool execution.
+ * Fail-closed: if the root cannot be resolved, the override does not match the
+ * canonical projection, state cannot be read, or the root does not belong to
+ * the bound worktree, returns an explicit error that the calling hook can use
+ * to deny tool execution.
  *
- * @version v1
+ * @version v3
  */
 
-import { existsSync } from 'node:fs';
-import { computeFingerprint } from '../../adapters/workspace/index.js';
-import { sessionDir } from '../../adapters/workspace/index.js';
-import { readState } from '../../adapters/persistence.js';
+import { existsSync, realpathSync } from 'node:fs';
+import * as path from 'node:path';
+import { resolveSessionAuthority } from '../../adapters/session-authority.js';
+import { defaultReasonRegistry } from '../../config/reasons.js';
 import type { SessionState } from '../../state/schema.js';
+import { SESSION_AUTHORITY_DEADLINE_MS } from './limits.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -35,70 +41,94 @@ export type SessionResolution =
  * @returns SessionResolution — either success with state or failure with code/reason.
  */
 export async function resolveSession(cwd: string, sessionId: string): Promise<SessionResolution> {
-  // Priority 1: Explicit override via env var
-  const envDir = process.env['FLOWGUARD_SESSION_DIR'];
-  if (envDir && envDir.length > 0) {
-    return readSessionState(envDir);
-  }
-
-  // Priority 2: Compute from cwd + sessionId
-  let fingerprint: string;
+  // The canonical authority resolves the git root, fingerprints it, derives the
+  // session directory, and validates the persisted worktree/fingerprint binding
+  // before the hook trusts the state. This runs even under an override.
+  let resolution: Awaited<ReturnType<typeof resolveSessionAuthority>>;
   try {
-    const fpResult = await computeFingerprint(cwd);
-    fingerprint = fpResult.fingerprint;
+    resolution = await resolveSessionAuthority({
+      root: cwd,
+      sessionId,
+      deadlineMs: SESSION_AUTHORITY_DEADLINE_MS,
+    });
   } catch (err) {
     return {
       ok: false,
-      code: 'FINGERPRINT_FAILED',
-      reason: `Cannot compute workspace fingerprint from cwd "${cwd}": ${err instanceof Error ? err.message : String(err)}`,
+      code: 'SESSION_AUTHORITY_UNAVAILABLE',
+      reason: `Cannot resolve the session authority from cwd "${cwd}": ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 
-  let sessDir: string;
-  try {
-    sessDir = sessionDir(fingerprint, sessionId);
-  } catch (err) {
-    return {
-      ok: false,
-      code: 'SESSION_DIR_INVALID',
-      reason: `Cannot derive session directory (fingerprint="${fingerprint}", sessionId="${sessionId}"): ${err instanceof Error ? err.message : String(err)}`,
-    };
+  if (resolution.status === 'unavailable') {
+    return { ok: false, code: resolution.code, reason: resolution.reason };
   }
 
-  return readSessionState(sessDir);
+  // Testing/CI override as an assertion on the canonical projection: a foreign,
+  // symlinked, stale, or merely different session path never becomes an
+  // alternative authority.
+  const override = process.env['FLOWGUARD_SESSION_DIR'];
+  if (override !== undefined && override.length > 0) {
+    const overrideFailure = validateSessionDirOverride(override, resolution.sessDir);
+    if (overrideFailure !== null) return overrideFailure;
+  }
+
+  if (resolution.status === 'resolved') {
+    return { ok: true, state: resolution.state, sessionDir: resolution.sessDir };
+  }
+  const code = existsSync(resolution.sessDir) ? 'STATE_MISSING' : 'SESSION_DIR_NOT_FOUND';
+  return {
+    ok: false,
+    code,
+    reason: defaultReasonRegistry.format(code, { sessDir: resolution.sessDir }).reason,
+  };
 }
 
 /**
- * Read session state from a known session directory.
- * Fail-closed: missing directory, missing file, or corrupt file all produce explicit errors.
+ * Canonicalize a path that may not exist yet by resolving its parent. Returns
+ * null when neither the path nor its parent can be resolved.
  */
-async function readSessionState(sessDir: string): Promise<SessionResolution> {
-  if (!existsSync(sessDir)) {
-    return {
-      ok: false,
-      code: 'SESSION_DIR_NOT_FOUND',
-      reason: `Session directory does not exist: "${sessDir}". Run /hydrate to initialize.`,
-    };
-  }
-
-  let state: SessionState | null;
+function canonicalizeExistingOrParent(targetPath: string): string | null {
   try {
-    state = await readState(sessDir);
-  } catch (err) {
+    return realpathSync(targetPath);
+  } catch {
+    // Fall through: an absent session directory is still comparable by parent.
+  }
+  try {
+    return path.join(realpathSync(path.dirname(targetPath)), path.basename(targetPath));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Require the override to be the canonical session directory the authority
+ * derived. Returns a fail-closed resolution on mismatch, null when it matches.
+ */
+function validateSessionDirOverride(
+  override: string,
+  canonicalSessDir: string,
+): SessionResolution | null {
+  const canonicalOverride = canonicalizeExistingOrParent(override);
+  if (canonicalOverride === null) {
     return {
       ok: false,
-      code: 'STATE_UNREADABLE',
-      reason: `Session state exists but is unreadable: ${err instanceof Error ? err.message : String(err)}`,
+      code: 'SESSION_OVERRIDE_UNRESOLVABLE',
+      reason:
+        `FLOWGUARD_SESSION_DIR cannot be resolved to an existing path: "${override}". ` +
+        'The override must name the canonical session directory derived from the worktree, fingerprint, and host session id.',
     };
   }
 
-  if (state === null) {
+  const expected = canonicalizeExistingOrParent(canonicalSessDir) ?? canonicalSessDir;
+  if (canonicalOverride !== expected) {
     return {
       ok: false,
-      code: 'STATE_MISSING',
-      reason: `Session directory exists but contains no state file. Run /hydrate to initialize.`,
+      code: 'SESSION_OVERRIDE_MISMATCH',
+      reason:
+        `FLOWGUARD_SESSION_DIR "${canonicalOverride}" does not match the canonical session ` +
+        `directory "${expected}" derived from the worktree, fingerprint, and host session id.`,
     };
   }
 
-  return { ok: true, state, sessionDir: sessDir };
+  return null;
 }

@@ -11,7 +11,10 @@
  * 1. The code is registered in the default registry.
  * 2. It has non-empty recovery steps (build-time guard symmetry).
  * 3. The category is 'state' (tool-failure, not user-input).
- * 4. The {obligationId} and {reason} interpolation variables resolve.
+ * 4. The {obligationId} interpolation variable resolves. Reviewer-supplied
+ *    cause text never enters the reason template: the bounded
+ *    missingVerification/unknowns diagnostics travel as structured detail from
+ *    the validated, host-bound findings (Run-9 F3).
  * 5. There is NO quickFixCommand — recovery requires a fresh /plan or
  *    /implement submission, which is a deliberate reset, not a one-tap fix.
  * 6. The recovery messaging explicitly forbids retry of the same submission
@@ -41,21 +44,19 @@ describe('SUBAGENT_UNABLE_TO_REVIEW (P1.3 slice 2)', () => {
     }
   });
 
-  it('GOOD: interpolates {obligationId} and {reason} variables', () => {
+  it('GOOD: interpolates the {obligationId} variable and embeds no reviewer text', () => {
     const formatted = defaultReasonRegistry.format('SUBAGENT_UNABLE_TO_REVIEW', {
       obligationId: 'obl_abc123',
-      reason: 'plan text empty',
     });
     expect(formatted.reason).toContain('obl_abc123');
-    expect(formatted.reason).toContain('plan text empty');
     expect(formatted.reason).not.toContain('{obligationId}');
     expect(formatted.reason).not.toContain('{reason}');
+    for (const step of formatted.recovery) expect(step).not.toContain('{');
   });
 
   it('GOOD: blocked() helper produces a structurally-valid RailBlocked', () => {
     const result = blocked('SUBAGENT_UNABLE_TO_REVIEW', {
       obligationId: 'obl_xyz',
-      reason: 'mandate digest mismatch',
     });
     expect(result.kind).toBe('blocked');
     expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
@@ -79,12 +80,12 @@ describe('SUBAGENT_UNABLE_TO_REVIEW (P1.3 slice 2)', () => {
     expect(reason?.quickFixCommand).toBeUndefined();
   });
 
-  it('EDGE: format() with no vars leaves placeholders visible (debuggability)', () => {
+  it('EDGE: format() with no vars leaves the obligation placeholder visible (debuggability)', () => {
     // The interpolate() helper deliberately leaves unknown placeholders
     // as-is so missing variables surface in output instead of silently
     // disappearing. Confirm that contract holds for this reason too.
     const formatted = defaultReasonRegistry.format('SUBAGENT_UNABLE_TO_REVIEW');
     expect(formatted.reason).toContain('{obligationId}');
-    expect(formatted.reason).toContain('{reason}');
+    expect(formatted.reason).not.toContain('{reason}');
   });
 });

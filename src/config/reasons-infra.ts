@@ -5,6 +5,8 @@
  * @internal — do not import directly. Use reasons.ts barrel.
  */
 import type { BlockedReason } from './reasons-types.js';
+import { BOUNDARY_INFRA_REASONS } from './reasons-infra-boundary.js';
+import { PREFLIGHT_INFRA_REASONS } from './reasons-infra-preflight.js';
 
 export const INFRA_REASONS: readonly BlockedReason[] = [
   {
@@ -267,18 +269,19 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'The state file may be corrupted',
       'Check the session state file for valid JSON',
-      'Consider starting a new session with /hydrate',
+      'Preserve the affected file and restore it from a trusted backup; hydrate and Start cannot repair corrupted bound authority',
     ],
   },
 
   {
     code: 'SCHEMA_VALIDATION_FAILED',
     category: 'adapter',
-    messageTemplate: 'State schema validation failed: {message}',
+    messageTemplate: 'FlowGuard schema validation failed: {message}',
     recoverySteps: [
-      'The state file does not match the expected schema',
+      'The reported file does not match the current schema; inspect its path and rejected fields',
       'This may indicate a version mismatch',
-      'Consider starting a new session with /hydrate',
+      'For flowguard.json, follow docs/configuration.md#breaking-change-manual-configuration-recovery; install --force does not migrate it',
+      'For session state, restore trustworthy authority; do not synthesize a current state or restart the binding',
     ],
   },
 
@@ -314,12 +317,44 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'NO_WORKTREE',
+    category: 'adapter',
+    messageTemplate: 'Neither a worktree nor a directory is available: {message}',
+    recoverySteps: [
+      'Open the FlowGuard workspace inside a git worktree',
+      'Ensure the host provides a worktree or directory for the session',
+    ],
+  },
+
+  {
     code: 'WORKTREE_MISMATCH',
     category: 'adapter',
     messageTemplate: 'Worktree mismatch: expected {expected}, got {actual}',
     recoverySteps: [
       'The session was created for a different worktree',
-      'Start a new session with /hydrate in the correct directory',
+      'For new work, use a distinct host session in the correct directory and follow its documented session-start procedure; do not rebind the old session',
+    ],
+  },
+
+  {
+    code: 'SESSION_BINDING_MISMATCH',
+    category: 'adapter',
+    messageTemplate: 'Session binding does not match the canonical workspace: {message}',
+    recoverySteps: [
+      'The persisted session state does not belong to this workspace',
+      'Restore the original matching session state and worktree from trusted evidence; do not rebind through hydrate or Start',
+      'Check FlowGuard workspace integrity with flowguard doctor',
+    ],
+  },
+
+  {
+    code: 'SESSION_AUTHORITY_UNAVAILABLE',
+    category: 'adapter',
+    messageTemplate: 'Session authority is unavailable: {message}',
+    recoverySteps: [
+      'Stop and restore the original session mapping from trusted evidence; hydrate and Start must not recreate unavailable authority',
+      'Ensure the working directory is inside the bound git worktree',
+      'Re-run the command after the session authority is resolvable',
     ],
   },
 
@@ -339,7 +374,7 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     category: 'adapter',
     messageTemplate: 'Audit session authority is unavailable: {message}',
     recoverySteps: [
-      'Run /hydrate to bootstrap or restore the FlowGuard session mapping',
+      'Stop and restore the original session mapping from trusted evidence; hydrate and Start must not recreate unavailable audit authority',
       'Check that the plugin workspace fingerprint resolution succeeded',
       'Re-run the command after the audit session authority is resolvable',
     ],
@@ -352,7 +387,7 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'The session predates the durable audit outbox and its transition was never audited',
       'Do not advance the session — contemporaneous audit evidence is absent',
-      'Start a new session with /hydrate to re-establish the audit contract',
+      'Do not manufacture missing audit evidence. New work requires a distinct host session, a trustworthy pre-change baseline and the documented host session-start procedure',
     ],
   },
 
@@ -363,7 +398,7 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Do not rely on completion evidence from this session',
       'Inspect the durable transition audit operation for the terminal transition',
-      'Start a new session with /hydrate if the terminal authority cannot be recovered',
+      'If terminal authority cannot be recovered, retain the block. New work requires a distinct host session and its documented start procedure, not recreation of this binding',
     ],
   },
 
@@ -395,7 +430,7 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     category: 'adapter',
     messageTemplate: 'Session error received from host runtime: {message}',
     recoverySteps: [
-      'Check the host runtime (OpenCode) logs for the root cause',
+      'Check the host runtime logs for the root cause',
       'The session may have encountered an unrecoverable error',
       'Start a new session if the current one is no longer functional',
     ],
@@ -413,7 +448,7 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     ],
   },
 
-  // ─── Hook Session Resolution (Phase 3: #244) ────────────────────────────────
+  // ─── Hook Session Resolution (Phase 3: #244) ────────────────────────────────,
 
   {
     code: 'FINGERPRINT_FAILED',
@@ -427,12 +462,23 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'WORKTREE_RESOLUTION_FAILED',
+    category: 'adapter',
+    messageTemplate: 'Cannot resolve git worktree root: {message}',
+    recoverySteps: [
+      'Verify that cwd in the hook payload points inside a git repository',
+      'Check that git is installed and accessible',
+      'Re-run the hook from the session worktree root',
+    ],
+  },
+
+  {
     code: 'SESSION_DIR_INVALID',
     category: 'adapter',
     messageTemplate: 'Cannot derive session directory: {message}',
     recoverySteps: [
       'Verify that session_id in the hook payload is a valid identifier',
-      'Run /hydrate to initialize the FlowGuard session',
+      'Do not initialize a replacement for an invalid binding; restore trustworthy session identity first',
       'Check FlowGuard workspace integrity with flowguard doctor',
     ],
   },
@@ -441,9 +487,9 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     code: 'STATE_MISSING',
     category: 'adapter',
     messageTemplate:
-      'Session directory exists but contains no state file. Run /hydrate to initialize.',
+      'Session directory exists but contains no state file. Stop; hydrate and Start cannot recreate missing bound authority.',
     recoverySteps: [
-      'Run /hydrate to initialize the session state',
+      'Restore the original state from a trusted backup without editing its identity or audit contract',
       'Verify that the session was properly bootstrapped before tool execution',
     ],
   },
@@ -455,7 +501,7 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Check filesystem permissions on the session state file',
       'Run flowguard doctor to diagnose state file corruption',
-      'Re-hydrate the session if the state is irrecoverable',
+      'If the state is irrecoverable, preserve evidence and keep this session blocked; do not recreate its authority',
     ],
   },
 
@@ -466,8 +512,8 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'Could not acquire the session write lock — another operation is holding it: {message}',
     recoverySteps: [
       'Wait for the concurrent FlowGuard operation on this session to finish, then re-run /hydrate',
-      'If no other operation is running, a stale lock may remain (session-state.json.lock in the session directory)',
-      'Remove the stale lock file only after confirming no live process holds it, then re-run /hydrate',
+      'A lock whose owner is provably gone (dead process, previous boot, reused PID) is reclaimed automatically on the next attempt',
+      'Remove session-state.json.lock manually only after confirming a live process still holds it, then re-run /hydrate',
     ],
   },
 
@@ -482,4 +528,19 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'If persistent, inspect session directory for stale lock diagnostics',
     ],
   },
+
+  {
+    code: 'DECISION_BINDING_STALE',
+    category: 'adapter',
+    messageTemplate: 'The displayed review decision no longer matches canonical state: {reason}',
+    recoverySteps: [
+      'Reopen the FlowGuard review view to read the current subject and allowed actions',
+      'Run /status before deciding again',
+      'Do not retry the stale action; it was deliberately refused',
+    ],
+  },
+
+  ...BOUNDARY_INFRA_REASONS,
+
+  ...PREFLIGHT_INFRA_REASONS,
 ];

@@ -13,8 +13,9 @@ import { lstatSync, realpathSync } from 'node:fs';
 import { lstat, rm, unlink } from 'node:fs/promises';
 import { basename, dirname, relative } from 'node:path';
 import { CliInstallError } from './errors.js';
+import type { CliInstallErrorCode } from './install-types.js';
 
-export function fail(code: string, message: string, options?: ErrorOptions): never {
+export function fail(code: CliInstallErrorCode, message: string, options?: ErrorOptions): never {
   throw new CliInstallError(code, message, options);
 }
 

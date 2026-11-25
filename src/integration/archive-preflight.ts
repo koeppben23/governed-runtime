@@ -5,14 +5,10 @@
 
 import type { SessionState } from '../state/schema.js';
 import { TERMINAL } from '../machine/topology.js';
+import type { FormattedBlock } from '../config/reasons-types.js';
 
-export type CommandPreflightReason =
-  | 'SESSION_REQUIRED'
-  | 'TERMINAL_PHASE_REQUIRED'
-  | 'ABORTED_SESSION'
-  | 'WORKFLOW_COMMAND_NOT_ALLOWED'
-  | 'CONTINUE_AMBIGUOUS'
-  | 'NOT_APPLICABLE_TO_ACTIVE_FLOW';
+/** Eligibility projections consume canonical runtime codes, not a second closed reason registry. */
+export type CommandPreflightReason = FormattedBlock['code'];
 
 export type CommandPreflight =
   | Readonly<{ status: 'available'; guarantee: 'eligible_to_attempt' | 'read_only_available' }>

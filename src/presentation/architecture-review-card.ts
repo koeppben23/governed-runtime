@@ -76,6 +76,8 @@ export interface ArchitectureReviewCardInput {
   isApproved: boolean;
   /** Typed reviewer-cycle evidence, separate from human approval. */
   reviewCompletion?: ArchitectureReviewCompletion;
+  /** A revision submitted with the exhausting verdict was not adopted. */
+  revisionNotAdopted?: boolean;
   /** Compact ProofGraph summary for the review card (decision claims). */
   proofSummary: CompactProofPresentation;
   /** Digest of the artifact revision these findings were bound to. */
@@ -167,6 +169,19 @@ function buildArchitectureWarningNotices(
   input: ArchitectureReviewCardInput,
 ): PresentationSection[] {
   const notices: PresentationSection[] = [];
+  if (input.revisionNotAdopted) {
+    notices.push({
+      kind: 'notice',
+      level: 'warning',
+      message: 'The revision submitted with the final verdict was NOT adopted.',
+      additionalMessages: [
+        'Only the independently reviewed ADR shown here is current and approvable.',
+        'Use /override-approve to accept it despite the open findings, /request-changes to ' +
+          'start a new revision, or /reject to decline it.',
+      ],
+      details: [],
+    });
+  }
   if (input.reviewCompletion === 'review_exhausted' && !input.isApproved) {
     notices.push({
       kind: 'notice',
@@ -189,6 +204,8 @@ function buildArchitectureWarningNotices(
         `Current digest:  \`${input.adrDigest}\``,
         'The current revision was submitted after the final independent review ' +
           'and has not itself been independently reviewed.',
+        'Re-run `/request-changes` to revise the current ADR and start a fresh review of the ' +
+          'current revision; `/override-approve` binds only the reviewed digest.',
       ],
       details: [],
     });

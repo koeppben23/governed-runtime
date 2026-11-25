@@ -1,4 +1,5 @@
 import { CODEX_REVIEWER_SUBAGENT } from './mandates.js';
+import { PLAN_CLAIM_GUIDANCE } from './plan-claim-guidance.js';
 
 export const CODEX_PLUGIN_NAME = 'flowguard';
 
@@ -192,11 +193,13 @@ description: Submit a governed implementation plan through FlowGuard MCP tools.
 Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy state yourself.
 
 1. Ensure a session exists by calling \`mcp__flowguard__flowguard_status\` or hydrate if needed.
-2. Submit the plan only through \`mcp__flowguard__flowguard_plan\`. Prefer vertical tracer-bullet slices over horizontal layer-by-layer builds; resolve repository-answerable questions by exploring the codebase instead of asking.
+2. Submit the complete plan and declarations through \`mcp__flowguard__flowguard_plan({ planText, claims })\`. Prefer vertical tracer-bullet slices over horizontal layer-by-layer builds; resolve repository-answerable questions by exploring the codebase instead of asking.
 3. Treat any blocked, failed, malformed, or nonconforming tool result as terminal.
 4. Do not start implementation until FlowGuard returns an explicit allowed path.
 
 Do not use Bash or apply_patch in this skill.
+
+${PLAN_CLAIM_GUIDANCE}
 `,
   'skills/implement/SKILL.md': `---
 description: Begin governed implementation only after FlowGuard allows implementation.
@@ -209,7 +212,7 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
 1. Call \`mcp__flowguard__flowguard_status\` to obtain the runtime-provided next action.
 2. After completing the plan steps, call \`mcp__flowguard__flowguard_implement\` (no arguments) to record implementation evidence.
 3. To submit the independent reviewer's verdict, call \`mcp__flowguard__flowguard_review_implementation\` with \`reviewVerdict\` (record and verdict are separate single-purpose tools). Submit only the verdict \`reviewDispatch.verdict\` reports; never self-approve.
-4. If the review returns \`changes_requested\`, the negative verdict is recorded first and routes back to IMPLEMENTATION; FlowGuard returns no intermediate presentation card, and the repair loop is an INTERNAL continuation. Make the requested code changes, call \`mcp__flowguard__flowguard_implement\` again to re-record (advances to IMPL_VALIDATION), then call \`mcp__flowguard__flowguard_status\` and run EVERY active check from the responses' \`activeChecks\` via \`mcp__flowguard__flowguard_run_check\` until the recorded validation is terminal (do not skip any active check and do not rely on assumed auto-chaining), record resolutions for any open implementation challenges, then invoke the reviewer again and submit the fresh verdict exactly as \`reviewDispatch.verdict\` reports. Continue automatically until convergence or the budget is exhausted — never stop or wait for a user command between iterations, and never render an intermediate result as final.
+4. If the review returns \`changes_requested\`, the negative verdict is recorded first and routes back to IMPLEMENTATION; FlowGuard returns no intermediate presentation card, and the repair loop is an INTERNAL continuation. Make the requested code changes, call \`mcp__flowguard__flowguard_implement\` again to re-record and dispatch on the returned phase (run the recorded checks only while the machine is still in IMPL_VALIDATION), then call \`mcp__flowguard__flowguard_status\` and run EVERY active check from the responses' \`activeChecks\` via \`mcp__flowguard__flowguard_run_check\` until the recorded validation is terminal (do not skip any active check and do not rely on assumed auto-chaining), record resolutions for any open implementation challenges, then invoke the reviewer again and submit the fresh verdict exactly as \`reviewDispatch.verdict\` reports. Continue automatically until convergence or the budget is exhausted — never stop or wait for a user command between iterations, and never render an intermediate result as final.
 5. If FlowGuard blocks, fails, or requests review evidence, report the exact blocker and stop.
 6. Use mutating host tools only after FlowGuard explicitly allows implementation.
 `,

@@ -28,6 +28,60 @@ function readDoc(relativePath: string): string {
   return readFileSync(join(REPO_ROOT, relativePath), 'utf-8');
 }
 
+describe('bounded OpenCode V2 acceptance claims', () => {
+  it('distinguishes accepted Windows CLI/server parity from open Desktop acceptance', () => {
+    const introduction = readDoc('docs/quick-start.md').split('## Prerequisites')[0]!;
+    expect(introduction).toContain('Linux, macOS and Windows');
+    expect(introduction).toContain('65/65');
+    expect(introduction).toContain('native Desktop Workbench');
+    expect(introduction).toContain('#1196');
+    expect(introduction).toContain('#1207');
+    expect(introduction).not.toContain('Draft/NO-GO');
+    expect(introduction).not.toContain('open Desktop PR');
+    expect(introduction).not.toContain('Desktop, Windows and whole-PR');
+  });
+
+  it('does not list the executed Windows matrix as an unverified remaining gate', () => {
+    const report = readDoc('docs/host-probes/opencode-v2/p0-00-inactive-parity.md');
+    const remaining = report.split('## Reproduction and remaining gates')[1]!;
+    expect(remaining).toContain('41855491592');
+    expect(remaining).toContain('2f4aa06d');
+    expect(report).toContain('41829567943');
+    expect(remaining).toContain('65/65');
+    expect(remaining).not.toContain('NOT_VERIFIED:** complete Windows');
+    expect(remaining).toContain('Desktop 2.2.4');
+    expect(remaining).toContain('live remote catalogue-refresh');
+  });
+
+  it('bounds synchronous enforcement without claiming final reviewer-input integrity', () => {
+    const enforcement = readDoc('docs/platform-limitations.md')
+      .split('## Enforcement Levels')[1]!
+      .split('## Gap 1:')[0]!;
+    expect(enforcement).not.toContain('Full fail-closed');
+    expect(enforcement).toContain('intercepted');
+    expect(enforcement).toContain('R4');
+    expect(enforcement).toContain('NOT_SUPPORTED');
+    expect(enforcement).toContain('trusted-plugin operating model');
+    expect(enforcement).toContain('outside the supported V2 security boundary');
+    expect(enforcement).toContain('untrusted co-installed plugins');
+    expect(enforcement).not.toContain('security requirement remains BLOCKED');
+    expect(enforcement).toContain('unobservable');
+  });
+
+  it('binds the quick start to a development build rather than a published artifact', () => {
+    const content = readDoc('docs/quick-start.md');
+    const introduction = content.split('## Prerequisites')[0]!;
+    expect(introduction).toContain('`develop` command surface');
+    expect(introduction).toContain('not to the published');
+    expect(introduction).toContain('matching commit');
+
+    const installation = content.split('## Start a Session')[0]!;
+    expect(installation).toContain('matching build');
+    expect(installation).toContain('version-bound');
+    expect(installation).not.toMatch(/latest release/i);
+  });
+});
+
 function slash(name: string): string {
   return `/${name}`;
 }
@@ -49,20 +103,28 @@ function isProductAlias(definition: InstalledCommandDefinition): boolean {
 
 const productAliasDefinitions = INSTALLED_COMMANDS.filter(isProductAlias);
 const productAliasTemplates = new Set<string>(
-  productAliasDefinitions.map((definition) => definition.templateFile),
+  productAliasDefinitions.flatMap((definition) =>
+    definition.templateFile === null ? [] : [definition.templateFile],
+  ),
 );
 
 function canonicalTargetFor(definition: InstalledCommandDefinition): string {
   if (definition.target.workflowCommand) return slash(definition.target.workflowCommand);
+  if (definition.target.nativeCommand !== undefined) return slash(definition.target.nativeCommand);
   const invocation = preferredInvocationForTool(definition.target.toolName);
   if (!invocation) throw new TypeError(`no primary invocation for ${definition.id}`);
   return invocation;
 }
 
 function installedCoreCommands(): string[] {
-  return INSTALLED_TEMPLATE_FILES.filter((templateFile) => !productAliasTemplates.has(templateFile))
-    .map((templateFile) => slash(templateFile.replace(/\.md$/, '')))
-    .sort();
+  return [
+    ...INSTALLED_TEMPLATE_FILES.filter(
+      (templateFile) => !productAliasTemplates.has(templateFile),
+    ).map((templateFile) => slash(templateFile.replace(/\.md$/, ''))),
+    ...INSTALLED_COMMANDS.filter(
+      (definition) => definition.templateFile === null && !isProductAlias(definition),
+    ).map((definition) => definition.invocation),
+  ].sort();
 }
 
 function extractCommandHeadings(content: string): string[] {
@@ -236,7 +298,7 @@ describe('documentation/user-docs-drift', () => {
       expect(section).toContain('installer persists `--policy-mode`');
     });
 
-    it('host-selection matrix documents enforcement levels and restart activation', () => {
+    it('host-selection matrix documents enforcement levels and host lifecycle without claiming activation', () => {
       const content = readDoc('docs/installation.md');
       expect(content).toContain('## Host Selection Matrix');
 
@@ -249,8 +311,11 @@ describe('documentation/user-docs-drift', () => {
       expect(content).toContain('`synchronous`');
       expect(content).toContain('`hook_gated`');
 
-      // Each host requires restart for activation
-      expect(content).toMatch(/Restart OpenCode/);
+      // Each host documents its activation boundary, not governance activation
+      expect(content).toMatch(
+        /Installer verifies\/restarts the running host; not governance activation/,
+      );
+      expect(content).toContain('Installed INACTIVE parity');
       expect(content).toMatch(/Restart Claude/);
       expect(content).toMatch(/Restart Codex/);
 

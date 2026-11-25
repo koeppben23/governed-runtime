@@ -5,15 +5,25 @@
  *              fenced recovery, and the best-effort outcome classification.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+// The suite exercises bare temp dirs; the canonical authority's git-root probe
+// is not what these tests verify.
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/git.js')>();
+  return { ...actual, resolveRoot: vi.fn(async (dir: string) => dir) };
+});
+
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
-import { readState } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
 import { makeProgressedState } from '../fixtures.js';
-import { resolveWorkspacePaths, writeStateWithArtifacts } from './tools/helpers.js';
+import { unavailableAuthority, resolvedAuthority } from './plugin-audit-test-helpers.js';
+import { requireWorkspacePaths, writeStateWithArtifacts } from './tools/helpers.js';
+import { getRuntimeInstanceId } from './runtime-instance.js';
 
 let tmpDir: string;
 
@@ -39,15 +49,25 @@ async function seedSession(
 ): Promise<{ sessionId: string; sessDir: string; runtime: never }> {
   const sessionId = crypto.randomUUID();
   const context = { sessionID: sessionId, worktree: tmpDir, directory: tmpDir };
-  const { sessDir } = await resolveWorkspacePaths(context);
+  const { sessDir, fingerprint, worktree } = await requireWorkspacePaths(context);
   const base = makeProgressedState('IMPLEMENTATION');
+  // The canonical authority validates the persisted binding against the
+  // resolved worktree, so the fixture must be bound to the test workspace.
   await writeStateWithArtifacts(sessDir, {
     ...base,
+    binding: { ...base.binding, worktree, fingerprint, hostSessionId: sessionId },
+    runtimeLease: {
+      holderRuntimeInstanceId: getRuntimeInstanceId(),
+      holderPid: process.pid,
+      generation: 1,
+      acquiredAt: '2026-01-01T00:00:00.000Z',
+      lastHeartbeatAt: '2026-01-01T00:00:00.000Z',
+    },
     mutationEpisodes: (options.episodes ?? []).map((episode) => ({
       episodeId: crypto.randomUUID(),
       hostCallId: episode.hostCallId,
       toolName: episode.toolName,
-      runtimeInstanceId: crypto.randomUUID(),
+      runtimeInstanceId: getRuntimeInstanceId(),
       leaseGeneration: episode.leaseGeneration ?? 1,
       authorizedAt: '2026-01-01T00:00:00.000Z',
       status: 'dispatch_authorized' as const,
@@ -66,7 +86,16 @@ async function seedSession(
       resolvingLeaseGeneration: 2,
     })),
   });
-  const runtime = { ws: { getSessionDir: () => sessDir } } as never;
+  const seededState = await readState(sessDir);
+  if (seededState === null) throw new Error(`No seeded state at ${sessDir}`);
+  const runtime = {
+    ws: {
+      resolveSessionAuthority: async () => ({
+        ...resolvedAuthority(seededState, sessDir),
+        worktreeRoot: worktree,
+      }),
+    },
+  } as never;
   return { sessionId, sessDir, runtime };
 }
 
@@ -107,6 +136,24 @@ function blockedCode(output: string): string | undefined {
 }
 
 describe('recordMutationCompletion fail-closed guards', () => {
+  it('reports a foreign live lease with fully interpolated recovery diagnostics', async () => {
+    const { sessionId, sessDir, runtime } = await seedSession({
+      episodes: [{ hostCallId: 'call-1', toolName: 'edit' }],
+    });
+    const state = (await readState(sessDir))!;
+    await writeState(sessDir, {
+      ...state,
+      runtimeLease: {
+        ...state.runtimeLease!,
+        holderRuntimeInstanceId: crypto.randomUUID(),
+        generation: 2,
+      },
+    });
+    const output = await runCompletion(runtime, sessionId, 'edit', 'call-1');
+    expect(blockedCode(output.output)).toBe('MUTATION_EPISODE_LEASE_UNAVAILABLE');
+    expect(output.output).not.toContain('{activeLeaseGeneration}');
+    expect((await readState(sessDir))!.mutationEpisodes[0]!.status).toBe('dispatch_authorized');
+  });
   it('ignores non-mutating host tools', async () => {
     const { sessionId, runtime } = await seedSession();
 
@@ -124,9 +171,11 @@ describe('recordMutationCompletion fail-closed guards', () => {
     expect(output.output).toContain('no host callID');
   });
 
-  it('blocks when the session directory cannot be resolved', async () => {
+  it('blocks when the session authority cannot be resolved', async () => {
     const { sessionId } = await seedSession();
-    const runtime = { ws: { getSessionDir: () => null } } as never;
+    const runtime = {
+      ws: { resolveSessionAuthority: async () => unavailableAuthority('NO_WORKTREE') },
+    } as never;
 
     const output = await runCompletion(runtime, sessionId, 'bash', 'call-1');
 
@@ -135,8 +184,10 @@ describe('recordMutationCompletion fail-closed guards', () => {
   });
 
   it('blocks when session state disappeared', async () => {
-    const { sessionId, runtime } = await seedSession();
-    const { sessDir } = await resolveWorkspacePaths({
+    const { sessionId, runtime } = await seedSession({
+      episodes: [{ hostCallId: 'call-1', toolName: 'bash' }],
+    });
+    const { sessDir } = await requireWorkspacePaths({
       sessionID: sessionId,
       worktree: tmpDir,
       directory: tmpDir,
@@ -158,7 +209,7 @@ describe('recordMutationCompletion fail-closed guards', () => {
     expect(blockedCode(wrongTool.output)).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
     expect(wrongTool.output).toContain('No authorized mutation episode');
 
-    const missing = await runCompletion(runtime, sessionId, 'bash', 'call-other');
+    const missing = await runCompletion(runtime, sessionId, 'edit', 'call-other');
     expect(blockedCode(missing.output)).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
   });
 
@@ -206,6 +257,10 @@ describe('mutation outcome classification', () => {
     expect(await completedOutcome('bash', {}, JSON.stringify({ error: true }))).toBe('failure');
     expect(await completedOutcome('bash', {}, JSON.stringify({ success: true }))).toBe('success');
     expect(await completedOutcome('bash', {}, 'unparsable-output')).toBe('unknown');
+    expect(await completedOutcome('edit', { success: true })).toBe('success');
+    expect(await completedOutcome('edit', { success: false })).toBe('unknown');
+    expect(await completedOutcome('write', { exit: 0 })).toBe('unknown');
+    expect(await completedOutcome('edit', { files: [] })).toBe('unknown');
   });
 
   it('classifies apply_patch by its files array', async () => {
@@ -223,22 +278,32 @@ describe('mutation outcome classification', () => {
     expect(await completedOutcome('write', { ...complete, filepath: 42 })).toBe('unknown');
     expect(await completedOutcome('write', { ...complete, exists: 'no' })).toBe('unknown');
     expect(await completedOutcome('write', { ...complete, diagnostics: [] })).toBe('unknown');
+    for (const diagnostics of [null, 1, 'invalid']) {
+      expect(await completedOutcome('write', { ...complete, diagnostics })).toBe('unknown');
+    }
+    expect(await completedOutcome('edit', complete)).toBe('unknown');
   });
 
-  it('classifies edit by its complete success contract', async () => {
-    const complete = {
-      diff: '--- a\n+++ b\n',
-      filediff: { file: 'src/a.ts', patch: 'x', additions: 1, deletions: 0 },
-      diagnostics: { errors: [] },
+  it('classifies edit by its real 2.2.4/2.2.5 files success contract', async () => {
+    const file = {
+      file: 'src/a.ts',
+      patch: '@@ -1 +1 @@',
+      status: 'modified',
+      additions: 1,
+      deletions: 0,
     };
+    const complete = { files: [file], truncated: false };
     expect(await completedOutcome('edit', complete)).toBe('success');
-    expect(await completedOutcome('edit', { ...complete, diff: undefined })).toBe('unknown');
-    expect(
-      await completedOutcome('edit', {
-        ...complete,
-        filediff: { file: 'src/a.ts', patch: 'x', additions: 1 },
-      }),
-    ).toBe('unknown');
-    expect(await completedOutcome('edit', { ...complete, filediff: 'x' })).toBe('unknown');
+    expect(await completedOutcome('edit', { files: [] })).toBe('unknown');
+    expect(await completedOutcome('edit', { files: 'src/a.ts' })).toBe('unknown');
+    for (const malformed of [
+      { ...file, file: 1 },
+      { ...file, patch: false },
+      { ...file, additions: '1' },
+      { ...file, deletions: '0' },
+      { ...file, status: 'failed' },
+    ])
+      expect(await completedOutcome('edit', { files: [malformed] })).toBe('unknown');
+    expect(await completedOutcome('write', complete)).toBe('unknown');
   });
 });

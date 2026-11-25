@@ -87,6 +87,9 @@ const LIMITS = {
   maxRiskHotspots: 5,
 } as const;
 
+/** Shared projection ceilings for full and explicitly unverified compact status. */
+export const IMPLEMENTATION_GUIDANCE_LIMITS = LIMITS;
+
 const STOP_WORDS = new Set([
   'add',
   'and',

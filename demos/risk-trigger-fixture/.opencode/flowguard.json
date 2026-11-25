@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "v1",
+  "policy": {
+    "riskTriggerPaths": [
+      { "trigger": "state_integrity", "pattern": "src/main/java/fixture/state/**" }
+    ]
+  }
+}

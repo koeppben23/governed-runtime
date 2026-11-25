@@ -7,13 +7,23 @@ A real reset is a **fresh workspace plus an exact tarball install plus a fresh
 files never does.
 
 ```bash
-# Option A: Delete and recreate with setup script (recommended)
+# Option A: Delete and recreate with setup script (recommended; repo-scoped)
 rm -rf /tmp/flowguard-java-demo
-./demos/java-task-manager/run-main-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
+./demos/java-task-manager/run-main-demo-setup.sh --install --install-scope repo --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
 
 # Then open the workspace in OpenCode Desktop and start a fresh session:
 # /start
 ```
+
+If you intentionally use a **global** install, do not delete
+`~/.config/opencode` to reset. Remove only FlowGuard's proven managed files:
+
+```bash
+npx --package /path/to/flowguard-core-*.tgz flowguard uninstall --install-scope global
+```
+
+The uninstaller preserves foreign OpenCode configuration, nonempty shared
+`node_modules`, workspace evidence and host state. Then rerun the setup command.
 
 ```bash
 # Option B: Prepare-only, then install manually

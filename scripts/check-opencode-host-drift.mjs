@@ -1,105 +1,74 @@
 #!/usr/bin/env node
-
+/** Exact native CLI candidate comparison, never product/Desktop certification. */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.join(__dirname, '..');
-const hostVersionPath = path.join(root, '.sdk-baselines', 'opencode', 'host-version.json');
-const shouldTrigger = process.argv.includes('--trigger');
+const root = fileURLToPath(new URL('../', import.meta.url));
+const candidatePath = path.join(root, '.sdk-baselines/opencode/cli-candidate.json');
 
-function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-}
-
-function run(command, args, options = {}) {
-  return spawnSync(command, args, {
-    cwd: root,
-    encoding: 'utf-8',
-    stdio: 'pipe',
-    env: { ...process.env, OPENCODE_DISABLE_AUTOUPDATE: '1' },
-    ...options,
-  });
-}
-
-function parseVersion(raw) {
-  const match = raw.trim().match(/v?(\d+)\.(\d+)\.(\d+)(?:[-+][\w.-]+)?/);
-  if (!match) return null;
-  return match[0].replace(/^v/, '');
-}
-
-function compareSemver(a, b) {
-  const ap = a.split('.').map((part) => Number(part));
-  const bp = b.split('.').map((part) => Number(part));
-  for (let i = 0; i < 3; i++) {
-    if (ap[i] > bp[i]) return 1;
-    if (ap[i] < bp[i]) return -1;
+class HostDriftError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
   }
-  return 0;
 }
 
-function fail(message) {
-  console.error(`ERROR: ${message}`);
-  process.exit(1);
+/** Check the whole reported version; suffixes and surrounding text are not accepted. */
+export function checkHostVersion(candidate, reported) {
+  if (
+    candidate?.package !== '@opencode/cli' ||
+    candidate.status !== 'candidate' ||
+    typeof candidate.version !== 'string' ||
+    !/^2\.\d+\.\d+$/.test(candidate.version)
+  ) {
+    throw new HostDriftError(
+      'OPENCODE_CANDIDATE_INVALID',
+      'Invalid native V2 CLI candidate metadata.',
+    );
+  }
+  const expected = `opencode v${candidate.version}`;
+  if (typeof reported !== 'string' || reported.trim() !== expected) {
+    throw new HostDriftError(
+      'OPENCODE_HOST_VERSION_MISMATCH',
+      `Expected exactly ${expected}; received ${String(reported)}. Use ${candidate.package}@${candidate.version} for candidate tests. API updates do not accept host drift.`,
+    );
+  }
+  return `Native CLI candidate matches: ${expected}. This is not ACTIVE product or Desktop certification.`;
 }
 
-if (!fs.existsSync(hostVersionPath)) {
-  fail(`OpenCode host baseline missing: ${path.relative(root, hostVersionPath)}`);
+export function run(argv = process.argv.slice(2)) {
+  if (argv.length > 0) {
+    console.error(
+      'OPENCODE_HOST_ARGUMENT_INVALID: no arguments accepted; this check does not update or certify hosts.',
+    );
+    return 1;
+  }
+  try {
+    const candidate = JSON.parse(fs.readFileSync(candidatePath, 'utf8'));
+    // Validate metadata before invoking any host executable.
+    checkHostVersion(candidate, `opencode v${candidate?.version}`);
+    const command = process.env.OPENCODE_CLI || 'opencode';
+    const probe = spawnSync(command, ['--version'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    if (probe.status !== 0) {
+      throw new HostDriftError(
+        'OPENCODE_HOST_PROBE_FAILED',
+        `${command} --version failed: ${probe.error?.message ?? probe.stderr ?? probe.status}`,
+      );
+    }
+    console.log(checkHostVersion(candidate, probe.stdout));
+    return 0;
+  } catch (error) {
+    console.error(`${error.code ?? 'OPENCODE_HOST_CHECK_FAILED'}: ${error.message}`);
+    return 1;
+  }
 }
 
-const baselineVersion = readJson(hostVersionPath).version;
-if (typeof baselineVersion !== 'string' || !parseVersion(baselineVersion)) {
-  fail(`OpenCode host baseline version is invalid: ${baselineVersion}`);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  process.exitCode = run();
 }
-
-const opencode = run('opencode', ['--version']);
-if (opencode.status !== 0) {
-  const detail = [opencode.stdout, opencode.stderr].filter(Boolean).join('\n').trim();
-  fail(`opencode --version failed. Install or update OpenCode first. ${detail}`.trim());
-}
-
-const localVersion = parseVersion(opencode.stdout);
-if (!localVersion) {
-  fail(`Unable to parse opencode version from output: ${opencode.stdout.trim()}`);
-}
-
-const comparison = compareSemver(localVersion, baselineVersion);
-if (comparison === 0) {
-  console.log(`OpenCode host baseline matches local version: ${localVersion}`);
-  process.exit(0);
-}
-
-if (comparison < 0) {
-  fail(
-    `OpenCode local host version ${localVersion} is older than validated baseline ${baselineVersion}.`,
-  );
-}
-
-const recoveryCommand = `gh workflow run opencode-sdk-update.yml --ref main -f version=latest -f opencode_version=${localVersion}`;
-console.error(`OpenCode host drift detected: local ${localVersion}, baseline ${baselineVersion}.`);
-console.error(`Recovery: ${recoveryCommand}`);
-
-if (!shouldTrigger) {
-  process.exit(1);
-}
-
-const gh = run('gh', [
-  'workflow',
-  'run',
-  'opencode-sdk-update.yml',
-  '--ref',
-  'main',
-  '-f',
-  'version=latest',
-  '-f',
-  `opencode_version=${localVersion}`,
-]);
-
-if (gh.status !== 0) {
-  const detail = [gh.stdout, gh.stderr].filter(Boolean).join('\n').trim();
-  fail(`failed to trigger OpenCode SDK Update workflow. ${detail}`.trim());
-}
-
-console.log(`Triggered OpenCode SDK Update workflow for opencode-ai@${localVersion}.`);

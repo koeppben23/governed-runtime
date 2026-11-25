@@ -32,7 +32,7 @@ names exactly in the `Protect main and develop` ruleset.
 
 From `.github/workflows/ci.yml`:
 
-- `ci-gate` (aggregates `unit` + `scripts-windows` + `coverage` + `integration-perf` + `provider-conformance` + `regulated-e2e`)
+- `ci-gate` (aggregates `unit` + `scripts-windows` + `critical-windows` + `coverage` + `integration-perf` + `provider-conformance` + `regulated-e2e` + `doc-drift`)
 - `typecheck`
 - `lint`
 - `format`
@@ -56,12 +56,32 @@ individually as branch-protection contexts.
 merge-blocking through the required `ci-gate` aggregator; the Ubuntu `unit` job
 runs the same suite as its second step.
 
+`critical-windows` runs the state, hook, ProofGraph, and real-Git
+approval/recovery suites on Windows and is merge-blocking through the required
+`ci-gate` aggregator, so platform-specific path, CRLF, and timing defects in
+those trust boundaries cannot merge unobserved.
+
+`doc-drift` is transitively merge-blocking through the required `ci-gate`, not a
+separate required ruleset context. The aggregator accepts only `success`, never
+failure, cancellation, skipped or missing results. This is guarded by executable
+workflow tests. The job requires a new or revised nonempty Unreleased changelog
+entry relative to the PR merge base and checks generated documentation
+consistency. Semantic documentation review remains mandatory. Repository edits
+do not themselves change the live GitHub ruleset.
+
 The `format` check is the merge-blocking Prettier gate for both protected
 branches. Mutation testing is deliberately NOT a PR gate: it runs on the
 scheduled/release cadence via `.github/workflows/mutation.yml` (the full-suite
 Stryker run is too expensive for per-PR execution; per-PR mutation was
 evaluated and rejected). The real-plugin mutation-episode E2E runs inside
-`coverage` (unit + integration projects on the final SHA).
+`coverage` (both sharded projects merged on the final SHA).
+
+`coverage-unit` and `coverage-integration` are implementation details of the
+`coverage` job and are not configured individually in the ruleset. The merge job
+fails closed unless both shards contribute one completeness-bound artifact for
+the same commit and workflow run; `ci-gate` therefore depends on every shard
+transitively. The recorded run attempt keeps a merge-job-only rerun compatible
+with shards from the same run.
 
 From `.github/workflows/conventional-commits.yml`:
 
@@ -116,18 +136,19 @@ re-enable every control immediately after recovery.
 
 The following jobs run but are intentionally **not** required by the live ruleset:
 
-| Job                    | Why non-blocking                                                                                                                                                                                                                                  |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unit`                 | Runs as a direct job, but the required `ci-gate` aggregator is the branch-protection check.                                                                                                                                                       |
-| `coverage`             | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                             |
-| `integration-perf`     | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                             |
-| `provider-conformance` | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                             |
-| `regulated-e2e`        | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                             |
-| `sdk-baseline`         | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`).                                                                            |
-| `unused-dependencies`  | `knip --dependencies`; a false positive should not block a release. Review the diff manually.                                                                                                                                                     |
-| `fuzz`                 | `fast-check` property tests with a fixed seed. Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR.                                                                             |
-| `mutation`             | Stryker runs on the nightly/release cadence (`mutation.yml`), not per-PR. A reliable per-PR incremental gate is not achievable with the current perTest + vitest-runner setup (see the workflow rationale); it is therefore not a required check. |
-| `dependency-review`    | `fail-on-severity: high` is configured; runs as advisory (`continue-on-error: true`) because Dependency Graph is not yet enabled for this repository. Will become a required check after the repo setting is toggled on.                          |
+| Job                    | Why non-blocking                                                                                                                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unit`                 | Runs as a direct job, but the required `ci-gate` aggregator is the branch-protection check.                                                                                                                                                                         |
+| `coverage`             | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                                               |
+| `doc-drift`            | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                                               |
+| `integration-perf`     | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                                               |
+| `provider-conformance` | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                                               |
+| `regulated-e2e`        | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                                               |
+| `sdk-baseline`         | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`).                                                                                              |
+| `unused-dependencies`  | `knip --dependencies`; a false positive should not block a release. Review the diff manually.                                                                                                                                                                       |
+| `fuzz`                 | `fast-check` property tests with a fixed seed. Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR.                                                                                               |
+| `mutation`             | Stryker runs on the weekly/release cadence (Mondays 02:00 UTC, `mutation.yml`), not per-PR. A reliable per-PR incremental gate is not achievable with the current perTest + vitest-runner setup (see the workflow rationale); it is therefore not a required check. |
+| `dependency-review`    | `fail-on-severity: high` is configured; runs as advisory (`continue-on-error: true`) because Dependency Graph is not yet enabled for this repository. Will become a required check after the repo setting is toggled on.                                            |
 
 If any of these is promoted to merge-blocking, move it to the required list
 above in the same PR that flips the ruleset setting.
@@ -188,6 +209,12 @@ stored as the repository secret `CONTROL_PLANE_READ_TOKEN` (fine-grained PAT)
 and exposed to the drift workflow and the release preflight as
 `CONTROL_PLANE_TOKEN`. Without it, trusted runs fail closed.
 
+An expired, revoked or under-scoped token is reported as `AUTH_FAILED`
+(exit code 2), not as control-plane drift. Trusted runs still fail, but the
+remediation job does not open a misleading `control-plane-drift` issue; rotate
+`CONTROL_PLANE_READ_TOKEN` and re-run the workflow. Only an actual divergence
+(exit code 1) opens or refreshes the drift issue.
+
 ## Actions Policy
 
 The repository Actions policy is part of the release supply chain and is
@@ -223,7 +250,6 @@ required-check list together.
    `release` environment wait timer (15 minutes) and its `v*` tag deployment
    policy through the same strict run.
 3. Open a test PR and confirm merge stays blocked until all required checks pass.
-4. Open a test PR and confirm merge stays blocked until all required checks pass.
 
 ## Emergency Procedure
 

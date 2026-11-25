@@ -112,9 +112,10 @@ export const implement: ToolDefinition = {
   description:
     'Record implementation evidence. Auto-detects changed files via git. ' +
     'Use AFTER making code changes with read/write/bash tools. Takes no arguments.\n' +
-    'On success, auto-advances to IMPL_REVIEW. To submit the reviewer verdict, ' +
-    'use the separate flowguard_review_implementation tool (issue #565: record and ' +
-    'verdict are distinct single-purpose tools).',
+    'On success, returns the authoritative phase: IMPL_VALIDATION when post-implementation ' +
+    'checks must run, a policy-permitted later phase, or a typed recovery. To submit the ' +
+    'reviewer verdict, use the separate flowguard_review_implementation tool (issue #565: ' +
+    'record and verdict are distinct single-purpose tools).',
   // Record mode takes NO arguments. The empty (strict) schema makes it
   // impossible to send a verdict on a record call — the previously-conflated
   // multi-mode failure state is now unrepresentable at the tool surface.
@@ -155,14 +156,14 @@ export const review_implementation: ToolDefinition = {
       .boolean()
       .optional()
       .describe(
-        'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
+        'Set to true ONLY after a real reviewer-subagent spawn failure (reviewer subagent fails, agent ' +
           'unavailable). It never enables self-review or approval.',
       ),
     reviewRecovery: z
       .literal('retry_transport')
       .optional()
       .describe(
-        'Typed transport-recovery intent. ONLY when the authorized native reviewer Task release ' +
+        'Typed transport-recovery intent. ONLY when the authorized native reviewer subagent release ' +
           'was technically interrupted or yielded no bindable evidence: re-emits the pending ' +
           'review dispatch for the current attempt, or re-arms a fresh attempt on the SAME frozen ' +
           'implementation subject after a released dispatch. Never a verdict and never approval.',

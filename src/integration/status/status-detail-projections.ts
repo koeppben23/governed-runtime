@@ -1,6 +1,7 @@
 /**
  * @module integration/status/status-detail-projections
- * @description Per-flag status surfaces: evidence, why-blocked, context, readiness.
+ * @description Per-flag status surfaces: evidence, why-blocked, context, readiness,
+ * and the single projection-kind authority that selects among them.
  *
  * Pure projections of canonical runtime truth; no independent interpretation.
  */
@@ -17,13 +18,17 @@ import type {
 import { evaluate } from '../../machine/evaluate.js';
 import {
   resolveWorkflowDirective,
+  resolveExecutionDisposition,
   type WorkflowDirective,
 } from '../../machine/workflow-directive.js';
 import { evaluateValidationEvidence } from '../../machine/validation-evidence.js';
 import { directiveLabel } from '../../presentation/directive-copy.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
-import { evaluateProofGraphGateFromState } from '../../audit/proofgraph/gate.js';
-import { mapEnforcementReasonToRegistryCode } from '../../audit/proofgraph/reason-code-mapping.js';
+import { evaluateEvidenceApprovalPreflight } from '../../audit/proofgraph/evidence-approval-preflight.js';
+import { defaultReasonRegistry } from '../../config/reasons.js';
+import type { FormattedBlock } from '../../config/reasons-types.js';
+import { projectDirectiveBlock } from './status-conclusion.js';
+import { unresolvedMutationEpisodes } from '../../state/evidence-mutation-episode.js';
 import { hashFindings } from '../review/findings-hash.js';
 import {
   findAcceptedInvocationForFindings,
@@ -33,10 +38,40 @@ import type {
   BlockedProjection,
   ContextProjection,
   EvidenceDetailProjection,
+  PlanClaimAuthorityProjection,
   ReadinessProjection,
   ReviewFeedbackFindingProjection,
   ReviewFeedbackProjection,
 } from './status-types.js';
+
+/**
+ * Focused status projections in first-match dispatch order. `finish` is the
+ * most comprehensive projection and is placed first so its own template call is
+ * never shadowed by a stray additional flag.
+ */
+const FOCUSED_STATUS_PROJECTIONS = [
+  'finish',
+  'whyBlocked',
+  'evidence',
+  'context',
+  'readiness',
+  'reviewFeedback',
+  'proofGraph',
+] as const;
+
+/** Projection a status call resolves to: one focused projection or the full status. */
+export type StatusProjectionKind = (typeof FOCUSED_STATUS_PROJECTIONS)[number] | 'full';
+
+/**
+ * Single authority for which projection a set of status arguments selects.
+ * Used by the projection dispatch itself and by diagnostics, so the two can
+ * never disagree. Non-object arguments select the full status.
+ */
+export function statusProjectionKind(args: unknown): StatusProjectionKind {
+  if (typeof args !== 'object' || args === null) return 'full';
+  const flags = args as Record<string, unknown>;
+  return FOCUSED_STATUS_PROJECTIONS.find((flag) => Boolean(flags[flag])) ?? 'full';
+}
 
 /**
  * Build EvidenceDetailProjection from canonical completeness report.
@@ -113,13 +148,28 @@ export function buildBlockedProjection(
   const completeness = evaluateCompleteness(state);
 
   const incompleteReview = directive.code === 'WORKFLOW_BLOCKED';
-  const blocked = evalResult.kind === 'waiting' || incompleteReview;
+  const approvalBlock = projectEvidenceApprovalBlock(state);
+  const blocked = evalResult.kind === 'waiting' || incompleteReview || approvalBlock !== null;
   const missingEvidence = completeness.slots
     .filter((slot) => slot.required && (slot.status === 'missing' || slot.status === 'failed'))
     .map((slot) => ({
       slot: slot.slot,
       hint: slot.status === 'failed' ? (slot.detail ?? null) : null,
     }));
+  const directiveBlock = projectDirectiveBlock(directive);
+  if (directiveBlock) {
+    return {
+      blocked: true,
+      reasonCode: directiveBlock.code,
+      reasonText: directiveBlock.reason,
+      ...(directive.context?.reasonParams ? { reasonParams: directive.context.reasonParams } : {}),
+      recoveryHint: directiveBlock.recovery.join('\n'),
+      missingEvidence,
+      nextResolvableCommand: null,
+      humanActionRequired: false,
+      mutationEpisodes: projectOpenMutationEpisodes(state),
+    };
+  }
 
   // #400: surface the explicit validation-evidence reason when VALIDATION is
   // fail-closed-blocked with no active checks. This is a projection of the single
@@ -142,11 +192,42 @@ export function buildBlockedProjection(
   return {
     blocked,
     reasonCode: reason.reasonCode,
-    reasonText: evalResult.kind === 'waiting' ? evalResult.reason : reason.reasonText,
-    recoveryHint: directive.context?.recovery ?? null,
     missingEvidence,
-    nextResolvableCommand: directive.commands[0] ?? null,
+    ...blockedRecoveryFields(approvalBlock, evalResult, reason.reasonText, directive),
     humanActionRequired: resolveHumanActionRequired(evalResult, incompleteReview),
+    mutationEpisodes: projectOpenMutationEpisodes(state),
+  };
+}
+
+/** Exact IDs needed by recovery, derived solely from persisted canonical episodes/resolutions. */
+export function projectOpenMutationEpisodes(state: SessionState) {
+  return unresolvedMutationEpisodes(state.mutationEpisodes, state.mutationEpisodeResolutions).map(
+    ({ hostCallId, toolName, authorizedAt, leaseGeneration }) => ({
+      hostCallId,
+      toolName,
+      authorizedAt,
+      leaseGeneration,
+    }),
+  );
+}
+
+function blockedRecoveryFields(
+  approvalBlock: FormattedBlock | null,
+  evaluation: ReturnType<typeof evaluate>,
+  reasonText: string | null,
+  directive: WorkflowDirective,
+): Pick<BlockedProjection, 'reasonText' | 'recoveryHint' | 'nextResolvableCommand'> {
+  if (approvalBlock) {
+    return {
+      reasonText: approvalBlock.reason,
+      recoveryHint: approvalBlock.recovery.join('\n'),
+      nextResolvableCommand: null,
+    };
+  }
+  return {
+    reasonText: evaluation.kind === 'waiting' ? evaluation.reason : reasonText,
+    recoveryHint: directive.context?.recovery ?? null,
+    nextResolvableCommand: directive.commands[0] ?? null,
   };
 }
 
@@ -182,7 +263,10 @@ export function buildReadinessProjection(
 ): ReadinessProjection {
   const completeness = evaluateCompleteness(state);
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
-  const blocked = evalResult.kind === 'waiting';
+  const blocked =
+    resolveExecutionDisposition(state) === 'blocked' ||
+    evalResult.kind === 'waiting' ||
+    projectEvidenceApprovalBlock(state) !== null;
   const snapshot = state.policySnapshot;
   const warnings: string[] = [];
 
@@ -210,6 +294,8 @@ function projectReviewFeedbackFindings(
     category: finding.category,
     message: finding.message,
     ...(finding.findingId ? { findingId: finding.findingId } : {}),
+    subjectAnchors: finding.relation.subjectAnchors,
+    evidenceLocations: finding.relation.evidenceLocations,
   }));
 }
 
@@ -223,28 +309,61 @@ function currentReviewFeedbackObligationType(state: SessionState): ReviewObligat
   if (state.phase === 'PLAN') return 'plan';
   if (state.phase === 'ARCHITECTURE') return 'architecture';
   if (state.phase === 'IMPL_REVIEW') return 'implement';
+  // A changes-requested implementation review is consumed by the decision
+  // that returns the workflow to IMPLEMENTATION. The exact rejected digest
+  // remains the binding anchor for its still-unresolved repair feedback.
+  if (state.phase === 'IMPLEMENTATION' && state.implementationRework !== null) return 'implement';
   if (state.phase === 'PEER_REVIEW') return 'review';
   return null;
+}
+
+function feedbackCandidates(
+  assurance: ReviewAssuranceState,
+  obligationType: ReviewObligationType,
+  reworkDigest: string | undefined,
+) {
+  return assurance.obligations.filter(
+    (obligation) =>
+      obligation.obligationType === obligationType &&
+      isCurrentReviewGeneration(obligation) &&
+      obligation.invocationId !== null &&
+      obligation.fulfilledAt !== null &&
+      (reworkDigest !== undefined
+        ? obligation.status === 'consumed' &&
+          obligation.consumedAt !== null &&
+          obligation.subjectDigest === reworkDigest
+        : obligation.status === 'fulfilled' && obligation.consumedAt === null),
+  );
+}
+
+function validFeedbackInvocation(input: {
+  invocation: ReviewInvocationEvidence;
+  obligation: ReviewObligation;
+  hostSessionId: string;
+  reworkDigest: string | undefined;
+}): boolean {
+  const { invocation, obligation, hostSessionId, reworkDigest } = input;
+  const expectedConsumedBy = reworkDigest !== undefined ? obligation.obligationId : null;
+  return (
+    invocation.obligationId === obligation.obligationId &&
+    invocation.obligationType === obligation.obligationType &&
+    invocation.parentSessionId === hostSessionId &&
+    invocation.fulfilledAt !== null &&
+    invocation.consumedByObligationId === expectedConsumedBy &&
+    invocation.findingsHash === hashFindings(invocation.capturedRawFindings)
+  );
 }
 
 function resolveBoundReviewFeedbackEvidence(
   state: SessionState,
 ): BoundReviewFeedbackEvidence | null {
   const assurance = state.reviewAssurance;
-  const currentObligationType = currentReviewFeedbackObligationType(state);
-  if (!assurance || !currentObligationType) return null;
-
-  const candidates = assurance.obligations.filter(
-    (obligation) =>
-      obligation.status === 'fulfilled' &&
-      obligation.obligationType === currentObligationType &&
-      isCurrentReviewGeneration(obligation) &&
-      obligation.invocationId !== null &&
-      obligation.fulfilledAt !== null &&
-      obligation.consumedAt === null,
-  );
+  const obligationType = currentReviewFeedbackObligationType(state);
+  if (!assurance || !obligationType) return null;
+  const reworkDigest =
+    state.phase === 'IMPLEMENTATION' ? state.implementationRework?.rejectedDigest : undefined;
+  const candidates = feedbackCandidates(assurance, obligationType, reworkDigest);
   if (candidates.length !== 1) return null;
-
   const obligation = candidates[0];
   if (!obligation) return null;
   const invocation = assurance.invocations.find(
@@ -252,15 +371,14 @@ function resolveBoundReviewFeedbackEvidence(
   );
   if (
     !invocation ||
-    invocation.obligationId !== obligation.obligationId ||
-    invocation.obligationType !== obligation.obligationType ||
-    invocation.parentSessionId !== state.binding.hostSessionId ||
-    invocation.fulfilledAt === null ||
-    invocation.consumedByObligationId !== null ||
-    invocation.findingsHash !== hashFindings(invocation.capturedRawFindings)
-  ) {
+    !validFeedbackInvocation({
+      invocation,
+      obligation,
+      hostSessionId: state.binding.hostSessionId,
+      reworkDigest,
+    })
+  )
     return null;
-  }
   return { assurance, obligation, invocation };
 }
 
@@ -294,7 +412,10 @@ function hasBoundReviewFeedbackLineage(
   invocation: ReviewInvocationEvidence,
   findings: ReviewFindings,
 ): boolean {
-  const accepted = findAcceptedInvocationForFindings(assurance, obligation, findings);
+  const accepted =
+    invocation.consumedByObligationId === obligation.obligationId
+      ? invocation
+      : findAcceptedInvocationForFindings(assurance, obligation, findings);
   const attempt = assurance.attempts.find((item) => item.attemptId === invocation.attemptId);
   const dispatch = assurance.dispatches.find(
     (item) =>
@@ -312,9 +433,35 @@ function hasBoundReviewFeedbackLineage(
 }
 
 /**
- * Project only a bound changes-requested review that the owning command has not
- * consumed. Invalid, ambiguous, stale, or already-consumed evidence is omitted
- * rather than reconstructed from reviewer-authored state.
+ * Read-only critical-claim identities for the current plan. This supplies the
+ * author with the stable prior-claim references needed to document a revision;
+ * it is a projection, never admission authority.
+ */
+export function buildPlanClaimAuthorityProjection(
+  state: SessionState,
+): PlanClaimAuthorityProjection | null {
+  const plan = state.plan;
+  if (!plan) return null;
+  const claims = plan.claimDeclarations?.claims ?? [];
+  return {
+    planVersion: plan.current.planVersion,
+    subjectDigest: plan.current.digest,
+    criticalClaims: claims
+      .filter((claim) => claim.critical)
+      .map((claim) => ({
+        claimId: claim.claimId,
+        statement: claim.statement,
+        authoritySectionId: claim.authoritySectionId,
+      })),
+  };
+}
+
+/**
+ * Project only a bound changes-requested review. In a review phase that is the
+ * unconsumed review; in the IMPLEMENTATION rework state it is the exact
+ * consumed review whose subject digest is the rejected implementation digest.
+ * Invalid, ambiguous, stale, or unrelated-consumed evidence is omitted rather
+ * than reconstructed from reviewer-authored state.
  */
 export function buildReviewFeedbackProjection(
   state: SessionState,
@@ -360,8 +507,19 @@ export function buildReviewFeedbackProjection(
  * — no independent gating authority.
  */
 export function proofGraphGateRegistryCode(state: SessionState): string | null {
+  return projectEvidenceApprovalBlock(state)?.code ?? null;
+}
+
+/** Read-only projection of the SAME preflight enforced by explicit and automatic approval. */
+export function projectEvidenceApprovalBlock(state: SessionState): FormattedBlock | null {
   if (state.phase !== 'EVIDENCE_REVIEW') return null;
-  const decision = evaluateProofGraphGateFromState(state);
-  if (!decision.gated) return null;
-  return mapEnforcementReasonToRegistryCode(decision.reasonCode);
+  if (resolveExecutionDisposition(state) === 'blocked') return null;
+  const preflight = evaluateEvidenceApprovalPreflight(state);
+  if (preflight.kind === 'clear') return null;
+  const formatted = defaultReasonRegistry.format(preflight.code, preflight.params);
+  return {
+    ...formatted,
+    reason: preflight.reason ?? formatted.reason,
+    recovery: preflight.recovery ?? formatted.recovery,
+  };
 }

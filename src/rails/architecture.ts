@@ -34,7 +34,7 @@ import {
   DEFAULT_MAX_REVIEW_ITERATIONS,
 } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { blockedFromOverflow } from './auto-advance-overflow.js';
+import { blockedFromEvidenceApproval, blockedFromOverflow } from './auto-advance-overflow.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -139,6 +139,7 @@ export function executeArchitecture(
   if (advanced.kind === 'overflow') {
     return blockedFromOverflow(advanced);
   }
+  if (advanced.kind === 'blocked') return blockedFromEvidenceApproval(advanced);
   const { state: finalState, evalResult: result, transitions: advanceTransitions } = advanced;
   const transitions = [...preTransitions, ...advanceTransitions];
 

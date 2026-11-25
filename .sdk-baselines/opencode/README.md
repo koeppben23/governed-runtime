@@ -1,47 +1,45 @@
-# OpenCode SDK Baseline
+# Native OpenCode V2 API Baselines
 
-**Do not edit these files manually.**
+Generated declarations must be updated through `scripts/sdk-type-snapshot.mjs`.
+Active baselines pin exact `@opencode/plugin` and `@opencode/client` packages,
+not installed Desktop/CLI behavior or operator/reviewer assurance.
 
-These files are snapshots of the `@opencode-ai/plugin` type definitions at the
-pinned version. They are compared against the installed version in CI to detect
-SDK type drift.
-
-OpenCode host/Desktop compatibility is tracked separately through the
-`opencode-ai` package. Official OpenCode docs describe `opencode upgrade` and
-startup autoupdate behavior; CI disables autoupdate with
-`OPENCODE_DISABLE_AUTOUPDATE=1` so host tests run against the pinned package
-version recorded in `host-version.json`.
-
-| File                | Source                                             |
-| ------------------- | -------------------------------------------------- |
-| `plugin-index.d.ts` | `@opencode-ai/plugin/dist/index.d.ts`              |
-| `plugin-tool.d.ts`  | `@opencode-ai/plugin/dist/tool.d.ts`               |
-| `host-version.json` | OpenCode Desktop/host package compatibility target |
-| `docs-hashes.json`  | Hash baseline for OpenCode documentation sections  |
-
-## Updating the baseline
+| Files                                                        | Contract                                                                 |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| `plugin-{index,plugin,tool,session,event,registration}.d.ts` | Native Promise plugin definition, context, registrations and hooks       |
+| `client-event-contract.d.ts`                                 | `EventSubscribeOutput`, `V2Event`, member payloads and structured errors |
+| `client-message-contract.d.ts`                               | Raw session messages, native tool states/content and structured errors   |
+| `schema-tool.d.ts`                                           | Plugin tool context, result/content and error schema declarations        |
+| `version.json`                                               | Exact plugin/client package versions and normalized declaration hashes   |
+| `host-version.json`, `docs-hashes.json`                      | Retained old-generation host/docs baseline; **not V2 certification**     |
 
 ```bash
-node scripts/sdk-type-snapshot.mjs --update
-npm run update:opencode-sdk -- <sdk-version> <opencode-host-version>
-node scripts/docs-drift.mjs --update
+node scripts/sdk-type-snapshot.mjs
+npm run update:opencode-sdk -- <V2-version-or-tag>
 ```
 
-## Desktop update signal
+The update command requires matching native plugin/client releases and uses
+`npm install` to synchronize exact pins and the lockfile. It does not update
+host support constants, product versions, documentation tags, or historical
+probe bytes. A host-version argument is rejected. Missing package metadata
+fails explicitly; no `unknown` version or latest-SDK comparison bypass exists.
 
-After accepting an OpenCode Desktop update locally, check whether the local host
-version is newer than this repository's host baseline:
+Scheduled API-candidate checks regenerate a candidate baseline and run contract
+and regression checks; changing those declarations is not proof of installed
+host behavior. The API update workflow opens a **Draft** PR, never certifies a
+host or closes operator/reviewer acceptance gates.
 
-```bash
-npm run check:opencode-host
-```
+`check:opencode-host` validates `cli-candidate.json` and compares the exact native
+CLI version output; it does not certify ACTIVE product or Desktop support.
+`OPENCODE_CLI` may name the executable, but cannot change the expected version.
+The obsolete host-update trigger was removed; API updates never adopt a host.
 
-If drift is detected, trigger the governed GitHub workflow instead of changing
-baselines locally:
-
-```bash
-npm run trigger:opencode-host-update
-```
-
-The trigger only starts `opencode-sdk-update.yml`; the workflow remains the
-authority that regenerates baselines and opens a PR after CI gates pass.
+**V2 documentation drift: NOT_VERIFIED.** No verified revisions/document set/hash
+contract has been adopted for V2 docs. `docs-drift.yml` is manual historical V1
+integrity only, not scheduled or part of V2 acceptance. Its explicit command is
+`node scripts/docs-drift.mjs --historical --verbose`; unqualified invocation fails
+with `NOT_VERIFIED`. Historical baseline bytes cannot be rewritten by the tool.
+A historical match never implies V2 documentation coverage or SDK compatibility.
+Investigate changed bytes against the original tag commit as an integrity issue;
+the API-only SDK updater does not update this host pin or docs evidence.
+See `docs/host-probes/opencode-v2/` for separately scoped acceptance gates.

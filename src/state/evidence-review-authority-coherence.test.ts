@@ -1,3 +1,5 @@
+import { messageCaptureFixture } from '../review-invocation-test-helpers.js';
+
 /**
  * @module evidence-review-authority-coherence.test
  * @description Current-epoch authority boundary tests: obligation/authority
@@ -203,7 +205,13 @@ describe('Current persisted authority schemas are strict', () => {
     parentSessionId: 'ses_parent',
     childSessionId: 'ses_child',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'native_task_structured_followup' as const,
+    invocationMode: 'native_task_message_json' as const,
+    transportVersion: 5 as const,
+    capture: messageCaptureFixture({
+      childSessionId: 'ses_child',
+      obligationId: FIXED_UUID,
+      attemptId: '22222222-2222-4222-8222-222222222222',
+    }),
     hostVisible: true,
     transcriptNavigable: true,
     source: 'host-orchestrated' as const,
@@ -216,9 +224,8 @@ describe('Current persisted authority schemas are strict', () => {
     consumedByObligationId: null,
     attemptId: '22222222-2222-4222-8222-222222222222',
     capturedRawFindings: { overallVerdict: 'accept' },
-    reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high' as const,
+    reviewOutputMode: 'validated_json' as const,
+    reviewAssuranceLevel: 'host_message_validated' as const,
   };
 
   const VALID_ATTEMPT = {
@@ -507,7 +514,13 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     childSessionId: 'ses_child',
     agentType: 'flowguard-reviewer',
     attemptId: REJECTED_ATTEMPT_ID,
-    invocationMode: 'native_task_structured_followup' as const,
+    invocationMode: 'native_task_message_json' as const,
+    transportVersion: 5 as const,
+    capture: messageCaptureFixture({
+      childSessionId: 'ses_child',
+      obligationId: FIXED_UUID,
+      attemptId: REJECTED_ATTEMPT_ID,
+    }),
     hostVisible: true as const,
     transcriptNavigable: true as const,
     promptHash: 'b'.repeat(64),
@@ -520,9 +533,8 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     consumedByObligationId: null,
     capturedRawFindings: { overallVerdict: 'accept', blockingIssues: [{}] },
     source: 'host-orchestrated' as const,
-    reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true as const,
-    reviewAssuranceLevel: 'structured_high' as const,
+    reviewOutputMode: 'validated_json' as const,
+    reviewAssuranceLevel: 'host_message_validated' as const,
   };
 
   /** Completed dispatch closing the BOUND_INVOCATION host release. */
@@ -977,7 +989,13 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
       parentSessionId: 'ses_parent',
       childSessionId: 'ses_child',
       agentType: 'flowguard-reviewer' as const,
-      invocationMode: 'native_task_structured_followup' as const,
+      invocationMode: 'native_task_message_json' as const,
+      transportVersion: 5 as const,
+      capture: messageCaptureFixture({
+        childSessionId: 'ses_child',
+        obligationId: FIXED_UUID,
+        attemptId: ATTEMPT_ID,
+      }),
       hostVisible: true,
       transcriptNavigable: true,
       source: 'host-orchestrated' as const,
@@ -990,9 +1008,8 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
       consumedByObligationId: null,
       attemptId: ATTEMPT_ID,
       capturedRawFindings: { overallVerdict: 'accept' },
-      reviewOutputMode: 'structured_output' as const,
-      structuredOutputUsed: true,
-      reviewAssuranceLevel: 'structured_high' as const,
+      reviewOutputMode: 'validated_json' as const,
+      reviewAssuranceLevel: 'host_message_validated' as const,
       ...overrides,
     };
   }

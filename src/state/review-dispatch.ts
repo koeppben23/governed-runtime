@@ -8,7 +8,7 @@
  * This module owns the append-only ledger mutators used by every controlled
  * writer (`appendReviewDispatch`, `markDispatchOutcomeUnknown`,
  * `completeReviewDispatch`, `abandonReviewDispatch`,
- * `rebindReviewDispatchHostCall`, `hasReleasedDispatch`)
+ * `hasReleasedDispatch`)
  * together with the shared base `emptyReviewAssurance` /
  * `ensureReviewAssurance` constructors.
  *
@@ -27,6 +27,7 @@ import {
   REVIEW_ASSURANCE_SCHEMA_VERSION,
   type ReviewAssuranceState,
   type ReviewDispatchRecord,
+  type ReviewObligation,
 } from './evidence-review.js';
 
 /**
@@ -111,28 +112,6 @@ export function completeReviewDispatch(
   };
 }
 
-/**
- * Re-key an authorized dispatch from its pre-release host-call identity to the
- * bound child session identity. Native Task releases are authorized under the
- * Task call ID before the child exists; evidence binding then rebinds the same
- * authorized record to the exact child session in the same mutation.
- */
-export function rebindReviewDispatchHostCall(
-  assurance: ReviewAssuranceState | undefined,
-  fromHostCallId: string,
-  toHostCallId: string,
-): ReviewAssuranceState {
-  const base = ensureReviewAssurance(assurance);
-  return {
-    ...base,
-    dispatches: (base.dispatches ?? []).map((record) =>
-      record.hostCallId === fromHostCallId && record.dispatchStatus === 'authorized'
-        ? { ...record, hostCallId: toHostCallId }
-        : record,
-    ),
-  };
-}
-
 /** Whether a durable `authorized` dispatch exists for the exact host call and attempt. */
 export function hasAuthorizedDispatch(
   assurance: ReviewAssuranceState | undefined,
@@ -169,16 +148,77 @@ export function abandonReviewDispatch(
 }
 
 /**
- * True when the session carries a review obligation that is not consumed.
+ * True when a review obligation is open work: `pending` (awaiting dispatch) or
+ * `fulfilled` (evidence bound, awaiting verdict/consumption). Terminal states
+ * are never open work: `consumed` completed the obligation, and `blocked` is
+ * the runtime's deterministic closing of an unrepairable obligation whose
+ * documented recovery is a fresh obligation — it stays visible as a failed
+ * historical outcome but must never block open-work gates.
+ *
+ * SSOT: local reconstructions of this predicate are forbidden outside this
+ * authority; every open-work consumer imports this helper.
+ */
+export function isOpenReviewObligation(obligation: ReviewObligation): boolean {
+  return (
+    (obligation.status === 'pending' || obligation.status === 'fulfilled') &&
+    obligation.consumedAt == null
+  );
+}
+
+/**
+ * True when the session carries an open review obligation.
  * Canonical for every consumer that must fail closed on outstanding review
- * work (message phase gate, reduced-ceremony guard).
+ * work (mutating host-tool gates, reduced-ceremony guard and binding).
  */
 export function hasOutstandingReviewObligation(
   assurance: ReviewAssuranceState | null | undefined,
 ): boolean {
+  return assurance?.obligations.some(isOpenReviewObligation) ?? false;
+}
+
+/**
+ * Blocked codes that mark an integrity incident rather than a deterministic
+ * transport/exhaustion failure. A reused reviewer-evidence binding is the
+ * canonical integrity incident: the evidence lineage was compromised, so the
+ * per-obligation recovery (fresh obligation) must never silently restore
+ * session-level ceremony eligibility.
+ *
+ * The vocabulary stays private to this authority; consumers ask the predicate,
+ * never compare codes locally.
+ */
+const INTEGRITY_INCIDENT_BLOCKED_CODES: ReadonlySet<string> = new Set(['SUBAGENT_EVIDENCE_REUSED']);
+
+/**
+ * True while the session carries an unresolved integrity incident.
+ *
+ * D7 (#1028): this is deliberately separate from {@link isOpenReviewObligation}.
+ * `blocked` stays terminal and historically failed; open work stays defined by
+ * pending/fulfilled alone. The integrity predicate instead gates authorization
+ * decisions that a terminal block would otherwise free (reduced-ceremony
+ * eligibility and the approval waiver).
+ *
+ * Recovery contract: an incident stays authorization-relevant until an
+ * explicitly permitted recovery resolves it traceably. The persisted state has
+ * no incident timestamp (`blockedAt`) and the rejected reuse attempt is not
+ * persisted, so a later obligation or invocation cannot be proven to have
+ * happened after the incident with existing authorities. Per the fail-closed
+ * contract the projection therefore never auto-resolves an incident from later
+ * evidence; a new obligation alone must never clear the block. Recovery is a
+ * fresh governed session; within the incident session the full-ceremony review
+ * path remains available, only the reduced-ceremony shortcut is withheld.
+ *
+ * SSOT: this is the only integrity-incident predicate; local reconstructions
+ * (code comparisons) outside this authority are forbidden.
+ */
+export function hasUnresolvedIntegrityIncident(
+  assurance: ReviewAssuranceState | null | undefined,
+): boolean {
   return (
     assurance?.obligations.some(
-      (obligation) => obligation.status !== 'consumed' && obligation.consumedAt == null,
+      (obligation) =>
+        obligation.status === 'blocked' &&
+        obligation.blockedCode !== null &&
+        INTEGRITY_INCIDENT_BLOCKED_CODES.has(obligation.blockedCode),
     ) ?? false
   );
 }

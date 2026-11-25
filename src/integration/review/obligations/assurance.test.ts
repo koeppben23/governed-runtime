@@ -18,7 +18,6 @@ import {
   appendReviewObligation,
   findLatestObligation,
   consumeReviewObligation,
-  buildInvocationEvidence,
   hasEvidenceReuse,
   findAcceptedInvocationForFindings,
   validateStrictAttestation,
@@ -41,6 +40,7 @@ import type {
 import type { ReviewAttempt } from '../../../state/evidence-review.js';
 import { ReviewInvocationEvidence as ReviewInvocationEvidenceSchema } from '../../../state/evidence.js';
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../../../review-invocation-test-helpers.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -521,9 +521,9 @@ describe('integration/review-assurance', () => {
       );
       const fresh = makeObligation();
 
-      expect(REVIEW_CRITERIA_VERSION).toBe('p42-v1');
+      expect(REVIEW_CRITERIA_VERSION).toBe('p42-v7');
       expect(assurance.obligations).toEqual(priorObligations);
-      expect(fresh.criteriaVersion).toBe('p42-v1');
+      expect(fresh.criteriaVersion).toBe('p42-v7');
       expect(fresh.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
     });
   });
@@ -1022,11 +1022,12 @@ describe('integration/review-assurance', () => {
       expect(result.agentType).toBe(REVIEWER_SUBAGENT_TYPE);
       expect(result.mandateDigest).toBe(FIXTURE_MANDATE_DIGEST);
       expect(result.consumedByObligationId).toBeNull();
-      expect(result.invocationMode).toBe('native_task_structured_followup');
+      expect(result.invocationMode).toBe('native_subagent_message_json');
       expect(result.source).toBe('host-orchestrated');
-      expect(result.reviewOutputMode).toBe('structured_output');
-      expect(result.structuredOutputUsed).toBe(true);
-      expect(result.reviewAssuranceLevel).toBe('structured_high');
+      expect(result.reviewOutputMode).toBe('validated_json');
+      expect(result.transportVersion).toBe(6);
+      expect(result.nativeProvenance?.nativeCallId).toBe('child-1');
+      expect(result.reviewAssuranceLevel).toBe('host_message_validated');
       expect(result.capturedRawFindings).toEqual(SAMPLE_RAW_FINDINGS);
       expect(result.capturedVerdict).toBe('accept');
     });

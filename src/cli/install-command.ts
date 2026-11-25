@@ -10,21 +10,23 @@ import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { defaultReasonRegistry } from '../config/reasons.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { CliInstallError } from './errors.js';
-import type { CliArgs, CliResult, FileOp } from './install-types.js';
+import type { CliArgs, CliError, CliResult, FileOp } from './install-types.js';
 import type { RollbackEntry as InstallRollbackEntry } from './install-helpers-rollback.js';
 import { rollbackArtifacts, snapshotForRollback } from './install-helpers-rollback.js';
-import { toCliError } from './install-helpers.js';
+import { InstallError, toCliError } from './install-helpers.js';
 import {
   assertManagedMandatesOwnership,
-  assertNoAmbiguousLegacyInstruction,
+  assertNativeOpenCodeInstallTarget,
   deriveInstallOwnershipManifest,
   ownershipManifestPath,
+  readInstallOwnershipManifest,
   type InstallOwnershipManifest,
   writeInstallOwnershipManifest,
 } from './install-ownership.js';
+import { claudeCodePluginFilePaths } from './claude-code-plugin-install.js';
+import { codexPluginFilePaths } from './codex-plugin-install.js';
 import type { InstallContext, SnapshotResult } from './install-steps.js';
 import {
   buildRollbackSnapshot,
@@ -34,6 +36,7 @@ import {
   validateTarball,
   writeArtifacts,
   writeConfigFiles,
+  publishOpencodePlugin,
 } from './install-steps.js';
 import {
   commitDependencyTransaction,
@@ -46,8 +49,6 @@ import {
   recoverOrAbort,
   rollbackDependencyTransaction,
 } from './install-transaction-rollback.js';
-import { classifyOpenCodeRuntime } from './opencode-runtime-compat.js';
-import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
 
 const DEFAULT_LOCK = join(homedir(), '.config', 'opencode', '.flowguard-install.lock');
 
@@ -174,10 +175,11 @@ async function rollbackSnap(
   snapshot: SnapshotResult | null,
   ops: FileOp[],
   errors: string[],
+  errorDetails: CliError[],
 ): Promise<void> {
   if (!snapshot) return;
   try {
-    await rollbackArtifacts(snapshot.mutationJournal.deduplicated(), ops, errors);
+    await rollbackArtifacts(snapshot.mutationJournal.deduplicated(), ops, errors, errorDetails);
   } catch (err) {
     errors.push(`Artifact rollback failed: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -216,6 +218,49 @@ function alreadyInstalledResult(ctx: InstallContext): CliResult {
   };
 }
 
+/**
+ * Fail closed before any mutation when a non-OpenCode target already carries
+ * any plugin artifact the installer would write via writeIfAbsent but no
+ * flowguard.json — i.e. a partial or unproven install. Checking every artifact
+ * (not only the plugin manifest) is required because a stale hooks/hooks.json,
+ * .mcp.json, or dist hook would otherwise be silently skipped while the rest
+ * of the install reports success. A valid ownership manifest for the same
+ * host/scope proves this is an incomplete FlowGuard install; otherwise the
+ * material is unproven and may be customer-owned. `--force` is the explicit
+ * repair path.
+ */
+async function assertNoPartialNonOpencodeInstall(ctx: InstallContext): Promise<void> {
+  if (ctx.installPlatform === 'opencode' || ctx.args.force) return;
+
+  const artifactPaths =
+    ctx.installPlatform === 'claude-code'
+      ? claudeCodePluginFilePaths(ctx.target)
+      : codexPluginFilePaths(ctx.args.installScope);
+  const present = artifactPaths.filter((candidate) => existsSync(candidate));
+  if (present.length === 0) return;
+
+  const preview =
+    present.length > 3
+      ? `${present.slice(0, 3).join(', ')} (+${present.length - 3} more)`
+      : present.join(', ');
+
+  const ownership = await readInstallOwnershipManifest(ctx.target);
+  if (
+    ownership !== null &&
+    ownership.platform === ctx.installPlatform &&
+    ownership.scope === ctx.args.installScope
+  ) {
+    throw new InstallError(
+      'PARTIAL_INSTALL_CONFLICT',
+      `An incomplete FlowGuard install was detected at ${ctx.target}: ${preview} exist but the FlowGuard config is missing. Re-run with --force to repair it, or run uninstall first.`,
+    );
+  }
+  throw new InstallError(
+    'MANAGED_ARTIFACT_CONFLICT',
+    `${preview} exist but are not proven FlowGuard-managed artifacts; refusing to merge into customer-owned material. Move or rename them, then retry.`,
+  );
+}
+
 export async function install(args: CliArgs): Promise<CliResult> {
   let lock: { release(): void } | null = null;
   try {
@@ -242,57 +287,8 @@ export async function install(args: CliArgs): Promise<CliResult> {
   }
 }
 
-async function enforceInstructionSourceCompat(ctx: InstallContext): Promise<void> {
-  if (ctx.installPlatform !== 'opencode') return;
-
-  const evidence = await detectOpenCodeRuntimeEvidence({
-    scope: ctx.args.installScope,
-    platform: 'opencode',
-    target: ctx.target,
-  });
-  const classification = classifyOpenCodeRuntime(evidence);
-
-  if (classification.status === 'known-unsupported') {
-    const formatted = defaultReasonRegistry.format('OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED', {
-      runtimeLine: evidence.runtimeLine ?? 'unknown',
-      version: evidence.version ?? 'unknown',
-    });
-    ctx.warnings.push(
-      'The detected OpenCode runtime is known not to resolve instruction sources — installation was blocked before artifacts were written.',
-    );
-    ctx.errors.push(formatted.reason);
-    ctx.errorDetails.push({ message: formatted.reason });
-    return;
-  }
-
-  ctx.notices.push({
-    kind: 'status',
-    message:
-      'FlowGuard mandates are configured for OpenCode. Activation depends on the runtime ' +
-      'loading instructions[] into the agent context; install does not verify this. ' +
-      'A present instructions[] entry does not prove activation.',
-  });
-}
-
-function assertLegacyBoundary(ctx: InstallContext, snapshot: SnapshotResult): void {
-  const configPreState = snapshotEntry(snapshot, snapshot.cfgPath);
-  const opencodePreState = snapshot.opencodeJsonPath
-    ? snapshotEntry(snapshot, snapshot.opencodeJsonPath)
-    : null;
-  assertNoAmbiguousLegacyInstruction({
-    platform: ctx.installPlatform,
-    verifiedReinstall: ctx.args.force && configPreState.existed,
-    ...(opencodePreState?.originalContent !== undefined
-      ? { opencodeOriginalContent: opencodePreState.originalContent }
-      : {}),
-  });
-}
-
 function deriveOwnership(ctx: InstallContext, snapshot: SnapshotResult): InstallOwnershipManifest {
   const packagePreState = snapshotEntry(snapshot, snapshot.pkgPath);
-  const opencodePreState = snapshot.opencodeJsonPath
-    ? snapshotEntry(snapshot, snapshot.opencodeJsonPath)
-    : null;
   return deriveInstallOwnershipManifest({
     platform: ctx.installPlatform,
     scope: ctx.args.installScope,
@@ -301,12 +297,6 @@ function deriveOwnership(ctx: InstallContext, snapshot: SnapshotResult): Install
       ? { packageJsonOriginalContent: packagePreState.originalContent }
       : {}),
     packageJsonCurrentContent: readFileSync(snapshot.pkgPath, 'utf-8'),
-    ...(opencodePreState?.originalContent !== undefined
-      ? { opencodeOriginalContent: opencodePreState.originalContent }
-      : {}),
-    opencodeCurrentContent: snapshot.opencodeJsonPath
-      ? readFileSync(snapshot.opencodeJsonPath, 'utf-8')
-      : null,
   });
 }
 
@@ -334,11 +324,31 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
   try {
     const configTargetDir = resolveConfigTargetDir(ctx);
     await recoverOrAbort(configTargetDir);
-    await enforceInstructionSourceCompat(ctx);
-    if (ctx.errors.length > 0) return resultFromContext(ctx);
+    if (ctx.installPlatform === 'opencode') {
+      await assertNativeOpenCodeInstallTarget(ctx.target, [
+        ctx.target,
+        ...(args.installScope === 'repo' ? [process.cwd()] : []),
+      ]);
+    }
+    if (existsSync(ownershipManifestPath(ctx.target))) {
+      const ownership = await readInstallOwnershipManifest(ctx.target);
+      if (!ownership) {
+        throw new CliInstallError(
+          'OWNERSHIP_MANIFEST_INVALID',
+          'Unsupported installer ownership format; archive the old installation and evidence byte-for-byte before a fresh installation. --force does not migrate provenance.',
+        );
+      }
+      if (ownership.platform !== ctx.installPlatform || ownership.scope !== args.installScope) {
+        throw new CliInstallError(
+          'OWNERSHIP_MANIFEST_SCOPE_MISMATCH',
+          'Existing installer provenance belongs to another host/scope; preserving it.',
+        );
+      }
+    }
 
     const cfgPath = join(configTargetDir, 'flowguard.json');
     if (existsSync(cfgPath) && !args.force) return alreadyInstalledResult(ctx);
+    await assertNoPartialNonOpencodeInstall(ctx);
 
     await runInstallPreflight(ctx, configTargetDir);
     const tarball = await validateTarball(ctx);
@@ -346,7 +356,6 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
 
     snapshot = await buildRollbackSnapshot(ctx, tarball.name);
     await assertManagedMandatesOwnership(snapshot.mandatesPath);
-    assertLegacyBoundary(ctx, snapshot);
     await writeArtifacts(ctx, tarball, snapshot);
     await writeConfigFiles(ctx, snapshot);
     const ownership = deriveOwnership(ctx, snapshot);
@@ -354,6 +363,7 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
     tx = await createDependencyTransaction(snapshot, snapshot.vendorTarballPath);
     await executeDependencyTransaction(tx);
     await persistOwnership(ctx, snapshot, ownership);
+    if (ctx.installPlatform === 'opencode') await publishOpencodePlugin(ctx, snapshot);
     await commitDependencyTransaction(tx, ctx);
 
     emitPostInstallWarnings(ctx);
@@ -363,7 +373,7 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
     ctx.errors.push(formattedError);
     ctx.errorDetails.push(toCliError(error));
     await rollbackDeps(tx, ctx.errors);
-    await rollbackSnap(snapshot, ctx.ops, ctx.errors);
+    await rollbackSnap(snapshot, ctx.ops, ctx.errors, ctx.errorDetails);
     getAdapterLogger().error('cli', 'install command failed', { error: formattedError });
     return resultFromContext(ctx);
   }

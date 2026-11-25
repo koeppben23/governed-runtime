@@ -59,7 +59,13 @@ import {
   isEnoent,
   atomicWrite,
 } from './persistence.js';
-import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
+import {
+  appendAuditEvent,
+  appendAuditEventAlreadyLocked,
+  readAuditTrail,
+  resetAuditAppendCacheForTests,
+  withAuditTrailLock,
+} from './persistence-audit.js';
 import type { SessionState } from '../state/schema.js';
 import type { AuditEvent, AuditEventBody, ReviewReport } from '../state/evidence.js';
 import { withTestEnv } from '../integration/test-helpers.js';
@@ -75,7 +81,7 @@ import { initWorkspace, archiveSession } from './workspace/index.js';
 import { benchmarkSync, measureAsync, PERF_BUDGETS } from '../test-policy.js';
 import { verifyChain } from '../audit/integrity.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
-import { CURRENT_AUDIT_FORMAT_VERSION } from '../audit/types.js';
+import { computeChainHash, CURRENT_AUDIT_FORMAT_VERSION, GENESIS_HASH } from '../audit/types.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -108,6 +114,24 @@ function makeValidAuditEvent(overrides: Partial<AuditEventBody> = {}): AuditEven
     detail: { kind: 'transition', from: 'TICKET', to: 'PLAN' },
     ...overrides,
   };
+}
+
+/** Build a fully chained canonical event for damaged-trail fixtures. */
+function chainedAuditEvent(
+  body: AuditEventBody,
+  auditSequence: number,
+  prevHash: string,
+): Record<string, unknown> {
+  const withPosition = {
+    ...body,
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
+    auditSequence,
+    recordedAt: FIXED_TIME,
+    prevHash,
+  };
+  const semanticEventDigest = computeCanonicalEventDigest(withPosition);
+  const finalized = { ...withPosition, semanticEventDigest };
+  return { ...finalized, chainHash: computeChainHash(prevHash, finalized) };
 }
 
 /** Create a minimal valid ReviewReport for persistence tests. */
@@ -405,6 +429,56 @@ describe('persistence', () => {
       expect(events).toHaveLength(0);
     });
 
+    it('invalidates the in-process append proof when the persisted trail changes', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      const filePath = auditPath(tmpDir);
+      const raw = await fs.readFile(filePath, 'utf-8');
+      const first = JSON.parse(raw.trim()) as Record<string, unknown>;
+      const chainHash = String(first['chainHash']);
+      first['chainHash'] = `${chainHash.charAt(0) === 'a' ? 'b' : 'a'}${chainHash.slice(1)}`;
+      // The extra delimiter changes the file identity and leaves a readable but
+      // cryptographically invalid first record.
+      await fs.writeFile(filePath, `${JSON.stringify(first)}\n\n`, 'utf-8');
+
+      await expect(
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+      ).rejects.toThrow(/invalid audit chain at sequence 1/i);
+    });
+
+    it('rejects a persisted trail containing duplicate event identities', async () => {
+      const duplicateId = crypto.randomUUID();
+      const first = chainedAuditEvent(
+        makeValidAuditEvent({ id: duplicateId, event: 'first' }),
+        1,
+        GENESIS_HASH,
+      );
+      const second = chainedAuditEvent(
+        makeValidAuditEvent({ id: duplicateId, event: 'second' }),
+        2,
+        String(first['chainHash']),
+      );
+      await fs.writeFile(
+        auditPath(tmpDir),
+        `${JSON.stringify(first)}\n${JSON.stringify(second)}\n`,
+        'utf-8',
+      );
+
+      await expect(
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+      ).rejects.toThrow(/duplicate event id/i);
+    });
+
+    it('refuses to silently restart a chain after the persisted file disappears', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      await fs.unlink(auditPath(tmpDir));
+      resetAuditAppendCacheForTests();
+
+      await expect(
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+      ).rejects.toThrow(/explicit recovery is required/i);
+      expect(await readAuditTrail(tmpDir)).toHaveLength(0);
+    });
+
     // ── CORNER ──────────────────────────────────────────────
 
     it('recovers a dead-process audit lock before appending', async () => {
@@ -435,6 +509,42 @@ describe('persistence', () => {
       } finally {
         restoreRename();
       }
+    });
+
+    it('BAD: rejects append to a valid JSONL record lacking the final newline', async () => {
+      const first = makeValidAuditEvent({ id: crypto.randomUUID() });
+      const second = makeValidAuditEvent({ id: crypto.randomUUID() });
+      await appendAuditEvent(tmpDir, first);
+      const file = auditPath(tmpDir);
+      const canonical = await fs.readFile(file, 'utf-8');
+      expect(canonical.endsWith('\n')).toBe(true);
+      const unterminated = canonical.slice(0, -1);
+      await fs.writeFile(file, unterminated, 'utf-8');
+
+      await expect(appendAuditEvent(tmpDir, second)).rejects.toMatchObject({
+        code: 'AUDIT_ENVELOPE_INVALID',
+      });
+      expect(await fs.readFile(file, 'utf-8')).toBe(unterminated);
+      const persisted = await readAuditTrail(tmpDir);
+      expect(persisted).toHaveLength(1);
+      expect(verifyChain(persisted).valid).toBe(true);
+    });
+
+    it('EDGE: already-locked append refuses an unterminated audit record', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      const file = auditPath(tmpDir);
+      const canonical = await fs.readFile(file, 'utf-8');
+      const unterminated = canonical.slice(0, -1);
+      await fs.writeFile(file, unterminated, 'utf-8');
+
+      const appendUnderLock = () =>
+        withAuditTrailLock(tmpDir, () =>
+          appendAuditEventAlreadyLocked(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+        );
+      await expect(appendUnderLock()).rejects.toMatchObject({
+        code: 'AUDIT_ENVELOPE_INVALID',
+      });
+      expect(await fs.readFile(file, 'utf-8')).toBe(unterminated);
     });
 
     it('fsyncs the audit directory so a committed append survives a crash after the rename', async () => {

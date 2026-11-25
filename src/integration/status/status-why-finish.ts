@@ -18,32 +18,22 @@ import {
 } from '../../machine/workflow-directive.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
-import { projectStatusActionFromCommand } from './status-conclusion.js';
+import {
+  projectApprovalBlockedConclusion,
+  projectStatusActionFromCommand,
+  projectStatusConclusion,
+  projectDirectiveBlock,
+  projectWorkflowChoiceConclusion,
+  type StatusConclusionProjection,
+} from './status-conclusion.js';
+import { projectEvidenceApprovalBlock } from './status-detail-projections.js';
 import { directiveLabel, type PresentationAction } from '../../presentation/index.js';
 import type { BlockedProjection, FinishCard } from './status-types.js';
 import { projectProofStatusForState } from '../proofgraph/proof-summary-projectors.js';
-import { IntegrationInvariantError } from '../errors.js';
 
 // ─── /why Projection Types ─────────────────────────────────────────────────────
 
-export type WhyConclusionProjection =
-  | {
-      readonly kind: 'next_action';
-      readonly action: PresentationAction;
-    }
-  | {
-      readonly kind: 'terminal';
-      readonly message: string;
-    }
-  | {
-      readonly kind: 'decision_required';
-      readonly question: string;
-      readonly actions: readonly PresentationAction[];
-    }
-  | {
-      readonly kind: 'review_pending';
-      readonly message: string;
-    };
+export type WhyConclusionProjection = StatusConclusionProjection;
 
 export interface WhyPresentationProjection {
   readonly phase: string;
@@ -65,6 +55,17 @@ export type FinishConclusionProjection =
   | {
       readonly kind: 'next_action';
       readonly action: PresentationAction;
+    }
+  | {
+      readonly kind: 'decision_required';
+      readonly question: string;
+      readonly actions: readonly PresentationAction[];
+    }
+  | {
+      /** The approval preflight refuses approval: its canonical recovery, never /approve. */
+      readonly kind: 'recovery';
+      readonly message: string;
+      readonly steps: readonly string[];
     }
   | {
       readonly kind: 'terminal';
@@ -102,53 +103,19 @@ export function buildWhyPresentationProjection(
     blocker,
     evidenceSlots,
     proofSummary: projectProofStatusForState(state),
-    conclusion: buildWhyConclusion(evalResult, directive),
+    conclusion: buildWhyConclusion(state, evalResult, directive),
   };
 }
 
 function buildWhyConclusion(
+  state: SessionState,
   evalResult: ReturnType<typeof evaluate>,
   directive: WorkflowDirective,
 ): WhyConclusionProjection {
-  if (directive.kind === 'system_work') {
-    return { kind: 'review_pending', message: directiveLabel(directive.code) };
-  }
-  const command = directive.commands[0];
-
-  switch (evalResult.kind) {
-    case 'waiting': {
-      const actions = directive.commands.map((c) => projectStatusActionFromCommand(c, 'available'));
-      if (actions.length === 0) {
-        throw new IntegrationInvariantError(
-          'WHY_DECISION_PROJECTION_EMPTY',
-          `WhyProjection: waiting gate has no canonical decision actions: ${evalResult.reason}`,
-        );
-      }
-      return { kind: 'decision_required', question: evalResult.reason, actions };
-    }
-
-    case 'pending':
-    case 'transition': {
-      if (!command) {
-        return { kind: 'terminal', message: directiveLabel(directive.code) };
-      }
-      return {
-        kind: 'next_action',
-        action: projectStatusActionFromCommand(command, 'recommended'),
-      };
-    }
-
-    case 'terminal': {
-      const nextCmd = directive.commands[0];
-      if (!nextCmd) {
-        return { kind: 'terminal', message: directiveLabel(directive.code) };
-      }
-      return {
-        kind: 'next_action',
-        action: projectStatusActionFromCommand(nextCmd, 'recommended'),
-      };
-    }
-  }
+  // The same preflight full status uses: never offer an approval it refuses.
+  const approvalBlock = projectEvidenceApprovalBlock(state);
+  if (approvalBlock) return projectApprovalBlockedConclusion(approvalBlock, directive);
+  return projectStatusConclusion(evalResult, directive);
 }
 
 // ─── /finish Builder ───────────────────────────────────────────────────────────
@@ -165,6 +132,16 @@ export function buildFinishPresentationProjection(
 
 function buildFinishConclusion(state: SessionState): FinishConclusionProjection {
   const directive = resolveWorkflowDirective(state);
+  const directiveBlock = projectDirectiveBlock(directive);
+  if (directiveBlock)
+    return { kind: 'recovery', message: directiveBlock.reason, steps: directiveBlock.recovery };
+  // The finish card is BLOCKED while the approval preflight refuses approval;
+  // its conclusion is the preflight's own recovery, never a recommended /approve.
+  const approvalBlock = projectEvidenceApprovalBlock(state);
+  if (approvalBlock) {
+    return { kind: 'recovery', message: approvalBlock.reason, steps: [...approvalBlock.recovery] };
+  }
+  if (directive.code === 'CHOOSE_FLOW') return projectWorkflowChoiceConclusion();
   const command = directive.commands[0];
 
   if (command !== undefined) {

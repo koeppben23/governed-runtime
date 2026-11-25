@@ -25,7 +25,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { repoRelative } from './repo-path.js';
+import { repoRelative } from '../support/repo-path.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 
@@ -45,11 +45,6 @@ interface SinglePhaseAllowance {
 }
 
 const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
-  {
-    file: 'rails/continue.ts',
-    max: 1,
-    reason: 'attaches ADR status only on the architecture-flow terminal ARCH_COMPLETE',
-  },
   {
     file: 'integration/services/decision-finalization.ts',
     max: 2,
@@ -98,6 +93,12 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
     max: 1,
     reason:
       'flow-specific contention re-read: the export rail can only have produced the ticket-flow COMPLETE position after materialization',
+  },
+  {
+    file: 'integration/diagnostics/review-subject-selection.ts',
+    max: 3,
+    reason:
+      'flow-specific subject selection: PEER_REVIEW_COMPLETE, ARCH_COMPLETE, and COMPLETE identify the displayed flow terminal subject, not terminal membership',
   },
 ];
 

@@ -1,0 +1,62 @@
+{
+  "observedDate": "2026-11-01",
+  "scope": "Published-source and CI-artifact identity; bounded local installed CLI lifecycle only",
+  "decision": "NO-GO",
+  "publication": {
+    "pr": 1190,
+    "draft": true,
+    "head": "1750b6b1e31d08a979a4e12932d9d0d5f3c2fd23",
+    "ciMerge": "31e6b320a3071d5767e4594b1bbe049af312fce5",
+    "ciBase": "bd05351f3d04f592c3d865895e7c4283d74f623c",
+    "headAndMergeTree": "e553a41233973a409edb6200c5e36ede73b61298",
+    "ciRun": 41282275657,
+    "ciConclusion": "failure",
+    "evalRun": 41282275684,
+    "evalConclusion": "failure"
+  },
+  "artifact": {
+    "ciArtifactID": 13074340309,
+    "ciArtifactName": "dist",
+    "ciZipSha256": "4a88ad0df66be9ce4c2c5acf0cb112a35f0b154ae0a0f92e7715980bb30a7979",
+    "githubDigestMatchesDownloadedBytes": true,
+    "tarball": "flowguard-core-2.0.0-tp.2.tgz",
+    "tarballSha256": "20a189ac2eb869137cc8dc761ed4bff000b6f8bb4728d376f5b78ba03e7d9f85",
+    "packMethod": "Local npm pack of exact published-head metadata plus downloaded CI dist; not a CI-uploaded npm release",
+    "distFileCount": 2889,
+    "allPackagedDistBytesMatchCiZip": true,
+    "buildInfo": {
+      "version": "2.0.0-tp.2",
+      "gitSha": "31e6b320a3071d5767e4594b1bbe049af312fce5",
+      "gitShaSource": "git",
+      "builtAt": "2026-11-01T06:49:07.364Z"
+    },
+    "originalPrecommitSmokeTarballDigest": "NOT_VERIFIED: disposable artifact was not retained"
+  },
+  "newInstalledRun": {
+    "surface": "Local macOS private CLI/server, not Desktop or shared service",
+    "node": "22.22.2",
+    "host": "2.2.4",
+    "hostBinarySha256": "03fc30769f28dd346d2279baae77ef71308175cd49eb7a5be339d3860ee99ec1",
+    "test": "src/cli/opencode-native-install.smoke.test.ts",
+    "runnerSourceSha256": "4dff06e6660c16fc020bb50984fec105661e3aefcfd336231f8624e3fadec3ee",
+    "runnerIsFollowupToPublishedHead": true,
+    "suppliedTarballSha256": "20a189ac2eb869137cc8dc761ed4bff000b6f8bb4728d376f5b78ba03e7d9f85",
+    "passed": 1,
+    "bootstrapAndUninstallFromPackedPackage": true,
+    "completeInactiveParity": "NOT_VERIFIED",
+    "operatorUiProvenance": "BLOCKED",
+    "reviewerAssuranceAndRecovery": "NOT_VERIFIED"
+  },
+  "inspectedPinnedTypeSha256": {
+    "@opencode/client@2.2.4/dist/promise/generated/types.d.ts": "755938163be991f487d22cefe1e07de7b93922a2797cb82244398854aaf6abc0",
+    "@opencode/plugin@2.2.4/dist/promise/session.d.ts": "b33ad2554c28b1b7213a18a0502782467338a096203635e27137310cc6d48048",
+    "@opencode/plugin@2.2.4/dist/promise/rpc.d.ts": "a8286171def24eb35f35ed6d4149a7d4ac4993d7457a97465e2ed0f726e51283",
+    "@opencode/plugin@2.2.4/dist/tui/context.d.ts": "621afdacc9f6d270afe6ba2f4e2fb3a8fa42fbd78309a844b3048f9bb014d9bb"
+  },
+  "privateLogSha256": {
+    "1190-published-native-install.log": "362e0e50c9edd5ce08a1795f54b142acc0fbccb52c93ba750e62508805796703",
+    "1190-published-coverage.log": "f2b0635c371741e1067ad80d696fa54e1d3d5c1fe0e3a959acf79ba3aba498b4",
+    "1190-published-smoke.log": "c0a9254aac61c0a3d01c31407e70d298ffc5008000ce3b37a19c178965d8ba21",
+    "1190-published-evals.log": "6ba64318875684fced6ed7decabde6bcc46064b5eeeb74afa4fa05e89e998d04"
+  }
+}

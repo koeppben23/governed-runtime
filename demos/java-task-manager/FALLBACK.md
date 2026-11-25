@@ -17,7 +17,7 @@ not a planned part of the presentation.
 Record the Architecture variant (Steps A0–A6 from `DEMO_SCRIPT.md`):
 
 ```bash
-./run-main-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
+./run-main-demo-setup.sh --install --install-scope repo --tarball <tgz> /tmp/flowguard-java-demo
 cd /tmp/flowguard-java-demo
 # Open /tmp/flowguard-java-demo in OpenCode Desktop
 ```
@@ -38,7 +38,7 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 Record the Development variant (Steps 0–11 from `DEMO_SCRIPT.md`):
 
 ```bash
-./run-main-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
+./run-main-demo-setup.sh --install --install-scope repo --tarball <tgz> /tmp/flowguard-java-demo
 cd /tmp/flowguard-java-demo
 # Open /tmp/flowguard-java-demo in OpenCode Desktop
 ```
@@ -71,7 +71,7 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 Record R1–R4 from the Peer Review Flow section:
 
 ```bash
-./run-main-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
+./run-main-demo-setup.sh --install --install-scope repo --tarball <tgz> /tmp/flowguard-java-demo
 cd /tmp/flowguard-java-demo
 # Open /tmp/flowguard-java-demo in OpenCode Desktop
 ```
@@ -105,12 +105,12 @@ find ~/.config/opencode/workspaces -path '*/archive/*.tar.gz' -type f -print
 Record the reference-run values next to the package; without them the package
 assignment cannot be re-verified later:
 
-| Value                    | Where it comes from                                                                                                   |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Session id               | `/start` output (the archive file name)                                                                               |
-| Flow / phase             | `development` / `EXPORT_READY` for the `/export` package; `COMPLETE` for a raw terminal archive                       |
-| Runtime version + commit | The FlowGuard tarball used for the run (`flowguard --version`, `git rev-parse HEAD` of the checkout that produced it) |
-| Package + sidecar        | `<sessionId>.tar.gz` and `<sessionId>.tar.gz.sha256`                                                                  |
+| Value                    | Where it comes from                                                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session id               | `/start` output (the archive file name)                                                                                                         |
+| Flow / phase             | `development` / `EXPORT_READY` for the `/export` package; `COMPLETE` for a raw terminal archive                                                 |
+| Runtime version + commit | The FlowGuard tarball used for the run (`flowguard --version`, `git rev-parse HEAD` of the checkout that produced it)                           |
+| Package + sidecar        | `/export`: `export-<sessionId>.tar.gz` and `export-<sessionId>.tar.gz.sha256`; `/archive`: `<sessionId>.tar.gz` and `<sessionId>.tar.gz.sha256` |
 
 Re-verify the frozen package before the pitch (and after copying it between
 machines) with the standalone verifier — scope, limits, and exit codes are
@@ -119,7 +119,7 @@ documented in `EVIDENCE_PACKAGE.md`:
 ```bash
 # Run from the governed-runtime checkout of the same version that produced the package.
 node demos/java-task-manager/verify-evidence-package.mjs \
-  ~/.config/opencode/workspaces/<fingerprint>/sessions/archive/<sessionId>.tar.gz \
+  ~/.config/opencode/workspaces/<fingerprint>/sessions/archive/export-<sessionId>.tar.gz \
   --expect-session <session-id> \
   --expect-flow development \
   --expect-phase EXPORT_READY
@@ -218,7 +218,7 @@ Architecture recovery strategy:
 ## Pre-flight Checklist (morning of the demo)
 
 - [ ] All three recordings play correctly
-- [ ] `./run-main-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo` completes with verified install
+- [ ] `./run-main-demo-setup.sh --install --install-scope repo --tarball <tgz> /tmp/flowguard-java-demo` completes with verified install
 - [ ] `./mvnw test` — 16 tests, 0 failures, 1 skipped
 - [ ] `./mvnw -o test` passes (Maven offline-ready)
 - [ ] `ADR_TICKET.md` is present and non-empty in the workspace

@@ -72,6 +72,19 @@ describe('unresolvedBlockingObligations', () => {
     expect(result).toHaveLength(0);
   });
 
+  it('filters out deterministically blocked terminal obligations', () => {
+    const blocked = makeObligation({
+      status: 'blocked',
+      consumedAt: null,
+      blockedCode: 'REVIEW_ATTEMPT_UNAVAILABLE',
+    });
+    const state = makeState('READY', {
+      reviewAssurance: assuranceWith({ obligations: [blocked] }),
+    });
+    const result = unresolvedBlockingObligations(state);
+    expect(result).toHaveLength(0);
+  });
+
   it('returns pending obligations (not consumed, no consumedAt)', () => {
     const pending = makeObligation({ status: 'pending', consumedAt: null });
     const state = makeState('READY', {

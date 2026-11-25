@@ -30,8 +30,8 @@ export async function currentBranch(worktree: string): Promise<string | null> {
  * Check if the worktree is clean (no staged, unstaged, or untracked changes).
  * Useful for pre-implementation baseline checks.
  */
-export async function isClean(worktree: string): Promise<boolean> {
-  const status = await git(worktree, ['status', '--porcelain']);
+export async function isClean(worktree: string, signal?: AbortSignal): Promise<boolean> {
+  const status = await git(worktree, ['status', '--porcelain'], undefined, signal);
   return status === '';
 }
 
@@ -39,10 +39,11 @@ export async function isClean(worktree: string): Promise<boolean> {
  * Get the current HEAD commit hash (short form).
  * Returns null if no commits exist.
  */
-export async function headCommit(worktree: string): Promise<string | null> {
+export async function headCommit(worktree: string, signal?: AbortSignal): Promise<string | null> {
   try {
-    return await git(worktree, ['rev-parse', '--short', 'HEAD']);
+    return await git(worktree, ['rev-parse', '--short', 'HEAD'], undefined, signal);
   } catch {
+    signal?.throwIfAborted();
     logWarn('git', 'Failed to resolve HEAD commit', { worktree });
     return null;
   }
@@ -93,13 +94,22 @@ function isMissingHeadFailure(message: string): boolean {
  * Returns the branch name only (e.g., "main"), not the full ref.
  * Returns null if the default branch cannot be determined.
  */
-export async function defaultBranch(worktree: string): Promise<string | null> {
+export async function defaultBranch(
+  worktree: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   try {
-    const ref = await git(worktree, ['symbolic-ref', 'refs/remotes/origin/HEAD']);
+    const ref = await git(
+      worktree,
+      ['symbolic-ref', 'refs/remotes/origin/HEAD'],
+      undefined,
+      signal,
+    );
     // ref is "refs/remotes/origin/main" — extract last segment
     const parts = ref.split('/');
     return parts[parts.length - 1] || null;
   } catch {
+    signal?.throwIfAborted();
     logWarn('git', 'Failed to resolve default branch', { worktree });
     return null;
   }
@@ -113,13 +123,26 @@ export async function defaultBranch(worktree: string): Promise<string | null> {
  * - The directory is not a git repository
  * - Git is not available
  *
+ * A `GIT_TIMEOUT` is NOT swallowed: a hung remote probe must never silently
+ * fall back to the local-path fingerprint (that could select a different
+ * session identity). The typed error propagates to the caller.
+ *
  * Used by the workspace registry to derive the canonical repository fingerprint.
+ *
+ * @param worktree - Git worktree root.
+ * @param timeoutMs - Optional per-probe timeout override (deadline budgeting).
  */
-export async function remoteOriginUrl(worktree: string): Promise<string | null> {
+export async function remoteOriginUrl(
+  worktree: string,
+  timeoutMs?: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
   try {
-    const url = await git(worktree, ['remote', 'get-url', 'origin']);
+    const url = await git(worktree, ['remote', 'get-url', 'origin'], timeoutMs, signal);
     return url || null;
-  } catch {
+  } catch (err) {
+    signal?.throwIfAborted();
+    if (err instanceof GitError && err.code === 'GIT_TIMEOUT') throw err;
     logWarn('git', 'Failed to resolve remote origin URL', { worktree });
     return null;
   }

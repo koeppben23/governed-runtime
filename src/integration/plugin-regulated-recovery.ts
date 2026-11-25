@@ -20,7 +20,7 @@
  * acquisition inside every write and reconcile step.
  */
 
-import { PersistenceError, readState } from '../adapters/persistence.js';
+import { readState } from '../adapters/persistence.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import {
@@ -32,21 +32,13 @@ export async function recoverRegulatedCompletion(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
 ): Promise<void> {
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir) return;
+  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+  if (resolution.status !== 'resolved') return;
+  const sessDir = resolution.sessDir;
   // The enforcement gates that follow own the canonical fail-closed error
   // surface for unreadable state. Recovery must not shadow their errors: when
   // the precondition cannot be established, recovery has nothing to resume.
-  let state;
-  try {
-    state = await readState(sessDir);
-  } catch (err) {
-    runtime.log.warn('enforcement', 'Skipping regulated completion recovery: state unreadable', {
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return;
-  }
+  const state = resolution.state;
   if (
     !state ||
     !isRegulatedTicketCompletion(state) ||
@@ -54,13 +46,7 @@ export async function recoverRegulatedCompletion(
   ) {
     return;
   }
-  const fingerprint = await runtime.auditDeps.resolveFingerprint();
-  if (!fingerprint) {
-    throw new PersistenceError(
-      'WRITE_FAILED',
-      'Cannot resume regulated completion without a workspace fingerprint',
-    );
-  }
+  const fingerprint = resolution.fingerprint;
   // Re-check under the lock so a concurrent completion finishing in between
   // does not re-run the chain. The resume itself runs outside the lock.
   const needsResume = await withSessionWriteLock(sessDir, async () => {

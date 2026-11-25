@@ -3,6 +3,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { makeState } from '../../fixtures.js';
+import { planApprovalContextOf } from '../../state/proofgraph-approval-context.js';
+import { planApprovalCertificateIdentity } from '../../state/proofgraph-plan-certificate.js';
 import {
   computeArtifactDigest,
   computeProjectionDigest,
@@ -20,6 +22,7 @@ import {
   materializeApprovedPlanContractResult,
 } from './materialize-contract.js';
 import type { PlanClaimDeclarations } from '../../state/proofgraph-approval.js';
+import type { SessionState } from '../../state/schema.js';
 
 const PLAN_CURRENT = makePlanRevision({ body: 'approved plan' });
 const PLAN_DIGEST = PLAN_CURRENT.digest;
@@ -35,7 +38,96 @@ const NOW = '2026-01-01T00:00:00.000Z';
  * the same canonical revision.
  */
 const PLAN_RECORD_DIGEST = PLAN_CURRENT.recordDigest;
+const CLAIM_DECLARATIONS: PlanClaimDeclarations = {
+  flow: 'plan',
+  version: 'v2',
+  claims: [
+    {
+      claimId: CLAIM_ID,
+      statement: 'the approved plan behavior is implemented',
+      critical: true,
+      authoritySectionId: 'implementation',
+      claimScope: 'specific_behavior',
+      expectedCheckId: 'test',
+      counterexampleRequirement: {
+        kind: 'assertion',
+        checkId: 'security',
+        assertion: { providerId: 'junit', localId: 'some-id' },
+      },
+      structuralSurface: 'command-registration',
+      mutationProfile: 'semantic',
+      coversRiskTriggers: ['state_integrity'],
+    },
+  ],
+};
 
+const CERT_CONTEXT = planApprovalContextOf(makeState('IMPL_REVIEW'));
+const CERT_ATTESTATION = {
+  kind: 'explicit_decision' as const,
+  decision: {
+    verdict: 'approve' as const,
+    rationale: 'approved',
+    decidedAt: NOW,
+    decisionIdentity: {
+      actorId: 'user',
+      actorEmail: null,
+      actorSource: 'unknown' as const,
+      actorAssurance: 'best_effort' as const,
+    },
+  },
+  flowguardSessionId: CERT_CONTEXT.flowguardSessionId,
+  bindingDigest: CERT_CONTEXT.bindingDigest,
+  policyHash: CERT_CONTEXT.policyHash,
+  policyHashVersion: CERT_CONTEXT.policyHashVersion,
+};
+const CERT_DIGEST = hashText(canonicalJsonStringify(CERT_ATTESTATION));
+const CERT_ID = planApprovalCertificateIdentity({
+  authorityDigest: PLAN_DIGEST,
+  claimDeclarationsDigest: hashText(canonicalJsonStringify(CLAIM_DECLARATIONS)),
+  decisionAttestationDigest: CERT_DIGEST,
+  planVersion: 1,
+  planRecordDigest: PLAN_RECORD_DIGEST,
+  reviewBinding: {
+    kind: 'current_review',
+    reviewObligationId: '00000000-0000-4000-8000-0000000000ab',
+    reviewEvidenceDigest: 'e'.repeat(64),
+    reviewedSubjectDigest: PLAN_DIGEST,
+  },
+  approvedAt: NOW,
+});
+
+/**
+ * Rebind an existing certificate to a changed declaration set: the canonical
+ * certificate identity is recomputed, so the certificate stays a valid
+ * certificate for the new declarations.
+ */
+function rebindDeclarationCertificate(
+  state: SessionState,
+  declarations: PlanClaimDeclarations,
+): SessionState {
+  const certificate = state.plan!.approvalCertificate!;
+  const claimDeclarationsDigest = hashText(canonicalJsonStringify(declarations));
+  return {
+    ...state,
+    plan: {
+      ...state.plan!,
+      claimDeclarations: declarations,
+      approvalCertificate: {
+        ...certificate,
+        claimDeclarationsDigest,
+        certificateId: planApprovalCertificateIdentity({
+          authorityDigest: certificate.authorityDigest,
+          claimDeclarationsDigest,
+          decisionAttestationDigest: certificate.decisionAttestationDigest,
+          planVersion: certificate.planVersion,
+          planRecordDigest: certificate.planRecordDigest,
+          reviewBinding: certificate.reviewBinding,
+          approvedAt: certificate.approvedAt,
+        }),
+      },
+    },
+  };
+}
 function stateWithClaims() {
   const state = makeState('IMPL_REVIEW', {
     verificationCandidates: [
@@ -70,57 +162,15 @@ function stateWithClaims() {
       history: [],
       reviewFindings: [],
       reviewCompletion: 'pending',
-      claimDeclarations: {
-        flow: 'plan',
-        version: 'v2',
-        claims: [
-          {
-            claimId: CLAIM_ID,
-            statement: 'the approved plan behavior is implemented',
-            critical: true,
-            authoritySectionId: 'implementation',
-            claimScope: 'specific_behavior',
-            expectedCheckId: 'test',
-            counterexampleRequirement: {
-              kind: 'assertion',
-              checkId: 'security',
-              assertion: { providerId: 'junit', localId: 'some-id' },
-            },
-            structuralSurface: 'command-registration',
-            mutationProfile: 'semantic',
-          },
-        ],
-      },
+      claimDeclarations: CLAIM_DECLARATIONS,
       approvalCertificate: {
-        flow: 'plan',
+        schemaVersion: 'plan-approval-certificate.v1' as const,
+        flow: 'plan' as const,
         authorityDigest: PLAN_DIGEST,
-        claimDeclarationsDigest: hashText(
-          canonicalJsonStringify({
-            flow: 'plan',
-            version: 'v2',
-            claims: [
-              {
-                claimId: CLAIM_ID,
-                statement: 'the approved plan behavior is implemented',
-                critical: true,
-                authoritySectionId: 'implementation',
-                claimScope: 'specific_behavior',
-                expectedCheckId: 'test',
-                counterexampleRequirement: {
-                  kind: 'assertion',
-                  checkId: 'security',
-                  assertion: { providerId: 'junit', localId: 'some-id' },
-                },
-                structuralSurface: 'command-registration',
-                mutationProfile: 'semantic',
-              },
-            ],
-          }),
-        ),
-        decisionAttestationDigest: 'a'.repeat(64),
+        claimDeclarationsDigest: hashText(canonicalJsonStringify(CLAIM_DECLARATIONS)),
+        decisionAttestationDigest: CERT_DIGEST,
         approvedAt: NOW,
-        approvedBy: 'user',
-        certificateId: '00000000-0000-4000-8000-000000000001',
+        certificateId: CERT_ID,
         planVersion: 1,
         planRecordDigest: PLAN_RECORD_DIGEST,
         reviewBinding: {
@@ -129,6 +179,7 @@ function stateWithClaims() {
           reviewEvidenceDigest: 'e'.repeat(64),
           reviewedSubjectDigest: PLAN_DIGEST,
         },
+        approvalAttestation: CERT_ATTESTATION,
       },
     },
     reviewDecision: {
@@ -194,18 +245,57 @@ describe('materializeApprovedPlanContract', () => {
       { kind: 'validation_attempt', attemptId: ATTEMPT_ID },
       { kind: 'structural_surface', surfaceId: 'command-registration' },
     ]);
+    expect(contract.claims[0]!.coversRiskTriggers).toEqual(['state_integrity']);
     expect(contract.claims[0]!.provenance).toEqual({
       kind: 'canonical_authority',
       authorityId: 'plan',
       digest: PLAN_DIGEST,
       approval: {
-        certificateId: '00000000-0000-4000-8000-000000000001',
+        certificateId: CERT_ID,
         claimDeclarationsDigest:
           stateWithClaims().plan!.approvalCertificate!.claimDeclarationsDigest,
-        decisionAttestationDigest: 'a'.repeat(64),
+        decisionAttestationDigest: CERT_DIGEST,
         declarationId: CLAIM_ID,
       },
     });
+  });
+
+  it('records a role collision and keeps the shared attempt out of adversarial refs', async () => {
+    const state = stateWithClaims();
+    const declarations = state.plan!.claimDeclarations!;
+    const collidingDeclaration = {
+      ...declarations.claims[0]!,
+      expectedCheckId: 'security',
+      counterexampleRequirement: {
+        kind: 'assertion' as const,
+        checkId: 'security',
+        assertion: { providerId: 'junit' as const, localId: 'some-id' },
+      },
+    };
+    const claimDeclarations = {
+      flow: 'plan' as const,
+      version: 'v2' as const,
+      claims: [collidingDeclaration],
+    };
+    const collidingState = {
+      ...rebindDeclarationCertificate(state, claimDeclarations),
+      validationAttempts: state.validationAttempts.map((attempt) => ({
+        ...attempt,
+        result: { ...attempt.result, checkId: 'security' },
+      })),
+    };
+
+    const materialized = await materializeApprovedPlanContractResult(collidingState, process.cwd());
+
+    expect(materialized.coverage).toContainEqual({
+      claimId: CLAIM_ID,
+      cause: 'evidence_role_collision',
+    });
+    expect(materialized.contract.claims[0]!.evidenceRefs).toContainEqual({
+      kind: 'validation_attempt',
+      attemptId: ATTEMPT_ID,
+    });
+    expect(materialized.contract.claims[0]!.counterexampleRefs).toEqual([]);
   });
 
   it('retains a claim with required executed-test coverage when its expected check is absent', async () => {
@@ -260,18 +350,8 @@ describe('materializeApprovedPlanContract', () => {
             mutationProfile: 'proofgraph-evaluator',
           },
         ],
-      } as NonNullable<typeof initial.plan>['claimDeclarations'];
-      const state = {
-        ...initial,
-        plan: {
-          ...initial.plan!,
-          claimDeclarations: declarations,
-          approvalCertificate: {
-            ...initial.plan!.approvalCertificate!,
-            claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-          },
-        },
-      };
+      } as PlanClaimDeclarations;
+      const state = rebindDeclarationCertificate(initial, declarations);
       const materialized = await materializeApprovedPlanContractResult(
         {
           ...state,
@@ -369,6 +449,22 @@ describe('materializeApprovedPlanContract', () => {
     expect(result).toEqual({
       contract: { version: 'contract.v2', claims: [] },
       coverage: [{ cause: 'invalid_certificate' }],
+    });
+  });
+
+  it('requires the declared assertion as adversarial carrying evidence even for non-critical claims', async () => {
+    const base = stateWithClaims();
+    const declarations = {
+      ...base.plan!.claimDeclarations!,
+      claims: [{ ...base.plan!.claimDeclarations!.claims[0]!, critical: false }],
+    };
+    const state = rebindDeclarationCertificate(base, declarations);
+
+    const contract = await materializeApprovedPlanContract(state, process.cwd());
+
+    expect(contract.claims[0]!.requiredEvidence).toEqual({
+      positive: ['executed_test', 'structural_assertion', 'fault_injection'],
+      adversarial: ['counterexample'],
     });
   });
 
@@ -492,17 +588,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
     // Test fixtures build v2 declaration bodies inline; the runtime contract
     // is `'version' in declarations` + `claimScope` presence, not a schema parse.
     const declarations = v2Declarations(claims) as PlanClaimDeclarations;
-    return {
-      ...state,
-      plan: {
-        ...state.plan!,
-        claimDeclarations: declarations,
-        approvalCertificate: {
-          ...state.plan!.approvalCertificate!,
-          claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-        },
-      },
-    };
+    return rebindDeclarationCertificate(state, declarations);
   }
 
   it('versioned declarations materialize with claimScope', async () => {
@@ -549,15 +635,11 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
         },
       ],
     };
-    const plan = {
-      ...state.plan!,
-      claimDeclarations: declarations,
-      approvalCertificate: {
-        ...state.plan!.approvalCertificate!,
-        claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-      },
-    };
-    const result = await materializeApprovedPlanContractResult({ ...state, plan }, process.cwd());
+    const stateWithDeclarations = rebindDeclarationCertificate(state, declarations);
+    const result = await materializeApprovedPlanContractResult(
+      stateWithDeclarations,
+      process.cwd(),
+    );
     const claims = result.contract.claims as readonly {
       requiredEvidence: { positive: string[]; adversarial: string[] };
     }[];
@@ -762,13 +844,29 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
     ]);
   });
 
-  it('fails closed with invalid_certificate coverage outside IMPL_REVIEW', async () => {
+  it('validates the certificate binding independently of phase (entry timing is owned by the post-validation authority)', async () => {
     const state = stateWithClaims();
-    const result = await materializeApprovedPlanContractResult(
+    const valid = await materializeApprovedPlanContractResult(
       { ...state, phase: 'IMPLEMENTATION' as const },
       process.cwd(),
     );
-    expect(result.coverage).toEqual([{ cause: 'invalid_certificate' }]);
-    expect(result.contract.claims).toHaveLength(0);
+    expect(valid.contract.claims).toHaveLength(1);
+
+    const stale = await materializeApprovedPlanContractResult(
+      {
+        ...state,
+        phase: 'IMPLEMENTATION' as const,
+        plan: {
+          ...state.plan!,
+          approvalCertificate: {
+            ...state.plan!.approvalCertificate!,
+            authorityDigest: 'other-plan',
+          },
+        },
+      },
+      process.cwd(),
+    );
+    expect(stale.coverage).toEqual([{ cause: 'invalid_certificate' }]);
+    expect(stale.contract.claims).toHaveLength(0);
   });
 });

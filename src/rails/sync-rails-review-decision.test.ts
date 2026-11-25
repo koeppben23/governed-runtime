@@ -3,8 +3,10 @@ import { executeReviewDecision } from '../rails/review-decision.js';
 import type { ReviewDecisionInput } from '../rails/review-decision.js';
 import { createTestContext } from '../testing.js';
 import {
+  makePlanApprovalCertificate,
   makeState,
   makeProgressedState,
+  materializedPlanClaim,
   REGULATED_POLICY_SNAPSHOT,
   DECISION_IDENTITY_REVIEWER,
   DECISION_IDENTITY_VERIFIED_REVIEWER,
@@ -12,6 +14,7 @@ import {
 import { ReviewDecision } from '../state/evidence.js';
 import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy.js';
 import type { ProofGraphProjection } from '../state/proofgraph.js';
+import type { SpecificRiskTrigger } from '../state/risk-trigger.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
 
@@ -53,7 +56,10 @@ function proofGraph(
   };
 }
 
-function withCertifiedCriticalPlan(state: ReturnType<typeof makeProgressedState>) {
+function withCertifiedCriticalPlan(
+  state: ReturnType<typeof makeProgressedState>,
+  opts: { readonly coversRiskTriggers?: readonly SpecificRiskTrigger[] } = {},
+) {
   const declarations = {
     flow: 'plan' as const,
     version: 'v2' as const,
@@ -70,35 +76,97 @@ function withCertifiedCriticalPlan(state: ReturnType<typeof makeProgressedState>
           checkId: 'security',
           assertion: { providerId: 'junit', localId: 'some-id' },
         },
+        ...(opts.coversRiskTriggers !== undefined
+          ? { coversRiskTriggers: [...opts.coversRiskTriggers] }
+          : {}),
       },
     ],
   };
   const plan = state.plan!;
-  return {
+  const base = {
     ...state,
     plan: {
       ...plan,
       claimDeclarations: declarations,
-      approvalCertificate: {
-        flow: 'plan' as const,
-        authorityDigest: plan.current.digest,
-        claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-        decisionAttestationDigest: 'decision-digest',
-        approvedAt: '2026-01-01T00:00:00.000Z',
-        approvedBy: 'reviewer-1',
-        certificateId: '00000000-0000-4000-8000-000000000764',
-        planVersion: plan.current.planVersion,
-        planRecordDigest: plan.current.recordDigest,
-        reviewBinding: {
-          kind: 'current_review' as const,
-          reviewObligationId: '00000000-0000-4000-8000-000000000765',
-          reviewEvidenceDigest: 'review-evidence-digest',
-          reviewedSubjectDigest: plan.current.digest,
-        },
-        reviewObligationId: '00000000-0000-4000-8000-000000000765',
-        reviewEvidenceDigest: 'review-evidence-digest',
-      },
     },
+  };
+  const certificate = makePlanApprovalCertificate(base, {
+    claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+    planVersion: plan.current.planVersion,
+    planRecordDigest: plan.current.recordDigest,
+    reviewBinding: {
+      kind: 'current_review',
+      reviewObligationId: '00000000-0000-4000-8000-000000000765',
+      reviewEvidenceDigest: 'review-evidence-digest',
+      reviewedSubjectDigest: plan.current.digest,
+    },
+  });
+  const declaration = declarations.claims[0]!;
+  return {
+    ...base,
+    // Materialized source contract the gate requires alongside the certificate.
+    proofContract: {
+      version: 'contract.v2' as const,
+      claims: [materializedPlanClaim(declaration, certificate)],
+    },
+    plan: {
+      ...base.plan,
+      approvalCertificate: certificate,
+    },
+  };
+}
+
+/**
+ * Rebind a projection to the certificate carried by `state.plan`, so the
+ * evaluated claim's provenance matches the authorized certificate identity.
+ */
+function bindToCurrentCertificate(
+  state: ReturnType<typeof withCertifiedCriticalPlan>,
+  projection: ProofGraphProjection,
+): ProofGraphProjection {
+  const certificate = state.plan.approvalCertificate;
+  return {
+    ...projection,
+    claims: projection.claims.map((claim) => ({
+      ...claim,
+      provenance: {
+        kind: 'canonical_authority',
+        authorityId: 'plan',
+        digest: certificate.authorityDigest,
+        approval: {
+          certificateId: certificate.certificateId,
+          claimDeclarationsDigest: certificate.claimDeclarationsDigest,
+          decisionAttestationDigest: certificate.decisionAttestationDigest,
+          declarationId: claim.claimId,
+        },
+      },
+    })),
+  };
+}
+
+/**
+ * Evaluated projection built from the state's materialized contract claim, so
+ * the certified origin digest recomputes. Coverage overrides model a tampered
+ * projection and must fail the certificate binding.
+ */
+function materializedProjection(
+  state: ReturnType<typeof withCertifiedCriticalPlan>,
+  opts: { readonly coversRiskTriggers?: readonly SpecificRiskTrigger[] } = {},
+): ProofGraphProjection {
+  const claim = state.proofContract.claims[0];
+  if (!claim) throw new Error('fixture requires a materialized contract claim');
+  return {
+    version: 'proofgraph.v2',
+    evaluatedAt: '2026-01-01T00:00:00.000Z',
+    claims: [
+      {
+        ...claim,
+        verificationState: 'PROVEN',
+        ...(opts.coversRiskTriggers !== undefined
+          ? { coversRiskTriggers: [...opts.coversRiskTriggers] }
+          : {}),
+      },
+    ],
   };
 }
 
@@ -271,6 +339,120 @@ describe('review-decision rail', () => {
       expect(result).toMatchObject({ kind: 'ok' });
     });
 
+    it('blocks a detected risk trigger that no certified claim covers', () => {
+      const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'));
+      const result = executeReviewDecision(
+        {
+          ...certified,
+          proofGraph: materializedProjection(certified),
+          implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implReview: { ...certified.implReview!, currDigest: 'implementation-digest' },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            effectiveTaskClass: 'HIGH-RISK',
+            declaredTaskClass: null,
+            declarationKind: 'absent' as const,
+            ticketDigest: null,
+            touchedSurfaces: ['src/state/schema.ts'],
+            riskTriggers: ['state_integrity'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
+        ctx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+      });
+      if (result.kind === 'blocked') expect(result.reason).toContain('state_integrity');
+    });
+
+    it('allows approval when the certified claim covers the detected trigger', () => {
+      const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'), {
+        coversRiskTriggers: ['state_integrity'],
+      });
+      const result = executeReviewDecision(
+        {
+          ...certified,
+          proofGraph: materializedProjection(certified),
+          implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implReview: { ...certified.implReview!, currDigest: 'implementation-digest' },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            effectiveTaskClass: 'HIGH-RISK',
+            declaredTaskClass: null,
+            declarationKind: 'absent' as const,
+            ticketDigest: null,
+            touchedSurfaces: ['src/state/schema.ts'],
+            riskTriggers: ['state_integrity'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
+        ctx,
+      );
+      expect(result.kind).toBe('ok');
+    });
+
+    it('blocks a projection that adds coverage beyond the approved declaration', () => {
+      const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'), {
+        coversRiskTriggers: ['state_integrity'],
+      });
+      const result = executeReviewDecision(
+        {
+          ...certified,
+          // A tampered projection widening the certified coverage relation is
+          // no longer an evaluation of the certified declaration.
+          proofGraph: materializedProjection(certified, {
+            coversRiskTriggers: ['state_integrity', 'audit_authority'],
+          }),
+          implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implReview: { ...certified.implReview!, currDigest: 'implementation-digest' },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            effectiveTaskClass: 'HIGH-RISK',
+            declaredTaskClass: null,
+            declarationKind: 'absent' as const,
+            ticketDigest: null,
+            touchedSurfaces: ['src/state/schema.ts'],
+            riskTriggers: ['state_integrity', 'audit_authority'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
+        ctx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PROOFGRAPH_CERTIFIED_CLAIM_MISMATCH',
+      });
+    });
+
     it('blocks a stale assessment whose digest does not match the recorded implementation', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(
@@ -296,6 +478,27 @@ describe('review-decision rail', () => {
             assessedFileCount: 1,
             implementationDigest: 'superseded-implementation-digest',
           },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_RISK_ASSESSMENT_STALE' });
+    });
+
+    it('blocks an implementation approval when no risk assessment was recorded', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        {
+          ...state,
+          implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implReview: { ...state.implReview!, currDigest: 'implementation-digest' },
+          implementationRiskAssessment: null,
         },
         { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
         ctx,

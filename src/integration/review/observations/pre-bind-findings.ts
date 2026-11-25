@@ -37,12 +37,17 @@ export function validatePreBindFindings(input: {
       : {}),
   });
   if (!scope.ok) {
+    const subjectScope = input.obligation.reviewSubjectScope;
     return {
       ok: false,
       code: scope.code,
       details: {
         obligationId: input.obligation.obligationId,
         findingIndex: scope.details.outOfScopeFindingIndexes.join(', '),
+        ...(scope.code === 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE' &&
+        subjectScope?.kind === 'repository_change'
+          ? { allowedSubjectPaths: [...subjectScope.paths] }
+          : {}),
       },
     };
   }

@@ -17,11 +17,15 @@
 
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
-import type { RiskTrigger, SessionState } from '../../state/schema.js';
+import { AssertionBindingReasonCodeSchema } from '../../state/proofgraph.js';
 import {
-  authorizedCriticalPlanClaimIds,
-  type PlanClaimAuthority,
-} from '../../state/proofgraph-approval.js';
+  assessProofGraphEvidence,
+  type ProofEvidenceIntegrityInput,
+} from './evidence-integrity.js';
+import type { RiskTrigger, SessionState } from '../../state/schema.js';
+import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
+import type { AuthorizedClaimBinding } from '../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval-context.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import {
   computeProofGraphEnforcement,
@@ -44,18 +48,7 @@ function readDiagnosticsFromProjection(
 }
 
 function isValidBindingCode(value: string): value is AssertionBindingReasonCode {
-  return (
-    value === 'check_mismatch' ||
-    value === 'evidence_missing' ||
-    value === 'check_only_evidence' ||
-    value === 'provider_mismatch' ||
-    value === 'assertion_mismatch' ||
-    value === 'aggregate_check_mismatch' ||
-    value === 'aggregate_candidate_mismatch' ||
-    value === 'aggregate_scope_unattested' ||
-    value === 'aggregate_extraction_missing' ||
-    value === 'aggregate_capability_missing'
-  );
+  return AssertionBindingReasonCodeSchema.safeParse(value).success;
 }
 
 /** The evaluated ProofGraph gate decision. */
@@ -68,7 +61,9 @@ export interface ProofGraphGateDecision {
   readonly reasonCode: EnforcementReasonCode;
   readonly reason: string;
   readonly kind: EnforcementDecisionKind;
-  readonly relevantTriggers: readonly Exclude<RiskTrigger, 'ceremony_only'>[];
+  readonly relevantTriggers: readonly SpecificRiskTrigger[];
+  /** Detected specific triggers without eligible claim coverage. */
+  readonly uncoveredTriggers: readonly SpecificRiskTrigger[];
 }
 
 export interface ImplementationRiskAssessmentForGate {
@@ -79,21 +74,6 @@ export interface ImplementationRiskAssessmentForGate {
    * session schema rejects it before evaluation.
    */
   readonly riskTriggers: readonly RiskTrigger[];
-}
-
-export function planClaimAuthorityOf(plan: SessionState['plan']): PlanClaimAuthority | null {
-  if (plan === null) return null;
-  return {
-    current: {
-      digest: plan.current.digest,
-      planVersion: plan.current.planVersion,
-      recordDigest: plan.current.recordDigest,
-    },
-    ...(plan.claimDeclarations !== undefined ? { claimDeclarations: plan.claimDeclarations } : {}),
-    ...(plan.approvalCertificate !== undefined
-      ? { approvalCertificate: plan.approvalCertificate }
-      : {}),
-  };
 }
 
 export function isRiskAssessmentCurrent(
@@ -109,41 +89,92 @@ export function isRiskAssessmentCurrent(
 
 function relevantTriggers(
   assessment: ImplementationRiskAssessmentForGate | undefined,
-): readonly Exclude<RiskTrigger, 'ceremony_only'>[] {
+): readonly SpecificRiskTrigger[] {
   return (assessment?.riskTriggers ?? []).filter(
-    (trigger): trigger is Exclude<RiskTrigger, 'ceremony_only'> => trigger !== 'ceremony_only',
+    (trigger): trigger is SpecificRiskTrigger => trigger !== 'ceremony_only',
   );
 }
 
-export function evaluateProofGraphGate(input: {
-  readonly projection?: ProofGraphSummary['projection'];
-  readonly authorizedCriticalClaimIds?: readonly string[];
-  readonly certificateValid?: boolean;
-  readonly implementationDigest?: string;
-  readonly riskAssessment?: ImplementationRiskAssessmentForGate | undefined;
-  /** Per-claim binding diagnostics for enforcement surface. */
-  readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
-}): ProofGraphGateDecision {
-  const triggers = relevantTriggers(input.riskAssessment);
+type ProofEvidenceAssessment = ReturnType<typeof assessProofGraphEvidence>;
 
+function assessProjection(
+  input: ProofEvidenceIntegrityInput & { readonly projection?: ProofGraphProjection },
+): ProofEvidenceAssessment | undefined {
+  return input.projection === undefined
+    ? undefined
+    : assessProofGraphEvidence(input.projection, input);
+}
+
+/** Projection diagnostics first, explicit input next, identity failures last. */
+function mergeClaimDiagnostics(
+  input: {
+    readonly projection?: ProofGraphProjection;
+    readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
+  },
+  assessment: ProofEvidenceAssessment | undefined,
+): Map<string, AssertionBindingReasonCode> {
+  const merged = new Map<string, AssertionBindingReasonCode>();
+  for (const source of [
+    readDiagnosticsFromProjection(input.projection),
+    input.claimDiagnostics,
+    assessment?.identityDiagnostics,
+  ]) {
+    if (source === undefined) continue;
+    for (const [claimId, code] of source) merged.set(claimId, code);
+  }
+  return merged;
+}
+
+export function evaluateProofGraphGate(
+  input: ProofEvidenceIntegrityInput & {
+    readonly projection?: ProofGraphSummary['projection'];
+    readonly authorizedCriticalClaimIds?: readonly string[];
+    /**
+     * Certificate-bound coverage relation from the current plan approval. The
+     * projector trusts this relation, never the persisted projection's own
+     * `coversRiskTriggers` entries.
+     */
+    readonly authorizedRiskTriggerCoverage?: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
+    /** Expected certificate binding per authorized critical claim. */
+    readonly authorizedClaimBindings?: ReadonlyMap<string, AuthorizedClaimBinding>;
+    readonly certificateValid?: boolean;
+    readonly riskAssessment?: ImplementationRiskAssessmentForGate | undefined;
+    /** Per-claim binding diagnostics for enforcement surface. */
+    readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
+  },
+): ProofGraphGateDecision {
+  const triggers = relevantTriggers(input.riskAssessment);
+  const assessment = assessProjection(input);
+  const projection = assessment?.projection;
+
+  // A current implementation requires a risk assessment bound to that exact
+  // revision. A missing assessment is as unusable as a superseded one: the
+  // enforcement projection owns the fail-closed decision for both. With no
+  // implementation digest there is no revision to bind to, so the assessment
+  // cannot be judged stale.
   const riskStale =
-    input.riskAssessment !== undefined &&
     input.implementationDigest !== undefined &&
     !isRiskAssessmentCurrent(input.riskAssessment, input.implementationDigest);
 
-  const claimDiagnostics =
-    input.claimDiagnostics ?? readDiagnosticsFromProjection(input.projection);
+  const claimDiagnostics = mergeClaimDiagnostics(input, assessment);
   const enforcement = computeProofGraphEnforcement({
-    ...(input.projection !== undefined ? { projection: input.projection } : {}),
+    contract: input.contract,
+    ...(projection !== undefined ? { projection } : {}),
     ...(input.authorizedCriticalClaimIds !== undefined
       ? { authorizedCriticalClaimIds: input.authorizedCriticalClaimIds }
+      : {}),
+    ...(input.authorizedRiskTriggerCoverage !== undefined
+      ? { authorizedRiskTriggerCoverage: input.authorizedRiskTriggerCoverage }
+      : {}),
+    ...(input.authorizedClaimBindings !== undefined
+      ? { authorizedClaimBindings: input.authorizedClaimBindings }
       : {}),
     ...(input.certificateValid !== undefined ? { certificateValid: input.certificateValid } : {}),
     ...(input.implementationDigest !== undefined
       ? { implementationDigest: input.implementationDigest }
       : {}),
     riskAssessmentStale: riskStale,
-    riskTriggersPresent: triggers.length > 0,
+    riskTriggers: triggers,
     ...(claimDiagnostics !== undefined ? { claimDiagnostics } : {}),
   });
 
@@ -155,6 +186,7 @@ export function evaluateProofGraphGate(input: {
     reason: enforcement.reason,
     kind: enforcement.decisionKind,
     relevantTriggers: triggers,
+    uncoveredTriggers: enforcement.uncoveredTriggers,
   };
 }
 
@@ -164,14 +196,20 @@ export function evaluateProofGraphGate(input: {
  * status surface — never a second gating authority.
  */
 export function evaluateProofGraphGateFromState(state: SessionState): ProofGraphGateDecision {
-  const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
+  const authorization = authorizedCriticalPlanClaimIds(state);
   return evaluateProofGraphGate({
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
+    implementationDigest: state.implementation?.digest,
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
-    certificateValid: authorization.kind === 'authorized',
-    ...(state.implementation?.digest !== undefined
-      ? { implementationDigest: state.implementation.digest }
+    ...(authorization.kind === 'authorized'
+      ? { authorizedRiskTriggerCoverage: authorization.coverage }
       : {}),
+    ...(authorization.kind === 'authorized'
+      ? { authorizedClaimBindings: authorization.bindings }
+      : {}),
+    certificateValid: authorization.kind === 'authorized',
     ...(state.implementationRiskAssessment !== null
       ? { riskAssessment: state.implementationRiskAssessment }
       : {}),

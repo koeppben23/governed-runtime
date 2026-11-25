@@ -17,10 +17,9 @@ import type {
   ArchitectureApprovalCertificate,
   ReviewBinding,
 } from '../state/proofgraph-approval.js';
-import {
-  authorizedCriticalPlanClaimIds,
-  emptyClaimDeclarations,
-} from '../state/proofgraph-approval.js';
+import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
+import { evaluateEvidenceApprovalPreflight } from '../audit/proofgraph/evidence-approval-preflight.js';
+import { blockedFromEvidenceApproval } from './auto-advance-overflow.js';
 import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { reducedCeremonyReady } from '../machine/guards.js';
 import type { RailBlocked, RailContext } from './types.js';
@@ -30,8 +29,7 @@ import { isApprovalVerdict } from '../state/evidence.js';
 import { isAssuranceAtLeast } from '../shared/actor-assurance.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { digestToId } from '../shared/hashing.js';
-import { evaluateProofGraphGate, planClaimAuthorityOf } from '../audit/proofgraph/gate.js';
-import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
+
 import {
   resolveArchitectureReviewEvidence,
   resolveLatestPlanReviewEvidence,
@@ -167,20 +165,7 @@ function enforceApprovalIdentity(
   return verifyAssuranceThreshold(input, ctx);
 }
 
-function rejectedCriticalClaimBlock(state: SessionState): RailBlocked | null {
-  const claim = state.plan?.claimSubmissionDiagnostics?.rejectedClaims.find(
-    (item) => item.disposition === 'rejected_blocking',
-  );
-  return claim
-    ? blocked('PROOFGRAPH_CLAIM_NOT_DECLARED', {
-        claimRef: claim.claimRef,
-        field: 'claim declaration',
-        detail: claim.reason,
-      })
-    : null;
-}
-
-/** True when the decision is a human approval at the plan or evidence gate. */
+/** True when the decision is an approval at the plan or evidence gate. */
 function isEvidenceApprovalPhase(state: SessionState, input: ReviewDecisionInput): boolean {
   return (
     (state.phase === 'PLAN_REVIEW' || state.phase === 'EVIDENCE_REVIEW') &&
@@ -188,54 +173,22 @@ function isEvidenceApprovalPhase(state: SessionState, input: ReviewDecisionInput
   );
 }
 
-function evaluateEvidenceProofGraphGate(
-  state: SessionState,
-): ReturnType<typeof evaluateProofGraphGate> {
-  const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
-  return evaluateProofGraphGate({
-    projection: state.proofGraph,
-    authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
-    certificateValid: authorization.kind === 'authorized',
-    ...(state.implementation?.digest !== undefined
-      ? { implementationDigest: state.implementation.digest }
-      : {}),
-    ...(state.implementationRiskAssessment !== null
-      ? { riskAssessment: state.implementationRiskAssessment }
-      : {}),
-  });
-}
-
-/** Enforce ProofGraph only for governed plan and final evidence approval. */
-function enforceProofGraphEvidenceApproval(
+/**
+ * Enforce the canonical evidence-approval prerequisite for plan and final
+ * evidence approvals. The substantive decision — rejected claim diagnostics,
+ * certificate validity, authorized claim uniqueness/binding, risk assessment,
+ * coverage, and proof state — is owned by the single preflight authority; this
+ * adapter only maps its outcome to a rail block, so the explicit and automatic
+ * approval paths cannot drift apart.
+ */
+function enforceEvidenceApprovalPreflight(
   state: SessionState,
   input: ReviewDecisionInput,
 ): RailBlocked | null {
   if (!isEvidenceApprovalPhase(state, input)) return null;
-  const rejectedBlock = rejectedCriticalClaimBlock(state);
-  if (rejectedBlock) return rejectedBlock;
-  if (state.phase !== 'EVIDENCE_REVIEW') return null;
-  const decision = evaluateEvidenceProofGraphGate(state);
-  if (!decision.gated) return null;
-  if (decision.kind === 'critical_fact_required') {
-    return blocked('PROOFGRAPH_CRITICAL_FACT_REQUIRED', {
-      triggers: decision.relevantTriggers.join(', '),
-    });
-  }
-  if (decision.kind === 'facts_unproven') {
-    // facts_unproven — include per-claim registry details in the message
-    const claimDetails = decision.blockingClaims
-      .map((bc) => `${bc.claimId} (${bc.registryCode})`)
-      .join(', ');
-    return blocked('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN', {
-      claimDetails,
-      claimIds: decision.blockingClaimIds.join(', '),
-    });
-  }
-  const registryCode = mapEnforcementReasonToRegistryCode(decision.reasonCode);
-  if (decision.kind === 'evaluation_unavailable') {
-    return blocked(registryCode, { claimIds: decision.blockingClaimIds.join(', ') });
-  }
-  return blocked(registryCode, undefined);
+  const preflight = evaluateEvidenceApprovalPreflight(state);
+  if (preflight.kind === 'clear') return null;
+  return blockedFromEvidenceApproval({ kind: 'blocked', phase: state.phase, block: preflight });
 }
 
 /**
@@ -250,13 +203,20 @@ function enforceMutationEpisodeEvidenceApproval(
   input: ReviewDecisionInput,
 ): RailBlocked | null {
   if (state.phase !== 'EVIDENCE_REVIEW' || !isApprovalVerdict(input.verdict)) return null;
-  const unboundCount = countUnboundMutationEpisodes(
-    state.mutationEpisodes,
-    state.mutationEpisodeResolutions,
-  );
+  const unboundCount = unboundMutationEpisodeCount(state);
   return unboundCount > 0
     ? blocked('MUTATION_EPISODE_BINDING_REQUIRED', { count: String(unboundCount) })
     : null;
+}
+
+/**
+ * Canonical count of mutation episodes that block a final evidence approval:
+ * a dispatched-but-unfinished host mutation, or a completed mutation whose
+ * implementation evidence was never bound. Shared by the explicit decision
+ * rail and the automatic approval path so both respect the same fence.
+ */
+export function unboundMutationEpisodeCount(state: SessionState): number {
+  return countUnboundMutationEpisodes(state.mutationEpisodes, state.mutationEpisodeResolutions);
 }
 
 /**
@@ -442,7 +402,7 @@ export function approvalCertificatePatch(
 ): Partial<Pick<SessionState, 'plan' | 'architecture'>> {
   if (!isApprovalVerdict(input.verdict)) return {};
   return {
-    ...planCertificatePatch(state, decision, ctx, bindings.planReviewEvidence),
+    ...planCertificatePatch(state, decision, bindings.planReviewEvidence),
     ...architectureCertificatePatch(state, decision, ctx, bindings.architectureReviewBinding),
   };
 }
@@ -504,6 +464,6 @@ export function enforceApprovalPreconditions(
   if (planEvidenceBlock) return { block: planEvidenceBlock, evidence, planEvidence };
   const mutationEpisodeBlock = enforceMutationEpisodeEvidenceApproval(state, input);
   if (mutationEpisodeBlock) return { block: mutationEpisodeBlock, evidence, planEvidence };
-  const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input);
+  const proofGraphBlock = enforceEvidenceApprovalPreflight(state, input);
   return { block: proofGraphBlock, evidence, planEvidence };
 }

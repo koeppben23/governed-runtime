@@ -22,6 +22,7 @@ function inputs(over: Partial<RegistrationConsistencyInputs> = {}): Registration
     templateFiles: new Set(['plan.md']),
     toolNames: new Set(['flowguard_plan']),
     workflowCommands: new Set(['plan']),
+    nativeCommands: new Set(['check']),
     ...over,
   };
 }
@@ -51,6 +52,34 @@ describe('evaluateRegistrationConsistency', () => {
   it('detects an unknown workflow command', () => {
     const report = evaluateRegistrationConsistency(inputs({ workflowCommands: new Set() }));
     expect(report.findings.some((f) => f.rule === 'workflow_command_valid')).toBe(true);
+  });
+
+  it('checks a native callback against native identities, not tool or phase aliases', () => {
+    const report = evaluateRegistrationConsistency(
+      inputs({
+        installedCommands: [
+          { invocation: '/check', templateFile: null, target: { nativeCommand: 'check' } },
+        ],
+        templateFiles: new Set(),
+        toolNames: new Set(),
+        workflowCommands: new Set(),
+      }),
+    );
+    expect(report.ok).toBe(true);
+    expect(report.checkedCommands).toBe(1);
+    expect(report.findings).toEqual([]);
+  });
+
+  it.each([
+    { invocation: '/check', templateFile: null, target: { nativeCommand: 'unregistered' } },
+    { invocation: '/other', templateFile: null, target: { nativeCommand: 'check' } },
+    { invocation: '/check', templateFile: 'plan.md', target: { nativeCommand: 'check' } },
+  ])('rejects native target drift: %j', (command) => {
+    const report = evaluateRegistrationConsistency(inputs({ installedCommands: [command] }));
+    expect(report.ok).toBe(false);
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({ rule: 'native_command_registered' }),
+    );
   });
 
   it('ignores the workflow-command rule when the target declares none', () => {

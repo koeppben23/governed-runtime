@@ -14,9 +14,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { buildInvocationFixture } from '../review-invocation-test-helpers.js';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ReviewFindings } from '../state/evidence.js';
 import {
@@ -25,7 +25,6 @@ import {
   isTarAvailable,
   parseToolResult,
   isBlockedResult,
-  assertTestConfigDir,
   fulfillStrictReviewObligation,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
@@ -64,9 +63,11 @@ import { completedDispatchForInvocation } from '../state/evidence-test-constants
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { convertArgsToInputSchema } from '../mcp-server/schema-converter.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ReviewVerdict } from '../state/evidence.js';
-
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -200,7 +201,7 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   cleanupEnv();
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -222,17 +223,8 @@ async function hydrateSession(
 }
 
 function recordUserDecision(verdict: ReviewVerdict): void {
-  const command =
-    verdict === 'approve'
-      ? '/approve'
-      : verdict === 'approve_with_governance_override'
-        ? '/override-approve'
-        : verdict === 'changes_requested'
-          ? '/request-changes'
-          : '/reject';
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
-    command,
     expectedVerdict: verdict,
   });
 }
@@ -294,7 +286,143 @@ describe('plan', () => {
       expect(result.selfReviewIteration).toBe(0);
     });
 
-    it('admits valid claims while recording an unsupported non-critical suite claim as diagnostic', async () => {
+    it('rejects a minimal plan without ATX headings before spending review authority', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute({ planText: 'X' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING');
+      expect(result.message).not.toContain('UNREGISTERED_REASON');
+      expect(result.message).not.toContain('{reason}');
+      const state = await readState(await currentSessionDir());
+      expect(state!.plan).toBeNull();
+      expect(state!.reviewAssurance?.obligations ?? []).toHaveLength(0);
+    });
+
+    it('presents multiple rejection causes without spending state, audit or review authority', async () => {
+      await hydrateAndTicket();
+      const sessionDir = await currentSessionDir();
+      const state = await readState(sessionDir);
+      await writeState(sessionDir, {
+        ...state!,
+        activeChecks: ['test', 'security'],
+        verificationCandidates: [
+          {
+            assertionCapability: 'structured',
+            candidateId: 'vc_test_junit',
+            kind: 'test',
+            command: 'npm test',
+            source: 'package.json:scripts.test',
+            confidence: 'high',
+            reason: 'repo test script',
+            assertionReport: {
+              collection: 'snapshot_diff',
+              transport: 'file',
+              format: 'junit_xml',
+              providerId: 'junit',
+              standardPatterns: ['reports/TEST-*.xml'],
+            },
+          },
+          {
+            assertionCapability: 'structured',
+            candidateId: 'vc_security_junit',
+            kind: 'security',
+            command: 'npm test -- --security',
+            source: 'package.json:scripts.test',
+            confidence: 'high',
+            reason: 'independent adversarial script',
+            assertionReport: {
+              collection: 'snapshot_diff',
+              transport: 'file',
+              format: 'junit_xml',
+              providerId: 'junit',
+              standardPatterns: ['reports/TEST-*.xml'],
+            },
+          },
+        ],
+      });
+
+      const beforeAdmission = await readState(sessionDir);
+      const beforeAudit = await readAuditTrail(sessionDir);
+      const raw = await plan.execute(
+        {
+          planText: '## Plan\n1. Fix missing task updates',
+          claims: [
+            {
+              statement: 'missing task updates return 404',
+              critical: true,
+              claimScope: 'specific_behavior',
+              expectedCheckId: 'test',
+              authoritySectionId: 'step-1',
+              counterexampleRequirement: {
+                kind: 'assertion',
+                checkId: 'security',
+                assertion: {
+                  providerId: 'junit',
+                  localId: 'TaskControllerTest#update_taskNotFound_returns404',
+                },
+              },
+            },
+            {
+              statement: 'the repository test suite passes',
+              critical: false,
+              claimScope: 'suite',
+              expectedCheckId: 'inactive',
+              authoritySectionId: 'step-1',
+            },
+            {
+              statement: 'request validation rejects invalid input',
+              critical: true,
+              claimScope: 'specific_behavior',
+              expectedCheckId: 'test',
+              authoritySectionId: 'step-1',
+            },
+          ],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
+      expect(result.claimSubmissionDiagnostics).toMatchObject({
+        rejectedClaims: [
+          {
+            statement: 'the repository test suite passes',
+            disposition: 'rejected_blocking',
+            code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+          },
+          {
+            statement: 'request validation rejects invalid input',
+            disposition: 'rejected_blocking',
+            code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+          },
+        ],
+      });
+
+      // A pre-admission rejection stays in the current planning step, without
+      // prescribing claim withdrawal or a nonexistent gate transition.
+      const rejected = (
+        result.claimSubmissionDiagnostics as {
+          rejectedClaims: { reason: string; recovery: string[] }[];
+        }
+      ).rejectedClaims[0]!;
+      expect(rejected.reason).toContain('The complete submission was rejected');
+      expect(rejected.reason).not.toContain('Non-critical');
+      expect(rejected.recovery).toContainEqual(expect.stringContaining('current planning step'));
+      expect(rejected.recovery.join(' ')).not.toContain('changes_requested');
+      const markdown = (result.presentation as { markdown: string }).markdown;
+      expect(markdown).toContain('the repository test suite passes');
+      expect(markdown).toContain('request validation rejects invalid input');
+      expect(markdown).toContain('expectedCheckId');
+      expect(markdown).toContain('counterexampleRequirement');
+      const persisted = await readState(sessionDir);
+      expect(persisted).toEqual(beforeAdmission);
+      expect(persisted?.phase).toBe('TICKET');
+      expect(await readAuditTrail(sessionDir)).toEqual(beforeAudit);
+    });
+
+    it('records an unsatisfiable non-critical claim as a non-blocking diagnostic', async () => {
       await hydrateAndTicket();
       const sessionDir = await currentSessionDir();
       const state = await readState(sessionDir);
@@ -323,29 +451,15 @@ describe('plan', () => {
 
       const raw = await plan.execute(
         {
-          planText: '## Plan\n1. Fix missing task updates',
+          planText: '## Plan\n1. Document behavior',
           claims: [
             {
-              statement: 'missing task updates return 404',
-              critical: true,
+              statement: 'the mutation profile stays clean',
+              critical: false,
               claimScope: 'specific_behavior',
               expectedCheckId: 'test',
               authoritySectionId: 'step-1',
-              counterexampleRequirement: {
-                kind: 'assertion',
-                checkId: 'test',
-                assertion: {
-                  providerId: 'junit',
-                  localId: 'TaskControllerTest#update_taskNotFound_returns404',
-                },
-              },
-            },
-            {
-              statement: 'the repository test suite passes',
-              critical: true,
-              claimScope: 'suite',
-              expectedCheckId: 'test',
-              authoritySectionId: 'step-1',
+              mutationProfile: 'proofgraph-evaluator',
             },
           ],
           targetPaths: ['docs/test.md'],
@@ -357,29 +471,88 @@ describe('plan', () => {
       expect(result.claimSubmissionDiagnostics).toMatchObject({
         rejectedClaims: [
           {
-            statement: 'the repository test suite passes',
-            disposition: 'rejected_blocking',
+            disposition: 'rejected_non_blocking',
             code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
           },
         ],
       });
-      expect((result.presentation as { markdown: string }).markdown).toContain(
-        '## Declarations not admitted',
-      );
-      expect((result.presentation as { markdown: string }).markdown).toContain('## Next action');
+      const rejected = (
+        result.claimSubmissionDiagnostics as {
+          rejectedClaims: { reason: string }[];
+        }
+      ).rejectedClaims[0]!;
+      expect(rejected.reason).toContain('The plan and its accepted claims remain valid.');
+      expect(rejected.reason).not.toContain('Non-critical');
 
-      const persisted = await readState(sessionDir);
-      expect(persisted?.plan?.claimDeclarations?.claims).toHaveLength(1);
-      expect(persisted?.plan?.claimDeclarations?.claims[0]?.statement).toBe(
-        'missing task updates return 404',
-      );
-      expect(persisted?.plan?.claimSubmissionDiagnostics?.rejectedClaims).toHaveLength(1);
-      expect(persisted?.plan?.claimSubmissionHistory).toMatchObject([
+      // A non-blocking-only rejection must not tell the user that approval is
+      // blocked, nor that critical claims were rejected.
+      const presentation = (result.presentation as { markdown: string }).markdown;
+      expect(presentation).toContain('non-blocking');
+      expect(presentation).not.toContain('block evidence approval');
+      expect(presentation).not.toContain('rejected critical');
+    });
+
+    it('withdraws a rejected submission without spending a plan version or reviewer attempt', async () => {
+      // Team mode keeps the human gate: solo would auto-approve the plan.
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+      const sessionDir = await currentSessionDir();
+
+      // Plan v1 carries a critical claim without a counterexample requirement.
+      const v1Raw = await plan.execute(
         {
-          planVersion: 1,
-          rejectedClaims: [{ statement: 'the repository test suite passes' }],
+          planText: '## Plan v1\n1. Fix missing task updates',
+          claims: [
+            {
+              statement: 'missing task updates return 404',
+              critical: true,
+              claimScope: 'specific_behavior',
+              expectedCheckId: 'test',
+              authoritySectionId: 'step-1',
+            },
+          ],
+          targetPaths: ['docs/test.md'],
         },
-      ]);
+        ctx,
+      );
+      expect(parseToolResult(v1Raw).error).toBe(true);
+      const afterPlan = await readState(sessionDir);
+      expect(afterPlan?.phase).toBe('TICKET');
+      expect(afterPlan?.plan).toBeNull();
+      expect(afterPlan?.reviewAssurance?.obligations ?? []).toHaveLength(0);
+      expect(afterPlan?.reviewAssurance?.attempts ?? []).toHaveLength(0);
+
+      // An explicit empty claims array withdraws the rejected declarations.
+      await plan.execute(
+        {
+          planText: '## Plan v2\n1. Document the fix',
+          claims: [],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const revised = await readState(sessionDir);
+      expect(revised?.plan?.current.planVersion).toBe(1);
+      expect(revised?.plan?.claimDeclarations?.claims).toHaveLength(0);
+      expect(revised?.plan?.claimSubmissionDiagnostics?.rejectedClaims ?? []).toHaveLength(0);
+
+      const secondFindings = await fulfillStrictReviewObligation(sessionDir, {
+        obligationType: 'plan',
+        iteration: 0,
+        planVersion: 1,
+        overallVerdict: 'accept',
+      });
+      await plan.execute({ reviewVerdict: 'accept', reviewFindings: secondFindings }, ctx);
+      expect((await readState(sessionDir))?.phase).toBe('PLAN_REVIEW');
+
+      // The stale rejected-claim blocker must be gone: approval now advances.
+      recordUserDecision('approve');
+      const approvedRaw = await decision.execute(
+        { verdict: 'approve', rationale: 'Accepted after withdrawal' },
+        ctx,
+      );
+      expect(parseToolResult(approvedRaw).error).not.toBe(true);
+      expect((await readState(sessionDir))?.phase).toBe('IMPLEMENTATION');
     });
 
     it('Mode B: approve converges after mandatory subagent review', async () => {
@@ -398,23 +571,30 @@ describe('plan', () => {
       expect(state?.validation.every((entry) => entry.passed)).toBe(true);
     });
 
-    it('Mode B: changes_requested with revised plan', async () => {
-      await hydrateAndTicket();
-      await plan.execute({ planText: '## Original Plan', targetPaths: ['docs/test.md'] }, ctx);
-      const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
-      const raw = await plan.execute(
-        {
-          reviewVerdict: 'changes_requested',
-          planText: '## Revised Plan\n1. Better approach',
-          claims: [],
-          reviewFindings,
-          targetPaths: ['docs/test.md'],
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBeUndefined();
-    });
+    it.each([undefined, ['docs/replacement.md'], []])(
+      'Mode B: revised plan replaces targets with %j or retains omitted targets',
+      async (targets) => {
+        await hydrateAndTicket();
+        await plan.execute({ planText: '## Original Plan', targetPaths: ['docs/test.md'] }, ctx);
+        const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
+        const raw = await plan.execute(
+          {
+            reviewVerdict: 'changes_requested',
+            planText: '## Revised Plan\n1. Better approach',
+            claims: [],
+            reviewFindings,
+            ...(targets === undefined ? {} : { targetPaths: targets }),
+          },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+        expect(result.error).toBeUndefined();
+        const state = await readState(await currentSessionDir());
+        expect(state?.reviewAssurance?.obligations.at(-1)?.metadata?.targetPaths).toEqual(
+          targets ?? ['docs/test.md'],
+        );
+      },
+    );
 
     it('Mode B changes_requested keeps selfReviewIteration aligned with next iteration metadata', async () => {
       await hydrateSession({ policyMode: 'team' });
@@ -436,6 +616,11 @@ describe('plan', () => {
       expect(result.error).toBeUndefined();
       expect(typeof result.selfReviewIteration).toBe('number');
       expect(result.reviewDispatch).toEqual({ required: true });
+      expect(result.status).toContain('Plan revised (v2) after changes_requested');
+      expect(result.status).toContain('is pending; dispatch the reviewer');
+      expect(result.status).not.toContain('Verdict:');
+      expect(result.agentInstruction).toContain('Dispatch the flowguard-reviewer subagent');
+      expect((result.reviewInvocation as { status?: string }).status).toBe('pending_review');
       const revisionState = await readState(await currentSessionDir());
       expect(result.reviewAttemptId).toBe(
         revisionState?.reviewAssurance?.attempts.find(
@@ -464,6 +649,17 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('EMPTY_PLAN');
+    });
+
+    it('blocks without ticket evidence in the TICKET phase', async () => {
+      await hydrateSession();
+      const dir = await currentSessionDir();
+      const state = await readState(dir);
+      await writeState(dir, { ...state!, phase: 'TICKET', ticket: null });
+      const raw = await plan.execute({ planText: '## Plan' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('TICKET_REQUIRED');
     });
 
     it('blocks in READY phase (command not allowed without ticket phase)', async () => {
@@ -853,6 +1049,7 @@ describe('plan', () => {
               claimScope: 'specific_behavior',
               authoritySectionId: 'authentication',
               expectedCheckId: 'typecheck',
+              structuralSurface: 'command-registration',
             },
           ],
           targetPaths: ['docs/test.md'],
@@ -872,6 +1069,7 @@ describe('plan', () => {
             claimScope: 'specific_behavior',
             authoritySectionId: 'authentication',
             expectedCheckId: 'typecheck',
+            structuralSurface: 'command-registration',
           },
         ],
       });
@@ -958,25 +1156,31 @@ describe('plan', () => {
       expect(state!.phase).toBe('PLAN_REVIEW');
       expect(state!.reviewDecision).toBeNull();
     });
-
-    it('TEAM: force-converged card binds reviewer findings to the prior plan revision (F1)', async () => {
+    it('TEAM: the exhausting revision is not adopted; the reviewed plan stays current (F1)', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
 
       const result = await exhaustPlanReviews(3);
       expect(result.phase).toBe('PLAN_REVIEW');
+      expect(result.adopted).toBe(false);
 
       const state = await readState(await currentSessionDir());
       const reviewed = state!.reviewAssurance!.obligations.find(
         (o) => o.obligationType === 'plan' && o.iteration === 2 && o.planVersion === 3,
       );
       expect(reviewed).toBeDefined();
+      // The last reviewed revision remains the current authority: the draft
+      // submitted with the exhausting verdict was never reviewed and is not
+      // adopted (no new plan version, no history entry).
+      expect(reviewed!.subjectDigest).toBe(state!.plan!.current.digest);
+      expect(state!.plan!.current.planVersion).toBe(reviewed!.planVersion);
+      expect(state!.selfReview!.currDigest).toBe(state!.plan!.current.digest);
+      // Adopted lineage stops at the reviewed version: no entry for the draft.
+      expect(state!.plan!.history).toHaveLength(state!.plan!.current.planVersion - 1);
 
       const card = String(result.reviewCard);
-      expect(card).toContain('⚠ These reviewer findings apply to a prior plan revision.');
-      expect(card).toContain(`Reviewed digest: \`${reviewed!.subjectDigest}\``);
-      expect(card).toContain(`Current digest:  \`${state!.plan!.current.digest}\``);
-      expect(reviewed!.subjectDigest).not.toBe(state!.plan!.current.digest);
+      expect(card).toContain('The revision submitted with the final verdict was NOT adopted.');
+      expect(card).not.toContain('apply to a prior plan revision');
     });
 
     it('TEAM: plain approve of the force-converged plan requires the governance override verdict (CE5/P2)', async () => {
@@ -984,8 +1188,12 @@ describe('plan', () => {
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
-      // The exhausted gate accepts only the explicit override intent; a plain
-      // approve must fail closed before any evidence resolution.
+      // A self-initiated call records nothing and names the user's override path.
+      const selfDecision = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'Self-initiated' }, ctx),
+      );
+      expect(selfDecision.code).toBe('HUMAN_DECISION_REQUIRED');
+      expect(String(selfDecision.agentInstruction)).toContain('/override-approve');
       recordUserDecision('approve');
       const decisionResult = parseToolResult(
         await decision.execute(
@@ -1000,16 +1208,17 @@ describe('plan', () => {
       expect(state!.plan?.approvalCertificate).toBeUndefined();
     });
 
-    it('TEAM: human governance override of the force-converged plan blocks when the last review covered a prior plan version (CE5/P2)', async () => {
+    it('TEAM: human governance override approves the last REVIEWED plan when the budget is exhausted (CE5/P2)', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
-      // The last independent review covered the PRIOR plan revision; the final
-      // revision was never reviewed. Resolution binds the exact
-      // subjectDigest+planVersion+claimDeclarationsDigest tuple, so no
-      // current-version evidence exists — even the override must fail closed:
-      // plan review evidence must be bindable for an override.
+      // The exhausting revision was not adopted, so the reviewed subject IS the
+      // current plan: the explicit human override binds exactly that reviewed
+      // digest and never an un-reviewed revision.
+      const reviewedState = await readState(await currentSessionDir());
+      const reviewedDigest = reviewedState!.plan!.current.digest;
+
       recordUserDecision('approve_with_governance_override');
       const decisionResult = parseToolResult(
         await decision.execute(
@@ -1020,11 +1229,10 @@ describe('plan', () => {
           ctx,
         ),
       );
-      expect(decisionResult.error).toBe(true);
-      expect(decisionResult.code).toBe('PLAN_REVIEW_EVIDENCE_REQUIRED');
+      expect(decisionResult.error).toBeUndefined();
       const state = await readState(await currentSessionDir());
-      expect(state!.phase).toBe('PLAN_REVIEW');
-      expect(state!.plan?.approvalCertificate).toBeUndefined();
+      expect(state!.plan?.approvalCertificate).toBeDefined();
+      expect(state!.plan!.current.digest).toBe(reviewedDigest);
     });
 
     it('TEAM: human changes_requested sends the force-converged plan back to PLAN', async () => {
@@ -1096,10 +1304,10 @@ describe('plan', () => {
         code: 'GOVERNANCE_OVERRIDE_REQUIRED',
       });
 
-      // The governance override can never bypass evidence binding: this
-      // fixture's exhausted review loop does not bind the final revision, so
-      // the override is fail-closed too. The coherent-evidence override path
-      // is covered by the review-decision rail tests.
+      // The explicit override approves the last REVIEWED plan; the exhausting
+      // revision was not adopted, so no un-reviewed artifact is ever released.
+      const reviewedState = await readState(await currentSessionDir());
+      const reviewedDigest = reviewedState!.plan!.current.digest;
       recordUserDecision('approve_with_governance_override');
       const override = parseToolResult(
         await decision.execute(
@@ -1107,12 +1315,10 @@ describe('plan', () => {
           ctx,
         ),
       );
-      expect(override).toMatchObject({
-        error: true,
-        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
-      });
+      expect(override.error).toBeUndefined();
       const state = await readState(await currentSessionDir());
-      expect(state!.phase).toBe('PLAN_REVIEW');
+      expect(state!.plan?.approvalCertificate).toBeDefined();
+      expect(state!.plan!.current.digest).toBe(reviewedDigest);
     });
   });
 
@@ -1237,9 +1443,10 @@ describe('plan', () => {
       expect(result.reviewCard).toContain('## Proposed Plan');
       expect(result.reviewCard).toContain('Implement payment validation');
       expect(result.reviewCard).toContain('Plan decision required.');
-      expect(result.presentation).toEqual({ markdown: result.reviewCard });
+      // Single-source card: with the default glyph profile the host-visible
+      // markdown is identical to the canonical card, so it is not re-sent.
+      expect(result.presentation).toBeUndefined();
     });
-
     it('converged PLAN_REVIEW reviewCard contains recommended commands', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix auth', source: 'user' }, ctx);
@@ -1571,7 +1778,7 @@ describe('plan', () => {
       const planResponseMod = await import('./tools/plan/plan-response.js');
       return {
         artifactReviewSubjectScope: assuranceMod.artifactReviewSubjectScope,
-        buildInvocationEvidence: assuranceMod.buildInvocationEvidence,
+        buildInvocationEvidence: buildInvocationFixture,
         createReviewObligation: assuranceMod.createReviewObligation,
         freezeReviewMaterial: assuranceMod.freezeReviewMaterial,
         REVIEW_CRITERIA_VERSION: assuranceMod.REVIEW_CRITERIA_VERSION,
@@ -1693,33 +1900,6 @@ describe('plan', () => {
       const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
       expect(summary.reviewedDigest).toBeUndefined();
       expect(summary.reviewedObligationId).toBeUndefined();
-    });
-  });
-
-  describe('assertTestConfigDir (test safety guard)', () => {
-    it('HAPPY: passes when OPENCODE_CONFIG_DIR is set to a temp directory', async () => {
-      const ws = await createTestWorkspace();
-      expect(() => assertTestConfigDir()).not.toThrow();
-      await ws.cleanup();
-    });
-
-    it('BAD: throws when OPENCODE_CONFIG_DIR is not set', () => {
-      const cleanup = withTestEnv({ OPENCODE_CONFIG_DIR: undefined });
-      try {
-        expect(() => assertTestConfigDir()).toThrow('Unsafe OPENCODE_CONFIG_DIR');
-      } finally {
-        cleanup();
-      }
-    });
-
-    it('BAD: throws when OPENCODE_CONFIG_DIR points to non-temp directory', () => {
-      const nonTempPath = path.join(os.homedir(), '.config', 'opencode');
-      const cleanup = withTestEnv({ OPENCODE_CONFIG_DIR: nonTempPath });
-      try {
-        expect(() => assertTestConfigDir()).toThrow('Unsafe OPENCODE_CONFIG_DIR');
-      } finally {
-        cleanup();
-      }
     });
   });
 

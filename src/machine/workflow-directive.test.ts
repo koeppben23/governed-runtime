@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeState, ARCHITECTURE_DECISION, PLAN_RECORD } from '../fixtures.js';
 import { Phase, type SessionState } from '../state/schema.js';
+import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js';
 import {
   resolveExecutionDisposition,
   resolveWorkflowDirective,
@@ -45,7 +46,11 @@ describe('resolveWorkflowDirective', () => {
       code: 'WORKFLOW_BLOCKED',
       allowedIntents: [],
       commands: [],
-      context: { reasonCode: 'TEST_BLOCKED', recovery: 'clear the test error' },
+      context: {
+        reasonCode: 'TEST_BLOCKED',
+        reasonText: 'blocked for test',
+        recovery: 'clear the test error',
+      },
     });
   });
 
@@ -129,6 +134,22 @@ describe('resolveWorkflowDirective', () => {
 });
 
 describe('resolveExecutionDisposition', () => {
+  it('does not turn a recording prerequisite into a global block in other phases', () => {
+    const authorized = authorizeMutationEpisode([], {
+      episodeId: '11111111-1111-4111-8111-111111111111',
+      hostCallId: 'edit-call',
+      toolName: 'edit',
+      runtimeInstanceId: '22222222-2222-4222-8222-222222222222',
+      leaseGeneration: 1,
+      authorizedAt: '2026-10-01T00:00:00.000Z',
+    });
+    if (authorized.kind !== 'authorized') throw new Error('fixture');
+    for (const phase of ['PLAN', 'IMPL_REVIEW', 'EVIDENCE_REVIEW'] as const) {
+      const state = { ...makeState(phase), mutationEpisodes: authorized.episodes };
+      expect(resolveExecutionDisposition(state)).not.toBe('blocked');
+      expect(resolveWorkflowDirective(state).kind).not.toBe('blocked');
+    }
+  });
   it('derives terminal, awaiting_human, and active from the workflow position', () => {
     for (const phase of [
       'COMPLETE',
@@ -194,7 +215,7 @@ describe('resolveExecutionDisposition', () => {
       code: 'WORKFLOW_BLOCKED',
       allowedIntents: [],
       commands: [],
-      context: { reasonCode: 'RISK_GATE_BLOCKED' },
+      context: { reasonCode: 'RISK_GATE_BLOCKED', reasonText: 'risk gate blocked' },
     });
   });
 
@@ -214,7 +235,7 @@ describe('resolveExecutionDisposition', () => {
       code: 'WORKFLOW_BLOCKED',
       allowedIntents: [],
       commands: [],
-      context: { reasonCode: 'DISCOVERY_DRIFT_BLOCKED' },
+      context: { reasonCode: 'DISCOVERY_DRIFT_BLOCKED', reasonText: 'discovery health blocked' },
     });
   });
 

@@ -20,7 +20,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import ts from 'typescript';
 
-import { collectProductionSources } from './production-source.js';
+import { collectProductionSources } from '../support/production-source.js';
 
 const SRC = join(process.cwd(), 'src');
 

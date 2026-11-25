@@ -13,18 +13,25 @@
  * @version v1
  */
 
-import { z } from 'zod';
-
 import type { ToolDefinition, ToolResult, WorkspaceToolContext } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { withMutableSession, withMutableSessionTransaction } from '../helpers.js';
+import { withMutableSessionTransaction } from '../helpers.js';
 import { persistAndFormat } from '../helpers-rail-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
-import type { ActorInfo, ReviewVerdict } from '../../../state/evidence.js';
+import { ReviewVerdict, type ActorInfo } from '../../../state/evidence.js';
+import { isApprovalVerdict } from '../../../state/evidence-primitives.js';
+import type { SessionState } from '../../../state/schema.js';
+import type { FlowGuardPolicy } from '../../../config/policy.js';
+import {
+  latestPlanTargetPaths,
+  preexistingTargetCheck,
+} from '../../../verification/implementation-subject.js';
 import type { RailResult } from '../../../rails/types.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import { TOOL_FLOWGUARD_DECISION } from '../../tool-names.js';
+import { requiresGovernanceOverride } from '../../../machine/workflow-directive.js';
+import { blocked } from '../../../config/reasons.js';
 
 // Rails
 import { executeReviewDecision } from '../../../rails/review-decision.js';
@@ -37,8 +44,16 @@ import { ActorIdentityError } from '../../../adapters/actor.js';
 import { finalizeDecision } from '../../services/decision-finalization.js';
 import { buildDecisionAuditIntent } from '../../services/decision-audit-intent.js';
 import { createSessionCompletionAuditDeps } from '../../services/regulated-completion.js';
-import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../../user-decision-intent.js';
-import { attestReducedCeremonySubject } from '../reduced-ceremony-attestation.js';
+import {
+  DecisionArgsSchema,
+  readDecisionInvocation,
+  verifyDecisionInvocation,
+  type DecisionInvocation,
+} from '../../workflow-decision-invocation.js';
+import {
+  attestApprovalWorktreeSubject,
+  attestReducedCeremonySubject,
+} from '../reduced-ceremony-attestation.js';
 
 // Automatic validation on entry to VALIDATION
 import {
@@ -50,25 +65,15 @@ import {
 // flowguard_decision — Human Verdict at User Gates
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function requireHumanDecisionIntent(input: {
-  readonly sessionId: string;
-  readonly verdict: ReviewVerdict;
-  readonly requireHumanGates: boolean;
-}): string | null {
-  if (!input.requireHumanGates) return null;
-  // Non-destructive gate: a valid intent is left in place so that a decision
-  // failing at a later, independent stage (schema validation, actor assurance)
-  // can be retried without the user re-issuing the /approve command. The intent
-  // is only consumed once the decision is actually processed (see execute()).
-  // Anti-replay for expired/verdict_mismatch is still enforced inside peek.
-  const gate = peekUserDecisionIntent({
-    sessionId: input.sessionId,
-    verdict: input.verdict,
-  });
-  if (gate.ok) return null;
-  return formatBlocked('HUMAN_DECISION_REQUIRED', {
-    reason: gate.reason,
-  });
+/**
+ * The agent never owns a user gate. When it calls the decision tool on its own,
+ * the refusal names the command the USER must run and, at an exhausted review
+ * gate, the only admissible override path.
+ */
+function decisionOriginAgentInstruction(state: SessionState): string {
+  return requiresGovernanceOverride(state)
+    ? 'Do not call flowguard_decision yourself. The independent review is exhausted: present the governance override option and ask the user to run /override-approve with a durable rationale, or /request-changes to revise the artifact.'
+    : 'Do not call flowguard_decision yourself. Ask the user to run /approve, /request-changes, or /reject; only the user may decide this gate.';
 }
 
 type DecisionFinalization = Awaited<ReturnType<typeof finalizeDecision>>;
@@ -94,6 +99,7 @@ async function decisionReceiptIntents(input: {
   readonly actor: string;
   /** The actor that actually decided — never the session initiator's ActorInfo. */
   readonly actorInfo: ActorInfo;
+  readonly invocation: DecisionInvocation | undefined;
 }): Promise<readonly SemanticAuditIntent[]> {
   const { finalResult } = input;
   if (finalResult.kind !== 'ok') return [];
@@ -112,28 +118,165 @@ async function decisionReceiptIntents(input: {
       decisionSequence,
       actor: input.actor,
       actorInfo: input.actorInfo,
+      ...(input.invocation === undefined ? {} : { operation: input.invocation.operation }),
     }),
   ];
+}
+
+/**
+ * Bind every final full-review approval to the live governed subject: an
+ * unchanged session state does not prove the worktree bytes still match the
+ * reviewed implementation. Reduced ceremony keeps its own binding path
+ * (implReview is null there); this check covers the full independent review.
+ */
+async function approvedFullReviewWorktreeBlock(input: {
+  readonly state: SessionState;
+  readonly verdict: ReviewVerdict;
+  readonly worktree: string;
+  readonly digest: (text: string) => string;
+}): Promise<PersistedDecision | null> {
+  if (
+    input.state.phase !== 'EVIDENCE_REVIEW' ||
+    input.state.implReview === null ||
+    (input.verdict !== 'approve' && input.verdict !== 'approve_with_governance_override')
+  ) {
+    return null;
+  }
+  const worktreeAttestation = await attestApprovalWorktreeSubject({
+    state: input.state,
+    worktree: input.worktree,
+    digest: input.digest,
+  });
+  if (worktreeAttestation?.kind !== 'subject_changed') return null;
+  return {
+    output: formatBlocked(
+      'IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH',
+      {
+        reviewedDigest: worktreeAttestation.expected,
+        currentDigest: worktreeAttestation.actual,
+      },
+      { phase: input.state.phase },
+    ),
+    finalResult: {
+      kind: 'blocked',
+      code: 'IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH',
+      reason: 'The governed worktree no longer matches the reviewed implementation.',
+    },
+  };
+}
+
+function missingCommandDecision(state: SessionState): PersistedDecision {
+  return {
+    output: formatBlocked(
+      'HUMAN_DECISION_REQUIRED',
+      { reason: 'missing host-command operation' },
+      { agentInstruction: decisionOriginAgentInstruction(state) },
+    ),
+    finalResult: {
+      kind: 'blocked',
+      code: 'HUMAN_DECISION_REQUIRED',
+      reason: 'An explicit host-command decision is required by the frozen policy.',
+    },
+  };
+}
+
+function planBaselineDecisionBlock(code: string, vars: Record<string, string>): PersistedDecision {
+  const block = blocked(code, vars);
+  return {
+    output: formatBlocked(code, vars),
+    finalResult: {
+      kind: 'blocked',
+      code: block.code,
+      reason: block.reason,
+      recovery: block.recovery,
+    },
+  };
+}
+
+async function planBaselineApprovalBlock(input: {
+  readonly state: SessionState;
+  readonly verdict: ReviewVerdict;
+  readonly worktree: string;
+}): Promise<PersistedDecision | null> {
+  if (input.state.phase !== 'PLAN_REVIEW' || !isApprovalVerdict(input.verdict)) return null;
+  const targetCheck = await preexistingTargetCheck({
+    worktree: input.worktree,
+    baseline: input.state.implementationBaseline,
+    targetPaths: latestPlanTargetPaths(input.state),
+  });
+  if (targetCheck.kind === 'unavailable')
+    return planBaselineDecisionBlock('IMPLEMENTATION_BASELINE_UNAVAILABLE', {});
+  if (targetCheck.kind === 'invalid')
+    return planBaselineDecisionBlock('PLAN_TARGET_PATH_INVALID', { path: targetCheck.path });
+  if (targetCheck.kind === 'dirty' && targetCheck.baselinePaths.length > 0)
+    return planBaselineDecisionBlock('PLAN_TARGETS_PREEXISTING_DIRTY', {
+      paths: targetCheck.baselinePaths.join(', '),
+      capturedAt: input.state.implementationBaseline.capturedAt,
+    });
+  if (targetCheck.kind === 'dirty')
+    return planBaselineDecisionBlock('PLAN_TARGETS_DIRTY_AT_APPROVAL', {
+      paths: targetCheck.currentPaths.join(', '),
+    });
+  return null;
+}
+
+async function decisionActorAuthority(
+  worktree: string,
+  policy: FlowGuardPolicy,
+): Promise<{
+  readonly actorInfo: ActorInfo;
+  readonly actor: string;
+  readonly decisionIdentity: {
+    actorId: string;
+    actorEmail: string | null;
+    actorDisplayName: string | null | undefined;
+    actorSource: ActorInfo['source'];
+    actorAssurance: ActorInfo['assurance'];
+  };
+}> {
+  const actorInfo = await resolveActorForPolicy(worktree, policy);
+  return {
+    actorInfo,
+    actor: policy.actorClassification[TOOL_FLOWGUARD_DECISION] ?? 'system',
+    decisionIdentity: {
+      actorId: actorInfo.id,
+      actorEmail: actorInfo.email,
+      actorDisplayName: actorInfo.displayName,
+      actorSource: actorInfo.source,
+      actorAssurance: actorInfo.assurance,
+    },
+  };
 }
 
 async function persistHumanDecision(
   context: WorkspaceToolContext,
   args: { readonly verdict: ReviewVerdict; readonly rationale: string },
-  actorInfo: ActorInfo,
 ): Promise<PersistedDecision> {
   return withMutableSessionTransaction(
     context,
     async ({ fingerprint, sessDir, state, policy, ctx }) => {
-      // P30/P34: Build structured decision identity directly from resolved actor info
-      // actorAssurance comes from the canonical ActorInfo — not re-derived from source
-      const decisionIdentity = {
-        actorId: actorInfo.id,
-        actorEmail: actorInfo.email,
-        actorDisplayName: actorInfo.displayName,
-        actorSource: actorInfo.source,
-        actorAssurance: actorInfo.assurance,
-      };
-      const actor = policy.actorClassification[TOOL_FLOWGUARD_DECISION] ?? 'system';
+      const probe = { context, state, verdict: args.verdict, rationale: args.rationale };
+      const invocation = readDecisionInvocation(probe);
+      if (policy.requireHumanGates && invocation?.operation.source !== 'host_command')
+        return missingCommandDecision(state);
+      if (invocation !== undefined) await verifyDecisionInvocation(invocation, probe);
+      const { actorInfo, actor, decisionIdentity } = await decisionActorAuthority(
+        context.worktree,
+        policy,
+      );
+      const worktreeBlock = await approvedFullReviewWorktreeBlock({
+        state,
+        verdict: args.verdict,
+        worktree: context.worktree,
+        digest: ctx.digest,
+      });
+      if (worktreeBlock) return worktreeBlock;
+      const planBaselineBlock = await planBaselineApprovalBlock({
+        state,
+        verdict: args.verdict,
+        worktree: context.worktree,
+      });
+      if (planBaselineBlock) return planBaselineBlock;
 
       // Reduced-ceremony approval binding: the integration boundary re-attests
       // the frozen worktree bytes; the rail checks the outcome. Non-reduced
@@ -148,13 +291,7 @@ async function persistHumanDecision(
         state,
         {
           verdict: args.verdict,
-          // Fall back to an empty string here rather than relying on the Zod
-          // `.default('')`: the MCP boundary strips null-valued args (some
-          // models inject `rationale: null`), which removes the key entirely
-          // and leaves the value undefined by the time it reaches state
-          // serialization. Without this guard SessionState.safeParse rejects
-          // the decision with SCHEMA_VALIDATION_FAILED.
-          rationale: args.rationale ?? '',
+          rationale: args.rationale,
           decisionIdentity,
           ...(subjectAttestation !== null ? { subjectAttestation } : {}),
         },
@@ -187,6 +324,7 @@ async function persistHumanDecision(
         auditDeps,
         actor,
         actorInfo,
+        invocation,
       });
 
       const persisted = await persistAndFormat(sessDir, finalResult, {
@@ -195,12 +333,14 @@ async function persistHumanDecision(
           (args.verdict === 'approve' || args.verdict === 'approve_with_governance_override'),
         semanticIntents,
       });
+      if (finalResult.kind === 'ok' && invocation !== undefined) invocation.committed = true;
 
       return { output: persisted, finalResult };
     },
   );
 }
 
+const DecisionArgs = DecisionArgsSchema;
 export const decision: ToolDefinition = {
   description:
     'Record a human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW). ' +
@@ -208,57 +348,13 @@ export const decision: ToolDefinition = {
     "'changes_requested' (revise), 'reject' (end the governed workflow). " +
     'This tool ONLY works at PLAN_REVIEW, EVIDENCE_REVIEW, and ARCH_REVIEW phases. ' +
     'In regulated mode, four-eyes principle is enforced: the reviewer must differ from the session initiator.',
-  args: {
-    verdict: z
-      .enum(['approve', 'approve_with_governance_override', 'changes_requested', 'reject'])
-      .describe(
-        "Review verdict. 'approve' advances a reviewer-accepted workflow. " +
-          "'approve_with_governance_override' accepts an exhausted review gate with a recorded override. " +
-          "'changes_requested' returns to revision. " +
-          "'reject' ends the governed workflow at REJECTED.",
-      ),
-    rationale: z.string().default('').describe('Reason for the decision. Recorded in audit trail.'),
-  },
+  args: DecisionArgs.shape,
   async execute(args, context) {
     try {
-      const probe = await withMutableSession(context);
-      const requireHumanGates = probe.policy.requireHumanGates === true;
-      const humanOriginBlocked = requireHumanDecisionIntent({
-        sessionId: context.sessionID,
-        verdict: args.verdict,
-        requireHumanGates,
-      });
-      if (humanOriginBlocked) {
-        getAdapterLogger().warn('tool', 'decision_origin_missing', {
-          sessionId: context.sessionID,
-          code: 'HUMAN_DECISION_REQUIRED',
-          ...getLogTraceFields(),
-        });
-        return humanOriginBlocked;
-      }
-
-      const actorInfo = await resolveActorForPolicy(
-        context.worktree || context.directory,
-        probe.policy,
-      );
-
-      const settled = await persistHumanDecision(context, args, actorInfo);
+      const parsed = DecisionArgs.parse(args);
+      const settled = await persistHumanDecision(context, parsed);
       const finalResult = settled.finalResult;
       const output = settled.output;
-
-      // Consume the user-decision intent ONLY on a fully successful decision,
-      // and only in human-gated mode. Placing this after finalizeDecision (and
-      // after persistAndFormat) guarantees that any failure which produces a
-      // non-ok result or throws before this point — schema validation, actor
-      // assurance, missing evidence artifacts — leaves the intent intact for
-      // retry. A successful decision still burns it exactly once, preserving
-      // anti-replay. The consume is in-memory and cannot fail.
-      if (requireHumanGates && finalResult.kind === 'ok') {
-        consumeUserDecisionIntent({
-          sessionId: context.sessionID,
-          verdict: args.verdict,
-        });
-      }
 
       if (finalResult.kind === 'ok') {
         getAdapterLogger().info('tool', 'decision_persisted', {
@@ -280,7 +376,11 @@ export const decision: ToolDefinition = {
           phase: finalResult.state.phase,
         });
         if (autoValidation.kind === 'run') {
-          const autoValidationResponse = await runActiveChecksAutomatically(context);
+          const autoValidationResponse = await runActiveChecksAutomatically(
+            context,
+            undefined,
+            context.autoValidationProgress,
+          );
           if (autoValidationResponse !== null) return autoValidationResponse;
         }
       }

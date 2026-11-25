@@ -5,6 +5,10 @@ presentation and repeatability scenario. The demo **contract** is enforced in
 the unit suite by `src/documentation/__tests__/demo-contract.test.ts`, which
 runs with the unit test suite (`npm run test:unit`).
 
+See the
+[Java reference evidence case study](../../docs/case-studies/java-governed-delivery.md)
+for the observed red-green, positive, negative, and integrity controls.
+
 ## What This Demo Proves
 
 The Java bug is deliberately small. This demo does **not** prove that an LLM
@@ -35,11 +39,33 @@ for already-terminal sessions and defaults to a redacted sharing archive.
 ## Prerequisites
 
 - JDK 21+
-- Node.js 22+
+- For reproducible demo runs: Node.js from `.node-version` (22.22.2) and npm 10.x.
+  Node 26/npm 11 are outside the package support contract; select the pinned
+  toolchain (for example `nvm use 22.22.2`) before installing.
 - OpenCode CLI (`opencode`) in PATH
 - FlowGuard core tarball (build with `npm run build && npm run pack:checksums`
   from the governed-runtime repo root; the script writes the tarball and the
   `checksums.sha256` file the installer requires next to it)
+
+## Run all demos (one command)
+
+`demos/run-all-demos.sh` is the supported entry point for a full live run. It
+performs a mandatory dry-run environment gate (toolchain pins, npm 10 canary
+install under `engine-strict`, run isolation, artifact checksum, provider ping)
+and then runs the matrix, claim controls, risk-trigger controls and the replan
+recovery sequentially with fresh roots:
+
+```bash
+demos/run-all-demos.sh /tmp/flowguard-demos-run
+```
+
+The wrapper requires Node from `.node-version`, the exact OpenCode V2 candidate
+in `.sdk-baselines/opencode/cli-candidate.json`, JDK 21+ and npm 10 (installed into the run root
+when the ambient npm major differs). Runs are intentionally sequential: the
+host installer uses a lock that the wrapper scopes per run root. Exit code `0`
+means every scenario produced accepted evidence, `2` marks unreached proofs and
+`1` a contract violation. See `demos/DEMO_ASSURANCE.md` for the result taxonomy
+and the forensic findings this harness enforces.
 
 ## Quick Start
 
@@ -47,9 +73,31 @@ for already-terminal sessions and defaults to a redacted sharing archive.
 tarball. It does not call `/start`, dispatch a reviewer, or complete any flow.
 Follow the live-evidence checklist below before claiming a demo was executed.
 
+The install scope defaults to `--install-scope global` (`~/.config/opencode`,
+commands available in every OpenCode project, but governance stays inactive).
+OpenCode V2 watches plugin/config changes; the OpenCode V2 host command `/reload`
+forces rediscovery if needed.
+The runbooks below pass `--install-scope repo` explicitly: it
+keeps FlowGuard isolated inside each demo workspace, so no global state is
+touched.
+
+Setup verifies the install with `flowguard doctor` from the **same tarball** and
+requires a non-empty reviewer agent for both scopes. V2 discovers
+`plugins/flowguard/index.ts` natively: neither `opencode.json` nor V1 tool/plugin
+wrappers are required or created. Missing/modified managed artifacts, invalid
+config, unresolved dependencies or obsolete/duplicate registrations block setup.
+Doctor's runtime/activation warnings are not installed ACTIVE or Desktop
+acceptance; do not start `/start` until setup verification succeeds.
+
+If Desktop still cannot find `/start`, inspect its own server's plugin status.
+A retained `Cannot find package '@flowguard/core'` error from an earlier live
+install is not repaired by creating V1 files or invoking `/hydrate`. After
+safely stopping active work, follow the [native load recovery procedure](../../docs/installation.md#native-v2-layout-and-fresh-install-boundary)
+using the CLI matching Desktop, then verify `/start` in that same server.
+
 ```bash
-# From demos/java-task-manager/: prepare every live demo workspace
-../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+# From demos/java-task-manager/: prepare every live demo workspace (repo-scoped)
+../../run-demo-setup.sh --install --install-scope repo --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 cd /tmp/flowguard-demos/java-task-manager
 
 # Verify the starting state
@@ -136,12 +184,170 @@ comparison together with the main workspace by default. Use
 `run-reduced-ceremony-demo-setup.sh` directly only when preparing the A/B
 comparison on its own.
 
+### Optional Post-Export — ISO/IEC 27001:2022 Evidence Projection
+
+After the Development Flow reaches `COMPLETE`, the prepared workspace contains
+`run-iso-mapping.sh` and a synthetic demo mapping
+(`iso27001-demo-mapping.json`). The wrapper is a read-only projection over the
+already verified export; it does not call a model, does not modify the session,
+and does not create evidence.
+
+```bash
+./run-iso-mapping.sh --session <host-session-id>
+```
+
+The host session ID is the OpenCode session identity from the live evidence
+checklist, not the internal FlowGuard session ID. The wrapper writes:
+
+- `/tmp/flowguard-iso-reports/<host-session-id>/iso27001-report.json`
+- `/tmp/flowguard-iso-reports/<host-session-id>/iso27001-report.md`
+
+Exit `0` means the reports were produced; individual controls may still be
+`EVIDENCE_MISSING` or `NOT_VERIFIED`. Exit `1` is a usage/mapping/output error;
+exit `2` means the export is missing or not verifiable. Existing report
+directories are never overwritten. The final directory is reserved with Node's
+non-recursive filesystem operation, not the shell `mkdir` exit status (affected
+Ubuntu uutils versions can report success after `EEXIST`). Concurrent publishers
+have one winner. The two validated companion files are moved after reservation;
+this is not crash-atomic publication of the pair.
+
+The demo mapping relates the verified technical evidence to A.8.15, A.8.25,
+A.8.29, and A.8.32. A.8.29 is explicitly a functional regression assertion
+example, not a claim of complete security-test coverage. The mapping is
+synthetic: it is not an organization-specific Statement of Applicability,
+organizational approval, or ISO conformity assessment. Read the Markdown report's limitations and the
+`EVIDENCE_*` status values; do not reduce them to a pass/fail headline.
+
+The wrapper resolves the installed FlowGuard CLI from the repo-scoped
+`.opencode/node_modules/@flowguard/core/dist/cli/install.js` or the global
+OpenCode config, with `FLOWGUARD_BIN` as an explicit override. It does not use
+`npx` or an unrelated CLI from `PATH`.
+
 ## Live Evidence Checklist
 
 Workspace preparation is not a live run. Record a distinct host-session ID and
 FlowGuard session ID for every row; the host-session ID is the package identity
 used by `verify-evidence-package.mjs`. Do not reuse a session or a chat export
 between flows.
+
+`run-live-matrix.mjs` executes this checklist reproducibly: it reads the
+toolchain pins from the canonical repository files (`.sdk-baselines/opencode/cli-candidate.json`
+and `.node-version`), verifies the tarball against its `checksums.sha256`
+sidecar before installing, prepares fresh workspaces, opts the repository
+config into raw auditor archives next to the isolated global grant, runs
+prompt-template steps through headless `opencode run` from an explicit working
+directory, and sends native start/check commands and decisions directly through
+the host command API. It creates the root session through the isolated host,
+then verifies the worktree binding and packages and exports the parent and
+reviewer-child transcripts to exclusive files. Each export must match its
+session, worktree and parent and end in a completed assistant response with
+text after the final user request. The matrix records the installed
+build identity, records recovered typed denials and successful reviewer re-arms while
+stopping on any non-recoverable block, removes the isolated raw-export grant on exit, and exits
+non-zero when any requested flow did not complete. It performs no governance
+work itself.
+
+Use a fresh root and a free `127.0.0.1:49375`. The runner starts and authenticates
+its own OpenCode child, with separate configuration and storage, and stops only
+that child on exit. It never attaches to an existing listener. The setup
+installer is pointed at an absent run-local service record, so it cannot
+discover or restart the user's shared OpenCode service; the runner verifies its
+own child and `/start` instead. Supply model
+credentials through the provider environment; the runner does not reuse the
+shared host's credential store. Native commands require a continuous, current,
+session-bound audit window, not just HTTP success. `/start` requires the new
+root's `host_command` activation record; `/check` requires fresh audited
+`flowguard_run_check` calls and matching persisted execution attempts, each
+bound to the baseline plan or implementation subject at dispatch. A
+status-only `/check` is not evidence that a check ran, and execution alone does
+not prove a passing result. Decisions also require canonical state digests
+linking every transition from the pre-dispatch snapshot to the settled state,
+and typed, interpretable tool outcomes. An ambiguous transport outcome stops the
+run without resubmitting the decision. Native HTTP response bodies are not
+written to evidence or logs.
+
+The matrix CLI composes separate setup, scenario, transport, turn/recovery,
+and evidence modules. To verify the witness boundaries without a provider-backed
+Java run:
+
+```bash
+npm run mutation -- stryker.java-live-harness.config.mjs
+OPENCODE_LIVE=1 npx vitest run --project smoke src/cli/opencode-check-command-live.smoke.test.ts
+```
+
+The native check smoke seeds only the validation gate. The pinned host executes
+the real check and persists and audits its attempt; it is not installed-tarball
+or independent review acceptance.
+
+The active preflight requires the exact V2 CLI candidate's `opencode v<version>`
+output. It does not use or rewrite historical V1 comparison pins. Passing
+`--check` proves only toolchain selection, not full ACTIVE or Desktop
+acceptance; the complete installed workflow remains open. R4 is the documented
+`NOT_SUPPORTED` trusted-plugin limitation.
+
+The persisted terminal phase is the outcome authority: when a transport-level
+block appears after the session already reached that phase, the flow records it
+under `terminalBlocks` instead of discarding the completed flow. Each entry keeps
+`phaseBefore`, `phaseAfter` and a `denialAfterTerminal` flag that is `true` only
+when the terminal phase was already persisted before the turn — otherwise it stays
+`null` and no ordering is claimed. Package verification still runs and fails the
+flow if the required artifact is missing. Any block observed before the terminal
+phase still stops the flow.
+
+Recoverable typed denials are evidence-bound, never allow-listed blank. A denial
+counts as resolved in-turn only when a later call of the same tool matches the
+typed operation identities without contradiction (`same_turn_operation_recovery`). A later success without that
+binding is recorded as `later_tool_success` — an observation that does NOT
+resolve the denial: the next required step must prove the authorized persistence
+of the bound operation (`next_step_operation_transition:<step>`), otherwise the
+flow stops. A plan/ADR proof binds the exact subject/revision, accepting review
+and newly minted approval certificate; a generic state-file digest change never
+counts. Plan-preflight denials remain `pending_verification` until the exact
+plan revision and consumed independent acceptance observed in that turn match
+the gate and the subsequent native approval is witnessed. The harness uses the
+installed product's invocation schema and native capture validation; historical
+review transport cannot settle a recovery. A
+structured reviewer re-arm is recorded as `structured_rearm` and supersedes a
+terminal capture block only with `retryable: true`, the same explicit obligation
+and a fresh attempt. `CONTINUE_AMBIGUOUS` is
+different: it mutates nothing and demands an explicit flow choice, so it is
+recorded as `pending_recovery` and becomes `recovered` only through the selected
+flow's expected operation and its actual persisted artifact/obligation. An
+unresolved recoverable denial — including plan/implement call-shape guards such
+as `INVALID_PLAN_TOOL_SEQUENCE` — is reported as `NOT_VERIFIED` with its
+occurrence evidence preserved; only a proven wrong denial code, contradictory
+evidence or an unexpected unknown block remains `FAILED`.
+
+The architecture negative probe is a controlled denial step: the runner
+requires the exact `ARCHITECTURE_CLAIM_INVALID` rejection, proves that the rejected
+ADR was not persisted, and only then creates a complete Service-Layer Null-Safety
+ADR aligned with `ADR_TICKET.md` and `TICKET.md`. The probe's runtime rejection is
+separate runner evidence, not the ADR subject or repository evidence for its
+claims. Full independent review and ordinary approval still apply; an exhausted
+review is not bypassed with a governance override.
+
+The probe governs a dedicated pristine seed copy
+(`workspaces/java-task-manager-architecture-negative`). The development flow
+modifies the main workspace, and a reviewer comparing a post-fix ADR against the
+frozen base would correctly reject it; the copy keeps that comparison honest.
+
+Failed exports remain as diagnostic bytes and stop the flow. Hashes of truncated
+or structurally invalid JSON are never registered as accepted transcript evidence.
+Filenames use the actual scenario name; child exports must identify its parent.
+
+The separate [critical ProofGraph live-control contract](./PROOFGRAPH_LIVE_CONTROLS.md)
+defines the positive and negative evidence required before claiming critical-claim
+enforcement was verified. A claimless completion or an unrelated earlier gate
+block does not satisfy that contract.
+
+```bash
+# Full matrix: builds + packs the current tree, prepares fresh workspaces,
+# runs every flow, and verifies each package.
+node demos/java-task-manager/run-live-matrix.mjs --root /tmp/flowguard-live-run
+
+# Toolchain/preflight check only (no live run).
+node demos/java-task-manager/run-live-matrix.mjs --root /tmp/flowguard-live-run --check
+```
 
 | Flow         | Workspace                      | Required terminal state    | Individual evidence package                                                |
 | ------------ | ------------------------------ | -------------------------- | -------------------------------------------------------------------------- |
@@ -260,7 +466,8 @@ demos/java-task-manager/
 ├── RESET.md                     ← How to reset for a fresh demo
 ├── EVIDENCE_PACKAGE.md          ← Evidence-package verification scope and limits
 ├── evidence-manifest.example.json ← Template binding the three sessions to their artifacts
-├── run-main-demo-setup.sh       ← Main-workspace setup primitive
+├── run-main-demo-setup.sh       ← Main-workspace setup primitive (--install-scope global|repo)
+├── install-flowguard-lib.sh     ← Shared install/verify helpers for the setup scripts
 ├── run-reduced-ceremony-demo-setup.sh ← Two fresh workspaces, explicit policies, --verify-session
 ├── run-demo-preflight.sh        ← Pre-flight checks before a live pitch
 ├── verify-evidence-package.mjs  ← Standalone offline package verifier

@@ -11,7 +11,10 @@ import {
   PlanApprovalCertificate,
   ReviewBinding,
   mintProofGraphClaimId,
+  normalizeArchitectureClaims,
+  normalizePlanClaims,
   PlanClaimDeclarationInput,
+  ArchitectureClaimDeclaration,
   ArchitectureClaimDeclarationInput,
   hasCurrentPlanApprovalCertificate,
   type PlanClaimAuthority,
@@ -20,26 +23,67 @@ import { SessionState } from './schema.js';
 import { makeState } from '../fixtures.js';
 import { makePlanRevision } from './evidence-test-constants.js';
 import { hashText } from '../shared/hashing.js';
+import { planApprovalCertificateIdentity } from './proofgraph-plan-certificate.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
-const CERTIFICATE = {
-  flow: 'plan' as const,
-  authorityDigest: 'plan-digest',
-  claimDeclarationsDigest: 'claims-digest',
-  decisionAttestationDigest: 'decision-digest',
-  approvedAt: NOW,
-  approvedBy: 'user@example.test',
-  certificateId: '00000000-0000-4000-8000-000000000001',
-  planVersion: 1,
-  planRecordDigest: 'record-digest',
-  reviewBinding: {
-    kind: 'current_review' as const,
-    reviewObligationId: '00000000-0000-4000-8000-00000000000a',
-    reviewEvidenceDigest: 'review-evidence-digest',
-    reviewedSubjectDigest: 'plan-digest',
-  },
+const TEST_CONTEXT = {
+  flowguardSessionId: '00000000-0000-4000-8000-000000000002',
+  bindingDigest: 'b'.repeat(64),
+  policyHash: 'a'.repeat(64),
+  policyHashVersion: 'policy-digest.v4' as const,
+  requireHumanGates: false,
 };
+const CERTIFICATE_ATTESTATION = {
+  kind: 'explicit_decision' as const,
+  decision: {
+    verdict: 'approve' as const,
+    rationale: 'LGTM',
+    decidedAt: NOW,
+    decisionIdentity: {
+      actorId: 'user@example.test',
+      actorEmail: null,
+      actorSource: 'unknown' as const,
+      actorAssurance: 'best_effort' as const,
+    },
+  },
+  flowguardSessionId: TEST_CONTEXT.flowguardSessionId,
+  bindingDigest: TEST_CONTEXT.bindingDigest,
+  policyHash: TEST_CONTEXT.policyHash,
+  policyHashVersion: TEST_CONTEXT.policyHashVersion,
+};
+function certificateFixture() {
+  const base = {
+    schemaVersion: 'plan-approval-certificate.v1' as const,
+    flow: 'plan' as const,
+    authorityDigest: 'plan-digest',
+    claimDeclarationsDigest: 'claims-digest',
+    decisionAttestationDigest: hashText(canonicalJsonStringify(CERTIFICATE_ATTESTATION)),
+    approvedAt: NOW,
+    planVersion: 1,
+    planRecordDigest: 'record-digest',
+    reviewBinding: {
+      kind: 'current_review' as const,
+      reviewObligationId: '00000000-0000-4000-8000-00000000000a',
+      reviewEvidenceDigest: 'review-evidence-digest',
+      reviewedSubjectDigest: 'plan-digest',
+    },
+    approvalAttestation: CERTIFICATE_ATTESTATION,
+  };
+  return {
+    ...base,
+    certificateId: planApprovalCertificateIdentity({
+      authorityDigest: base.authorityDigest,
+      claimDeclarationsDigest: base.claimDeclarationsDigest,
+      decisionAttestationDigest: base.decisionAttestationDigest,
+      planVersion: base.planVersion,
+      planRecordDigest: base.planRecordDigest,
+      reviewBinding: base.reviewBinding,
+      approvedAt: base.approvedAt,
+    }),
+  };
+}
+const CERTIFICATE = certificateFixture();
 const PLAN_CLAIM = {
   claimId: '00000000-0000-4000-8000-000000000002',
   statement: 'The change preserves the intended behavior.',
@@ -166,6 +210,27 @@ describe('ProofGraph approval schemas', () => {
 
   it('persists plan declarations and certificates', () => {
     const current = makePlanRevision({ body: 'Plan', createdAt: NOW });
+    const rebound = {
+      ...CERTIFICATE,
+      authorityDigest: current.digest,
+      planRecordDigest: current.recordDigest,
+      reviewBinding: {
+        ...CERTIFICATE.reviewBinding,
+        reviewedSubjectDigest: current.digest,
+      },
+    };
+    const certificate = {
+      ...rebound,
+      certificateId: planApprovalCertificateIdentity({
+        authorityDigest: rebound.authorityDigest,
+        claimDeclarationsDigest: rebound.claimDeclarationsDigest,
+        decisionAttestationDigest: rebound.decisionAttestationDigest,
+        planVersion: rebound.planVersion,
+        planRecordDigest: rebound.planRecordDigest,
+        reviewBinding: rebound.reviewBinding,
+        approvedAt: rebound.approvedAt,
+      }),
+    };
     const state = SessionState.parse(
       makeState('PLAN_REVIEW', {
         plan: {
@@ -174,20 +239,12 @@ describe('ProofGraph approval schemas', () => {
           reviewFindings: [],
           reviewCompletion: 'pending',
           claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
-          approvalCertificate: {
-            ...CERTIFICATE,
-            authorityDigest: current.digest,
-            planRecordDigest: current.recordDigest,
-            reviewBinding: {
-              ...CERTIFICATE.reviewBinding,
-              reviewedSubjectDigest: current.digest,
-            },
-          },
+          approvalCertificate: certificate,
         },
       }),
     );
 
-    expect(state.plan?.approvalCertificate?.certificateId).toBe(CERTIFICATE.certificateId);
+    expect(state.plan?.approvalCertificate?.certificateId).toBe(certificate.certificateId);
   });
 
   describe('ArchitectureApprovalCertificate reviewBinding', () => {
@@ -469,24 +526,54 @@ describe('certificate integrity', () => {
   };
 
   function makeCertificate(digest: string) {
+    const attestation = {
+      kind: 'explicit_decision' as const,
+      decision: {
+        verdict: 'approve' as const,
+        rationale: 'LGTM',
+        decidedAt: NOW,
+        decisionIdentity: {
+          actorId: 'test',
+          actorEmail: null,
+          actorSource: 'unknown' as const,
+          actorAssurance: 'best_effort' as const,
+        },
+      },
+      flowguardSessionId: TEST_CONTEXT.flowguardSessionId,
+      bindingDigest: TEST_CONTEXT.bindingDigest,
+      policyHash: TEST_CONTEXT.policyHash,
+      policyHashVersion: TEST_CONTEXT.policyHashVersion,
+    };
     return PlanApprovalCertificate.parse({
+      schemaVersion: 'plan-approval-certificate.v1',
       flow: 'plan',
       authorityDigest: 'plan-digest',
       planVersion: 1,
       planRecordDigest: 'rec-digest',
       claimDeclarationsDigest: digest,
-      decisionAttestationDigest: 'dec-digest',
+      decisionAttestationDigest: hashText(canonicalJsonStringify(attestation)),
       approvedAt: NOW,
-      approvedBy: 'test',
-      certificateId: '00000000-0000-4000-8000-000000000003',
+      certificateId: planApprovalCertificateIdentity({
+        authorityDigest: 'plan-digest',
+        claimDeclarationsDigest: digest,
+        decisionAttestationDigest: hashText(canonicalJsonStringify(attestation)),
+        planVersion: 1,
+        planRecordDigest: 'rec-digest',
+        reviewBinding: {
+          kind: 'current_review',
+          reviewObligationId: '00000000-0000-4000-8000-00000000000b',
+          reviewEvidenceDigest: 'ev-digest',
+          reviewedSubjectDigest: 'plan-digest',
+        },
+        approvedAt: NOW,
+      }),
       reviewBinding: {
         kind: 'current_review',
         reviewObligationId: '00000000-0000-4000-8000-00000000000b',
         reviewEvidenceDigest: 'ev-digest',
         reviewedSubjectDigest: 'plan-digest',
       },
-      reviewObligationId: '00000000-0000-4000-8000-00000000000b',
-      reviewEvidenceDigest: 'ev-digest',
+      approvalAttestation: attestation,
     });
   }
 
@@ -510,7 +597,7 @@ describe('certificate integrity', () => {
   it('recognises a certificate whose digest matches the current declarations', () => {
     const digest = hashText(canonicalJsonStringify(declarations));
     const plan = makePlan(declarations, makeCertificate(digest));
-    expect(hasCurrentPlanApprovalCertificate(plan)).toBe(true);
+    expect(hasCurrentPlanApprovalCertificate(plan, TEST_CONTEXT)).toBe(true);
   });
 
   it('rejects a certificate whose digest does not match the current declarations', () => {
@@ -522,19 +609,33 @@ describe('certificate integrity', () => {
       }),
     );
     const plan = makePlan(declarations, makeCertificate(digest));
-    expect(hasCurrentPlanApprovalCertificate(plan)).toBe(false);
+    expect(hasCurrentPlanApprovalCertificate(plan, TEST_CONTEXT)).toBe(false);
   });
 
   it('rejects when no certificate is present', () => {
     const plan = makePlan(declarations);
-    expect(hasCurrentPlanApprovalCertificate(plan)).toBe(false);
+    expect(hasCurrentPlanApprovalCertificate(plan, TEST_CONTEXT)).toBe(false);
+  });
+
+  it('rejects a tampered certificateId at parse and authorization time', () => {
+    const digest = hashText(canonicalJsonStringify(declarations));
+    const plan = makePlan(declarations, makeCertificate(digest));
+    const tampered = {
+      ...plan,
+      approvalCertificate: {
+        ...plan.approvalCertificate!,
+        certificateId: '00000000-0000-4000-8000-0000000000ff',
+      },
+    };
+    expect(hasCurrentPlanApprovalCertificate(tampered, TEST_CONTEXT)).toBe(false);
+    expect(() => PlanApprovalCertificate.parse(tampered.approvalCertificate)).toThrow();
   });
 
   it('rejects when plan digest changed after approval', () => {
     const digest = hashText(canonicalJsonStringify(declarations));
     const plan = makePlan(declarations, makeCertificate(digest));
     const diverged = { ...plan, current: { ...plan.current, digest: 'changed' } };
-    expect(hasCurrentPlanApprovalCertificate(diverged)).toBe(false);
+    expect(hasCurrentPlanApprovalCertificate(diverged, TEST_CONTEXT)).toBe(false);
   });
 });
 
@@ -628,5 +729,97 @@ describe('read-model schema boundaries', () => {
       kind: 'assertion',
       assertion: { providerId: 'junit', localId: 'x#y' },
     });
+  });
+});
+
+describe('claim input normalization', () => {
+  it('persists the declared positive-evidence assertion verbatim', () => {
+    // Regression: an explicit field-projection once dropped `expectedAssertion`,
+    // so the persisted declaration silently lost the declared binding.
+    const normalized = normalizePlanClaims([
+      {
+        statement: 'ModuleStateStore.write rejects missing ownership values',
+        critical: true,
+        authoritySectionId: 'step-1',
+        claimScope: 'specific_behavior',
+        expectedCheckId: 'test',
+        expectedAssertion: {
+          providerId: 'junit',
+          localId: 'fixture.StateNoteTest#rejectsMissingOwnership',
+        },
+      },
+    ]);
+
+    expect(normalized).toHaveLength(1);
+    expect(normalized![0]!.expectedAssertion).toEqual({
+      providerId: 'junit',
+      localId: 'fixture.StateNoteTest#rejectsMissingOwnership',
+    });
+    // A declaration without the optional field persists without it.
+    const without = normalizePlanClaims([
+      {
+        statement: 'documented behavior stays stable',
+        critical: false,
+        authoritySectionId: 'step-2',
+        claimScope: 'suite',
+        expectedCheckId: 'test',
+      },
+    ]);
+    expect(without![0]).not.toHaveProperty('expectedAssertion');
+  });
+
+  it('projects plan claim inputs onto the declared fields', () => {
+    const normalized = normalizePlanClaims([
+      {
+        statement: 'documented behavior stays stable',
+        critical: true,
+        authoritySectionId: 'step-1',
+        claimScope: 'specific_behavior',
+        expectedCheckId: 'test',
+        counterexampleRequirement: {
+          kind: 'assertion',
+          checkId: 'test',
+          assertion: { providerId: 'junit', localId: 'A#b' },
+          undeclaredNested: 'leak',
+        },
+        structuralSurface: 'api',
+        mutationProfile: 'proofgraph-evaluator',
+        undeclaredTopLevel: 'leak',
+      } as unknown as PlanClaimDeclarationInput,
+    ]);
+
+    expect(normalized).toHaveLength(1);
+    const declaration = normalized![0]!;
+    // Host-supplied undeclared keys must not leak into persisted state; the
+    // strict declaration schema would otherwise refuse the whole write.
+    expect(declaration).not.toHaveProperty('undeclaredTopLevel');
+    expect(declaration.counterexampleRequirement).toEqual({
+      kind: 'assertion',
+      checkId: 'test',
+      assertion: { providerId: 'junit', localId: 'A#b' },
+    });
+    expect(PlanClaimDeclaration.safeParse(declaration).success).toBe(true);
+  });
+
+  it('projects architecture claim inputs onto the declared fields', () => {
+    const normalized = normalizeArchitectureClaims([
+      {
+        statement: 'the decision keeps service data durable',
+        critical: true,
+        authoritySectionId: 'Decision',
+        requiredReviewEvidence: ['architecture-review'],
+        assumptions: ['single writer'],
+        claimScope: 'specific_behavior',
+        expectedCheckId: 'test',
+      } as unknown as ArchitectureClaimDeclarationInput,
+    ]);
+
+    expect(normalized).toHaveLength(1);
+    const declaration = normalized![0]!;
+    expect(declaration).not.toHaveProperty('claimScope');
+    expect(declaration).not.toHaveProperty('expectedCheckId');
+    expect(declaration.requiredReviewEvidence).toEqual(['architecture-review']);
+    expect(declaration.assumptions).toEqual(['single writer']);
+    expect(ArchitectureClaimDeclaration.safeParse(declaration).success).toBe(true);
   });
 });

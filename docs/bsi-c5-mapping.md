@@ -79,7 +79,7 @@ The RB domain covers change management, operational documentation, logging, and 
 - Tamper-evident design: each event's hash includes the previous event's hash
 - 5 structured event kinds: `transition`, `tool_call`, `error`, `lifecycle`, `decision`
 - Automated compliance summary generation from audit trail (7-check assessment)
-- Policy snapshot: immutable, SHA-256 hashed copy of the active policy frozen at session creation
+- Policy snapshot: frozen executable policy, SHA-256 content verified on read/write; no cryptographic authenticity against an OS user who can replace state and hash
 
 **Operational Documentation:**
 
@@ -121,7 +121,7 @@ EVIDENCE_REVIEW, ARCH_REVIEW}` in `src/machine/topology.ts`
 **Policy Enforcement:**
 
 - Policy mode is set at session creation and governs all subsequent transitions
-- Policy configuration is immutable for the session lifetime (policy snapshot with SHA-256 hash)
+- Runtime-mediated policy is frozen for the session lifetime and its content hash is checked. Local filesystem enforcement and trusted external evidence remain organization responsibilities.
 
 #### Organization Must Provide
 
@@ -290,16 +290,16 @@ The following C5:2020 domains address concerns outside FlowGuard's scope. FlowGu
 
 The following FlowGuard artifacts provide verifiable evidence for the mappings above.
 
-| Artifact                        | Location                                                                                           | Supports                                             |
-| ------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| State machine topology          | `src/machine/topology.ts`                                                                          | RB (change management), DEV (structured workflow)    |
-| Evidence completeness matrix    | `src/audit/completeness.ts`                                                                        | COM (evidence management)                            |
-| Audit trail types and integrity | `src/audit/types.ts`, `src/audit/integrity.ts`                                                     | RB (logging), CRY (hash chain)                       |
-| Policy presets and resolution   | `src/config/policy-presets.ts`, `src/config/policy-resolver.ts`                                    | IDM (separation of duties), OIS (policy enforcement) |
-| Review decision logic           | `src/rails/review-decision.ts`                                                                     | IDM (four-eyes principle)                            |
-| Archive verification            | `src/adapters/workspace/archive.ts` (`verifyArchive`); finding-code enum in `src/archive/types.ts` | COM (audit support), PI (portability)                |
-| Release workflow                | `.github/workflows/release.yml` (tarball, checksums, SBOM, SLSA attestation)                       | AM (checksums + SBOM), DLL (supply chain)            |
-| Security policy                 | `SECURITY.md`                                                                                      | PSS (vulnerability management)                       |
+| Artifact                        | Location                                                                                                        | Supports                                             |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| State machine topology          | `src/machine/topology.ts`                                                                                       | RB (change management), DEV (structured workflow)    |
+| Evidence completeness matrix    | `src/audit/completeness.ts`                                                                                     | COM (evidence management)                            |
+| Audit trail types and integrity | `src/audit/types.ts`, `src/audit/integrity.ts`                                                                  | RB (logging), CRY (hash chain)                       |
+| Policy presets and resolution   | `src/config/policy-presets.ts`, `src/config/policy-resolver.ts`                                                 | IDM (separation of duties), OIS (policy enforcement) |
+| Review decision logic           | `src/rails/review-decision.ts`                                                                                  | IDM (four-eyes principle)                            |
+| Archive verification            | `src/adapters/workspace/archive-verify-chain.ts` (`verifyArchive`); finding-code enum in `src/archive/types.ts` | COM (audit support), PI (portability)                |
+| Release workflow                | `.github/workflows/release.yml` (tarball, checksums, SBOM, SLSA attestation)                                    | AM (checksums + SBOM), DLL (supply chain)            |
+| Security policy                 | `SECURITY.md`                                                                                                   | PSS (vulnerability management)                       |
 
 ---
 

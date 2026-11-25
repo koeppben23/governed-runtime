@@ -27,7 +27,11 @@ import {
 } from '../test-helpers.js';
 import { status, hydrate, ticket, plan, run_check } from '../tools/index.js';
 import { readState, writeState } from '../../adapters/persistence.js';
-import { FROZEN_IMPLEMENTATION_BASE } from '../../fixtures.js';
+import {
+  FROZEN_IMPLEMENTATION_BASE,
+  makePlanApprovalCertificate,
+  makePolicySnapshot,
+} from '../../fixtures.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
@@ -115,7 +119,7 @@ vi.mock('../../verification/executor', () => ({
       stdout: 'All clear',
       stderr: '',
       timedOut: false,
-      startedAt: '2026-01-01T00:00:00.000Z',
+      startedAt: new Date(Date.now() - 500).toISOString(),
     })),
 }));
 
@@ -512,7 +516,7 @@ describe('HAPPY', () => {
         stdout: 'All clear',
         stderr: '',
         timedOut: false,
-        startedAt: '2026-01-01T00:00:00.000Z',
+        startedAt: new Date(Date.now() - 500).toISOString(),
       };
     });
 
@@ -586,7 +590,7 @@ describe('HAPPY', () => {
         stdout: 'All clear',
         stderr: '',
         timedOut: false,
-        startedAt: '2026-01-01T00:00:00.000Z',
+        startedAt: new Date(Date.now() - 500).toISOString(),
       };
     });
 
@@ -652,7 +656,7 @@ describe('HAPPY', () => {
         stdout: 'All clear',
         stderr: '',
         timedOut: false,
-        startedAt: '2026-01-01T00:00:00.000Z',
+        startedAt: new Date(Date.now() - 500).toISOString(),
       };
     });
 
@@ -733,7 +737,7 @@ describe('HAPPY', () => {
         stdout: 'All clear',
         stderr: '',
         timedOut: false,
-        startedAt: '2026-01-01T00:00:00.000Z',
+        startedAt: new Date(Date.now() - 500).toISOString(),
       };
     });
 
@@ -804,7 +808,7 @@ describe('HAPPY', () => {
         stdout: 'All clear',
         stderr: '',
         timedOut: false,
-        startedAt: '2026-01-01T00:00:00.000Z',
+        startedAt: new Date(Date.now() - 500).toISOString(),
       };
     });
 
@@ -889,7 +893,7 @@ describe('HAPPY', () => {
         stdout: '',
         stderr: '',
         timedOut: false,
-        startedAt: '2026-01-01T00:00:00.000Z',
+        startedAt: new Date(Date.now() - 500).toISOString(),
       };
     });
 
@@ -966,10 +970,10 @@ describe('BAD', () => {
     await writeState(sd, {
       ...state!,
       activeChecks: [],
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...state!.policySnapshot,
         validationEvidence: { enforcement: 'required', allowNoCommands: false },
-      },
+      }),
     });
 
     const result = parseToolResult<RunCheckResult>(
@@ -990,10 +994,10 @@ describe('BAD', () => {
       // stack-detected-but-no-commands block).
       discoverySummary: null,
       detectedStack: null,
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...state!.policySnapshot,
         validationEvidence: { enforcement: 'off', allowNoCommands: false },
-      },
+      }),
     });
 
     const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
@@ -1056,7 +1060,7 @@ describe('CORNER', () => {
       stdout: '',
       stderr: '',
       timedOut: true,
-      startedAt: '2026-01-01T00:00:00.000Z',
+      startedAt: new Date(Date.now() - 500).toISOString(),
     });
 
     await callOk(run_check, { kind: 'typecheck' });
@@ -1142,9 +1146,7 @@ describe('CORNER', () => {
             },
           ],
         },
-        approvalCertificate: {
-          flow: 'plan',
-          authorityDigest: state!.plan!.current.digest,
+        approvalCertificate: makePlanApprovalCertificate(state!, {
           claimDeclarationsDigest: hashText(
             canonicalJsonStringify({
               flow: 'plan',
@@ -1161,10 +1163,6 @@ describe('CORNER', () => {
               ],
             }),
           ),
-          decisionAttestationDigest: hashText('decision'),
-          approvedAt: '2026-01-01T00:00:00.000Z',
-          approvedBy: 'approver',
-          certificateId: '00000000-0000-4000-8000-000000000001',
           // The certificate is bound to the CURRENT plan record: a hardcoded
           // version or record digest makes it stale, and materialization then
           // yields an empty contract instead of the claims under test.
@@ -1176,7 +1174,7 @@ describe('CORNER', () => {
             reviewEvidenceDigest: 'e'.repeat(64),
             reviewedSubjectDigest: state!.plan!.current.digest,
           },
-        },
+        }),
       },
     });
 
@@ -1225,7 +1223,7 @@ describe('CORNER', () => {
       stdout: 'error TS2345: Argument...',
       stderr: '',
       timedOut: false,
-      startedAt: '2026-01-01T00:00:00.000Z',
+      startedAt: new Date(Date.now() - 500).toISOString(),
     });
 
     const result = parseToolResult<RunCheckResult>(
@@ -1272,7 +1270,7 @@ describe('EDGE', () => {
       stdout: '',
       stderr: '',
       timedOut: true,
-      startedAt: '2026-01-01T00:00:00.000Z',
+      startedAt: new Date(Date.now() - 500).toISOString(),
     });
 
     const result = parseToolResult<RunCheckResult>(
@@ -1302,7 +1300,7 @@ describe('EDGE', () => {
       stdout: 'src/x.ts(1,1): error TS2322: type mismatch',
       stderr: '',
       timedOut: false,
-      startedAt: '2026-01-01T00:00:00.000Z',
+      startedAt: new Date(Date.now() - 500).toISOString(),
     });
 
     const result1 = parseToolResult<RunCheckResult>(
@@ -1504,7 +1502,7 @@ describe('STALE_STATE', () => {
         stdout: 'All clear',
         stderr: '',
         timedOut: false,
-        startedAt: '2026-01-01T00:00:00.000Z',
+        startedAt: new Date(Date.now() - 500).toISOString(),
       };
     });
 
@@ -1548,7 +1546,7 @@ describe('STALE_STATE', () => {
         stdout: 'All clear',
         stderr: '',
         timedOut: false,
-        startedAt: '2026-01-01T00:00:00.000Z',
+        startedAt: new Date(Date.now() - 500).toISOString(),
       };
     });
 

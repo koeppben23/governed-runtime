@@ -264,8 +264,16 @@ export function hasUnresolvedMutationEpisodes(
   episodes: readonly MutationEpisode[],
   resolutions: readonly MutationEpisodeResolution[] = [],
 ): boolean {
+  return unresolvedMutationEpisodes(episodes, resolutions).length > 0;
+}
+
+/** Open dispatches without an append-only resolution; shared by recording and projections. */
+export function unresolvedMutationEpisodes(
+  episodes: readonly MutationEpisode[],
+  resolutions: readonly MutationEpisodeResolution[],
+): readonly MutationEpisode[] {
   const resolvedCallIds = new Set(resolutions.map((resolution) => resolution.hostCallId));
-  return episodes.some(
+  return episodes.filter(
     (episode) =>
       episode.status === 'dispatch_authorized' && !resolvedCallIds.has(episode.hostCallId),
   );

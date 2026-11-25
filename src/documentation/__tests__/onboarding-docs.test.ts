@@ -117,6 +117,34 @@ describe('developer onboarding documentation contract', () => {
     expect(distribution.match(/curl -u opencode:secret/g)).toHaveLength(2);
   });
 
+  it('does not present an HTTP text prompt as native governance activation', () => {
+    const section = read('docs/distribution-model.md')
+      .split('### HTTP API Mode (opencode serve)')[1]
+      ?.split('### ACP Mode')[0];
+
+    expect(section).toBeDefined();
+    expect(section).toContain('ungoverned message');
+    expect(section).toContain('"text": "Inspect the project without activating FlowGuard"');
+    expect(section).toContain('does not activate governance');
+    expect(section).not.toContain('/hydrate policyMode=');
+    expect(section).not.toContain('send a governed message');
+  });
+
+  it('uses the declared native CLI candidate for ACP smoke guidance', () => {
+    const candidate = JSON.parse(read('.sdk-baselines/opencode/cli-candidate.json')) as {
+      package: string;
+      version: string;
+    };
+    const section = read('docs/troubleshooting.md')
+      .split('### ACP Smoke Tests Skipped')[1]
+      ?.split('### PERF Tests')[0];
+
+    expect(section).toBeDefined();
+    expect(section).toContain(`npm install -g ${candidate.package}@${candidate.version}`);
+    expect(section).toContain('RUN_OPENCODE_ACP_TESTS=1 npm run test:acp');
+    expect(section).not.toContain('opencode-ai');
+  });
+
   it('documents every installed command whose tool binding is not a direct name mapping', () => {
     const commands = read('docs/commands.md');
     const exceptions = INSTALLED_COMMANDS.filter((definition) => {
@@ -132,7 +160,12 @@ describe('developer onboarding documentation contract', () => {
 
     for (const definition of exceptions) {
       expect(commands, definition.invocation).toContain(`\`${definition.invocation}\``);
-      expect(commands, definition.target.toolName).toContain(`\`${definition.target.toolName}\``);
+      if (definition.target.nativeCommand !== undefined) {
+        expect(commands).toContain('native scoped command');
+        expect(definition.target.toolName).toBeUndefined();
+      } else {
+        expect(commands, definition.target.toolName).toContain(`\`${definition.target.toolName}\``);
+      }
     }
   });
 
@@ -166,6 +199,80 @@ describe('developer onboarding documentation contract', () => {
     expect(diagram).toContain('/plan` → `/approve` → `/implement`');
     expect(diagram).toContain('/check` is a manual compatibility and recovery command');
     expect(diagram).not.toContain('/approve` → `/check` → `/implement`');
+  });
+
+  it('keeps the two-document first-contribution path in the development guide', () => {
+    const guide = read('docs/development/index.md');
+    const firstChange = read('docs/development/first-change.md');
+
+    expect(guide).toContain('[Your First Change](./first-change.md)');
+    expect(guide).toContain('only required');
+    expect(guide).toContain('## Reference (not required for a first contribution)');
+    expect(firstChange).toContain('Open the pull request');
+    expect(firstChange).toContain('CONTRIBUTING.md');
+  });
+
+  it('documents the pinned Node setup commands and the onboarding acceptance path', () => {
+    const guide = read('docs/development/index.md');
+    const acceptance = read('docs/development/onboarding-acceptance.md');
+
+    expect(guide).toContain('nvm install "$(cat .node-version)"');
+    expect(guide).toContain('nvm use "$(cat .node-version)"');
+    expect(guide).toContain('[Onboarding Acceptance](./onboarding-acceptance.md)');
+    expect(acceptance).toContain('npm run onboarding:smoke');
+    expect(acceptance).toContain('--expected-sha');
+    expect(acceptance).toContain('15:00');
+
+    const packageJson = JSON.parse(read('package.json')) as {
+      scripts?: Record<string, string>;
+    };
+    expect(packageJson.scripts?.['onboarding:smoke']).toBe('node scripts/onboarding-smoke.mjs');
+  });
+
+  it('keeps the canonical live-host debugging guide on V2', () => {
+    const debug = read('docs/development/debugging.md');
+    const candidate = JSON.parse(read('.sdk-baselines/opencode/cli-candidate.json')) as {
+      version: string;
+    };
+
+    expect(debug).not.toContain('1.18.30');
+    expect(debug).toContain(`opencode v${candidate.version}`);
+    expect(debug).toContain('opencode debug paths');
+    expect(debug).toContain('opencode plugin list');
+    expect(debug).toContain('opencode serve --port 4096');
+    expect(debug).not.toContain('--standalone serve');
+    expect(debug).not.toContain('debug.bun.sh');
+  });
+
+  it('keeps the security support matrix aligned with the V2-only development model', () => {
+    for (const path of ['SECURITY.md', 'docs/support-model.md', 'docs/release-policy.md']) {
+      const document = read(path);
+      expect(document, path).toContain('2.0.0-tp.x');
+      expect(document, path).toContain('Active development — Technical Preview');
+      expect(document, path).toContain('Legacy — no active maintenance');
+      expect(document, path).toContain('no production support commitment');
+      expect(document, path).not.toContain('receives bug fixes and security patches');
+      expect(document, path).not.toContain('72 hours');
+    }
+    expect(read('SECURITY.md')).toContain('docs/security-assurance.md');
+  });
+
+  it('keeps the architecture diagram consistent with the module dependency policy', () => {
+    const diagram = read('docs/architecture/architecture-diagram.md');
+
+    expect(diagram).toContain('MODULE_DEPENDENCY_POLICY');
+    // Wrong dependency directions and stale adapter claims must not return.
+    for (const wrong of [
+      'EvidenceNode -->|record| Audit',
+      'SSOT -->|derive| Cards',
+      'EvidenceNode -->|persist| Archive',
+      'SSOT -->|persist via| Adapters',
+      'SSOT -->|log via| Logging',
+      '(Persistence, Workspace, Fingerprint)',
+    ]) {
+      expect(diagram, wrong).not.toContain(wrong);
+    }
+    expect(diagram).toContain('(persistence, workspace, git, host, actor)');
   });
 
   it('uses the canonical peer-review terminal phase in the quick reference', () => {

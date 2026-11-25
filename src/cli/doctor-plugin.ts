@@ -2,7 +2,7 @@
  * @module cli/doctor-plugin
  * @description Plugin activation check for the doctor command.
  *
- * Extracted from doctor-command.ts to keep the module under the 700 LOC
+ * Extracted from doctor-command.ts to keep the module under the 650 LOC
  * threshold. Verifies the FlowGuard audit plugin file exists and
  * @flowguard/core is ESM-importable.
  *
@@ -13,10 +13,11 @@ import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DoctorCheck } from './install-types.js';
+import { PLUGIN_RELATIVE_PATH } from './templates.js';
 
 export async function checkPluginActivation(target: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
-  const pluginFile = join(target, 'plugins', 'flowguard-audit.ts');
+  const pluginFile = join(target, PLUGIN_RELATIVE_PATH);
 
   if (!existsSync(pluginFile)) {
     checks.push({
@@ -36,7 +37,8 @@ export async function checkPluginActivation(target: string): Promise<DoctorCheck
     checks.push({
       file: pluginFile,
       status: 'ok',
-      detail: 'Plugin package importable',
+      detail:
+        'Plugin package importable; native runtime load and governance activation NOT_VERIFIED',
     });
   } catch {
     checks.push({

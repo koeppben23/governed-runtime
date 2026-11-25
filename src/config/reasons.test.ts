@@ -10,6 +10,17 @@ import { resolveRuntimePolicyMode } from '../config/policy.js';
 import { benchmarkSync } from '../test-policy.js';
 
 describe('config/reasons', () => {
+  it('claim admission recovery distinguishes submission and both approval gates', () => {
+    const recovery = defaultReasonRegistry
+      .get('PROOFGRAPH_CLAIM_NOT_DECLARED')!
+      .recoverySteps.join('\n');
+    expect(recovery).toContain('TICKET or PLAN');
+    expect(recovery).toContain('At PLAN_REVIEW');
+    expect(recovery).toContain('at EVIDENCE_REVIEW');
+    expect(recovery).toContain('IMPLEMENTATION, not PLAN');
+    expect(recovery).toContain('start a new host session with a different host-session id');
+    expect(recovery).toContain('claims: []');
+  });
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
     it('format produces structured result for known code', () => {
@@ -59,10 +70,14 @@ describe('config/reasons', () => {
       expect(reason?.recoverySteps[0]).toContain('Request changes');
     });
 
-    it('mutation binding recovery first reopens IMPLEMENTATION from the evidence gate', () => {
+    it('mutation binding recovery distinguishes known from unknown outcomes', () => {
       const reason = defaultReasonRegistry.get('MUTATION_EPISODE_BINDING_REQUIRED');
-      expect(reason?.quickFixCommand).toBe('/request-changes');
-      expect(reason?.recoverySteps[0]).toContain('/request-changes');
+      expect(reason?.quickFixCommand).toBe('/status');
+      expect(reason?.recoverySteps[0]).toContain('/status');
+      expect(reason?.recoverySteps.join('\n')).toContain('flowguard_reconcile_mutation_episode');
+      expect(reason?.recoverySteps.join('\n')).toContain(
+        'Unknown outcomes cannot be cleared by /request-changes',
+      );
     });
   });
 

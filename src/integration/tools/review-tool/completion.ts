@@ -22,9 +22,10 @@ import type { ReviewExecutors } from '../../../rails/review.js';
 import { ReviewReport } from '../../../state/evidence.js';
 import { resolveAuthoritativePeerReviewTask } from '../../../state/peer-review.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
-import type { AutoAdvanceOverflow } from '../../../rails/types.js';
+import type { AutoAdvanceBlocked, AutoAdvanceOverflow } from '../../../rails/types.js';
 import { PHASE_LABELS, buildReviewReportCard } from '../../../presentation/index.js';
 import type { PresentationRenderOptions } from '../../../presentation/glyph-profile.js';
+import { differencedCardPresentation } from '../../../presentation/glyph-profile.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { writeReport, reportPath } from '../../../adapters/persistence.js';
@@ -151,6 +152,7 @@ export async function persistReviewCompletion(
   validatedReviewObligation: ReviewObligation | null,
 ): Promise<
   | { kind: 'overflow'; overflow: AutoAdvanceOverflow }
+  | { kind: 'blocked'; blocked: AutoAdvanceBlocked }
   | {
       kind: 'ok';
       finalState: SessionState;
@@ -162,6 +164,9 @@ export async function persistReviewCompletion(
   const advanced = autoAdvance(stateWithReportPath, createPolicyEvalFn(ctx), ctx);
   if (advanced.kind === 'overflow') {
     return { kind: 'overflow', overflow: advanced };
+  }
+  if (advanced.kind === 'blocked') {
+    return { kind: 'blocked', blocked: advanced };
   }
   const { state: finalState, transitions: advanceTransitions } = advanced;
   const finalReport = ReviewReport.parse({
@@ -266,7 +271,7 @@ interface ReviewCardInvocationFields {
   invocationMode?: ReviewInvocationEvidence['invocationMode'];
   hostVisible?: boolean;
   reviewOutputMode?: ReviewInvocationEvidence['reviewOutputMode'];
-  structuredOutputUsed?: ReviewInvocationEvidence['structuredOutputUsed'];
+  validationAuthority?: 'flowguard';
   reviewAssuranceLevel?: ReviewInvocationEvidence['reviewAssuranceLevel'];
   reviewerSessionId?: string;
 }
@@ -295,9 +300,7 @@ function invocationAssuranceFields(
   boundInvocation: BoundReviewInvocation,
 ): ReviewCardInvocationFields {
   return {
-    ...(boundInvocation?.structuredOutputUsed !== undefined
-      ? { structuredOutputUsed: boundInvocation.structuredOutputUsed }
-      : {}),
+    ...(boundInvocation ? { validationAuthority: 'flowguard' as const } : {}),
     ...(boundInvocation?.reviewAssuranceLevel !== undefined
       ? { reviewAssuranceLevel: boundInvocation.reviewAssuranceLevel }
       : {}),
@@ -391,7 +394,7 @@ function formatReviewCompletionResponse(input: {
     enrichWithWorkflowDirective(
       {
         reviewCard,
-        presentation: { markdown: presentationMarkdown },
+        presentation: differencedCardPresentation(presentationMarkdown, reviewCard),
         phase: finalState.phase,
         ...(artifactWarning && { artifactWarning }),
         status: 'Review flow complete. Report generated.',
@@ -441,7 +444,7 @@ export async function buildReviewCompletionResponse(input: {
   });
   const presentationMarkdown = buildPeerReviewCard(
     { result, finalState, report, validatedReviewObligation },
-    { glyphProfile: (await readConfig(worktree)).presentation.opencode.glyphProfile },
+    { glyphProfile: (await readConfig(worktree)).presentation.glyphProfile },
   );
   return formatReviewCompletionResponse({
     finalState,

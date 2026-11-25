@@ -8,6 +8,10 @@ import {
   type ReviewAssuranceState,
 } from '../state/evidence-review.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../review-invocation-test-helpers.js';
 
 export const ARCH_OBLIGATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const ARCH_INVOCATION_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -62,6 +66,12 @@ function invocationsFromEntries(entries: AssuranceEntry[]): ReviewAssuranceState
     .map((e, index) => {
       const createdAt = e.createdAt ?? '2026-01-01T00:00:00.000Z';
       const capturedRawFindings = capturedFindingsRecord(e, index);
+      const capture = messageCaptureFixture({
+        childSessionId: `child-${index}`,
+        obligationId: e.obligationId,
+        attemptId: attemptIdForIndex(index),
+        findings: capturedRawFindings,
+      });
       return {
         invocationId:
           e.invocationId === null
@@ -73,7 +83,11 @@ function invocationsFromEntries(entries: AssuranceEntry[]): ReviewAssuranceState
         parentSessionId: `parent-${index}`,
         childSessionId: `child-${index}`,
         agentType: 'flowguard-reviewer',
-        invocationMode: 'native_task_structured_followup',
+        invocationMode: 'native_subagent_message_json',
+        transportVersion: 6,
+        capture,
+        // completedDispatchForInvocation uses the child session id as hostCallId.
+        nativeProvenance: nativeProvenanceFixture(capture, `child-${index}`),
         hostVisible: true,
         transcriptNavigable: true,
         source: 'host-orchestrated',
@@ -86,9 +100,8 @@ function invocationsFromEntries(entries: AssuranceEntry[]): ReviewAssuranceState
         consumedByObligationId: e.consumedByObligationId ?? null,
         ...(e.capturedVerdict ? { capturedVerdict: e.capturedVerdict } : {}),
         capturedRawFindings,
-        reviewOutputMode: 'structured_output',
-        structuredOutputUsed: true,
-        reviewAssuranceLevel: 'structured_high',
+        reviewOutputMode: 'validated_json',
+        reviewAssuranceLevel: 'host_message_validated',
       };
     });
 }

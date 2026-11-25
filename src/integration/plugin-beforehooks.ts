@@ -1,18 +1,23 @@
-import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { readState } from '../adapters/persistence.js';
 import { workspacesHome } from '../adapters/workspace/index.js';
 import { buildEnforcementError } from './blocked-result.js';
 
-import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
+import {
+  isMutatingHostTool,
+  isHostToolAllowedInPhase,
+  hostMutationIntegrityGate,
+  NATIVE_SUBAGENT_TOOL,
+  requiresHostAuthority,
+} from './phase-tool-gate.js';
 import { isAllowedReworkContinuation } from './plugin-rework-continuation.js';
 import { isMutatingFlowGuardTool } from './tool-classification.js';
 import { enforceBeforeVerdict } from './review/enforcement/enforcement.js';
-import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput } from './types.js';
-import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
+import { reviewSignalOwner } from './review/obligations/obligation-tools.js';
+import type { ToolHookBeforeInput, ToolHookBeforeOutput } from './types.js';
 import {
   getToolTraceId,
-  type ActiveCommandScope,
+  recordToolLatencyStart,
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
 import {
@@ -23,6 +28,7 @@ import {
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_RUN_CHECK,
   TOOL_FLOWGUARD_STATUS,
+  TOOL_FLOWGUARD_IMPLEMENT,
 } from './tool-names.js';
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
@@ -39,40 +45,7 @@ import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js'
 import { getRuntimeInstanceId } from './runtime-instance.js';
 import { acquireRuntimeLease } from './runtime-lease.js';
 import { enforceGitPrerequisiteBeforeMutation } from './plugin-git-gate.js';
-
-export async function commandBefore(
-  runtime: FlowGuardPluginRuntime,
-  input: unknown,
-  _output: unknown,
-): Promise<void> {
-  return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
-    const hookInput = input as CommandHookBeforeInput;
-    const rawSessionId = hookInput?.sessionID;
-    if (!rawSessionId) {
-      runtime.log.warn('decision', 'command.execute.before missing sessionID');
-      return;
-    }
-
-    // Stryker disable next-line OptionalChaining — equivalent: sessionID-missing inputs return at the guard above before this line is reached.
-    updateCommandScope(runtime, rawSessionId, hookInput?.command ?? '');
-
-    const intent = recordUserDecisionIntentFromCommand({
-      sessionId: rawSessionId,
-      // Stryker disable next-line OptionalChaining — equivalent: the `?? ''` fallback keeps removed optional chains observationally identical.
-      command: hookInput?.command ?? '',
-      // Stryker disable next-line OptionalChaining — equivalent: decision commands ignore the arguments value when absent; the `?? ''` fallback neutralizes single-`?.` removals.
-      arguments: hookInput?.arguments ?? '',
-    });
-    if (!intent) return;
-
-    runtime.log.info('decision', 'recorded user decision command intent', {
-      sessionId: rawSessionId,
-      command: intent.command,
-      expectedVerdict: intent.expectedVerdict,
-      expiresAt: intent.expiresAt,
-    });
-  });
-}
+import { reconcileHostMutationEpisodes } from './plugin-mutation-reconciliation.js';
 
 export async function toolBefore(
   runtime: FlowGuardPluginRuntime,
@@ -83,9 +56,9 @@ export async function toolBefore(
     const hookInput = input as ToolHookBeforeInput;
     const toolName = hookInput?.tool ?? '';
     const sessionId = hookInput?.sessionID ?? 'unknown';
-    const traceId = getToolTraceId(runtime, input, 'before');
+    const traceId = getToolTraceId(input);
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
-      if (toolName.startsWith(FLOWGUARD_TOOL_PREFIX) || isMutatingHostTool(toolName)) {
+      if (toolName.startsWith(FLOWGUARD_TOOL_PREFIX) || requiresHostAuthority(toolName)) {
         await recoverRegulatedCompletion(runtime, sessionId);
       }
       const args = (output as ToolHookBeforeOutput)?.args ?? {};
@@ -110,6 +83,9 @@ export async function toolBefore(
         }
         throw err;
       }
+      // Diagnostic only: the last statement of a fully passed before-hook, so
+      // a blocked call never leaves a latency start behind.
+      recordToolLatencyStart(runtime, input);
     });
   });
 }
@@ -135,8 +111,8 @@ async function resolveEnforcement(
   context: 'subagent' | 'verdict',
 ): Promise<SessionState | null> {
   try {
-    const sessDir = runtime.ws.getSessionDir(sessionId);
-    return sessDir ? await readState(sessDir) : null;
+    const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+    return resolution.status === 'resolved' ? resolution.state : null;
   } catch {
     runtime.log.warn(
       'enforcement',
@@ -154,13 +130,24 @@ async function enforceBeforeRules(
   callId: string,
   args: Record<string, unknown>,
 ): Promise<void> {
+  await enforceCapacityLock(runtime, toolName, sessionId);
   await enforceCommandScope(runtime, toolName, sessionId);
+  if (toolName === TOOL_FLOWGUARD_IMPLEMENT) {
+    await reconcileHostMutationEpisodes(runtime, sessionId);
+  }
 
   const mutatingHost = isMutatingHostTool(toolName);
 
   let hostResolution: { sessDir: string; state: SessionState } | null = null;
-  if (mutatingHost) {
+  if (mutatingHost || toolName === NATIVE_SUBAGENT_TOOL) {
     hostResolution = await resolveHostToolStateOrThrow(runtime, toolName, sessionId);
+    const integrity = hostMutationIntegrityGate(
+      toolName,
+      hostResolution.state,
+      args,
+      hostResolution.sessDir,
+    );
+    if (integrity.kind === 'blocked') throw buildEnforcementError(integrity.code, integrity.reason);
   }
 
   await enforceVerdictCheck(runtime, toolName, sessionId, args);
@@ -170,7 +157,7 @@ async function enforceBeforeRules(
     return;
   }
 
-  if (isMutatingFlowGuardTool(toolName) || mutatingHost) {
+  if (isMutatingFlowGuardTool(toolName) || mutatingHost || toolName === NATIVE_SUBAGENT_TOOL) {
     await reconcileBeforeMutation(runtime, sessionId, toolName);
   }
 
@@ -283,7 +270,7 @@ async function reconcileObservationParent(
 ): Promise<void> {
   const capability = typeof args.capability === 'string' ? args.capability : '';
   if (!capability) return;
-  const fingerprint = runtime.auditDeps.cachedFingerprint ?? runtime.ws.cachedFingerprint;
+  const fingerprint = runtime.ws.cachedFingerprint;
   if (!fingerprint) {
     throw buildEnforcementError(
       'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
@@ -299,27 +286,12 @@ async function reconcileObservationParent(
   await reconcileBeforeMutation(runtime, resolution.sessionId, TOOL_FLOWGUARD_OBSERVE_REPOSITORY);
 }
 
-function updateCommandScope(
-  runtime: FlowGuardPluginRuntime,
-  sessionId: string,
-  command: string,
-): void {
-  runtime.checkReworkContinuations.delete(sessionId);
-  const normalized = command.trim().replace(/^\/+/, '');
-  const scope: ActiveCommandScope | undefined = normalized === 'check' ? 'check' : undefined;
-  if (scope) {
-    runtime.activeCommandScopes.set(sessionId, scope);
-    return;
-  }
-  runtime.activeCommandScopes.delete(sessionId);
-}
-
 async function readScopedState(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
 ): Promise<SessionState | null> {
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  return sessDir ? await readState(sessDir) : null;
+  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+  return resolution.status === 'resolved' ? resolution.state : null;
 }
 
 async function isAllowedInImplReview(
@@ -332,6 +304,23 @@ async function isAllowedInImplReview(
     toolName === TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE;
   if (!reviewSurface) return false;
   return (await readScopedState(runtime, sessionId))?.phase === 'IMPL_REVIEW';
+}
+
+async function enforceCapacityLock(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+): Promise<void> {
+  if (reviewSignalOwner(toolName) === undefined) return;
+  const state = await resolveEnforcement(runtime, sessionId, 'verdict');
+  const lock = state?.reviewAssurance?.capacityLock;
+  if (!lock) return;
+  throw buildEnforcementError(
+    'REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND',
+    'A previous reviewer exhausted its execution capacity and the review obligation is blocked. ' +
+      'No new review may start in the same user turn. Report the blocker and wait for a new explicit review command.',
+    { obligationId: lock.obligationId, code: lock.code },
+  );
 }
 
 async function enforceCommandScope(
@@ -363,15 +352,23 @@ async function resolveHostToolStateOrThrow(
   toolName: string,
   sessionId: string,
 ): Promise<{ sessDir: string; state: SessionState }> {
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir) {
+  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+  if (resolution.status === 'unavailable') {
+    throw buildEnforcementError(resolution.code, resolution.reason, {
+      sessionId,
+      tool: toolName,
+      sessionMapping: 'unresolved',
+    });
+  }
+  if (resolution.status === 'absent') {
     throw buildEnforcementError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Cannot verify host tool phase gate because no authoritative FlowGuard session mapping exists. Run /hydrate before mutating the workspace.',
-      { sessionId, tool: toolName, sessionMapping: 'unresolved' },
+      'SESSION_DIR_NOT_FOUND',
+      'Cannot verify host tool phase gate because no authoritative FlowGuard session state exists. Run /hydrate before mutating the workspace.',
+      { sessionId, tool: toolName, stateReadable: 'false' },
     );
   }
-  const state = await readRequiredHostToolState(sessDir, sessionId, toolName);
+
+  const { sessDir, state } = resolution;
   if (state.error) {
     // A persisted blocking error (e.g. strict TSA assurance failure) is a
     // durable fail-closed latch: the next governed host mutation must not
@@ -389,65 +386,14 @@ async function resolveHostToolStateOrThrow(
   return { sessDir, state };
 }
 
-async function readRequiredHostToolState(
-  sessDir: string,
-  sessionId: string,
-  toolName: string,
-): Promise<SessionState> {
-  if (!existsSync(sessDir)) {
-    throw buildEnforcementError(
-      'SESSION_DIR_NOT_FOUND',
-      `FlowGuard session directory expected at "${sessDir}" but not found on disk. Run /hydrate to initialize the session.`,
-      { sessionId, tool: toolName, sessDir, stateReadable: 'false' },
-    );
-  }
-  try {
-    const state = await readState(sessDir);
-    if (state) return state;
-  } catch (err) {
-    throw unreadableStateError(sessDir, sessionId, toolName, err);
-  }
-  throw missingStateError(sessDir, sessionId, toolName);
-}
-
-function unreadableStateError(
-  sessDir: string,
-  sessionId: string,
-  toolName: string,
-  err: unknown,
-): Error {
-  return buildEnforcementError(
-    'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-    `Cannot verify host tool phase gate — session state exists at "${sessDir}" but is unreadable (${err instanceof Error ? err.message : String(err)}). Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
-    {
-      sessionId,
-      tool: toolName,
-      stateFile: `${sessDir}/session-state.json`,
-      stateReadable: 'false',
-      error: err instanceof Error ? err.message : String(err),
-    },
-  );
-}
-
-function missingStateError(sessDir: string, sessionId: string, toolName: string): Error {
-  return buildEnforcementError(
-    'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-    `Cannot verify host tool phase gate — session directory exists at "${sessDir}" but contains no state file. Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
-    {
-      sessionId,
-      tool: toolName,
-      stateFile: `${sessDir}/session-state.json`,
-      stateReadable: 'false',
-    },
-  );
-}
-
 function enforceHostToolPhase(
   runtime: FlowGuardPluginRuntime,
   toolName: string,
   sessionId: string,
   state: SessionState,
 ): void {
+  const integrity = hostMutationIntegrityGate(toolName, state);
+  if (integrity.kind === 'blocked') throw buildEnforcementError(integrity.code, integrity.reason);
   const gateResult = isHostToolAllowedInPhase(toolName, state.phase);
   runtime.log.debug('enforcement', 'evaluating phase gate', {
     tool: toolName,

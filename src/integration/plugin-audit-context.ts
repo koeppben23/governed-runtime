@@ -12,14 +12,17 @@
 import type { SessionState } from '../state/schema.js';
 import { parseToolResult } from './blocked-result.js';
 
+import type {
+  SessionAuthorityResolution,
+  SessionAuthorityErrorCode,
+} from '../adapters/session-authority.js';
 import { sanitizeDiagnosticString } from '../logging/redact.js';
 import { checkNtpClock, type NtpCheckResult } from '../audit/ntp-check.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 
 /** Subset of plugin-audit AuditDeps needed for context resolution. */
 interface AuditContextDeps {
-  resolveFingerprint(): Promise<string | null>;
-  getSessionDir(sessionId: string): string | null;
+  resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   resolveSessionPolicy(sessDir: string): Promise<{
     policy: {
       audit: {
@@ -85,16 +88,19 @@ export async function resolveAuditContext(
   toolName: string,
   output: unknown,
   sessionId: string,
-): Promise<AuditContextResolution | null> {
-  await deps.resolveFingerprint();
-  const sessDir = deps.getSessionDir(sessionId);
-  if (!sessDir) return null;
-
-  const { policy, state } = await deps.resolveSessionPolicy(sessDir);
-  if (!state) {
-    deps.log.debug('audit', 'skipping unhydrated session audit', { sessionId, tool: toolName });
-    return null;
+): Promise<AuditContextOutcome> {
+  const authority = await deps.resolveSessionAuthority(sessionId);
+  if (authority.status === 'unavailable') {
+    return { kind: 'unavailable', code: authority.code, reason: authority.reason };
   }
+  if (authority.status === 'absent') {
+    deps.log.debug('audit', 'skipping unhydrated session audit', { sessionId, tool: toolName });
+    return { kind: 'absent' };
+  }
+
+  const sessDir = authority.sessDir;
+  const state = authority.state;
+  const { policy } = await deps.resolveSessionPolicy(sessDir);
   const { emitToolCalls, emitTransitions, enableChainHash } = policy.audit;
   const effectiveMode = policy.mode;
 
@@ -108,13 +114,14 @@ export async function resolveAuditContext(
   const actor = policy.actorClassification[toolName] ?? 'system';
   const now = new Date().toISOString();
 
-  if (state?.regulatedArchiveStatus) deps.invalidateChainState(sessionId);
+  if (state.regulatedArchiveStatus) deps.invalidateChainState(sessionId);
   const prevHash = await deps.initChain(sessDir, sessionId);
   const parsedOutput = parseAuditOutput(output);
   const resolvedTsa = resolveTimestampAssurancePolicy(policy.audit.timestampAssurance);
   const ntpResult = await resolveAuditNtpResult(resolvedTsa);
 
   return {
+    kind: 'resolved',
     ctx: {
       sessDir,
       emitToolCalls,
@@ -138,18 +145,27 @@ export async function resolveAuditContext(
   };
 }
 
-export interface AuditContextResolution {
-  ctx: AuditContext;
-  policy: {
-    audit: { emitToolCalls: boolean; emitTransitions: boolean; enableChainHash: boolean };
-    actorClassification: Record<string, string>;
-    mode: string;
-    requireHumanGates: boolean;
-  };
-  state: SessionState | null;
-  policyResolved: boolean;
-  effectiveMode: string;
-}
+/** Audit-context outcome; `absent` is positively established, never guessed. */
+export type AuditContextOutcome =
+  | {
+      readonly kind: 'resolved';
+      readonly ctx: AuditContext;
+      readonly policy: {
+        audit: { emitToolCalls: boolean; emitTransitions: boolean; enableChainHash: boolean };
+        actorClassification: Record<string, string>;
+        mode: string;
+        requireHumanGates: boolean;
+      };
+      readonly state: SessionState;
+      readonly policyResolved: boolean;
+      readonly effectiveMode: string;
+    }
+  | { readonly kind: 'absent' }
+  | {
+      readonly kind: 'unavailable';
+      readonly code: SessionAuthorityErrorCode;
+      readonly reason: string;
+    };
 
 // ─── Private Helpers ──────────────────────────────────────────────────────────
 

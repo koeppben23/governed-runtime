@@ -38,8 +38,8 @@ export type ReviewActorInfo = z.infer<typeof ReviewActorInfo>;
  * bound to. All reviewable flows (/plan, /architecture, /implement,
  * /review) create a ReviewObligation before subagent invocation, so the
  * UUID is always available.
- * validateStrictAttestation (review-assurance.ts) and plugin-orchestrator.ts
- * compare this field against the expected obligationId.
+ * validateStrictAttestation (integration/review/obligations/assurance.ts),
+ * consumed by review validation, compares this field against the expected obligationId.
  */
 export const ReviewAttestation = z
   .object({

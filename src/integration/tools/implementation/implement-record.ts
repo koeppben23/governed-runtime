@@ -4,16 +4,16 @@
  *
  * Host-Observed Independent Review for /implement
  *
- * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
- * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. The HOST captures the reviewer's structured findings into
+ * Architecture: FlowGuard does NOT call subagents. The host primary agent
+ * orchestrates independent review by calling the native flowguard-reviewer
+ * subagent. The HOST captures the reviewer's structured findings into
  * the review assurance evidence; the agent never resubmits findings.
  *
  * Flow:
  * 1. Primary agent performs implementation work
  * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
  * 3. FlowGuard returns next-action instructing subagent invocation
- * 4. Primary agent calls flowguard-reviewer subagent via Task tool
+ * 4. Primary agent calls the native flowguard-reviewer subagent
  * 5. Host captures the reviewer's structured findings into invocation evidence
  * 6. Primary agent submits the review verdict ONLY (flowguard_review_implementation)
  * 7. FlowGuard resolves the host-captured findings, validates, and persists them
@@ -31,13 +31,13 @@
  *
  * Multi-call pattern driven by the LLM:
  *
- * Step 1: LLM makes code changes using OpenCode built-in tools (read, write, bash)
+ * Step 1: LLM makes code changes using host built-in tools (read, write, shell)
  * Step 2: LLM calls flowguard_implement({})
  *   -> Tool auto-detects changed files via git, records ImplEvidence
  *   -> Auto-advances to IMPL_REVIEW
  *   -> Returns "review needed" with policy-conditional next-action
  *
- * Step 3: LLM calls flowguard-reviewer subagent via Task tool
+ * Step 3: LLM calls flowguard-reviewer subagent via reviewer subagent
  * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept" })
  *   -> Tool resolves the host-captured findings, records the review iteration,
  *      and checks convergence
@@ -50,11 +50,11 @@
  */
 
 import { formatBlocked } from '../../blocked-result.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
 import {
+  formatAutoAdvanceBlocked,
   formatAutoAdvanceOverflow,
-  enrichWithWorkflowDirective,
-  writeStateWithArtifacts,
-} from '../helpers.js';
+} from '../../../rails/auto-advance-overflow.js';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 // State & Machine
@@ -97,13 +97,13 @@ import {
 import type { CeremonyEligibilityProjection } from '../../phase-tool-gate.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import {
-  hasUnresolvedMutationEpisodes,
+  unresolvedMutationEpisodes,
   reconcileMutationEpisodes,
 } from '../../../state/evidence-mutation-episode.js';
 import {
   activateReviewObligationAndPersist,
   buildImplementationReviewInstruction,
-  materializeImplReviewContract,
+  materializePostValidationContract,
   nextImplementationReviewIteration,
 } from '../implementation-review-activation.js';
 
@@ -141,19 +141,11 @@ export function validateImplRecordPrerequisites(input: ImplementRuntime): string
   }
   if (!input.state.ticket) return formatBlocked('TICKET_REQUIRED', { action: 'implementation' });
   if (!input.state.plan) return formatBlocked('PLAN_REQUIRED', { action: 'implementation' });
-  const resolvedCallIds = new Set(
-    input.state.mutationEpisodeResolutions.map((resolution) => resolution.hostCallId),
+  const unresolvedEpisodes = unresolvedMutationEpisodes(
+    input.state.mutationEpisodes,
+    input.state.mutationEpisodeResolutions,
   );
-  const unresolvedEpisodes = input.state.mutationEpisodes.filter(
-    (episode) =>
-      episode.status === 'dispatch_authorized' && !resolvedCallIds.has(episode.hostCallId),
-  );
-  if (
-    hasUnresolvedMutationEpisodes(
-      input.state.mutationEpisodes,
-      input.state.mutationEpisodeResolutions,
-    )
-  ) {
+  if (unresolvedEpisodes.length > 0) {
     return formatBlocked('MUTATION_EPISODE_UNRESOLVED', {
       count: String(unresolvedEpisodes.length),
     });
@@ -227,7 +219,7 @@ function buildImplRecordedResponse(input: {
   reviewFindings: ReviewFindings[];
   ceremony: CeremonyEligibilityProjection;
   policy: FlowGuardPolicy;
-  baselineScoping: 'applied' | 'unavailable';
+  baselineScoping: 'applied';
 }): Record<string, unknown> {
   const instruction = input.authority
     ? buildImplementationReviewInstruction(input.authority)
@@ -347,6 +339,18 @@ function buildImplementationRiskAssessment(
   };
 }
 
+function emptyImplementationScopeBlock(rawFiles: readonly string[], capturedAt: string): string {
+  if (rawFiles.length === 0) {
+    return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
+      reason: 'no changed files detected in worktree',
+    });
+  }
+  return formatBlocked('IMPLEMENTATION_BASELINE_PREEXISTING', {
+    paths: rawFiles.join(', '),
+    capturedAt,
+  });
+}
+
 export async function handleImplRecord(
   input: ImplementRuntime,
   changedFilesOverride?: string[],
@@ -371,18 +375,17 @@ export async function handleImplRecord(
     rawFiles,
     input.state.implementationBaseline,
   );
+  if (scoped.kind === 'unavailable') return formatBlocked('IMPLEMENTATION_BASELINE_UNAVAILABLE');
   if (scoped.kind === 'empty') {
-    return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
-      reason:
-        scoped.rawFiles.length > 0
-          ? 'no changed files attributable to this implementation after baseline scoping (all changed files were already dirty and unchanged since session start)'
-          : 'no changed files detected in worktree',
-    });
+    return emptyImplementationScopeBlock(
+      scoped.rawFiles,
+      input.state.implementationBaseline.capturedAt,
+    );
   }
   const { files, baselineScoping } = scoped.subject;
 
   const domainFiles = files.filter(
-    (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
+    (file) => !file.includes('node_modules/') && !isNonDomainConfigPath(file),
   );
   const digest = await computeImplementationDigest({
     worktree: input.worktree,
@@ -400,7 +403,7 @@ export async function handleImplRecord(
   const declarationBlocked = ticketDeclarationBlocked(input.state);
   if (declarationBlocked !== null) return declarationBlocked;
   const ceremony = projectCeremonyEligibility({ state: input.state, changedFiles: files });
-  const assessment = assessMinimumTaskClass(files);
+  const assessment = assessMinimumTaskClass(files, input.state.policySnapshot.riskTriggerPaths);
   const nextState: SessionState = {
     ...input.state,
     mutationEpisodes: reconcileMutationEpisodes(
@@ -459,7 +462,7 @@ interface PersistImplRecordArgs {
   planVersion: number;
   reviewFindings: ReviewFindings[];
   ceremony: CeremonyEligibilityProjection;
-  baselineScoping: 'applied' | 'unavailable';
+  baselineScoping: 'applied';
 }
 
 export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): Promise<string> {
@@ -469,8 +472,11 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
   }
+  if (advanced.kind === 'blocked') {
+    return formatAutoAdvanceBlocked(advanced);
+  }
   const { state: finalState, transitions } = advanced;
-  const stateWithMaterializedContract = await materializeImplReviewContract(
+  const stateWithMaterializedContract = await materializePostValidationContract(
     finalState,
     input.worktree,
   );

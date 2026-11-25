@@ -26,6 +26,7 @@ import type { JwksIdpConfig } from '../identity/types.js';
 import {
   resolveActor,
   resolveActorFromClaim,
+  actorInfoFromDecisionIdentity,
   ActorClaimError,
   ActorIdentityError,
 } from './actor.js';
@@ -593,5 +594,41 @@ describe('resolveActor', () => {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
     });
+  });
+});
+
+describe('actorInfoFromDecisionIdentity', () => {
+  it('HAPPY: maps every persisted decision identity field onto ActorInfo', () => {
+    expect(
+      actorInfoFromDecisionIdentity({
+        actorId: 'bob-reviewer',
+        actorEmail: 'bob@example.com',
+        actorDisplayName: 'Bob Reviewer',
+        actorSource: 'oidc',
+        actorAssurance: 'idp_verified',
+      }),
+    ).toEqual({
+      id: 'bob-reviewer',
+      email: 'bob@example.com',
+      displayName: 'Bob Reviewer',
+      source: 'oidc',
+      assurance: 'idp_verified',
+    });
+  });
+
+  it('EDGE: omits an absent display name and never invents verification metadata', () => {
+    const actorInfo = actorInfoFromDecisionIdentity({
+      actorId: 'carol',
+      actorEmail: null,
+      actorSource: 'env',
+      actorAssurance: 'best_effort',
+    });
+    expect(actorInfo).toEqual({
+      id: 'carol',
+      email: null,
+      source: 'env',
+      assurance: 'best_effort',
+    });
+    expect(actorInfo.verificationMeta).toBeUndefined();
   });
 });

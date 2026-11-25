@@ -13,11 +13,33 @@ const mocks = vi.hoisted(() => ({
   appendAuditEvent: vi.fn(async (_sessionDir: string, _event: unknown) => undefined),
   installHookStdoutGuard: vi.fn(() => ({ restore: vi.fn() })),
   assessObligationEscalation: vi.fn(() => ({ message: undefined as string | undefined })),
+  appendHookIngestFailure: vi.fn(
+    async (..._args: unknown[]): Promise<{ recorded: boolean; reason?: string }> => ({
+      recorded: true,
+    }),
+  ),
 }));
 
 vi.mock('./shared/stdin-reader.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./shared/stdin-reader.js')>();
-  return { ...actual, readStdin: (...args: unknown[]) => mocks.readStdin(...args) };
+  return {
+    ...actual,
+    readStdin: (...args: unknown[]) => mocks.readStdin(...args),
+    // The hook reads raw stdin to keep bounded failure metadata; delegate to the
+    // same controllable mock so existing scenarios keep their behavior.
+    readStdinRaw: async (...args: unknown[]) => {
+      const payload = (await mocks.readStdin(...args)) as Record<string, unknown>;
+      return { payload, raw: Buffer.from(JSON.stringify(payload)) };
+    },
+  };
+});
+
+vi.mock('../adapters/persistence-hook-ingest.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/persistence-hook-ingest.js')>();
+  return {
+    ...actual,
+    appendHookIngestFailure: (...args: unknown[]) => mocks.appendHookIngestFailure(...args),
+  };
 });
 
 vi.mock('./shared/session-resolver.js', () => ({
@@ -48,6 +70,7 @@ interface RunOptions {
   readonly payload?: unknown;
   readonly session?: unknown;
   readonly stdinFails?: boolean;
+  readonly stdinRejection?: unknown;
   readonly auditFails?: boolean;
 }
 
@@ -65,7 +88,9 @@ async function runHook(options: RunOptions = {}): Promise<string> {
     cwd: '/tmp/project',
   };
 
-  if (options.stdinFails === true) {
+  if (options.stdinRejection !== undefined) {
+    mocks.readStdin.mockRejectedValue(options.stdinRejection);
+  } else if (options.stdinFails === true) {
     mocks.readStdin.mockRejectedValue(new Error('stdin broken'));
   } else {
     mocks.readStdin.mockResolvedValue(payload);
@@ -180,7 +205,31 @@ describe('post-tool-use hook', () => {
 
     expect(stderr).toContain('stdin read failed: stdin broken');
     expect(mocks.appendAuditEvent).not.toHaveBeenCalled();
+    expect(mocks.appendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ transport: 'command_hook', reasonCode: 'HOOK_STDIN_INVALID' }),
+    );
+    expect(stderr).toContain('NOT a tool-call audit event');
     expect(process.exitCode ?? 0).toBe(0);
+  });
+
+  it('records observed bytes and digest for an oversized stdin failure', async () => {
+    const { StdinReadError } = await import('./shared/stdin-reader.js');
+    await runHook({
+      stdinRejection: new StdinReadError('STDIN_TOO_LARGE', 'stdin exceeds 1048576 bytes', {
+        bytes: 1_100_000,
+        prefix: Buffer.from('observed-prefix'),
+      }),
+    });
+
+    expect(mocks.appendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'command_hook',
+        reasonCode: 'STDIN_TOO_LARGE',
+        observedBytes: 1_100_000,
+        observedPrefix: Buffer.from('observed-prefix'),
+      }),
+    );
+    expect(mocks.appendAuditEvent).not.toHaveBeenCalled();
   });
 
   it('stays non-blocking when payload validation fails', async () => {
@@ -190,6 +239,24 @@ describe('post-tool-use hook', () => {
 
     expect(stderr).toContain('validation failed:');
     expect(mocks.appendAuditEvent).not.toHaveBeenCalled();
+    expect(mocks.appendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ transport: 'command_hook', reasonCode: 'HOOK_PAYLOAD_INVALID' }),
+    );
+  });
+
+  it('surfaces an unrecorded ingestion failure without failing the hook', async () => {
+    mocks.appendHookIngestFailure.mockResolvedValueOnce({
+      recorded: false,
+      reason: 'LOCK_UNAVAILABLE',
+    });
+
+    const stderr = await runHook({ stdinFails: true });
+
+    expect(stderr).toContain(
+      'transport ingestion failure NOT recorded (HOOK_STDIN_INVALID, LOCK_UNAVAILABLE)',
+    );
+    expect(mocks.appendAuditEvent).not.toHaveBeenCalled();
+    expect(process.exitCode ?? 0).toBe(0);
   });
 
   it('warns and skips persistence for an unresolved session', async () => {
@@ -199,6 +266,7 @@ describe('post-tool-use hook', () => {
 
     expect(stderr).toContain('WARN: cannot persist audit (SESSION_NOT_FOUND): unknown session');
     expect(mocks.appendAuditEvent).not.toHaveBeenCalled();
+    expect(mocks.appendHookIngestFailure).not.toHaveBeenCalled();
   });
 
   it('logs an audit write failure without failing the hook', async () => {

@@ -26,6 +26,8 @@ import { deriveProofGraph } from './derive.js';
 import { isFreshCounterexample } from './evaluate.js';
 import { bindExecutedTestEvidence } from './executed-test-binder.js';
 import { bindCounterexamples } from './counterexample-binder.js';
+import { uniqueClaimIds, claimsMatchDeclaredSet } from '../../state/proofgraph-claim-set.js';
+import { assessProofGraphEvidence } from './evidence-integrity.js';
 import type { MutationProfileSummary, MutationSurvivor } from './mutation-report.js';
 
 /** Adversarial outcome for one claim, with explicit revision freshness. */
@@ -97,6 +99,43 @@ export interface PersistedProofGraphSummary {
 }
 
 /**
+ * Contract coverage requires set identity: every declared contract claim must be
+ * present EXACTLY once in the projection and PROVEN. Advisory hypotheses and
+ * other explicitly supported sources may be projected additionally, but a
+ * projected claim with any governing provenance that the contract does not
+ * declare means the projection and the contract disagree — never PROVEN.
+ * Missing, duplicated, or unauthorized claims are inconsistencies, not coverage.
+ */
+function hasUndeclaredGoverningClaim(
+  claims: ProofGraphProjection['claims'],
+  declaredIds: ReadonlySet<string>,
+): boolean {
+  // Any non-null provenance is a governing authority (`approved_ticket`,
+  // `plan_adr_section`, or `canonical_authority`). Only unsourced advisory
+  // claims (`provenance: null`, e.g. peer-review hypotheses) may exist beyond
+  // the declared contract.
+  return claims.some((claim) => !declaredIds.has(claim.claimId) && claim.provenance !== null);
+}
+
+function contractCoverage(
+  state: SessionState,
+  claims: ProofGraphProjection['claims'],
+): PersistedProofGraphSummary['coverage'] {
+  const contract = state.proofContract;
+  if (contract === undefined) return 'NOT_DECLARED';
+  if (contract.claims.length === 0) return 'NOT_VERIFIED';
+  const declaredIds = uniqueClaimIds(contract.claims);
+  if (declaredIds === null) return 'NOT_VERIFIED';
+  if (!claimsMatchDeclaredSet(claims, declaredIds)) return 'NOT_VERIFIED';
+  if (hasUndeclaredGoverningClaim(claims, declaredIds)) return 'NOT_VERIFIED';
+  return claims
+    .filter((claim) => declaredIds.has(claim.claimId))
+    .every((claim) => claim.verificationState === 'PROVEN')
+    ? 'PROVEN'
+    : 'NOT_VERIFIED';
+}
+
+/**
  * Summarize the persisted projection without executing providers. An empty graph
  * is never reported as healthy: it means no structured claims were declared.
  *
@@ -113,22 +152,16 @@ export interface PersistedProofGraphSummary {
  * state, not a passing one.
  */
 export function summarizePersistedProofGraph(state: SessionState): PersistedProofGraphSummary {
-  const claims = state.proofGraph.claims;
+  const claims = assessProofGraphEvidence(state.proofGraph, {
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
+    implementationDigest: state.implementation?.digest,
+  }).projection.claims;
   const provenCount = claims.filter((claim) => claim.verificationState === 'PROVEN').length;
   const unprovenCount = claims.length - provenCount;
-  const contractClaimIds = new Set((state.proofContract?.claims ?? []).map((c) => c.claimId));
-  const contractClaims = claims.filter((c) => contractClaimIds.has(c.claimId));
-  const contractProven = contractClaims.filter((c) => c.verificationState === 'PROVEN').length;
   const contractClaimCount = state.proofContract?.claims.length ?? 0;
   return {
-    coverage:
-      state.proofContract === undefined
-        ? 'NOT_DECLARED'
-        : contractClaimCount === 0
-          ? 'NOT_VERIFIED'
-          : contractProven === contractClaims.length && contractClaims.length > 0
-            ? 'PROVEN'
-            : 'NOT_VERIFIED',
+    coverage: contractCoverage(state, claims),
     claimCount: claims.length,
     provenCount,
     unprovenCount,
@@ -259,6 +292,10 @@ export function summarizeProofGraph(
     survivors: m.survivors,
   }));
 
+  const projectionDiagnostics = new Map<string, AssertionBindingReasonCode>(
+    Object.entries(projection.claimDiagnostics ?? {}),
+  );
+
   return {
     projection,
     counts,
@@ -267,6 +304,6 @@ export function summarizeProofGraph(
     counterexamples,
     mutation,
     unresolvedAssumptions,
-    claimDiagnostics: diagnostics,
+    claimDiagnostics: projectionDiagnostics,
   };
 }

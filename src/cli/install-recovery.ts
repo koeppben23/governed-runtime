@@ -7,7 +7,8 @@
  * @version v1
  */
 
-import type { InstallErrorCode, CliError } from './install-types.js';
+import type { CliError, CliErrorCode, InstallErrorCode } from './install-types.js';
+import { CliInstallError } from './errors.js';
 
 export class InstallError extends Error {
   readonly code: InstallErrorCode;
@@ -19,15 +20,7 @@ export class InstallError extends Error {
   }
 }
 
-const RECOVERY_MAP: Record<
-  string,
-  | string
-  | ((detail: {
-      code?: InstallErrorCode;
-      message: string;
-      recoveryContext?: { path?: string; target?: string };
-    }) => string)
-> = {
+const RECOVERY_MAP: Partial<Record<CliErrorCode, string | ((detail: CliError) => string)>> = {
   MISSING_CORE_TARBALL: 'Add --core-tarball <path> to your install command',
   TARBALL_NOT_FOUND: 'Verify the tarball path exists and is readable',
   TARBALL_NAME_INVALID: 'Rename to flowguard-core-{version}.tgz or download the correct release',
@@ -39,23 +32,49 @@ const RECOVERY_MAP: Record<
     'Inspect the integrity error above, re-download the release artifacts, and retry verification.',
   ALREADY_INSTALLED: 'Add --force to overwrite, or run uninstall first',
   MANAGED_ARTIFACT_CONFLICT: 'Move or rename the customer-owned conflicting file, then retry.',
-  LEGACY_INSTRUCTION_AMBIGUOUS:
-    'Inspect the existing OpenCode instructions. Remove AGENTS.md only if it is the obsolete FlowGuard reference; otherwise keep it and resolve the authority conflict explicitly before reinstalling.',
+  PARTIAL_INSTALL_CONFLICT:
+    'Re-run with --force to repair the incomplete FlowGuard install, or run uninstall first.',
+  ROLLBACK_DIRECTORY_NOT_EMPTY:
+    'Rollback preserved a directory that still contains foreign or concurrently created content. Inspect the reported path and remove leftover FlowGuard artifacts manually.',
+  NON_OPENCODE_ARTIFACT_EXISTS:
+    'A plugin artifact appeared after the install preflight. Remove or rename the reported path, then retry (or run uninstall first).',
+  NON_OPENCODE_CONFIG_EXISTS:
+    'Re-run with --force to update the existing FlowGuard config, or run uninstall first.',
+  NON_OPENCODE_CONFIG_INVALID:
+    'Inspect the reported config path, fix or remove the file, then retry; a backup may be required before re-running with --force.',
+  OPENCODE_FRESH_INSTALL_REQUIRED:
+    'Archive old FlowGuard installation and evidence byte-for-byte. Confirm ownership before removing obsolete registrations, then perform a fresh V2 installation; --force does not migrate old formats.',
+  OPENCODE_CONFIG_INVALID:
+    'Preserve and repair the reported OpenCode configuration before installing; the installer does not rewrite it.',
+  OWNERSHIP_MANIFEST_INVALID:
+    'Archive the old installation/configuration and evidence byte-for-byte, verify the archive, then perform a fresh install. --force does not migrate ownership formats.',
+  OWNERSHIP_MANIFEST_SCOPE_MISMATCH:
+    'Use the matching host/scope or resolve the provenance conflict without deleting evidence; the installer does not overwrite another scope.',
   DEPENDENCY_INSTALL_FAILED: 'Run npm install or bun install manually in the target directory',
   INSTALL_LOCK_CONFLICT: (detail) => {
     if (!detail.recoveryContext?.path)
       return 'Remove the stale FlowGuard installation lock and retry';
     return `Remove stale lock file: rm -f ${detail.recoveryContext.path}`;
   },
+  HOST_SERVICE_RECORD_INVALID:
+    'Inspect the OpenCode service record; the installer will not kill an unverified PID.',
+  HOST_SERVICE_UNSAFE_URL:
+    'Inspect the OpenCode service record; only loopback URLs are accepted for credentials.',
+  HOST_SERVICE_STALE:
+    'Start OpenCode or remove the stale service record; no process was signalled.',
+  HOST_RESTART_REQUIRED:
+    'Automatic restart is disabled or the installer cannot prove it is outside the service; rerun without --no-restart-host or restart the exact service shown above. Installed artifacts remain committed.',
+  HOST_RESTART_FAILED:
+    'Check the OpenCode host log, then retry the exact restart command shown above. Installed artifacts remain committed.',
+  HOST_PLUGIN_MISMATCH:
+    'Preserve the reported installation, remove or archive the foreign FlowGuard plugin, then reinstall the intended scope. No process was signalled.',
+  HOST_COMMAND_MISSING:
+    'Verify the plugin status and /start after restart; inspect the OpenCode host log.',
+  HOST_VERIFICATION_UNAVAILABLE:
+    'Check the OpenCode host log and run flowguard doctor; no restart was attempted.',
 };
 
-export function formatRecoveryLines(
-  errorDetails: Array<{
-    code?: InstallErrorCode;
-    message: string;
-    recoveryContext?: { path?: string; target?: string };
-  }>,
-): string[] {
+export function formatRecoveryLines(errorDetails: CliError[]): string[] {
   const lines: string[] = [];
   const seen = new Set<string>();
   let hasUncoded = false;
@@ -92,7 +111,7 @@ export function pushError(
   error: unknown,
   recovery?: CliError['recoveryContext'],
 ): void {
-  if (error instanceof InstallError) {
+  if (error instanceof InstallError || error instanceof CliInstallError) {
     const msg = error.message;
     errors.push(msg);
     errorDetails.push({
@@ -111,6 +130,8 @@ export function pushError(
 }
 
 export function toCliError(error: unknown): CliError {
-  if (error instanceof InstallError) return { code: error.code, message: error.message };
+  if (error instanceof InstallError || error instanceof CliInstallError) {
+    return { code: error.code, message: error.message };
+  }
   return { message: error instanceof Error ? error.message : String(error) };
 }

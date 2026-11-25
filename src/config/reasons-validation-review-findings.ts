@@ -69,8 +69,9 @@ export const REVIEW_FINDING_VALIDATION_REASONS = [
     messageTemplate:
       'Reviewer finding {findingIndex} has no subject anchor in the frozen reviewed subject for obligation {obligationId}.',
     recoverySteps: [
-      'Anchor the finding to the reviewed change or artifact section',
-      'Put unrelated observations in scopeCreep instead of blockingIssues or majorRisks',
+      'Anchor a missing-change finding at the changed code location that introduces the requirement (the reviewed subject), and cite unchanged files only as observed evidenceLocations',
+      'If no changed location carries the finding, it is genuinely out of scope: record unrelated observations in scopeCreep instead of blockingIssues or majorRisks; never invent a link to the reviewed change',
+      'Retry diagnostics list the exact allowed subject paths of the frozen review scope',
     ],
   },
   {

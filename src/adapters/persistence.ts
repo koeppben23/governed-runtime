@@ -53,6 +53,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
+import { channel } from 'node:diagnostics_channel';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
   CURRENT_ASSURANCE_EPOCH,
@@ -62,8 +63,10 @@ import {
   SessionState,
 } from '../state/schema.js';
 import { ReviewReport } from '../state/evidence.js';
+import { computePolicySnapshotHash } from '../state/evidence-policy.js';
 import { withSessionWriteLock } from './persistence-lock.js';
 import { assertImplementationEntryFrozen } from './implementation-entry-guard.js';
+import { assertEvidenceApprovalWriteBoundary } from './evidence-approval-write-guard.js';
 import { ensureDir, PersistenceError, isEnoent } from './persistence-core.js';
 
 export {
@@ -103,6 +106,16 @@ export function globalConfigPath(): string {
   return path.join(base, CONFIG_FILE);
 }
 
+/**
+ * Resolve the bounded transport hook ingestion-failure ledger path (config
+ * root). This ledger records PostToolUse payloads that can never become a
+ * tool-call audit event; it is not an audit trail and carries no session or
+ * audit-chain claim.
+ */
+export function hookIngestFailureLogPath(): string {
+  return path.join(path.dirname(globalConfigPath()), 'flowguard-hook-ingest-failures.jsonl');
+}
+
 /** Resolve the repo-scoped config file path ({worktree}/.opencode/flowguard.json). */
 export function repoConfigPath(worktree: string): string {
   return path.join(worktree, '.opencode', CONFIG_FILE);
@@ -111,6 +124,23 @@ export function repoConfigPath(worktree: string): string {
 // -- Error Types --------------------------------------------------------------
 
 // -- Atomic Write -------------------------------------------------------------
+
+/**
+ * Fault-injection/observability seam for durable publication phases.
+ *
+ * Production has no subscribers and pays only the boolean check. The crash
+ * matrix subscribes to kill a real child at an exact fsync/rename boundary.
+ *
+ * @internal
+ */
+const atomicWriteChannel = channel('flowguard.persistence.atomic-write');
+
+/** @internal Publish a named durable-write phase without changing I/O order. */
+export function publishAtomicWritePhase(filePath: string, phase: string): void {
+  if (atomicWriteChannel.hasSubscribers) {
+    atomicWriteChannel.publish({ filePath, phase });
+  }
+}
 
 /**
  * Rename with retry for Windows EPERM/EBUSY transient failures.
@@ -194,14 +224,19 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
 
   try {
     const handle = await fs.open(tempPath, 'wx', 0o600);
+    publishAtomicWritePhase(filePath, 'temp-opened');
     try {
       await handle.writeFile(content, 'utf-8');
+      publishAtomicWritePhase(filePath, 'temp-written');
       await handle.sync();
+      publishAtomicWritePhase(filePath, 'temp-fsynced');
     } finally {
       await handle.close();
     }
     await renameWithRetry(tempPath, filePath);
+    publishAtomicWritePhase(filePath, 'renamed');
     await syncDirectory(dir);
+    publishAtomicWritePhase(filePath, 'dir-fsynced');
   } catch (err) {
     // Stryker disable next-line BlockStatement — equivalent: the temp-file cleanup is best-effort by design; removing the cleanup block cannot change the fail-closed throw below.
     try {
@@ -242,7 +277,7 @@ function isDirectorySyncUnsupported(err: unknown): boolean {
   return code === 'EISDIR' || code === 'EINVAL';
 }
 
-async function syncDirectory(dir: string): Promise<void> {
+export async function syncDirectory(dir: string): Promise<void> {
   let handle: Awaited<ReturnType<typeof fs.open>> | null = null;
   // Read-only open of an EXISTING directory to fsync the rename entry. No
   // file is created; the explicit 0o600 mode is ignored for an existing
@@ -280,6 +315,30 @@ async function syncDirectory(dir: string): Promise<void> {
  * reference, never a shared mutable object.
  */
 
+/**
+ * Root phase of the persisted predecessor for the evidence-approval boundary.
+ *
+ * Uses exactly the parse the canonical read uses (`JSON.parse` of the whole
+ * document), never a textual heuristic: duplicate keys, key order, indentation,
+ * CRLF, or a BOM therefore resolve identically here and in {@link readState}.
+ * Schema validation is deliberately skipped (it runs only when the predecessor
+ * is approved). Anything that is not a JSON object with a string root `phase`
+ * reports `unknown`, so the caller fails closed through the canonical read.
+ */
+async function persistedPhaseForBoundary(sessionDir: string): Promise<string | 'unknown' | null> {
+  const raw = await readStateFile(statePath(sessionDir));
+  if (raw === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return 'unknown';
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return 'unknown';
+  const phase = (parsed as { phase?: unknown }).phase;
+  return typeof phase === 'string' ? phase : 'unknown';
+}
+
 async function readStateFile(filePath: string): Promise<string | null> {
   try {
     return await fs.readFile(filePath, 'utf-8');
@@ -305,10 +364,31 @@ function parseStateJson(raw: string, filePath: string): unknown {
   }
 }
 
-function assertCurrentStateContract(
-  contract: Record<string, unknown> | null,
-  filePath: string,
-): void {
+/** Canonical assessment of a persisted session-state document. */
+export type PersistedStateAssessment =
+  | { readonly kind: 'compatible'; readonly state: SessionState }
+  | { readonly kind: 'incompatible' }
+  | { readonly kind: 'integrity_mismatch'; readonly message: string }
+  | { readonly kind: 'invalid'; readonly message: string };
+
+function hasRemovedStateFields(contract: Record<string, unknown>): boolean {
+  const snapshot = contract.policySnapshot;
+  const snapshotHasRemovedField =
+    typeof snapshot === 'object' &&
+    snapshot !== null &&
+    ('selfReview' in snapshot || 'requireVerifiedActorsForApproval' in snapshot);
+  return 'archiveStatus' in contract || snapshotHasRemovedField;
+}
+
+/**
+ * Canonical persisted-state boundary: the SINGLE authority for both the
+ * executable read path and the upgrade preflight's archive classification.
+ * A missing current tuple component is `incompatible` (expected legacy shape),
+ * a malformed current document is `invalid`. No migration, defaulting, or
+ * authority carry-forward exists on this boundary.
+ */
+export function assessPersistedStateDocument(json: unknown): PersistedStateAssessment {
+  const contract = json as Record<string, unknown> | null;
   if (
     !contract ||
     typeof contract !== 'object' ||
@@ -317,38 +397,29 @@ function assertCurrentStateContract(
     contract.stateDigestFormat !== CURRENT_STATE_DIGEST_FORMAT ||
     contract.auditChainFormat !== CURRENT_AUDIT_CHAIN_FORMAT
   ) {
-    throw new PersistenceError(
-      'SESSION_STATE_INCOMPATIBLE',
-      `State file does not satisfy the current executable Assurance epoch contract: ${filePath}. ` +
-        'Start a new FlowGuard session in the current Assurance Epoch.',
-    );
+    return { kind: 'incompatible' };
   }
-}
-
-function assertNoRemovedStateFields(contract: Record<string, unknown> | null): void {
-  if (!contract) return;
-  const snapshot = contract.policySnapshot;
-  const snapshotHasRemovedField =
-    typeof snapshot === 'object' &&
-    snapshot !== null &&
-    ('selfReview' in snapshot || 'requireVerifiedActorsForApproval' in snapshot);
-  if ('archiveStatus' in contract || snapshotHasRemovedField) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      'State file contains a field removed by the current session-state contract.',
-    );
+  if (hasRemovedStateFields(contract)) {
+    return {
+      kind: 'invalid',
+      message: 'State file contains a field removed by the current session-state contract.',
+    };
   }
-}
-
-function validateStateJson(json: unknown): SessionState {
   const result = SessionState.safeParse(json);
-  if (!result.success) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      `State file failed Zod validation: ${result.error.message}`,
-    );
+  if (result.success) {
+    const snapshot = result.data.policySnapshot;
+    if (computePolicySnapshotHash(snapshot) !== snapshot.hash) {
+      return {
+        kind: 'integrity_mismatch',
+        message: 'Frozen policy fields do not match their recorded content digest.',
+      };
+    }
+    return { kind: 'compatible', state: result.data };
   }
-  return result.data;
+  return {
+    kind: 'invalid',
+    message: `State file failed Zod validation: ${result.error.message}`,
+  };
 }
 
 export async function readState(sessionDir: string): Promise<SessionState | null> {
@@ -358,12 +429,20 @@ export async function readState(sessionDir: string): Promise<SessionState | null
   if (raw === null) return null;
 
   const json = parseStateJson(raw, filePath);
-  const contract = json as Record<string, unknown> | null;
-  assertCurrentStateContract(contract, filePath);
-  assertNoRemovedStateFields(contract);
-
-  // No read migration, partial parsing, defaulting, or authority carry-forward.
-  return validateStateJson(json);
+  const assessment = assessPersistedStateDocument(json);
+  if (assessment.kind === 'incompatible') {
+    throw new PersistenceError(
+      'SESSION_STATE_INCOMPATIBLE',
+      `State file does not satisfy the current executable Assurance epoch contract: ${filePath}. ` +
+        'Start a new FlowGuard session in the current Assurance Epoch.',
+    );
+  }
+  if (assessment.kind === 'invalid') {
+    throw new PersistenceError('SCHEMA_VALIDATION_FAILED', assessment.message);
+  }
+  if (assessment.kind === 'integrity_mismatch')
+    throw new PersistenceError('POLICY_SNAPSHOT_INTEGRITY_MISMATCH', assessment.message);
+  return assessment.state;
 }
 
 /**
@@ -387,12 +466,19 @@ export async function readState(sessionDir: string): Promise<SessionState | null
 export async function writeStateAlreadyLocked(
   sessionDir: string,
   state: SessionState,
+  approvalAdmission?: unknown,
 ): Promise<void> {
   const result = SessionState.safeParse(state);
   if (!result.success) {
     throw new PersistenceError(
       'SCHEMA_VALIDATION_FAILED',
       `Refusing to persist invalid state: ${result.error.message}`,
+    );
+  }
+  if (computePolicySnapshotHash(result.data.policySnapshot) !== result.data.policySnapshot.hash) {
+    throw new PersistenceError(
+      'POLICY_SNAPSHOT_INTEGRITY_MISMATCH',
+      'Refusing a frozen policy whose fields do not match its digest.',
     );
   }
 
@@ -402,6 +488,23 @@ export async function writeStateAlreadyLocked(
   // finalizeImplementationEntry before reaching this write; any other writer
   // fails closed here instead of persisting an unreviewable implementation.
   assertImplementationEntryFrozen(result.data);
+
+  // THE lowest evidence-approval boundary. A write that enters `EXPORT_READY`
+  // or leaves an approved predecessor must present the canonical admission and
+  // an unchanged basis — regardless of the chosen target phase, so a direct
+  // writer cannot bypass the protection through an out-of-topology transition.
+  // The predecessor phase comes from the same JSON parse as the canonical
+  // read (no schema pass on ordinary writes); an approved or unreadable
+  // predecessor goes through the full canonical read and therefore fails
+  // closed on corruption, integrity, or contract mismatch.
+  const predecessorPhase =
+    result.data.phase === 'EXPORT_READY'
+      ? 'EXPORT_READY'
+      : await persistedPhaseForBoundary(sessionDir);
+  if (predecessorPhase === 'EXPORT_READY' || predecessorPhase === 'unknown') {
+    const previous = await readState(sessionDir);
+    await assertEvidenceApprovalWriteBoundary(previous, result.data, approvalAdmission);
+  }
 
   await ensureDir(sessionDir);
   const json = JSON.stringify(result.data, null, 2) + '\n';
@@ -422,10 +525,11 @@ export async function writeState(
   sessionDir: string,
   state: SessionState,
   timeoutMs?: number,
+  approvalAdmission?: unknown,
 ): Promise<void> {
   return withSessionWriteLock(
     sessionDir,
-    () => writeStateAlreadyLocked(sessionDir, state),
+    () => writeStateAlreadyLocked(sessionDir, state, approvalAdmission),
     timeoutMs,
   );
 }

@@ -56,18 +56,25 @@ function toDetailRecord(detail: TypedDetail): Record<string, unknown> {
 // ─── Factory Functions ────────────────────────────────────────────────────────
 
 /** Shared body-input shape; the detail payload is specific to each body builder. */
-interface AuditBodyInput<D> extends Omit<TransitionEventInput, 'timestampEvidence' | 'detail'> {
+interface AuditBodyInput<D> extends Omit<
+  TransitionEventInput,
+  'timestampEvidence' | 'detail' | 'actorInfo'
+> {
   readonly detail: D;
 }
 
 /** Input object for buildTransitionBody. */
-export type TransitionBodyInput = AuditBodyInput<Omit<TransitionDetail, 'kind'>>;
+export type TransitionBodyInput = AuditBodyInput<Omit<TransitionDetail, 'kind'>> & {
+  /** Resolved session-principal identity; absence stays machine-only. */
+  readonly actorInfo?: ActorInfo | undefined;
+};
 
 /**
  * Build a transition event body (no chainHash, no canonical digest, no evidence).
  */
 export function buildTransitionBody(input: TransitionBodyInput): EventBody {
-  const { flowguardSessionId, hostSessionId, phase, detail, occurredAt, prevHash } = input;
+  const { flowguardSessionId, hostSessionId, phase, detail, occurredAt, prevHash, actorInfo } =
+    input;
   return {
     id: detail.operationId ?? crypto.randomUUID(),
     flowguardSessionId,
@@ -79,6 +86,7 @@ export function buildTransitionBody(input: TransitionBodyInput): EventBody {
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: toDetailRecord({ ...detail, kind: 'transition' }),
     prevHash,
+    ...(actorInfo !== undefined ? { actorInfo } : {}),
   };
 }
 
@@ -133,6 +141,8 @@ export interface TransitionEventInput {
   readonly detail: Omit<TransitionDetail, 'kind'>;
   readonly occurredAt: string;
   readonly prevHash: string;
+  /** Resolved session-principal identity; absence stays machine-only. */
+  readonly actorInfo?: ActorInfo | undefined;
   readonly timestampEvidence?: TimestampEvidence | undefined;
 }
 
@@ -162,6 +172,7 @@ export function createTransitionEvent(
       detail: input.detail,
       occurredAt: input.occurredAt,
       prevHash: input.prevHash,
+      ...(input.actorInfo !== undefined ? { actorInfo: input.actorInfo } : {}),
     }),
     input.prevHash,
     input.timestampEvidence,

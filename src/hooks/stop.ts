@@ -19,6 +19,7 @@ import { writeLog } from './shared/stdout-writer.js';
 import { installHookStdoutGuard } from './shared/stdout-guard.js';
 import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
+import { unresolvedBlockingObligations } from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import type { AuditEventBody } from '../state/evidence-audit.js';
 
@@ -68,10 +69,7 @@ async function stopLogic(): Promise<void> {
   const { state, sessionDir } = resolution;
 
   // Check for outstanding review obligations.
-  const pendingObligations =
-    state.reviewAssurance?.obligations.filter(
-      (ob) => ob.status !== 'consumed' && ob.consumedAt == null,
-    ) ?? [];
+  const pendingObligations = unresolvedBlockingObligations(state);
 
   if (pendingObligations.length > 0) {
     writeLog(

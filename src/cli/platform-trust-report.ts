@@ -5,14 +5,23 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { EnforcementLevel, HostCapabilities } from '../adapters/host-adapter.js';
 import type { HostId } from '../shared/hosts.js';
 import type { DoctorCheck, InstallScope } from './install-types.js';
 import { codexInstallStatus, resolveCodexMarketplacePath } from './codex-plugin-install.js';
 
+/** Diagnostic-only projection; never an adapter capability or assurance authority. */
+interface HostTrustCapabilities {
+  readonly preToolBlock: boolean;
+  readonly argMutation: boolean;
+  readonly outputReplacement: boolean;
+  readonly contextInjection: boolean;
+  readonly compactionInjection: boolean;
+  readonly reviewTransports: readonly Readonly<Record<string, unknown>>[];
+}
+
 interface HostTrustProjection {
-  enforcementLevel: EnforcementLevel;
-  capabilities: HostCapabilities;
+  enforcementLevel: 'synchronous' | 'hook_gated' | 'advisory';
+  capabilities: HostTrustCapabilities;
   runtimeVerification: string;
   activation: string;
   hookSemantics: string;
@@ -31,13 +40,13 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       contextInjection: true,
       reviewTransports: [
         {
-          kind: 'native_task_structured_followup',
-          structuredOutput: true,
+          kind: 'native_subagent_message_json',
+          validatedResult: true,
           parentVisible: true,
           transcriptNavigable: true,
           isolatedAgentIdentity: true,
           permissionIsolation: true,
-          assurance: 'structured_high',
+          assurance: 'host_message_validated',
         },
       ],
       compactionInjection: true,
@@ -45,11 +54,11 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
     runtimeVerification:
       'runtime probe required for Governance active; file existence is not proof',
     activation:
-      'configured when local plugin artifacts and import check pass; restart still required',
+      'local plugin artifacts and import check configure discovery only; V2 watches plugin/config changes, /reload forces rediscovery; governance activation remains NOT_VERIFIED',
     hookSemantics: 'in-process plugin can synchronously block through FlowGuard runtime decisions',
     approvalPrimitive: 'FlowGuard /review-decision with validated obligation-bound ReviewFindings',
     reviewerTransport:
-      'native_task_structured_followup uses one native Task child for visible review execution and schema-constrained findings capture; the same child identity binds both phases',
+      'native_subagent_message_json uses one native subagent child and a proven terminal JSON capture window validated by FlowGuard; model selection and child identity bind both phases',
     receiptPreservation: [
       'sessionId: preserved by FlowGuard state/audit',
       'reviewDecisionId: preserved by FlowGuard decision receipt',
@@ -172,14 +181,23 @@ export function buildPlatformTrustReport(
   }
 
   if (host === 'codex') {
+    const codexStatus = codexInstallStatus(scope);
     checks.push({
       file: resolveCodexMarketplacePath(scope),
-      status: codexInstallStatus(scope) === 'INSTALLED_AND_REGISTERED' ? 'warn' : 'missing',
-      detail: `Codex marketplace registration: ${codexInstallStatus(scope)}; native load NOT_VERIFIED_NATIVE_LOAD`,
+      status: codexMarketplaceDoctorStatus(codexStatus),
+      detail: `Codex marketplace registration: ${codexStatus}; native load NOT_VERIFIED_NATIVE_LOAD`,
     });
   }
 
   return checks;
+}
+
+function codexMarketplaceDoctorStatus(
+  status: ReturnType<typeof codexInstallStatus>,
+): DoctorCheck['status'] {
+  if (status === 'INSTALLED_AND_REGISTERED') return 'warn';
+  if (status === 'MARKETPLACE_UNREADABLE' || status === 'MARKETPLACE_MALFORMED') return 'error';
+  return 'missing';
 }
 
 function hostActivationStatus(
@@ -193,5 +211,5 @@ function hostActivationStatus(
       ? 'warn'
       : 'missing';
   }
-  return codexInstallStatus(scope) === 'INSTALLED_AND_REGISTERED' ? 'warn' : 'missing';
+  return codexMarketplaceDoctorStatus(codexInstallStatus(scope));
 }

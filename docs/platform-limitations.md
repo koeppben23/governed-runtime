@@ -6,11 +6,12 @@ This document enumerates each gap with its impact assessment, mitigation strateg
 
 ## Glyph Display Fallback
 
-OpenCode terminals or fonts that cannot display FlowGuard's canonical Unicode
-status markers can set `presentation.opencode.glyphProfile` to `ascii` in
-`flowguard.json`. This affects only transient `presentation.markdown` markers;
+Terminals or fonts that cannot display FlowGuard's canonical Unicode status
+markers can set `presentation.glyphProfile` to `ascii` in `flowguard.json`. The
+earlier `presentation.opencode.glyphProfile` key keeps its meaning and remains
+readable. This affects only transient `presentation.markdown` markers;
 canonical Unicode `reviewCard` artifacts and arbitrary content are unchanged.
-See [Configuration](./configuration.md#presentationopencodeglyphprofile).
+See [Configuration](./configuration.md#presentationglyphprofile).
 
 ## Gap Summary
 
@@ -28,11 +29,24 @@ See [Configuration](./configuration.md#presentationopencodeglyphprofile).
 
 FlowGuard operates at different enforcement levels depending on the host platform:
 
-| Level         | Platform            | Guarantee                                                                                       |
-| ------------- | ------------------- | ----------------------------------------------------------------------------------------------- |
-| `synchronous` | OpenCode Plugin SDK | In-process enforcement. Tool call blocked synchronously before execution. Full fail-closed.     |
-| `hook_gated`  | Claude Code, Codex  | Out-of-process hook evaluation. Best-effort fail-closed — platform may proceed on hook failure. |
-| `advisory`    | Any (MCP-only)      | Governance decisions returned as tool output. LLM must comply voluntarily.                      |
+| Level         | Platform            | Guarantee                                                                                                                 |
+| ------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `synchronous` | OpenCode Plugin SDK | In-process, pre-effect denial for intercepted governed tool calls; bounded by the host's observable/enforceable surfaces. |
+| `hook_gated`  | Claude Code, Codex  | Out-of-process hook evaluation. Best-effort fail-closed — platform may proceed on hook failure.                           |
+| `advisory`    | Any (MCP-only)      | Governance decisions returned as tool output. LLM must comply voluntarily.                                                |
+
+For OpenCode V2.2.4/2.2.5, synchronous denial is not a universal host/OS
+containment guarantee. Native pre-prompt shell and other unobservable host paths
+are outside that claim. The later 2.2.7 API baseline refresh does not re-certify
+this boundary; installed-host evidence remains version-bound. Under the untrusted co-installed plugins contract, the
+public APIs cannot guarantee final reviewer-input integrity: R4 is `NOT_SUPPORTED`.
+The 2026-11-06 operator decision accepts this as a documented host limitation
+under the trusted-plugin operating model; untrusted co-installed plugins are
+outside the supported V2 security boundary. This is not a `PASS` and no receipt
+claims tool-result-byte attestation. CLI/server parity does not certify Desktop
+or the full ACTIVE workflow. The [current contract gates](./host-probes/opencode-v2/phase0-contract-gates.md)
+own these acceptance boundaries and link the retained counterexamples; no
+supported ACTIVE V2 release follows from the enforcement-level label.
 
 ---
 
@@ -103,17 +117,21 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 
 1. **Aggressive timeouts**: PreToolUse hooks configured with 10s timeout (vs 600s platform default). Fast failure rather than hanging.
 2. **Fast execution**: Hook scripts complete in <50ms (command) or <20ms (optional HTTP mode). Timeout risk minimized.
-3. **Audit trail**: PostToolUse persists tool-call audit events to the JSONL audit trail. PreToolUse gate decisions and hook failures/timeouts are not persisted as dedicated JSONL audit events by default; they may only be visible through host or stderr logs or inferred from subsequent tool-call records.
-4. **HTTP health monitoring** (optional HTTP mode only): Claude Code HTTP hooks include `/health` endpoint for liveness verification.
-5. **Fail-closed on internal error**: Hook scripts catch all exceptions and emit deny — crashes produce explicit denials, not silent pass-through.
+3. **Git-probe budget**: the session-authority worktree and remote-origin probes share one monotone 4s deadline (`SESSION_AUTHORITY_DEADLINE_MS`); each probe receives `min(5s, remaining)` and an exhausted budget fails closed with `GIT_TIMEOUT` instead of starting another probe. A timed-out remote probe propagates instead of silently falling back to the local-path fingerprint. The budget bounds the probes, not Node startup and file I/O.
+4. **Audit trail**: PostToolUse persists tool-call audit events to the JSONL audit trail. PreToolUse gate decisions and hook failures/timeouts are not persisted as dedicated JSONL audit events by default; they may only be visible through host or stderr logs or inferred from subsequent tool-call records. PostToolUse payloads that can never become a tool-call audit event (oversized, malformed, unreadable) are recorded in a bounded, metadata-only transport ingestion-failure ledger (`flowguard-hook-ingest-failures.jsonl` under the config root) with the reason code, the observed byte count, and a binary-exact SHA-256 digest of the observed raw prefix (retained prefix capped at the 1 MiB payload limit; an explicit `unavailable` when no bytes were retained). This ledger is NOT an audit event: it carries no session id, no audit-chain linkage, and no enforcement claim, and it never stores raw payload bytes. The 256 KiB rotation value is a pre-append threshold, not a strict maximum file size, and the bounded lock wait bounds lock acquisition only, not every subsequent filesystem operation.
+5. **HTTP health monitoring** (optional HTTP mode only): Claude Code HTTP hooks include `/health` endpoint for liveness verification.
+6. **Fail-closed on internal error**: Hook scripts catch all exceptions and emit deny — crashes produce explicit denials, not silent pass-through.
+7. **Fail-closed HTTP transport (PreToolUse payload failures)**: once authentication, method, and route checks have passed, an authenticated pre-tool-use request no longer fails with a bare non-2xx status for handler-reachable payload/transport failures. Invalid content type, unreadable/oversized bodies, and malformed JSON are delivered as HTTP 200 with a protocol DENY (`HOOK_PAYLOAD_INVALID` / `HOOK_STDIN_INVALID`), because Claude Code treats non-2xx hook responses as non-blocking. Failures before the application layer (401 authentication, 405 method, 404 unknown route) and the informational routes (`post-tool-use`, `session-start`, `stop`) keep their status codes.
 
 **Code references**:
 
 - `src/templates/claude-code-plugin.ts` (timeout: 10s)
 - `src/templates/codex-plugin.ts` (timeout: 10s)
-- `src/hooks/http-server.ts:388-402` (fail-closed on handler error)
+- `src/hooks/http-server.ts` (fail-closed transport and handler decisions)
 
 **Residual Risk**: HIGH — This is a fundamental platform limitation. If the hook process is killed by the OS (OOM, SIGKILL) or the HTTP server crashes without restart, the platform will allow tool execution without governance. This is documented as "best-effort fail-closed" for out-of-process platforms.
+
+Additional HTTP-mode residual risks that the server cannot eliminate from the inside: a missing or misconfigured bearer token returns `401`, and an unreachable server (connection refused), a client disconnect, or a request that exceeds the host hook deadline cannot be converted into a protocol DENY. These remain non-blocking host errors and must be covered by transport monitoring.
 
 **Recommendation for critical deployments**: Use Claude Code with HTTP hooks and external process monitoring (systemd, Docker health checks) to restart the hook server on failure.
 
@@ -243,52 +261,32 @@ governed capability is lost.
 
 ## OpenCode instruction-source: configured is not activated
 
-FlowGuard installs its mandates by registering an entry in the OpenCode
-`instructions[]` array. Per the official OpenCode documentation this is the
-documented mechanism for loading instruction sources, exposed to both the CLI
-and the Desktop app:
+The native V2 installer deliberately does **not** register mandates in
+`instructions[]`. It writes one default-export plugin directory and passive
+managed artifacts, leaving customer JSON/JSONC, instructions, models, variants
+and permissions byte-for-byte unchanged. It creates no activation or session
+state. The plugin itself injects phase-aware mandates only into verified ACTIVE
+non-reviewer requests; INACTIVE sessions receive none. See
+[native installation](./installation.md#native-v2-layout-and-fresh-install-boundary)
+and the [official V2 plugin contract](https://opencode.ai/v2/docs/build/plugins).
 
-- <https://opencode.ai/docs/config#instructions> (retrieved 2026-07)
-- <https://opencode.ai/docs/rules> (retrieved 2026-07)
+Doctor reports file/import checks separately from native host load and ACTIVE
+governance. Importability, plugin setup and a successful reload are not operator
+intent or reviewer proof. Its native installation check warns that runtime
+acceptance, INACTIVE parity, operator UI provenance and reviewer assurance remain
+NOT_VERIFIED. Native activation cannot be inferred from a command callback.
 
-**A present `instructions[]` entry means the instruction source is _configured_.
-It does not prove the runtime loaded the mandates into the model context.**
-FlowGuard has no reliable surface to verify activation: the Desktop app exposes
-no `opencode --version` executable and OpenCode offers no documented API that
-reports the resolved instruction sources or the composed system prompt.
-FlowGuard therefore never claims the mandates are "active", "supported", or that
-a runtime is "compatible".
+Obsolete FlowGuard wrappers, global mandate registrations and ownership formats
+are rejected, not rewritten or migrated with `--force`. Archive old installation
+and governance evidence without changing their bytes before a fresh V2 install.
+An intact historical archive is neither automatically valid current evidence nor
+automatically tampered data.
 
-What the tools report honestly:
-
-- `flowguard doctor` — the instruction-source check is `ok` only in the sense
-  that the entry is **configured**. Its detail states explicitly that
-  activation is not verifiable by FlowGuard. It does not turn the installation
-  green under a false "supported" claim.
-- `flowguard install` — writes the config and mandate file, then emits a notice
-  that mandates are **configured** and that activation is not verified by
-  install. It does not claim the runtime is governed.
-- An unknown or Desktop runtime is **never** classified as compatible. It is
-  simply `configured` (present, activation unverified).
-
-Fail-closed exception (deny-list): if a runtime is _positively known_ — with
-cited evidence — to accept the `instructions[]` entry without resolving it, it
-yields the `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` reason in `flowguard
-doctor` and a non-clean `flowguard install` result (artifacts are written but
-mandates are reported as NOT active — "write but refuse"). The deny-list
-(`KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES` in
-`src/cli/opencode-runtime-compat.ts`) is seeded empty; no such runtime is
-currently known.
-
-`flowguard doctor` and `flowguard install` record the detected OpenCode version
-(best-effort, CLI only), runtime kind, executable path, OS, install method, and
-install date to the FlowGuard logs. The Desktop app exposes no
-`opencode --version` executable, so its version is logged as `null`; this is a
-detection limitation and does not by itself imply activation either way.
-
-`NOT_VERIFIED`: FlowGuard does not prove instruction-source activation on any
-runtime. A future mechanism could verify activation if OpenCode exposes the
-resolved instruction sources or the composed agent system prompt.
+The remaining no-start parity gap is also explicit: the canonical session
+authority's `absent` result alone does not distinguish never-activated sessions
+from formerly ACTIVE sessions whose state is missing. The installer does not
+invent a second activation registry or convert that absence into runtime
+permission. Complete installed Desktop/CLI INACTIVE parity remains NOT_VERIFIED.
 
 ## References
 

@@ -1,19 +1,46 @@
 {
   "platform": "opencode",
-  "updated": "2026-09-28T16:39:42.704Z",
-  "version": "1.18.33",
+  "updated": "2026-11-23T07:14:51.207Z",
+  "packages": {
+    "@opencode/plugin": "2.3.2",
+    "@opencode/client": "2.3.2"
+  },
   "files": [
     {
-      "label": "plugin/dist/index.d.ts",
-      "hash": "f3ec1a150d1354be3c9d93928fa130edc118c63fb468533ebb01eb3d6ed77f92"
+      "label": "@opencode/plugin/dist/promise/index.d.ts",
+      "hash": "786a6383b72bbccb17bd55b61c90427a4d9051b418c7818304654c5a024f3252"
     },
     {
-      "label": "plugin/dist/tool.d.ts",
-      "hash": "5237b30a9b5a9a814f93327ce446e73b726da139fe2eba8edf88c4a45b4b8b2d"
+      "label": "@opencode/plugin/dist/promise/plugin.d.ts",
+      "hash": "3ce05b3e492b5bca41dd7e97ed4ee299eedd26265aeeb20909746fa24291a9bf"
     },
     {
-      "label": "sdk/gen/types.gen.d.ts#Event",
-      "hash": "bbf632c72d2484a5fdc39c9259606fe69ed45078cba64e9445e497688d1e804a"
+      "label": "@opencode/plugin/dist/promise/tool.d.ts",
+      "hash": "4c8da465dc42d2f7abdd7216aa5d508496bc885e5823777b8ad71498a124b3db"
+    },
+    {
+      "label": "@opencode/plugin/dist/promise/session.d.ts",
+      "hash": "61d8f6f325ae8e20ebe35dcc0fb80a404a4712b1dc5f38afeb613e0e542218bb"
+    },
+    {
+      "label": "@opencode/plugin/dist/promise/event.d.ts",
+      "hash": "0f8229f59b5e7528ea625af3f277f64869a981808bbfd6bc7589b0aa5144e556"
+    },
+    {
+      "label": "@opencode/plugin/dist/promise/registration.d.ts",
+      "hash": "16436600a035f85d035e3baebb8412084119f620ee4eafc9feba1c7438f6f5ff"
+    },
+    {
+      "label": "@opencode/client#EventSubscribeOutput/V2Event",
+      "hash": "ab43e300658e717349075ce482c439aa5e90400081342195918b0e96f87a3505"
+    },
+    {
+      "label": "@opencode/client#SessionMessageInfo/ToolContent",
+      "hash": "32a2ed3bbe0c3a17abe8da970db93b123337bce31728a0ad6c8e7a6571fd504a"
+    },
+    {
+      "label": "@opencode/schema/dist/tool.d.ts",
+      "hash": "33df2da0c5c26261a4713a56eb44c6095e8bc977145bc728bb5a77d7ff9702ac"
     }
   ]
 }

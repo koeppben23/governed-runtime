@@ -16,7 +16,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -34,25 +34,39 @@ vi.mock('./git-control-plane', async (importOriginal) => {
 });
 
 import { readState } from '../adapters/persistence.js';
-import { sessionDir, verifyArchive } from '../adapters/workspace/index.js';
-import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
+import { verifyCompletionExport } from '../adapters/workspace/index.js';
+import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
 import { parseTicketRiskDeclaration } from '../state/risk-declaration.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 import { computeImplementationDigest } from '../verification/implementation-subject.js';
 import { executeCheck } from '../verification/executor.js';
-import { makeProgressedState, POLICY_SNAPSHOT } from '../fixtures.js';
+import {
+  makePlanApprovalCertificate,
+  makeProgressedState,
+  POLICY_SNAPSHOT,
+  VALIDATION_PASSED,
+  makePolicySnapshot,
+} from '../fixtures.js';
+import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
 import type { SessionState } from '../state/schema.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
+import { canonicalBinding } from './test-helpers.js';
 import type { ToolContext } from './tools/helpers.js';
-import { decision, export as exportTool } from './tools/index.js';
+import { decision, declare_contract, export as exportTool } from './tools/index.js';
 import { reconcilePendingAuditOperations } from './plugin-audit.js';
 import { createSessionCompletionAuditDeps } from './services/regulated-completion.js';
 import { hydrate } from './tools/hydrate/hydrate.js';
 import { implement } from './tools/implementation/implement.js';
 import { run_check } from './tools/validation/run-check-tool.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 
 const DOC_PATH = 'docs/usage-notes.md';
 const REPORT_PATH = '.flowguard/reports/{attemptId}/jest.json';
@@ -78,6 +92,25 @@ const RUN_SPECIFIC_CANDIDATE = {
   candidateId: deriveVerificationCandidateId(RUN_SPECIFIC_DEFINITION),
 };
 
+/**
+ * Independent adversarial check for the F1 claim. One execution may never serve
+ * as both positive and adversarial evidence, so the counterexample is a
+ * distinct check with its own seeded implementation attempt.
+ */
+const COVERAGE_DEFINITION = { ...RUN_SPECIFIC_DEFINITION, kind: 'coverage' as const };
+const COVERAGE_CANDIDATE = {
+  ...COVERAGE_DEFINITION,
+  candidateId: deriveVerificationCandidateId(COVERAGE_DEFINITION),
+};
+const RUN_COVERAGE = { kind: 'coverage' as const, candidateId: COVERAGE_CANDIDATE.candidateId };
+
+/** Execute the independent adversarial check before the positive check run. */
+async function runAdversarialCoverageCheck(se: SE): Promise<void> {
+  executorWritesReport();
+  const result = await run_check.execute(RUN_COVERAGE, se.tc);
+  expect(String(result)).not.toContain('"error":true');
+}
+
 interface SE {
   rootDir: string;
   worktree: string;
@@ -97,7 +130,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   if (pc === undefined) delete process.env.OPENCODE_CONFIG_DIR;
   else process.env.OPENCODE_CONFIG_DIR = pc;
   if (s) {
@@ -114,12 +147,16 @@ interface BootOptions {
 
 async function boot(options: BootOptions = {}): Promise<SE> {
   const r = mkdtempSync(join(tmpdir(), 'fg-reduced-artifacts-'));
-  const w = join(r, 'worktree');
   const c = join(r, 'config');
   const id = randomUUID();
-  mkdirSync(w, { recursive: true });
+  mkdirSync(join(r, 'worktree'), { recursive: true });
   mkdirSync(c, { recursive: true });
+  // Canonicalize only the worktree: the session authority resolves it through
+  // git (physical path on macOS), while the config dir keeps the OS-tmpdir
+  // spelling for the test-directory guard.
+  const w = realpathSync(join(r, 'worktree'));
   execFileSync('git', ['init', '-q'], { cwd: w });
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: w });
   execFileSync('git', ['config', 'user.email', 't@t'], { cwd: w });
   execFileSync('git', ['config', 'user.name', 'T'], { cwd: w });
   writeFileSync(join(w, 'README.md'), '# E2E');
@@ -158,14 +195,20 @@ async function boot(options: BootOptions = {}): Promise<SE> {
   if (typeof hydrated !== 'string' || hydrated.includes('"error":true')) {
     throw new Error(`boot hydrate failed: ${String(hydrated).slice(0, 400)}`);
   }
-  const fp = await computeFingerprint(w);
+  // Derive the session location through the canonical authority exactly like
+  // the product does; a direct fingerprint of the raw path can disagree with
+  // git's canonical root on Windows (8.3 short names).
+  const authority = await resolveSessionAuthority({ root: w, sessionId: id });
+  if (authority.status !== 'resolved') {
+    throw new Error(`boot authority failed: ${authority.status}`);
+  }
   return {
     rootDir: r,
     worktree: w,
     configDir: c,
-    fingerprint: fp.fingerprint,
+    fingerprint: authority.fingerprint,
     sId: id,
-    sDir: sessionDir(fp.fingerprint, id),
+    sDir: authority.sessDir,
     tc,
   };
 }
@@ -195,7 +238,7 @@ function executorWritesReport(): void {
       stdout: 'OK',
       stderr: '',
       timedOut: false,
-      startedAt: '2026-09-01T00:00:00.000Z',
+      startedAt: new Date(Date.now() - 500).toISOString(),
     };
   });
 }
@@ -233,7 +276,7 @@ async function subjectState(
           initiatedBy: identityBase.initiatedBy,
           initiatedByIdentity: identityBase.initiatedByIdentity,
         }
-      : { binding: { ...base.binding, worktree: se.worktree } }),
+      : { binding: await canonicalBinding(se.worktree, se.tc.sessionID) }),
     implementationBaseAuthority: undefined,
     ...(claimedTaskClass !== null ? { claimedTaskClass } : {}),
     implementation: {
@@ -264,12 +307,12 @@ async function subjectState(
     policySnapshot:
       policySnapshot ??
       (reduced
-        ? {
+        ? makePolicySnapshot({
             ...POLICY_SNAPSHOT,
             allowReducedCeremony: true,
             requireHumanGates: true,
-            effectiveGateBehavior: 'human_gated' as const,
-          }
+            effectiveGateBehavior: 'human_gated',
+          })
         : base.policySnapshot),
   };
   await writeStateWithArtifacts(se.sDir, state);
@@ -342,7 +385,7 @@ describe('reduced-ceremony subject artifacts (real git)', () => {
 
     expect(String(result)).not.toContain('"error":true');
     const state = await readState(se.sDir);
-    expect(state!.phase).toBe('IMPL_REVIEW');
+    expect(state!.phase, String(result)).toBe('IMPL_REVIEW');
   });
 });
 
@@ -352,7 +395,7 @@ describe('baseline VALIDATION reports (real git)', () => {
     const base = makeProgressedState('VALIDATION');
     await writeStateWithArtifacts(se.sDir, {
       ...base,
-      binding: { ...base.binding, worktree: se.worktree },
+      binding: await canonicalBinding(se.worktree, se.tc.sessionID),
       implementationBaseAuthority: undefined,
       activeChecks: ['test'],
       verificationCandidates: [RUN_SPECIFIC_CANDIDATE],
@@ -379,12 +422,12 @@ describe('baseline VALIDATION reports (real git)', () => {
     await writeStateWithArtifacts(se.sDir, {
       ...state!,
       claimedTaskClass: 'TRIVIAL',
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...POLICY_SNAPSHOT,
         allowReducedCeremony: true,
         requireHumanGates: true,
         effectiveGateBehavior: 'human_gated',
-      },
+      }),
     });
   }
 
@@ -429,7 +472,7 @@ describe('baseline VALIDATION reports (real git)', () => {
     expect(state!.implementation?.changedFiles).toEqual([DOC_PATH, 'src-unexpected.ts']);
     expect(state!.implementationRiskAssessment?.computedMinimumTaskClass).toBe('STANDARD');
     expect(state!.reducedCeremony).toBeNull();
-    expect(state!.phase).toBe('IMPL_REVIEW');
+    expect(state!.phase, String(result)).toBe('IMPL_REVIEW');
   });
 });
 
@@ -476,7 +519,7 @@ describe('team opt-in completion (real git)', () => {
     expect(completeness.summary.waived).toBe(1);
 
     // The human evidence gate remains mandatory: approve → EXPORT_READY.
-    recordUserDecisionIntent({
+    recordComponentDecision({
       sessionId: se.sId,
       command: '/approve',
       expectedVerdict: 'approve',
@@ -528,7 +571,7 @@ describe('team opt-in completion (real git)', () => {
       implementationDigest: state!.implementation!.digest,
     });
 
-    // The completion package is named by the HOST session id and binds the
+    // The completion export is named by the HOST session id and binds the
     // archived state to the same host id and fingerprint.
     const archivePath = join(
       se.configDir,
@@ -536,16 +579,24 @@ describe('team opt-in completion (real git)', () => {
       se.fingerprint,
       'sessions',
       'archive',
-      `${se.sId}.tar.gz`,
+      `export-${se.sId}.tar.gz`,
     );
     expect(existsSync(archivePath)).toBe(true);
     const members = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf-8' })
-      .split('\n')
+      .split(/\r?\n/)
       .filter(Boolean);
     const stateMember = `${se.sId}/state/session-state.json`;
     const manifestMember = `${se.sId}/archive-manifest.json`;
-    expect(members).toContain(stateMember);
-    expect(members).toContain(manifestMember);
+    expect(
+      members,
+      `actual tar members:
+${members.join('\n')}`,
+    ).toContain(stateMember);
+    expect(
+      members,
+      `actual tar members:
+${members.join('\n')}`,
+    ).toContain(manifestMember);
     const archivedState = JSON.parse(
       execFileSync('tar', ['-xOzf', archivePath, stateMember], { encoding: 'utf-8' }),
     ) as SessionState;
@@ -570,8 +621,8 @@ describe('team opt-in completion (real git)', () => {
     // required): the integration suite must stay runnable before `npm run
     // build`. The standalone CLI verifier on the concrete package runs
     // post-build in the smoke project
-    // (src/cli/demo-evidence-verify.test.ts).
-    const verification = await verifyArchive(se.fingerprint, se.sId);
+    // (src/cli/demo-evidence-verify.smoke.test.ts).
+    const verification = await verifyCompletionExport(se.fingerprint, se.sId);
     expect(verification.passed).toBe(true);
   });
 });
@@ -632,5 +683,183 @@ describe('effective risk class (real git)', () => {
     const state = await readState(se.sDir);
     expect(state!.phase).toBe('IMPL_REVIEW');
     expect(state!.reducedCeremony).toBeNull();
+  });
+});
+
+// ─── Run-9 F1: reduced-ceremony contract materialization ─────────────────────
+
+const F1_CLAIM_ID = '22222222-2222-4222-8222-222222222222';
+
+function f1ClaimDeclarations(): PlanClaimDeclarations {
+  return {
+    flow: 'plan',
+    version: 'v2',
+    claims: [
+      {
+        claimId: F1_CLAIM_ID,
+        statement: 'the docs guide documents both Maven commands',
+        critical: true,
+        authoritySectionId: '### 1. Create docs/usage-notes.md',
+        claimScope: 'specific_behavior',
+        expectedCheckId: 'test',
+        counterexampleRequirement: {
+          kind: 'assertion',
+          checkId: 'coverage',
+          assertion: { providerId: 'jest', localId: 'tests/a.test.ts::passes' },
+        },
+      },
+    ],
+  };
+}
+
+/** Attach an approved, certificate-bound plan to the reduced subject state. */
+async function f1ClaimBearingState(se: SE, staleCertificate = false): Promise<void> {
+  const subject = await subjectState(se, true);
+  const planCurrent = makePlanRevision({ body: 'approved plan for the docs task' });
+  const declarations = f1ClaimDeclarations();
+  const baseState = {
+    ...subject.state,
+    activeChecks: ['test', 'coverage'],
+    verificationCandidates: [RUN_SPECIFIC_CANDIDATE, COVERAGE_CANDIDATE],
+    executionSubjectInputsByCandidateId: {
+      [RUN_SPECIFIC_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
+      [COVERAGE_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
+    },
+    plan: {
+      current: planCurrent,
+      history: [],
+      reviewFindings: [],
+      reviewCompletion: 'reviewer_accepted' as const,
+      claimDeclarations: declarations,
+    },
+  };
+  const certificate = makePlanApprovalCertificate(baseState, {
+    claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+    approvedAt: '2026-01-02T00:00:00.000Z',
+    planVersion: planCurrent.planVersion,
+    planRecordDigest: staleCertificate ? 'd'.repeat(64) : planCurrent.recordDigest,
+    reviewBinding: {
+      kind: 'current_review',
+      reviewObligationId: randomUUID(),
+      reviewEvidenceDigest: 'b'.repeat(64),
+      reviewedSubjectDigest: planCurrent.digest,
+    },
+  });
+  await writeStateWithArtifacts(se.sDir, {
+    ...baseState,
+    plan: {
+      ...baseState.plan,
+      approvalCertificate: certificate,
+    },
+  });
+}
+
+describe('reduced-ceremony contract materialization (Run-9 F1, real git)', () => {
+  it('HAPPY: materializes the approved-plan contract and clears the certificate-authorized claim gate', async () => {
+    s = await boot({ allowReducedCeremony: true });
+    const se = s;
+    await f1ClaimBearingState(se);
+    await runAdversarialCoverageCheck(se);
+    executorWritesReport();
+
+    const result = await run_check.execute(RUN, se.tc);
+    expect(String(result)).not.toContain('"error":true');
+
+    const state = await readState(se.sDir);
+    expect(state!.phase).toBe('EVIDENCE_REVIEW');
+    expect(state!.proofContract?.claims.map((claim) => claim.claimId)).toEqual([F1_CLAIM_ID]);
+    expect(state!.proofGraph.claims).toHaveLength(1);
+    expect(state!.proofGraph.claims[0]!.verificationState).toBe('PROVEN');
+    const gate = evaluateProofGraphGateFromState(state!);
+    expect(gate.gated).toBe(false);
+    // The materialization is committed in the same governed write as the
+    // contract: a retried materialization must not mint a different version.
+    expect(state!.proofContract?.version).toBe('contract.v2');
+  });
+
+  it('BAD: a stale certificate with declarations stays blocked, never claimless', async () => {
+    s = await boot({ allowReducedCeremony: true });
+    const se = s;
+    await f1ClaimBearingState(se, true);
+    await runAdversarialCoverageCheck(se);
+    executorWritesReport();
+
+    const result = await run_check.execute(RUN, se.tc);
+    expect(String(result)).not.toContain('"error":true');
+
+    const state = await readState(se.sDir);
+    expect(state!.phase).toBe('EVIDENCE_REVIEW');
+    expect(state!.proofContract?.claims).toEqual([]);
+    expect(state!.proofContractCoverage).toEqual([{ cause: 'invalid_certificate' }]);
+    const gate = evaluateProofGraphGateFromState(state!);
+    expect(gate.gated).toBe(true);
+    expect(gate.kind).toBe('certificate_invalid');
+  });
+
+  it('HAPPY: a manual /declare-contract claim survives the review entry alongside the approved plan', async () => {
+    s = await boot({ allowReducedCeremony: true });
+    const se = s;
+    await f1ClaimBearingState(se);
+
+    // The manual declaration resolves against the current implementation
+    // generation before the review entry.
+    const before = await readState(se.sDir);
+    await writeStateWithArtifacts(se.sDir, {
+      ...before!,
+      validationAttempts: [
+        {
+          attemptId: randomUUID(),
+          scope: 'implementation' as const,
+          implementationId: before!.implementation!.implementationId,
+          implementationDigest: before!.implementation!.digest,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: {
+            ...VALIDATION_PASSED[0]!,
+            checkId: 'test',
+            candidateId: RUN_SPECIFIC_CANDIDATE.candidateId,
+            passed: true,
+          },
+        },
+      ],
+    });
+    const declared = JSON.parse(
+      String(
+        await declare_contract.execute(
+          {
+            claims: [
+              {
+                statement: 'the docs guide keeps its manual advisory declaration',
+                checkId: 'test',
+                critical: false,
+                claimScope: 'specific_behavior',
+                structuralSurface: 'command-registration',
+              },
+            ],
+          },
+          se.tc,
+        ),
+      ),
+    ) as { error?: boolean };
+    expect(declared.error).toBeUndefined();
+
+    const withManual = await readState(se.sDir);
+    const manualClaim = withManual!.proofContract!.claims.at(-1)!;
+
+    await runAdversarialCoverageCheck(se);
+    executorWritesReport();
+    const result = await run_check.execute(RUN, se.tc);
+    expect(String(result)).not.toContain('"error":true');
+
+    const state = await readState(se.sDir);
+    expect(state!.phase).toBe('EVIDENCE_REVIEW');
+    // The certificate-bound plan claim is materialized and the advisory manual
+    // claim is preserved with its identity and evidence reference.
+    expect(state!.proofContract?.claims.map((claim) => claim.claimId)).toEqual([
+      F1_CLAIM_ID,
+      manualClaim.claimId,
+    ]);
+    expect(state!.proofContract?.claims.at(-1)).toEqual(manualClaim);
+    expect(state!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
+    expect(evaluateProofGraphGateFromState(state!).gated).toBe(false);
   });
 });
