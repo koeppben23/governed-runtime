@@ -1,63 +1,68 @@
 /** Operation-scoped persistence witnesses; unrelated changes must stay unproven. */
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   expectRecovery,
   implementationReviewAcceptanceProven,
   recoveryPersisted,
 } from '../../../demos/lib/recovery-state.mjs';
+import {
+  loadInstalledReviewInvocationValidator,
+  reviewInvocationValidator,
+} from '../../../demos/lib/review-recovery-authority.mjs';
 import { hashText } from '../../shared/hashing.js';
-import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
+import { ReviewInvocationEvidence } from '../../state/evidence-review-invocation.js';
+import {
+  approvedPlan,
+  consumedReview,
+  reviewedPlan,
+  validateReviewInvocation,
+} from '../demo-recovery-test-helpers.js';
+
+const foreignId = 'a7704ff0-f4f0-4eed-a8d1-3ca952e71068';
+const expectPlan = (state = reviewedPlan()) =>
+  expectRecovery(state, ['flowguard_plan'], 'COMPLETE', [], 0, [], validateReviewInvocation);
+const persistsReview = (expected: unknown, state: unknown, command: string) =>
+  recoveryPersisted(expected, state, command, [], validateReviewInvocation);
 
 describe('implementation review acceptance witness', () => {
   const digest = 'impl-digest-1';
   function accepting() {
+    const state = reviewedPlan();
     return {
+      ...state,
       phase: 'EVIDENCE_REVIEW',
       implementation: { digest },
-      reviewAssurance: {
-        obligations: [
-          {
-            obligationId: 'ob-1',
-            obligationType: 'implement',
-            subjectDigest: digest,
-            status: 'consumed',
-            consumedAt: '2026-10-16T00:00:00.000Z',
-            invocationId: 'inv-1',
-          },
-        ],
-        invocations: [
-          {
-            invocationId: 'inv-1',
-            obligationId: 'ob-1',
-            attemptId: 'att-1',
-            consumedByObligationId: 'ob-1',
-            capturedVerdict: 'accept',
-            structuredOutputUsed: true,
-          },
-        ],
-        attempts: [{ attemptId: 'att-1', obligationId: 'ob-1', subjectDigest: digest }],
-      },
+      reviewAssurance: consumedReview('implement', digest),
     };
   }
 
   it('proves an implementation recovery only through the bound, consumed acceptance', () => {
-    expect(implementationReviewAcceptanceProven(accepting())).toBe(true);
+    expect(implementationReviewAcceptanceProven(accepting(), validateReviewInvocation)).toBe(true);
 
     const wrongVerdict = structuredClone(accepting());
     wrongVerdict.reviewAssurance.invocations[0]!.capturedVerdict = 'changes_requested';
-    expect(implementationReviewAcceptanceProven(wrongVerdict)).toBe(false);
+    expect(implementationReviewAcceptanceProven(wrongVerdict, validateReviewInvocation)).toBe(
+      false,
+    );
 
     const notConsumed = structuredClone(accepting());
     notConsumed.reviewAssurance.obligations[0]!.status = 'fulfilled';
-    expect(implementationReviewAcceptanceProven(notConsumed)).toBe(false);
+    expect(implementationReviewAcceptanceProven(notConsumed, validateReviewInvocation)).toBe(false);
 
-    const withoutStructured = structuredClone(accepting());
-    withoutStructured.reviewAssurance.invocations[0]!.structuredOutputUsed = false;
-    expect(implementationReviewAcceptanceProven(withoutStructured)).toBe(false);
+    const withoutProvenance = accepting();
+    Reflect.deleteProperty(withoutProvenance.reviewAssurance.invocations[0]!, 'nativeProvenance');
+    expect(implementationReviewAcceptanceProven(withoutProvenance, validateReviewInvocation)).toBe(
+      false,
+    );
 
     const foreignDigest = structuredClone(accepting());
     foreignDigest.implementation.digest = 'impl-digest-2';
-    expect(implementationReviewAcceptanceProven(foreignDigest)).toBe(false);
+    expect(implementationReviewAcceptanceProven(foreignDigest, validateReviewInvocation)).toBe(
+      false,
+    );
 
     expect(implementationReviewAcceptanceProven({})).toBe(false);
   });
@@ -65,39 +70,38 @@ describe('implementation review acceptance witness', () => {
 
 describe('operation-scoped recovery witnesses', () => {
   it('accepts the authorized approval of the exact reviewed plan and obligation', () => {
-    const expected = expectRecovery(reviewedPlan(), ['flowguard_plan'], 'COMPLETE');
+    const expected = expectPlan();
     expect(expected.kind).toBe('subject_approval');
-    expect(recoveryPersisted(expected, approvedPlan(), 'approve')).toBe(true);
+    expect(persistsReview(expected, approvedPlan(), 'approve')).toBe(true);
+    expect(recoveryPersisted(expected, approvedPlan(), 'approve')).toBe(false);
   });
 
   it('rejects arbitrary state/file-digest changes, including a phase-only change', () => {
     const state = reviewedPlan();
-    const expected = expectRecovery(state, ['flowguard_plan'], 'COMPLETE');
-    expect(recoveryPersisted(expected, { ...state, logging: { level: 'debug' } }, 'approve')).toBe(
+    const expected = expectPlan(state);
+    expect(persistsReview(expected, { ...state, logging: { level: 'debug' } }, 'approve')).toBe(
       false,
     );
-    expect(recoveryPersisted(expected, { ...state, phase: 'IMPLEMENTATION' }, 'approve')).toBe(
-      false,
-    );
+    expect(persistsReview(expected, { ...state, phase: 'IMPLEMENTATION' }, 'approve')).toBe(false);
   });
 
   it('rejects a certificate for a different plan, revision, obligation or host', () => {
-    const expected = expectRecovery(reviewedPlan(), ['flowguard_plan'], 'COMPLETE');
+    const expected = expectPlan();
     const approved = approvedPlan();
     const foreignPlan = structuredClone(approved);
     foreignPlan.plan.current.digest = 'plan-B';
     foreignPlan.plan.approvalCertificate.authorityDigest = 'plan-B';
-    expect(recoveryPersisted(expected, foreignPlan, 'approve')).toBe(false);
+    expect(persistsReview(expected, foreignPlan, 'approve')).toBe(false);
     const foreignReview = structuredClone(approved);
     foreignReview.plan.approvalCertificate.reviewBinding.reviewObligationId = 'ob-B';
-    expect(recoveryPersisted(expected, foreignReview, 'approve')).toBe(false);
+    expect(persistsReview(expected, foreignReview, 'approve')).toBe(false);
     const foreignRevision = structuredClone(approved);
     foreignRevision.plan.current.recordDigest = 'record-B';
-    expect(recoveryPersisted(expected, foreignRevision, 'approve')).toBe(false);
+    expect(persistsReview(expected, foreignRevision, 'approve')).toBe(false);
     const foreignHost = structuredClone(approved);
     foreignHost.binding.hostSessionId = 'ses_other';
-    expect(recoveryPersisted(expected, foreignHost, 'approve')).toBe(false);
-    expect(recoveryPersisted(expected, approved, 'status')).toBe(false);
+    expect(persistsReview(expected, foreignHost, 'approve')).toBe(false);
+    expect(persistsReview(expected, approved, 'status')).toBe(false);
   });
 
   it('does not turn unsupported or missing subject evidence into a recovery', () => {
@@ -107,9 +111,15 @@ describe('operation-scoped recovery witnesses', () => {
   });
 
   it('does not bind a denial naming Plan A to the successful persistence of Plan B', () => {
-    const expected = expectRecovery(reviewedPlan(), ['flowguard_plan'], 'COMPLETE', [
-      { bindings: { subjectDigest: 'plan-B' }, conflicts: [] },
-    ]);
+    const expected = expectRecovery(
+      reviewedPlan(),
+      ['flowguard_plan'],
+      'COMPLETE',
+      [{ bindings: { subjectDigest: 'plan-B' }, conflicts: [] }],
+      0,
+      [],
+      validateReviewInvocation,
+    );
     expect(expected.kind).toBe('unproven');
     expect(recoveryPersisted(expected, approvedPlan(), 'approve')).toBe(false);
   });
@@ -125,6 +135,244 @@ describe('operation-scoped recovery witnesses', () => {
     const captured = { ...ready, phase: 'TICKET', ticket: { digest: 'ticket-A' } };
     expect(recoveryPersisted(expected, captured, 'status')).toBe(false);
     expect(recoveryPersisted(expected, captured, 'task')).toBe(true);
+  });
+});
+
+describe('review recovery rejects invalid current authority', () => {
+  type Ledger = ReturnType<typeof consumedReview>;
+  const boundPlan = (reviewAssurance: Ledger) => ({ ...reviewedPlan(), reviewAssurance });
+
+  it('rejects schema-valid historical generation 5', () => {
+    const ledger = consumedReview('plan', 'plan-A');
+    const { nativeProvenance: _nativeProvenance, ...current } = ledger.invocations[0]!;
+    const historical = ReviewInvocationEvidence.parse({
+      ...current,
+      transportVersion: 5,
+      invocationMode: 'native_task_message_json',
+    });
+    ledger.invocations[0] = { ...historical };
+    expect(expectPlan(boundPlan(ledger)).kind).toBe('unproven');
+  });
+
+  it('does not prove acceptance without an installed contract or a bound parent', () => {
+    const state = reviewedPlan();
+    expect(expectRecovery(state, ['flowguard_plan'], 'COMPLETE').kind).toBe('unproven');
+    expect(expectPlan({ ...state, binding: { hostSessionId: '' } }).kind).toBe('unproven');
+    expect(() => reviewInvocationValidator(undefined, () => true)).toThrow(
+      'installed product does not expose its V2 review contract',
+    );
+    expect(() => reviewInvocationValidator(ReviewInvocationEvidence, undefined)).toThrow(
+      'installed product does not expose its V2 review contract',
+    );
+  });
+
+  it.each(['missing', 'incomplete'])(
+    'fails closed on a %s installed review contract',
+    async (scenario) => {
+      const root = await mkdtemp(join(tmpdir(), 'fg-installed-review-'));
+      try {
+        if (scenario === 'incomplete') {
+          const dist = join(root, '.opencode', 'node_modules', '@flowguard', 'core', 'dist');
+          const integration = join(dist, 'integration', 'review', 'validation');
+          const schemas = join(dist, 'state');
+          await mkdir(integration, { recursive: true });
+          await mkdir(schemas, { recursive: true });
+          await writeFile(join(dist, 'package.json'), '{"type":"module"}\n', { flag: 'wx' });
+          await writeFile(join(schemas, 'evidence-review-invocation.js'), 'export {};\n', {
+            flag: 'wx',
+          });
+          await writeFile(join(integration, 'review-validation-acceptance.js'), 'export {};\n', {
+            flag: 'wx',
+          });
+        }
+        await expect(loadInstalledReviewInvocationValidator(root)).rejects.toMatchObject({
+          code: 'DEMO_NOT_VERIFIED',
+          message:
+            scenario === 'missing'
+              ? 'installed product V2 review contract is unreadable'
+              : 'installed product does not expose its V2 review contract',
+        });
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  const defects: Array<[string, (ledger: Ledger) => void]> = [
+    [
+      'missing native provenance',
+      (l) => {
+        Reflect.deleteProperty(l.invocations[0]!, 'nativeProvenance');
+      },
+    ],
+    [
+      'mismatched native provenance',
+      (l) => {
+        const i = l.invocations[0]!;
+        i.nativeProvenance = { ...i.nativeProvenance!, payloadDigest: 'e'.repeat(64) };
+      },
+    ],
+    [
+      'obsolete evidence flag',
+      (l) => {
+        Reflect.set(l.invocations[0]!, 'structuredOutputUsed', true);
+      },
+    ],
+    [
+      'other parent session',
+      (l) => {
+        l.invocations[0]!.parentSessionId = 'ses_other';
+      },
+    ],
+    [
+      'missing consumption timestamp',
+      (l) => {
+        l.obligations[0]!.consumedAt = null;
+      },
+    ],
+    [
+      'other consumer',
+      (l) => {
+        l.invocations[0]!.consumedByObligationId = foreignId;
+      },
+    ],
+    [
+      'wrong invocation',
+      (l) => {
+        l.obligations[0]!.invocationId = foreignId;
+      },
+    ],
+    [
+      'wrong obligation',
+      (l) => {
+        l.invocations[0]!.obligationId = foreignId;
+      },
+    ],
+    [
+      'wrong invocation type',
+      (l) => {
+        l.invocations[0]!.obligationType = 'review';
+      },
+    ],
+    [
+      'wrong capture attempt',
+      (l) => {
+        l.invocations[0]!.attemptId = foreignId;
+        l.attempts[0]!.attemptId = foreignId;
+      },
+    ],
+    [
+      'wrong persisted attempt',
+      (l) => {
+        l.attempts[0]!.attemptId = foreignId;
+      },
+    ],
+    [
+      'attempt under another obligation',
+      (l) => {
+        l.attempts[0]!.obligationId = foreignId;
+      },
+    ],
+    [
+      'attempt for another review type',
+      (l) => {
+        l.attempts[0]!.obligationType = 'architecture';
+      },
+    ],
+    [
+      'unbound attempt',
+      (l) => {
+        l.attempts[0]!.status = 'created';
+      },
+    ],
+    [
+      'attempt for another child',
+      (l) => {
+        l.attempts[0]!.childSessionId = 'ses_other';
+      },
+    ],
+    [
+      'wrong verdict',
+      (l) => {
+        l.invocations[0]!.capturedVerdict = 'changes_requested';
+      },
+    ],
+    [
+      'contradictory captured verdict',
+      (l) => {
+        const i = l.invocations[0]!;
+        i.capturedRawFindings = { ...i.capturedRawFindings, overallVerdict: 'changes_requested' };
+      },
+    ],
+    [
+      'changed captured findings',
+      (l) => {
+        const i = l.invocations[0]!;
+        i.capturedRawFindings = { ...i.capturedRawFindings, planVersion: 20 };
+      },
+    ],
+    [
+      'wrong review mandate',
+      (l) => {
+        l.obligations[0]!.mandateDigest = 'other-mandate';
+      },
+    ],
+    [
+      'different obligation subject',
+      (l) => {
+        l.obligations[0]!.subjectDigest = 'other-subject';
+      },
+    ],
+    [
+      'different attempt subject',
+      (l) => {
+        l.attempts[0]!.subjectDigest = 'other-subject';
+      },
+    ],
+  ];
+  it.each(defects)('rejects %s', (_name, change) => {
+    const ledger = consumedReview('plan', 'plan-A');
+    change(ledger);
+    expect(expectPlan(boundPlan(ledger)).kind).toBe('unproven');
+  });
+
+  it('revalidates a consumed V2 architecture review after certificate issuance', () => {
+    const digest = 'adr-A';
+    const state = {
+      ...reviewedPlan(),
+      phase: 'ARCH_REVIEW',
+      architecture: { digest, reviewCompletion: 'reviewer_accepted' },
+      reviewAssurance: consumedReview('architecture', digest),
+    };
+    const expected = expectRecovery(
+      state,
+      ['flowguard_architecture'],
+      'ARCH_COMPLETE',
+      [],
+      0,
+      [],
+      validateReviewInvocation,
+    );
+    const after = {
+      ...state,
+      phase: 'ARCH_COMPLETE',
+      architecture: {
+        ...state.architecture,
+        approvalCertificate: {
+          certificateId: 'cert-arch',
+          authorityDigest: digest,
+          reviewBinding: {
+            kind: 'current_review',
+            reviewedSubjectDigest: digest,
+            reviewObligationId: state.reviewAssurance.obligations[0]!.obligationId,
+          },
+        },
+      },
+    };
+    expect(expected.kind).toBe('subject_approval');
+    expect(persistsReview(expected, after, 'approve')).toBe(true);
+    after.reviewAssurance.invocations[0]!.parentSessionId = 'ses_other';
+    expect(persistsReview(expected, after, 'approve')).toBe(false);
   });
 });
 

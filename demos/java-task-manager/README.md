@@ -300,7 +300,9 @@ flow stops. A plan/ADR proof binds the exact subject/revision, accepting review
 and newly minted approval certificate; a generic state-file digest change never
 counts. Plan-preflight denials remain `pending_verification` until the exact
 plan revision and consumed independent acceptance observed in that turn match
-the gate and the subsequent native approval is witnessed. A
+the gate and the subsequent native approval is witnessed. The harness uses the
+installed product's invocation schema and native capture validation; historical
+review transport cannot settle a recovery. A
 structured reviewer re-arm is recorded as `structured_rearm` and supersedes a
 terminal capture block only with `retryable: true`, the same explicit obligation
 and a fresh attempt. `CONTINUE_AMBIGUOUS` is

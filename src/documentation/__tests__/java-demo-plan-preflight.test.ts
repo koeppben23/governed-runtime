@@ -1,11 +1,12 @@
 /** The recovery candidate is an occurrence-bound observation, not a gate or approval. */
 import { describe, expect, it, vi } from 'vitest';
 import {
-  pendingPlanPreflight,
-  planPreflightGate,
+  pendingPlanPreflight as projectPreflight,
+  planPreflightGate as projectGate,
   planReviewCorrectionProven,
 } from '../../../demos/java-task-manager/live-plan-preflight.mjs';
 import { Runner } from '../../../demos/java-task-manager/live-runner.mjs';
+import { reviewedPlan, validateReviewInvocation } from '../demo-recovery-test-helpers.js';
 
 const SESSION = 'ses_planning';
 const DIGEST = 'a'.repeat(64);
@@ -22,41 +23,26 @@ const tool = (payload: object, sessionID = SESSION, tool = 'flowguard_plan') =>
 const output = (...lines: string[]) => lines.join('\n');
 
 function reviewed() {
+  const state = reviewedPlan(DIGEST, 'b'.repeat(64), SESSION);
   return {
-    phase: 'PLAN_REVIEW',
-    binding: { hostSessionId: SESSION },
-    flowguardSessionId: 'fg_plan',
+    ...state,
     selfReview: { iteration: 2, maxIterations: 2, verdict: 'accept' },
     plan: {
-      reviewCompletion: 'reviewer_accepted',
-      current: { digest: DIGEST, recordDigest: 'b'.repeat(64), planVersion: 1 },
+      ...state.plan,
       claimDeclarations: { claims: [{ claimId: 'claim-1' }] },
-    },
-    reviewAssurance: {
-      obligations: [
-        {
-          obligationType: 'plan',
-          subjectDigest: DIGEST,
-          status: 'consumed',
-          consumedAt: '2026-01-01T00:00:00.000Z',
-          obligationId: 'obl-1',
-          invocationId: 'inv-1',
-        },
-      ],
-      invocations: [
-        {
-          invocationId: 'inv-1',
-          obligationId: 'obl-1',
-          consumedByObligationId: 'obl-1',
-          attemptId: 'attempt-1',
-          capturedVerdict: 'accept',
-          structuredOutputUsed: true,
-        },
-      ],
-      attempts: [{ attemptId: 'attempt-1', obligationId: 'obl-1', subjectDigest: DIGEST }],
     },
   };
 }
+
+const pendingPlanPreflight = (
+  transcript: string,
+  label: string,
+  state: ReturnType<typeof reviewed>,
+  sessionId: string,
+  phase: string,
+) => projectPreflight(transcript, label, state, sessionId, phase, validateReviewInvocation);
+const planPreflightGate = (state: ReturnType<typeof reviewed>, sessionId: string) =>
+  projectGate(state, sessionId, validateReviewInvocation);
 
 describe('plan-preflight evidence projection', () => {
   it.each([
@@ -83,7 +69,7 @@ describe('plan-preflight evidence projection', () => {
       evidence: 'same_turn_plan_preflight_correction',
       gate: {
         kind: 'subject_approval',
-        flowguardSessionId: 'fg_plan',
+        flowguardSessionId: state.flowguardSessionId,
         hostSessionId: SESSION,
         artifact: 'plan',
         command: 'approve',
@@ -92,7 +78,11 @@ describe('plan-preflight evidence projection', () => {
         recordDigest: 'b'.repeat(64),
         planVersion: 1,
         certificateBefore: null,
-        review: { obligationId: 'obl-1', invocationId: 'inv-1', attemptId: 'attempt-1' },
+        review: {
+          obligationId: state.reviewAssurance.obligations[0]!.obligationId,
+          invocationId: state.reviewAssurance.invocations[0]!.invocationId,
+          attemptId: state.reviewAssurance.attempts[0]!.attemptId,
+        },
       },
     });
   });
@@ -165,13 +155,17 @@ describe('plan-preflight evidence projection', () => {
   });
 
   it('binds all denials in sequence and de-duplicates only their reported code', () => {
+    const state = reviewed();
     const transcript = output(
       tool({ ...denial, subjectDigest: DIGEST }),
       tool({ ...denial, claimId: 'claim-1' }),
-      tool({ ...denial, code: 'PLAN_EVIDENCE_DESIGN_INVALID', obligationId: 'obl-1' }),
+      tool({
+        ...denial,
+        code: 'PLAN_EVIDENCE_DESIGN_INVALID',
+        obligationId: state.reviewAssurance.obligations[0]!.obligationId,
+      }),
       tool(acceptance),
     );
-    const state = reviewed();
     expect(pendingPlanPreflight(transcript, step, state, SESSION, 'PLAN')).toMatchObject({
       status: 'pending_verification',
       codes: [CODE, 'PLAN_EVIDENCE_DESIGN_INVALID'],
@@ -315,6 +309,7 @@ describe('plan-preflight evidence projection', () => {
     const reread = reviewed();
     reread.plan.current.recordDigest = 'c'.repeat(64);
     const runner = new Runner('/fixture', { model: 'test/fixture' }, '/fixture/config');
+    runner.reviewInvocationAuthority = async () => validateReviewInvocation;
     runner.requireBoundState = () => ({ state: reread, sessionDir: '/unused' });
     const send = vi.fn();
     runner.hostCommand = send;

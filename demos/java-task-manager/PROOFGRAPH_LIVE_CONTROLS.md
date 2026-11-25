@@ -128,6 +128,15 @@ invocations on the integrated HEAD. Original verification and Integrity A/B
 must then use that new positive export. Independent review of the historical
 local originals and final reference verification are `NOT_VERIFIED`.
 
+On integrated commit `466d9570d3d69958939649d6e76fb44c7b5a32a6`, both cases used
+tarball `ec006e4a43f423b93a78acfd3ece8909beda7e4cb76678ba629a3cc98913dc0e`.
+The negative case passed with the exact ProofGraph denial and no export. The
+positive was `NOT_VERIFIED` before approval: the harness's preflight recovery
+expected an obsolete invocation field, although the product had persisted the
+bound V2 acceptance. That run produced no package. Re-evaluating its existing
+evidence read-only verifies the harness correction, not a live control. Both
+cases must be run again on the accepted integrated fix with one new artifact.
+
 Full mutation admission remains a separate requirement with its own selectors and
 records. A correctly blocked negative case is a passed control, not a completed
 development workflow.

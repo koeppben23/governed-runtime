@@ -35,7 +35,7 @@ export function planReviewCorrectionProven(state) {
 }
 
 /** Freeze the bound gate reached by this turn; a later, unrelated gate cannot settle it. */
-export function planPreflightGate(state, sessionId, denials = []) {
+export function planPreflightGate(state, sessionId, validateInvocation, denials = []) {
   if (
     state?.phase !== 'PLAN_REVIEW' ||
     state.binding?.hostSessionId !== sessionId ||
@@ -43,7 +43,15 @@ export function planPreflightGate(state, sessionId, denials = []) {
     !planReviewCorrectionProven(state)
   )
     return null;
-  const gate = expectRecovery(state, ['flowguard_plan'], undefined, denials);
+  const gate = expectRecovery(
+    state,
+    ['flowguard_plan'],
+    undefined,
+    denials,
+    0,
+    [],
+    validateInvocation,
+  );
   return gate.kind === 'subject_approval' &&
     /^[a-f0-9]{64}$/.test(gate.digest) &&
     /^[a-f0-9]{64}$/.test(gate.recordDigest) &&
@@ -53,7 +61,14 @@ export function planPreflightGate(state, sessionId, denials = []) {
     : null;
 }
 
-export function pendingPlanPreflight(output, step, state, sessionId, phaseBefore) {
+export function pendingPlanPreflight(
+  output,
+  step,
+  state,
+  sessionId,
+  phaseBefore,
+  validateInvocation,
+) {
   const denials = toolDenialEvents(output).filter((event) =>
     PLAN_PREFLIGHT_RECOVERY_CODES.has(event.code),
   );
@@ -78,7 +93,7 @@ export function pendingPlanPreflight(output, step, state, sessionId, phaseBefore
     response?.error !== true &&
     response?.phase === 'PLAN_REVIEW' &&
     response.planDigest === state?.plan?.current?.digest
-      ? planPreflightGate(state, sessionId, identities)
+      ? planPreflightGate(state, sessionId, validateInvocation, identities)
       : null;
   return {
     status: 'pending_verification',

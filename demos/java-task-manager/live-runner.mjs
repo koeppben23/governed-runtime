@@ -4,6 +4,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { DemoNotVerifiedError } from '../lib/results.mjs';
 import { implementationReviewAcceptanceProven, recoveryPersisted } from '../lib/recovery-state.mjs';
+import { loadInstalledReviewInvocationValidator } from '../lib/review-recovery-authority.mjs';
 import {
   withHost,
   requireHost,
@@ -46,6 +47,7 @@ export class Runner {
     this.logFile = path.join(this.evidenceDir, 'driver.log');
     this.flows = [];
     this.turnObservations = [];
+    this.reviewAuthorities = new Map();
     /** @type {Parameters<Parameters<typeof import('../lib/service-lifecycle.mjs').withIsolatedService>[1]>[0] | undefined} */
     this.host = undefined;
   }
@@ -78,6 +80,13 @@ export class Runner {
 
   productStateDigest(workspace) {
     return productStateDigest(this, workspace);
+  }
+
+  reviewInvocationAuthority(workspace) {
+    if (!this.reviewAuthorities.has(workspace)) {
+      this.reviewAuthorities.set(workspace, loadInstalledReviewInvocationValidator(workspace));
+    }
+    return this.reviewAuthorities.get(workspace);
   }
 
   createHostSession(session, label) {
@@ -122,11 +131,15 @@ export class Runner {
    * Resolve a carried recovery against the operation this turn performed. A
    * turn that cannot demonstrate the bound transition stops the flow.
    */
-  settleAwaitingRecovery(session, label, command) {
+  async settleAwaitingRecovery(session, label, command) {
     if (!session.awaitingRecovery) return;
     const pending = session.awaitingRecovery;
     const after = this.requireBoundState(session).state;
-    if (!recoveryPersisted(pending.expected, after, command)) {
+    const validateInvocation =
+      pending.expected?.kind === 'subject_approval'
+        ? await this.reviewInvocationAuthority(session.workspace)
+        : undefined;
+    if (!recoveryPersisted(pending.expected, after, command, [], validateInvocation)) {
       throw new DemoNotVerifiedError(
         `${label}: pending recovery [${pending.codes.join(', ')}] was not demonstrated ` +
           'by the authorized affected-operation transition; stopping the flow',
@@ -198,7 +211,13 @@ export class Runner {
         observation.status === 'pending_verification',
     );
     const expectedPlanGate =
-      preflights.length > 0 ? planPreflightGate(snapshot.state, session.sessionId) : null;
+      preflights.length > 0
+        ? planPreflightGate(
+            snapshot.state,
+            session.sessionId,
+            await this.reviewInvocationAuthority(session.workspace),
+          )
+        : null;
     if (preflights.length > 0) {
       if (
         !expectedPlanGate ||
@@ -216,7 +235,10 @@ export class Runner {
           : expectedPhase === 'ARCH_REVIEW'
             ? snapshot.state.architecture?.reviewCompletion === 'reviewer_accepted'
             : expectedPhase === 'EVIDENCE_REVIEW'
-              ? implementationReviewAcceptanceProven(snapshot.state)
+              ? implementationReviewAcceptanceProven(
+                  snapshot.state,
+                  await this.reviewInvocationAuthority(session.workspace),
+                )
               : false;
       if (!proven) {
         throw new Error(

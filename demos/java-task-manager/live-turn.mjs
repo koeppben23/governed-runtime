@@ -99,7 +99,7 @@ export async function turn(runner, session, label, prompt, options = {}) {
   if (result.auditEvidence) {
     const command = options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1];
     assertTypedAuditConsistency(result.auditEvidence, label);
-    runner.settleAwaitingRecovery(session, label, command);
+    await runner.settleAwaitingRecovery(session, label, command);
     if (!options.expectedDenial) {
       const denials = result.auditEvidence.filter(
         (event) => event.success === false && event.errorCode,
@@ -126,7 +126,7 @@ export async function turn(runner, session, label, prompt, options = {}) {
   }
   if (options.expectedDenial) {
     assertExpectedDenial(result.stdout, options.expectedDenial, options.expectedDenialTool);
-    runner.settleAwaitingRecovery(
+    await runner.settleAwaitingRecovery(
       session,
       label,
       options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1],
@@ -147,7 +147,7 @@ export async function turn(runner, session, label, prompt, options = {}) {
         `${trust.unreadable.length} unreadable governed tool output(s)); the proof is NOT_VERIFIED`,
     );
   }
-  runner.settleAwaitingRecovery(
+  await runner.settleAwaitingRecovery(
     session,
     label,
     options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1],
@@ -251,6 +251,9 @@ export async function turn(runner, session, label, prompt, options = {}) {
     rearmState,
     session.sessionId,
     phaseBefore,
+    recoverable.some((code) => PLAN_PREFLIGHT_RECOVERY_CODES.has(code))
+      ? await runner.reviewInvocationAuthority(session.workspace)
+      : undefined,
   );
   if (preflight) {
     session.recoveryObservations.push(preflight);
@@ -364,25 +367,32 @@ export async function turn(runner, session, label, prompt, options = {}) {
     }
   }
   if (pendingCodes.length > 0) {
+    const deniedTools = [
+      ...new Set(
+        toolDenialEvents(result.stdout)
+          .filter((event) => pendingCodes.includes(event.code))
+          .map((event) => event.tool),
+      ),
+    ];
+    const validateInvocation =
+      deniedTools.length === 1 &&
+      (deniedTools[0] === 'flowguard_plan' || deniedTools[0] === 'flowguard_architecture')
+        ? await runner.reviewInvocationAuthority(session.workspace)
+        : undefined;
     session.awaitingRecovery = {
       step: label,
       codes: pendingCodes,
       denials: toolDenialEvents(result.stdout).filter((event) => pendingCodes.includes(event.code)),
       expected: expectRecovery(
         runner.requireBoundState(session).state,
-        [
-          ...new Set(
-            toolDenialEvents(result.stdout)
-              .filter((event) => pendingCodes.includes(event.code))
-              .map((event) => event.tool),
-          ),
-        ],
+        deniedTools,
         session.terminal,
         recoverableProofs
           .filter((proof) => proof.binding === 'tool')
           .map((proof) => proof.denialIdentity),
         auditFloorBefore,
         pendingCodes,
+        validateInvocation,
       ),
     };
     runner.log(

@@ -158,7 +158,14 @@ class RefusedDecisionMutationError extends Error {
   }
 }
 
-function acceptingReview(state, type, digest) {
+function acceptingReview(state, type, digest, validateInvocation) {
+  const parentSessionId = identity(state).hostSessionId;
+  if (
+    typeof parentSessionId !== 'string' ||
+    parentSessionId.length === 0 ||
+    typeof validateInvocation !== 'function'
+  )
+    return null;
   const assurance = state?.reviewAssurance;
   const obligations = (assurance?.obligations ?? []).filter(
     (item) =>
@@ -172,14 +179,19 @@ function acceptingReview(state, type, digest) {
       (item) =>
         item.invocationId === obligation.invocationId &&
         item.obligationId === obligation.obligationId &&
+        item.obligationType === type &&
         item.consumedByObligationId === obligation.obligationId &&
         item.capturedVerdict === 'accept' &&
-        item.structuredOutputUsed === true,
+        item.capturedRawFindings?.overallVerdict === 'accept' &&
+        validateInvocation({ obligation, invocation: item, parentSessionId }),
     );
     const attempt = (assurance?.attempts ?? []).find(
       (item) =>
         item.attemptId === invocation?.attemptId &&
         item.obligationId === obligation.obligationId &&
+        item.obligationType === type &&
+        item.status === 'bound' &&
+        item.childSessionId === invocation?.childSessionId &&
         item.subjectDigest === digest,
     );
     if (invocation && attempt)
@@ -204,10 +216,10 @@ function ticketContentDigest(text) {
  * the implementation-recovery completion condition (plan reviews prove
  * reviewer_accepted, implementation reviews prove bound acceptance).
  */
-export function implementationReviewAcceptanceProven(state) {
+export function implementationReviewAcceptanceProven(state, validateInvocation) {
   const digest = state?.implementation?.digest;
   if (typeof digest !== 'string' || digest.length === 0) return false;
-  return acceptingReview(state, 'implement', digest) !== null;
+  return acceptingReview(state, 'implement', digest, validateInvocation) !== null;
 }
 
 /** Freeze the affected subject and the exact authorized NEXT operation. */
@@ -218,6 +230,7 @@ export function expectRecovery(
   deniedIdentities = [],
   auditSequenceFloor = 0,
   denialCodes = [],
+  validateInvocation,
 ) {
   const actor = identity(state);
   if (tools.length === 1 && tools[0] === 'flowguard_continue' && state?.phase === 'READY') {
@@ -271,7 +284,7 @@ export function expectRecovery(
         : null;
   const record = kind === 'plan' ? state?.plan : state?.architecture;
   const subject = kind === 'plan' ? record?.current : record;
-  const review = acceptingReview(state, kind, subject?.digest);
+  const review = acceptingReview(state, kind, subject?.digest, validateInvocation);
   if (!kind || !subject?.digest || !review || record?.reviewCompletion !== 'reviewer_accepted') {
     return { kind: 'unproven', ...actor };
   }
@@ -378,7 +391,7 @@ function ticketAdoptionAfterDenial(scoped, code) {
 }
 
 /** An unrelated phase, audit or metadata update is never an operation witness. */
-export function recoveryPersisted(expected, state, command, auditEvents = []) {
+export function recoveryPersisted(expected, state, command, auditEvents = [], validateInvocation) {
   if (
     !expected ||
     expected.command !== command ||
@@ -415,7 +428,7 @@ export function recoveryPersisted(expected, state, command, auditEvents = []) {
   const record = state?.[expected.artifact];
   const subject = expected.artifact === 'plan' ? record?.current : record;
   const certificate = record?.approvalCertificate;
-  const review = acceptingReview(state, expected.artifact, expected.digest);
+  const review = acceptingReview(state, expected.artifact, expected.digest, validateInvocation);
   if (
     !review ||
     !certificate ||

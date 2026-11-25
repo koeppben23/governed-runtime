@@ -1,7 +1,9 @@
 /** Actual pinned native command/model boundaries. Core review gates are explicit fixtures,
  * not proof of native reviewer execution, installed acceptance, or human provenance. */
 import { afterEach, describe, expect, it } from 'vitest';
-import { readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createNativeHostProbe, type NativeHostProbe } from './opencode-native-test-helpers.js';
 import { prepareComponentDecisionGate } from '../integration/component-decision-test-helpers.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
@@ -17,6 +19,8 @@ import { execFileSync } from 'node:child_process';
 import { assertNativeDecisionWitness } from '../../demos/java-task-manager/live-decision-witness.mjs';
 import { assertNativeCommandWitness } from '../../demos/java-task-manager/live-native-command-witness.mjs';
 import { validateHostTranscript } from '../../demos/java-task-manager/live-host-export.mjs';
+import { planPreflightGate } from '../../demos/java-task-manager/live-plan-preflight.mjs';
+import { loadInstalledReviewInvocationValidator } from '../../demos/lib/review-recovery-authority.mjs';
 import { computeStateDigest } from '../integration/audit-outbox.js';
 import {
   FlowGuardGovernance,
@@ -344,6 +348,24 @@ describe.skipIf(!LIVE)('native decision commands with component core review gate
       expect(invocation.capturedVerdict).toBe(
         command === 'approve' ? 'accept' : 'changes_requested',
       );
+      if (command === 'approve') {
+        // Use the same compiled modules as the native host through the
+        // harness's installed-layout loader, without mutating the project.
+        const core = join(p.root, '.opencode', 'node_modules', '@flowguard', 'core');
+        await mkdir(core, { recursive: true });
+        await symlink(fileURLToPath(new URL('../../dist', import.meta.url)), join(core, 'dist'));
+        const validateInvocation = await loadInstalledReviewInvocationValidator(p.root);
+        expect(invocation).not.toHaveProperty('structuredOutputUsed');
+        expect(planPreflightGate(reviewed.state, root.id, validateInvocation)).toMatchObject({
+          kind: 'subject_approval',
+          digest: reviewed.state.plan!.current.digest,
+          review: {
+            obligationId: invocation.obligationId,
+            invocationId: invocation.invocationId,
+            attemptId: invocation.attemptId,
+          },
+        });
+      }
       const child = invocation.childSessionId;
       for (const [sessionId, parentSessionId] of [
         [root.id, undefined],

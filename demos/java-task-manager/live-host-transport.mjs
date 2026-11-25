@@ -308,7 +308,14 @@ export async function hostCommandTransport(runner, session, label, command, opti
   const before = runner.requireBoundState(session);
   if (
     options.expectedPlanGate &&
-    !isDeepStrictEqual(options.expectedPlanGate, planPreflightGate(before.state, session.sessionId))
+    !isDeepStrictEqual(
+      options.expectedPlanGate,
+      planPreflightGate(
+        before.state,
+        session.sessionId,
+        await runner.reviewInvocationAuthority(session.workspace),
+      ),
+    )
   ) {
     throw new DemoNotVerifiedError(`${label}: plan preflight approval lost its verified plan gate`);
   }
