@@ -246,9 +246,12 @@ function isJavaMethodDeclaration(line: string): boolean {
   if (open <= 0) return false;
   const prefix = text.slice(0, open).trimEnd();
   if (prefix.length === 0 || /[;{}=]/.test(prefix)) return false;
-  const name = /[A-Za-z_$][\w$]*$/.exec(prefix);
-  if (name === null) return false;
-  const returnType = prefix.slice(0, name.index).trimEnd();
+  // Scan the method name backwards. A trailing unanchored regex would retry
+  // every start position on a long non-matching prefix (quadratic).
+  let nameStart = prefix.length;
+  while (nameStart > 0 && /[A-Za-z0-9_$]/.test(prefix[nameStart - 1]!)) nameStart--;
+  if (nameStart === prefix.length || !/[A-Za-z_$]/.test(prefix[nameStart]!)) return false;
+  const returnType = prefix.slice(0, nameStart).trimEnd();
   return returnType.length > 0 && !JAVA_CONTROL_PREFIX.test(returnType);
 }
 
