@@ -69,7 +69,7 @@ describe('agent instruction forensic regressions', () => {
     expect(parsed.success).toBe(false);
   });
 
-  it('does not follow file symlinks while snapshotting a workspace', () => {
+  it('does not follow file symlinks while snapshotting a workspace', async () => {
     const root = mkdtempSync(join(tmpdir(), 'eval-file-symlink-'));
     const outside = mkdtempSync(join(tmpdir(), 'eval-file-outside-'));
     try {
@@ -80,7 +80,7 @@ describe('agent instruction forensic regressions', () => {
       } catch {
         return;
       }
-      const snapshot = snapshotWorkspace(root);
+      const snapshot = await snapshotWorkspace(root);
       expect(snapshot.entries.has('data/linked.txt')).toBe(false);
       expect(snapshot.contents.has('data/linked.txt')).toBe(false);
     } finally {

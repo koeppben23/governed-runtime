@@ -83,6 +83,12 @@ describe('audit/iso27001/render-markdown', () => {
       expect(markdown).toContain('&lt;script&gt;');
     });
 
+    it('escapes combined backslashes and table structure in one pass', () => {
+      expect(escapeMarkdownText('a\\b|c')).toBe('a\\\\b|c');
+      expect(escapeMarkdownCell('a\\|b')).toBe('a\\\\\\|b');
+      expect(escapeMarkdownCell('a|b')).toBe('a\\|b');
+    });
+
     it('escapes representative hostile text and cell values', () => {
       expect(escapeMarkdownText(HOSTILE)).not.toMatch(/<script>/i);
       expect(escapeMarkdownText(HOSTILE)).toContain('\\`');

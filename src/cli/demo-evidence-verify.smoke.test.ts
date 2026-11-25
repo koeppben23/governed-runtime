@@ -715,8 +715,9 @@ describe('demo evidence package verifier', () => {
 
     it('rejects an unsafe session prefix without starting an extraction', async () => {
       const spy = await makeTarSpy();
-      const unsafePath = path.join(os.tmpdir(), `fg-unsafe-${randomUUID()}.tar.gz`);
-      cleanups.push(async () => fs.rm(unsafePath, { force: true }));
+      const unsafeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-unsafe-'));
+      cleanups.push(async () => fs.rm(unsafeDir, { recursive: true, force: true }));
+      const unsafePath = path.join(unsafeDir, 'unsafe.tar.gz');
       await fs.writeFile(
         unsafePath,
         buildTarGz([{ name: '../outside/archive-manifest.json', content: '{}' }]),
@@ -739,8 +740,9 @@ describe('demo evidence package verifier', () => {
       await execFileAsync('tar', ['-xzf', packagePath, '-C', extraction], { timeout: 30_000 });
       const entries = await walkFiles(path.join(extraction, SESSION_A));
       expect(entries.length).toBeGreaterThan(0);
-      const duplicatePath = path.join(os.tmpdir(), `fg-duplicate-${randomUUID()}.tar.gz`);
-      cleanups.push(async () => fs.rm(duplicatePath, { force: true }));
+      const duplicateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-duplicate-'));
+      cleanups.push(async () => fs.rm(duplicateDir, { recursive: true, force: true }));
+      const duplicatePath = path.join(duplicateDir, 'duplicate.tar.gz');
       const members = entries.map((entry) => ({
         name: `${SESSION_A}/${entry.name}`,
         content: entry.content,

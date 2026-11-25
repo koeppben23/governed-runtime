@@ -214,7 +214,10 @@ const JAVA_MAPPING_ANNOTATION =
   /@(?:RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)\b/;
 const JAVA_TYPE_DECLARATION = /\b(?:class|interface|enum|record)\b/;
 const JAVA_ANNOTATION = /^@[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/;
-const JAVA_METHOD_DECLARATION = /^(?:<[^{}()]+>\s*)?[A-Za-z_$][^;{}()]*\(/;
+const JAVA_CONTROL_PREFIX =
+  /^(?:if|for|while|switch|catch|return|throw|new|do|else|try|assert|case)\b/;
+const JAVA_METHOD_DECLARATION =
+  /^(?:(?:public|protected|private|static|final|abstract|synchronized|native|default|strictfp)\s+)*[A-Za-z_$][^;{}()\s]*\s+[A-Za-z_$][^;{}()\s]*\s*\(/;
 
 interface JavaSourcePosition {
   readonly lineIndex: number;
@@ -484,7 +487,7 @@ function findJavaAnnotatedDeclaration(
       continue;
     }
 
-    if (JAVA_TYPE_DECLARATION.test(remainder)) return null;
+    if (JAVA_TYPE_DECLARATION.test(remainder) || JAVA_CONTROL_PREFIX.test(remainder)) return null;
     if (JAVA_METHOD_DECLARATION.test(remainder)) return codeStart.lineIndex;
     if (remainder.includes(';') || remainder.includes('{')) return null;
     position = { lineIndex: codeStart.lineIndex + 1, columnIndex: 0 };
