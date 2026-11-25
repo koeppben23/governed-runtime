@@ -250,10 +250,14 @@ installer is pointed at an absent run-local service record, so it cannot
 discover or restart the user's shared OpenCode service; the runner verifies its
 own child and `/start` instead. Supply model
 credentials through the provider environment; the runner does not reuse the
-shared host's credential store. Native decisions require current, session-bound audit evidence, not just
-HTTP success: canonical state digests must link the pre-dispatch snapshot to the
-settled state, and the audit window may contain only typed, interpretable tool
-outcomes. An ambiguous transport outcome stops the
+shared host's credential store. Native commands require a continuous, current,
+session-bound audit window, not just HTTP success. `/start` requires the new
+root's `host_command` activation record; `/check` requires fresh audited
+`flowguard_run_check` calls and matching persisted execution attempts. A
+status-only `/check` is not evidence that a check ran, and execution alone does
+not prove a passing result. Decisions also require canonical state digests
+linking every transition from the pre-dispatch snapshot to the settled state,
+and typed, interpretable tool outcomes. An ambiguous transport outcome stops the
 run without resubmitting the decision. Native HTTP response bodies are not
 written to evidence or logs.
 
@@ -280,7 +284,9 @@ resolve the denial: the next required step must prove the authorized persistence
 of the bound operation (`next_step_operation_transition:<step>`), otherwise the
 flow stops. A plan/ADR proof binds the exact subject/revision, accepting review
 and newly minted approval certificate; a generic state-file digest change never
-counts. A
+counts. Plan-preflight denials remain `pending_verification` until the exact
+plan revision and consumed independent acceptance observed in that turn match
+the gate and the subsequent native approval is witnessed. A
 structured reviewer re-arm is recorded as `structured_rearm` and supersedes a
 terminal capture block only with `retryable: true`, the same explicit obligation
 and a fresh attempt. `CONTINUE_AMBIGUOUS` is

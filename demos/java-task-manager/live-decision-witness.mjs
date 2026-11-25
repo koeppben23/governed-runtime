@@ -92,13 +92,18 @@ function assertStateDigestChain({
   ) {
     throw new DemoNotVerifiedError('native approval receipt is not bound to the observed state');
   }
-  const stateEvents = window.filter(isStateEvent);
+  const stateEvents = window.filter(
+    (event) => event.event.startsWith('transition:') || isStateEvent(event),
+  );
   if (!stateEvents.includes(receipt)) {
     throw new DemoNotVerifiedError('native approval receipt is absent from the state-digest chain');
   }
   let current = beforeDigest;
   let previous = null;
   for (const event of stateEvents) {
+    if (!isStateEvent(event)) {
+      throw new DemoNotVerifiedError('native transition has missing or malformed state digests');
+    }
     if (event.hostSessionId !== sessionId || !inDispatch(event)) {
       throw new DemoNotVerifiedError('native state chain contains foreign or late evidence');
     }

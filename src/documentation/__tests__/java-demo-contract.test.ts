@@ -8,7 +8,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   DEFAULT_FLOWS,
@@ -19,7 +19,6 @@ import {
   unexpectedDenialCodes,
   captureRetryCodes,
   planReviewSameTurnCorrection,
-  planReviewCorrectionProven,
   planCorrectionGateDecision,
   structuredRearmSupersedesTerminal,
   assertExpectedDenial,
@@ -33,6 +32,7 @@ import {
   verifyChecksumSidecar,
   withRawExportGrant,
 } from '../../../demos/java-task-manager/run-live-matrix.mjs';
+import { planReviewCorrectionProven } from '../../../demos/java-task-manager/live-plan-preflight.mjs';
 import { readPins } from '../../../demos/lib/toolchain.mjs';
 import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
 import { DemoNotVerifiedError } from '../../../demos/lib/results.mjs';
@@ -549,58 +549,154 @@ describe('Java Task Manager demo contract', () => {
     },
   );
 
-  it('records correctable plan preflight blocks without stopping an accepted plan turn', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-plan-preflight-'));
-    const toolLine = (code: string, success: boolean) =>
-      JSON.stringify({
-        type: 'tool_use',
-        part: {
-          tool: 'flowguard_plan',
-          state: {
-            output: JSON.stringify(
-              success
-                ? { phase: 'PLAN', status: 'Plan submitted', planDigest: 'a'.repeat(64) }
-                : { error: true, code },
-            ),
+  it.each([
+    'accepted',
+    'not-accepted',
+    'unbound-review',
+    'unrelated-gate',
+    'denied-other-subject',
+    'wrong-plan-response',
+    'foreign-plan-response',
+    'approval-fails',
+  ])(
+    'keeps preflight recovery pending until the bound plan gate is verified: %s',
+    async (scenario) => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-plan-preflight-'));
+      const toolLine = (code: string, success: boolean) =>
+        JSON.stringify({
+          type: 'tool_use',
+          sessionID: success && scenario === 'foreign-plan-response' ? 'ses_foreign' : 'ses_parent',
+          part: {
+            tool: 'flowguard_plan',
+            state: {
+              output: JSON.stringify(
+                success
+                  ? {
+                      phase: 'PLAN_REVIEW',
+                      planDigest: (scenario === 'wrong-plan-response' ? 'f' : 'a').repeat(64),
+                    }
+                  : {
+                      error: true,
+                      code,
+                      ...(scenario === 'denied-other-subject'
+                        ? { subjectDigest: 'e'.repeat(64) }
+                        : {}),
+                    },
+              ),
+            },
           },
-        },
-      });
-    try {
-      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
-      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
-      runner.hostStep = async () => ({
-        code: 0,
-        stderr: '',
-        timedOut: false,
-        durationMs: 0,
-        sessionIds: ['ses_parent'],
-        stdout: `${toolLine('PLAN_EVIDENCE_DESIGN_REQUIRED', false)}\n${toolLine('', true)}\n`,
-      });
-      runner.requireBoundState = () => ({
-        state: {
+        });
+      try {
+        await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+        const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+        runner.hostStep = async () => ({
+          code: 0,
+          stderr: '',
+          timedOut: false,
+          durationMs: 0,
+          sessionIds: ['ses_parent'],
+          stdout: `${toolLine('PLAN_EVIDENCE_DESIGN_REQUIRED', false)}\n${toolLine('', true)}\n`,
+        });
+        const digest = 'a'.repeat(64);
+        const reviewCompletion =
+          scenario === 'not-accepted' ? 'review_exhausted' : 'reviewer_accepted';
+        const state = {
           phase: 'PLAN_REVIEW',
-          plan: { reviewCompletion: 'reviewer_accepted' },
-          selfReview: { iteration: 1 },
-        },
-        sessionDir: root,
-      });
-      const session: {
-        workspace: string;
-        recoveryObservations?: Array<Record<string, unknown>>;
-        awaitingRecovery?: unknown;
-      } = { workspace: root };
-      await runner.turn(session, 'plan-preflight', 'x');
-      expect(session.awaitingRecovery).toBeUndefined();
-      expect(session.recoveryObservations).toContainEqual({
-        status: 'proven',
-        step: 'plan-preflight',
-        codes: ['PLAN_EVIDENCE_DESIGN_REQUIRED'],
-        evidence: 'same_turn_plan_preflight_correction',
-      });
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
+          flowguardSessionId: 'fg-bound',
+          binding: { hostSessionId: 'ses_parent' },
+          plan: {
+            current: { digest, recordDigest: 'b'.repeat(64), planVersion: 1 },
+            reviewCompletion,
+          },
+          selfReview: { iteration: 1, maxIterations: 2, verdict: 'accept' },
+          reviewAssurance: {
+            obligations: [
+              {
+                obligationType: 'plan',
+                obligationId: 'obl',
+                invocationId: 'inv',
+                subjectDigest: digest,
+                status: 'consumed',
+                consumedAt: '2026-01-01T00:00:00Z',
+              },
+            ],
+            invocations: [
+              {
+                invocationId: 'inv',
+                obligationId: 'obl',
+                consumedByObligationId: scenario === 'unbound-review' ? 'other' : 'obl',
+                capturedVerdict: 'accept',
+                structuredOutputUsed: true,
+                attemptId: 'attempt',
+              },
+            ],
+            attempts: [{ attemptId: 'attempt', obligationId: 'obl', subjectDigest: digest }],
+          },
+        };
+        let current = { ...state, phase: 'PLAN' };
+        runner.requireBoundState = () => ({ state: current, sessionDir: root });
+        const dispatch = vi.fn(async () => {
+          if (scenario === 'approval-fails') throw new Error('no decision witness');
+          current = { ...current, phase: 'IMPLEMENTATION' };
+          return {
+            code: 0,
+            stdout: '',
+            stderr: '',
+            timedOut: false,
+            durationMs: 0,
+            sessionIds: ['ses_parent'],
+            auditEvidence: [],
+          };
+        });
+        runner.hostCommandTransport = dispatch;
+        const session: {
+          workspace: string;
+          recoveryObservations?: Array<Record<string, unknown>>;
+          awaitingRecovery?: unknown;
+        } = { workspace: root };
+        const hostStep = runner.hostStep;
+        runner.hostStep = async () => {
+          current = state;
+          return hostStep();
+        };
+        await runner.turn(session, 'plan-preflight', 'x');
+        expect(session.awaitingRecovery).toBeUndefined();
+        const pending = session.recoveryObservations?.find(
+          (item) => item.evidence === 'same_turn_plan_preflight_correction',
+        );
+        expect(pending).toMatchObject({
+          status: 'pending_verification',
+          step: 'plan-preflight',
+          codes: ['PLAN_EVIDENCE_DESIGN_REQUIRED'],
+          evidence: 'same_turn_plan_preflight_correction',
+        });
+        if (scenario === 'unrelated-gate') {
+          current = {
+            ...state,
+            plan: {
+              ...state.plan,
+              current: { ...state.plan.current, recordDigest: 'c'.repeat(64), planVersion: 2 },
+            },
+          };
+        }
+        if (scenario === 'accepted') {
+          await runner.approve(session, 'approve-plan', 'PLAN_REVIEW');
+          expect(dispatch).toHaveBeenCalledOnce();
+          expect(pending).toMatchObject({ status: 'proven', provenStep: 'approve-plan' });
+        } else {
+          await expect(runner.approve(session, 'approve-plan', 'PLAN_REVIEW')).rejects.toThrow(
+            scenario === 'approval-fails'
+              ? 'no decision witness'
+              : 'bound reviewer_accepted plan gate',
+          );
+          expect(dispatch).toHaveBeenCalledTimes(scenario === 'approval-fails' ? 1 : 0);
+          expect(pending).toMatchObject({ status: 'pending_verification' });
+        }
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('requires a proven in-session retry before a recoverable denial counts as recovered', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-same-turn-'));

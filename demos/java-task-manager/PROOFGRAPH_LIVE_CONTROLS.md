@@ -109,19 +109,24 @@ NOT_VERIFIED. It is not interchangeable with the required ProofGraph denial.
 No override, claim withdrawal, fabricated reviewer acceptance or state edit may
 be used to reach the desired result.
 
-## Status
+## Historical observations, not final reference evidence
 
-Verified on the integrated head with DeepSeek V4.1 Flash and explicit thinking
-disabled (76 wire requests, 3 structured, 0 non-200). Both controls passed with
-real host sessions and validated parent/reviewer transcripts:
+On checkout `61a3380317404cdef6a9a492e69edcbb94d4cb00` (`demo-harness.v6`,
+OpenCode `2.2.5`, Node `22.22.2`, model `deepseek/deepseek-flash`), local
+provider-backed runs reported:
 
-- **claim-positive:** the retained critical claim reached `PROVEN` with the
-  adversarial assertion `passed` and both real checks green, passed ordinary
-  approval, and its `/export` package independently verified (`381fd11dee76…`).
-- **claim-negative:** both checks green, the adversarial assertion genuinely
-  `skipped`, the claim `NOT_VERIFIED`, and the real approval was denied with the
-  exact `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN` at unchanged `EVIDENCE_REVIEW`; the
-  persisted review decision was unchanged and no package was created.
+| Case                              | Installed tarball SHA-256                                          | Reported outcome                                                                                                |
+| --------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `claim-positive`                  | `651c1e757c6721d0434301767751eaa9e289eb29adef8fc11080aa3466e0bd12` | `COMPLETE`; offline verifier accepted export `9c8840ec1a586990309a2db7916e4ccc97063c1471875a05f0d71785150a2752` |
+| `claim-negative` (separate retry) | `3f1cab61127ba5d1ada6491e8c78e4ac2f5aa80a030010d405f017e2acf9900e` | `CONTROL_PASSED`; exact `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN` at unchanged `EVIDENCE_REVIEW`; no package         |
+
+The first negative attempt stopped at `TICKET_SOURCE_ORIGIN_CONFLICT` and did
+not verify the expected denial. The successful runs used different tarballs;
+they do not establish a matched final reference run. After harness acceptance
+and integration, pass the same `--tarball` (with its checksum sidecar) to both
+invocations on the integrated HEAD. Original verification and Integrity A/B
+must then use that new positive export. Independent review of the historical
+local originals and final reference verification are `NOT_VERIFIED`.
 
 Full mutation admission remains a separate requirement with its own selectors and
 records. A correctly blocked negative case is a passed control, not a completed

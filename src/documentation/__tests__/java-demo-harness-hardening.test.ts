@@ -37,7 +37,12 @@ const dir = path.join('workspaces','fixture','sessions','ses_parent');
 const audit = path.join(dir,'audit.jsonl');
 const stateFile = path.join(dir,'session-state.json');
 function append(event, detail, overrides={}) {
-  const auditSequence = fs.readFileSync(audit,'utf8').trim().split('\\n').length+1;
+  let auditSequence = 1;
+  try {
+    auditSequence += fs.readFileSync(audit,'utf8').trim().split('\\n').length;
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   fs.appendFileSync(audit, JSON.stringify({
     auditSequence, event, detail, occurredAt: new Date().toISOString(),
     flowguardSessionId: 'fg-session', hostSessionId: 'ses_parent', ...overrides,
@@ -62,7 +67,61 @@ const server = http.createServer(async (req,res) => {
   const parts = [];
   for await (const bytes of req) parts.push(bytes);
   const input = JSON.parse(Buffer.concat(parts));
-  if (input.name === 'start') return res.writeHead(204).end();
+  if (input.name === 'start') {
+    const ready = JSON.parse(fs.readFileSync('start-state.json','utf8'));
+    fs.writeFileSync(stateFile,JSON.stringify(ready));
+    append('tool_call:flowguard_hydrate',{tool:'flowguard_hydrate',success:true,transitionCount:0});
+    const activation = {
+      activationId:'activation-1',decisionId:'start-1',channel:'host_command',
+      rootSessionId:'ses_parent',worktreeRoot:ready.binding.worktree,policyDigest:ready.policySnapshot.hash,
+    };
+    if (scenario === 'start-foreign-worktree') activation.worktreeRoot = '/foreign';
+    if (scenario === 'start-wrong-channel') activation.channel = 'autonomous';
+    if (scenario !== 'start-no-witness') {
+      append('governance:activated', activation, {
+        id:'activation-1', phase:'READY',
+        ...(scenario === 'start-stale-activation' ? {occurredAt:'2001-01-01T00:00:00.000Z'} : {}),
+      });
+    }
+    if (scenario === 'start-duplicate-activation') {
+      append('governance:activated', activation, {id:'activation-1', phase:'READY'});
+    }
+    if (scenario === 'start-contradictory-error') append('error:UNEXPECTED',{code:'UNEXPECTED'});
+    return res.writeHead(204).end();
+  }
+  if (input.name === 'check') {
+    if (scenario === 'check-no-witness') return res.writeHead(204).end();
+    const before = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    const attempt = {
+      ...(before.phase === 'VALIDATION'
+        ? {scope:'baseline',planDigest:before.plan.current.digest}
+        : {scope:'implementation',implementationId:before.implementation.implementationId,implementationDigest:before.implementation.digest}),
+      attemptId:'attempt-1',
+      result:{checkId:'test',outputDigest:'a'.repeat(64),executedAt:new Date().toISOString()},
+    };
+    if (scenario === 'check-wrong-subject') attempt.planDigest = 'b'.repeat(64);
+    if (scenario === 'check-stale-attempt') attempt.result.executedAt = '2001-01-01T00:00:00.000Z';
+    if (scenario !== 'check-no-attempt') {
+      fs.writeFileSync(stateFile,JSON.stringify({...before,validationAttempts:[...before.validationAttempts,attempt]}));
+    }
+    if (scenario === 'check-rewritten-prefix') {
+      const original=JSON.parse(fs.readFileSync(audit,'utf8'));
+      fs.writeFileSync(audit,JSON.stringify({...original,detail:{note:'replaced'}})+'\\n');
+    }
+    const call = {
+      tool:'flowguard_run_check',success:true,transitionCount:0,
+      argsSummary:{sessionID:'ses_parent',callID:scenario === 'check-replayed-call' ? 'old-call' : 'check-1'},
+    };
+    if (scenario === 'check-foreign-args') call.argsSummary.sessionID = 'ses_foreign';
+    if (scenario === 'check-conflicting-outcome') call.errorCode = 'UNEXPECTED';
+    append(scenario === 'check-unrelated-tool' ? 'tool_call:flowguard_status' : 'tool_call:flowguard_run_check', call, {
+      ...(scenario === 'check-gap' ? {auditSequence: 99} : {}),
+      ...(scenario === 'check-foreign' ? {hostSessionId:'ses_foreign'} : {}),
+      ...(scenario === 'check-stale-call' ? {occurredAt:'2001-01-01T00:00:00.000Z'} : {}),
+    });
+    if (scenario === 'check-duplicate-call') append('tool_call:flowguard_run_check',call);
+    return res.writeHead(204).end();
+  }
   if(scenario === 'non204') return res.writeHead(500).end(secret);
   if(scenario === 'reset') {
     res.writeHead(500, {'content-length': 1000}).write(secret, () => res.destroy());
@@ -129,11 +188,16 @@ const server = http.createServer(async (req,res) => {
   if(scenario==='positive-two-receipts') append('decision:DEC-002',details);
   if(digests.afterPhase !== toPhase) append('transition:VALIDATION_PASSED',{
     from:toPhase,to:digests.afterPhase,
-    preStateDigest:scenario==='positive-digest-chain-gap'?'c'.repeat(64):postStateDigest,
-    postStateDigest:digests.after,
+    ...(scenario === 'positive-missing-followup-digests' ? {} : {
+      preStateDigest:scenario==='positive-digest-chain-gap'?'c'.repeat(64):postStateDigest,
+      postStateDigest:scenario==='positive-malformed-followup-digests'?'bad':digests.after,
+    }),
   });
   if(scenario==='positive-digest-chain-gap') append('state_write',{
     preStateDigest:'c'.repeat(64),postStateDigest:digests.after,mutationDigest:digests.after,
+  });
+  if(scenario.endsWith('followup-digests')) append('state_write',{
+    preStateDigest:postStateDigest,postStateDigest:digests.after,mutationDigest:digests.after,
   });
   if(scenario==='positive-ambiguous-tool') append('tool_call:flowguard_status',{tool:'flowguard_status'});
   if(scenario==='positive-failed-tool-no-code') append('tool_call:flowguard_status',{tool:'flowguard_status',success:false,transitionCount:0});
@@ -256,14 +320,91 @@ describe('Java live harness', () => {
   });
 
   it('starts a new session through the native command API', async () => {
-    await fs.writeFile(path.join(path.dirname(stateFile), 'audit.jsonl'), '');
-    const session: { workspace: string; sessionId?: string } = { workspace: root };
-    await run('native-start', () => runner.turn(session, 'start', undefined, { command: 'start' }));
-    expect(session.sessionId).toBe(SESSION);
+    const started = await start('native-start');
+    expect(started.sessionIds).toEqual([SESSION]);
     const evidenceFile = await fs.readFile(path.join(evidence, 'start.jsonl'), 'utf8');
     expect(evidenceFile).toContain('host_command_started');
     expect(evidenceFile).toContain('host_command_response_received');
   });
+
+  function start(scenario: string) {
+    return run(scenario, async () => {
+      await fs.writeFile(
+        path.join(configDir, 'start-state.json'),
+        JSON.stringify({ ...boundState('READY'), policySnapshot: { hash: 'a'.repeat(64) } }),
+      );
+      await fs.unlink(stateFile);
+      await fs.unlink(path.join(path.dirname(stateFile), 'audit.jsonl'));
+      return runner.turn({ workspace: root }, 'start', undefined, { command: 'start' });
+    });
+  }
+
+  it.each([
+    'no-witness',
+    'foreign-worktree',
+    'wrong-channel',
+    'stale-activation',
+    'duplicate-activation',
+    'contradictory-error',
+  ])('does not credit a 204 /start with %s', async (scenario) => {
+    await expect(start(`start-${scenario}`)).rejects.toMatchObject({ code: 'DEMO_NOT_VERIFIED' });
+    expect(await fs.readFile(path.join(configDir, 'dispatches'), 'utf8')).toBe('1\n');
+  });
+
+  async function check(scenario: string, phase = 'VALIDATION') {
+    await fs.writeFile(
+      stateFile,
+      JSON.stringify({
+        ...boundState(phase),
+        plan: { current: { digest: 'a'.repeat(64) } },
+        implementation: { implementationId: 'impl-1', digest: 'b'.repeat(64) },
+        validationAttempts: [],
+      }),
+    );
+    return run(`check-${scenario}`, () =>
+      runner.turn(session(), 'check', undefined, { command: 'check' }),
+    );
+  }
+
+  it.each(['VALIDATION', 'IMPL_VALIDATION'])(
+    'accepts a native /check with a fresh bound execution from %s',
+    async (phase) => {
+      expect((await check('positive', phase)).auditEvidence).toEqual([
+        expect.objectContaining({ tool: 'flowguard_run_check', success: true }),
+      ]);
+    },
+  );
+
+  it.each([
+    'no-witness',
+    'no-attempt',
+    'wrong-subject',
+    'stale-attempt',
+    'stale-call',
+    'foreign',
+    'foreign-args',
+    'unrelated-tool',
+    'gap',
+    'rewritten-prefix',
+    'replayed-call',
+    'duplicate-call',
+    'conflicting-outcome',
+  ])('does not credit a 204 /check with %s', async (scenario) => {
+    await expect(check(scenario)).rejects.toMatchObject({ code: 'DEMO_NOT_VERIFIED' });
+    expect(await fs.readFile(path.join(configDir, 'dispatches'), 'utf8')).toBe('1\n');
+  });
+
+  it.each(['missing', 'malformed'])(
+    'rejects %s digests on an automatic transition even with a matching state write',
+    async (kind) => {
+      await fs.writeFile(stateFile, JSON.stringify(boundState('PLAN_REVIEW')));
+      await expect(
+        run(`positive-${kind}-followup-digests`, () =>
+          runner.approve(session(), 'approval', 'PLAN_REVIEW'),
+        ),
+      ).rejects.toThrow('native transition has missing or malformed state digests');
+    },
+  );
 
   it('accepts a bound unchanged refusal despite a failing HTTP response without retaining its body', async () => {
     const result = await run('refusal', deny);

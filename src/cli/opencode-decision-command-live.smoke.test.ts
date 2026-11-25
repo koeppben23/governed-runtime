@@ -15,6 +15,7 @@ import { hashText } from '../shared/hashing.js';
 import { REVIEWER_AGENT } from '../templates/mandates.js';
 import { execFileSync } from 'node:child_process';
 import { assertNativeDecisionWitness } from '../../demos/java-task-manager/live-decision-witness.mjs';
+import { assertNativeCommandWitness } from '../../demos/java-task-manager/live-native-command-witness.mjs';
 import { validateHostTranscript } from '../../demos/java-task-manager/live-host-export.mjs';
 import { computeStateDigest } from '../integration/audit-outbox.js';
 import {
@@ -99,18 +100,48 @@ async function receipts(p: NativeHostProbe, sessionID: string) {
   );
 }
 describe.skipIf(!LIVE)('native decision commands with component core review gates', () => {
-  it('runs /check through the native command prompt', async () => {
+  it('witnesses native /start and does not credit a native /check prompt without execution', async () => {
     const p = await open('solo');
     const root = await p.session();
+    const startAt = Date.now();
     await activate(p, root.id);
+    await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
+    const initial = await workflow(p, root.id);
+    const auditBefore = await readAuditTrail(initial.sessDir);
+    assertNativeCommandWitness({
+      command: 'start',
+      before: null,
+      after: initial.state,
+      auditBefore: [],
+      events: auditBefore,
+      sessionId: root.id,
+      startedAt: startAt,
+      completedAt: Date.now(),
+    });
     const before = p.requests.length;
+    const checkAt = Date.now();
     await p.client.session.command({ sessionID: root.id, name: 'check', text: '' });
+    await p.client.session.wait({ sessionID: root.id }, { signal: AbortSignal.timeout(120_000) });
     expect(p.requests.length).toBeGreaterThan(before);
     expect(
       p.requests
         .slice(before)
         .some((request) => JSON.stringify(request.body).includes('flowguard_run_check')),
     ).toBe(true);
+    const checked = await workflow(p, root.id);
+    const events = await readAuditTrail(checked.sessDir);
+    expect(() =>
+      assertNativeCommandWitness({
+        command: 'check',
+        before: initial.state,
+        after: checked.state,
+        auditBefore,
+        events,
+        sessionId: root.id,
+        startedAt: checkAt,
+        completedAt: Date.now(),
+      }),
+    ).toThrow(/complete session-bound audit window|current command witness/);
   }, 300_000);
   it.each(['approve', 'override-approve'] as const)(
     'drives real Start, ticket, independent native review and %s without seeded gate evidence',

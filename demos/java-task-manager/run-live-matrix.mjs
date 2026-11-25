@@ -50,8 +50,16 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { exportHostTranscript } from './live-host-export.mjs';
 import { assertNativeDecisionWitness } from './live-decision-witness.mjs';
+import { assertNativeCommandWitness } from './live-native-command-witness.mjs';
+import {
+  pendingPlanPreflight,
+  planPreflightGate,
+  planReviewCorrectionProven,
+  PLAN_PREFLIGHT_RECOVERY_CODES,
+} from './live-plan-preflight.mjs';
 import {
   assertExpectedDenial,
   authorizedRetryEvents,
@@ -343,22 +351,6 @@ export const RECOVERABLE_DENIAL_CODES = new Set(DENIAL_BASELINE.recoverable);
 export const NEXT_STEP_RECOVERY_CODES = new Set(['CONTINUE_AMBIGUOUS']);
 
 /**
- * Plan preflight blocks are correctable in the same planning turn. They are
- * not failures: the accepted, independently reviewed plan is the proof. The
- * runner records the codes as observations and lets the plan gate decide.
- */
-export const PLAN_PREFLIGHT_RECOVERY_CODES = new Set([
-  'PLAN_EVIDENCE_DESIGN_REQUIRED',
-  'PLAN_EVIDENCE_DESIGN_INVALID',
-  'PLAN_FINDING_RESOLUTION_REQUIRED',
-  'PLAN_FINDING_RESOLUTION_INVALID',
-  'PLAN_CLAIM_LINEAGE_REQUIRED',
-  'PLAN_CLAIM_LINEAGE_INVALID',
-  'REVIEW_SUBJECT_CHANGED_WHILE_PENDING',
-  'PLAN_CLAIM_SUBMISSION_REJECTED',
-]);
-
-/**
  * A plan submission during an ACTIVE review loop is corrected by resuming the
  * bound review in the same turn. The correction is never accepted as a bare
  * retry: the same-turn proof here is paired with the persisted gate proof
@@ -381,26 +373,6 @@ export function planReviewSameTurnCorrection(output) {
     (candidate) => candidate.code === PLAN_REVIEW_CORRECTION_CODE,
   );
   return proof?.tool === 'flowguard_plan';
-}
-
-/**
- * Persisted proof required before the plan gate: the correction actually
- * resumed the SAME bound review loop (consistent iteration) to a recorded
- * reviewer acceptance. An unproven correction keeps the flow blocked.
- */
-export function planReviewCorrectionProven(state) {
-  const plan = state.plan;
-  const selfReview = state.selfReview;
-  if (!plan || !selfReview) return false;
-  const iterationConsistent =
-    Number.isInteger(selfReview.iteration) &&
-    Number.isInteger(selfReview.maxIterations) &&
-    selfReview.iteration <= selfReview.maxIterations;
-  return (
-    plan.reviewCompletion === 'reviewer_accepted' &&
-    selfReview.verdict === 'accept' &&
-    iterationConsistent
-  );
 }
 
 /**
@@ -989,14 +961,21 @@ export class Runner {
   }
 
   async hostNativeCommandTransport(session, label, command) {
-    const before = session.sessionId ? this.requireBoundState(session) : null;
-    const auditBefore = before ? readAuditEvents(before.sessionDir) : [];
     if (!session.sessionId) {
       if (command !== 'start') {
         throw new DemoNotVerifiedError(`${label}: native ${command} requires an existing session`);
       }
       session.sessionId = await this.createHostSession(session, label);
     }
+    const before =
+      command === 'check'
+        ? this.requireBoundState(session)
+        : readState(this.configDir, session.sessionId);
+    if (command === 'start' && before) {
+      throw new DemoNotVerifiedError(`${label}: native /start requires an uninitialized session`);
+    }
+    const auditBefore = before ? readAuditEvents(before.sessionDir) : [];
+    if (before) assertCompleteAuditWindow(before.state, 0, auditBefore);
     const response = await this.hostCommand(session, label, command, '');
     if (response.status !== 204) {
       throw new DemoNotVerifiedError(`${label}: isolated host rejected native ${command}`);
@@ -1008,26 +987,17 @@ export class Runner {
     }
     const settledAt = Date.now();
     const after = this.requireBoundState(session);
-    if (
-      typeof after.state.flowguardSessionId !== 'string' ||
-      after.state.binding?.hostSessionId !== session.sessionId
-    ) {
-      throw new DemoNotVerifiedError(
-        `${label}: native ${command} did not persist the bound session`,
-      );
-    }
-    const rawAudit = this.readAudit(session);
-    const events = rawAudit
-      ? rawAudit
-          .split('\n')
-          .filter((line) => line.trim().length > 0)
-          .map((line) => JSON.parse(line))
-      : [];
-    const auditEvidence = typedAuditEvidence(
-      events.slice(auditBefore.length),
-      session,
-      after.state.flowguardSessionId,
-    );
+    const window = assertNativeCommandWitness({
+      command,
+      before: before?.state ?? null,
+      after: after.state,
+      auditBefore,
+      events: readAuditEvents(after.sessionDir),
+      sessionId: session.sessionId,
+      startedAt: response.startedAt,
+      completedAt: settledAt,
+    });
+    const auditEvidence = typedAuditEvidence(window, session, after.state.flowguardSessionId);
     return {
       code: 0,
       stdout: '',
@@ -1043,6 +1013,17 @@ export class Runner {
     // Read the full prefix, not just the largest sequence number. Replaced
     // history or a partial tail must not prove a later decision.
     const before = this.requireBoundState(session);
+    if (
+      options.expectedPlanGate &&
+      !isDeepStrictEqual(
+        options.expectedPlanGate,
+        planPreflightGate(before.state, session.sessionId),
+      )
+    ) {
+      throw new DemoNotVerifiedError(
+        `${label}: plan preflight approval lost its verified plan gate`,
+      );
+    }
     const auditBefore = readAuditEvents(before.sessionDir);
     assertCompleteAuditWindow(before.state, 0, auditBefore);
     const verdict = expectedDecisionVerdict(command) ?? options.decisionVerdict;
@@ -1280,7 +1261,9 @@ export class Runner {
       })),
     );
     const proofs = sameTurnRecoveryProofs(result.stdout);
-    const recoverableProofs = proofs.recovered.filter((proof) => isRecoverableFamily(proof.code));
+    const recoverableProofs = proofs.recovered.filter(
+      (proof) => isRecoverableFamily(proof.code) && !PLAN_PREFLIGHT_RECOVERY_CODES.has(proof.code),
+    );
     const operationRecovered = [
       ...new Set(
         recoverableProofs
@@ -1361,21 +1344,18 @@ export class Runner {
         `${label}: recovered via same-turn wait-state progress [${[...waitStateProgress].join(', ')}]`,
       );
     }
-    const resolvedLaterSuccess = laterSuccessOnly.filter(
-      (code) => !waitStateProgress.has(code) && !PLAN_PREFLIGHT_RECOVERY_CODES.has(code),
+    const resolvedLaterSuccess = laterSuccessOnly.filter((code) => !waitStateProgress.has(code));
+    const preflight = pendingPlanPreflight(
+      result.stdout,
+      label,
+      rearmState,
+      session.sessionId,
+      phaseBefore,
     );
-    const planPreflightCodes = recoverable.filter((code) =>
-      PLAN_PREFLIGHT_RECOVERY_CODES.has(code),
-    );
-    if (planPreflightCodes.length > 0) {
-      session.recoveryObservations.push({
-        status: 'proven',
-        step: label,
-        codes: planPreflightCodes,
-        evidence: 'same_turn_plan_preflight_correction',
-      });
+    if (preflight) {
+      session.recoveryObservations.push(preflight);
       this.log(
-        `${label}: plan preflight correction(s) [${planPreflightCodes.join(', ')}] observed; the accepted plan gate is the proof`,
+        `${label}: plan preflight denial(s) [${preflight.codes.join(', ')}] pending verification at the bound plan gate`,
       );
     }
     if (operationRecovered.length > 0) {
@@ -1716,6 +1696,23 @@ export class Runner {
         `${label}: expected gate ${expectedPhase}, observed ${String(snapshot.state.phase)}`,
       );
     }
+    const preflights = (session.recoveryObservations ?? []).filter(
+      (observation) =>
+        observation.evidence === 'same_turn_plan_preflight_correction' &&
+        observation.status === 'pending_verification',
+    );
+    const expectedPlanGate =
+      preflights.length > 0 ? planPreflightGate(snapshot.state, session.sessionId) : null;
+    if (preflights.length > 0) {
+      if (
+        !expectedPlanGate ||
+        preflights.some((observation) => !isDeepStrictEqual(expectedPlanGate, observation.gate))
+      ) {
+        throw new DemoNotVerifiedError(
+          `${label}: plan preflight recovery did not reach its bound reviewer_accepted plan gate`,
+        );
+      }
+    }
     if (session.pendingReviewRecovery) {
       const proven =
         expectedPhase === 'PLAN_REVIEW'
@@ -1781,7 +1778,12 @@ export class Runner {
     await this.turn(session, label, undefined, {
       command: 'approve',
       expectedTargetPhase: targetPhase,
+      ...(expectedPlanGate ? { expectedPlanGate } : {}),
     });
+    for (const observation of preflights) {
+      observation.status = 'proven';
+      observation.provenStep = label;
+    }
   }
 
   /**

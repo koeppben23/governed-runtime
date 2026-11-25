@@ -2179,7 +2179,8 @@ stop`, reviewer child reported it could not complete the falsification).
 - Require native decision approval windows to reject ambiguous tool outcomes,
   unexplained error events and mixed success/error evidence. Bind the decision
   receipt and every transition to the installed product's canonical
-  state-authority digest, including automatic follow-up transitions. Record the
+  state-authority digest, rejecting automatic follow-up transitions with
+  missing or malformed digest pairs. Record the
   persisted reviewer obligation/invocation/attempt binding beside each
   reviewer transcript; transcript validation remains structural and
   `ReviewFindings` remains the review-completion authority.
@@ -2187,10 +2188,13 @@ stop`, reviewer child reported it could not complete the falsification).
   never discovers or restarts the user's shared OpenCode service. The harness
   starts and verifies its own authenticated child instead. Drive native
   `/start` and `/check` through the generated session's host command API; the
-  headless CLI is reserved for prompt templates.
+  headless CLI is reserved for prompt templates. Require a fresh host-command
+  activation record for `/start` and audited, persisted check attempts for
+  `/check`, both within a complete, dispatch-bound audit window.
 - Treat current plan-preflight edits (evidence design, finding resolutions,
   claim lineage, claim submission, pending-subject guard) as correctable
-  observations whose proof is the accepted, independently reviewed plan gate.
+  observations. Keep them pending until the same plan revision and consumed
+  independent acceptance are verified at the gate and native approval is witnessed.
   Ignore host control messages such as `model-switched` when validating the
   structural review exchange, and bind `/task` to the repository ticket file
   instead of passing its body as planning context.
