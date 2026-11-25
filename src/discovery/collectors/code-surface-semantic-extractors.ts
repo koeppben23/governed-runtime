@@ -249,8 +249,8 @@ function isJavaMethodDeclaration(line: string): boolean {
   // Scan the method name backwards. A trailing unanchored regex would retry
   // every start position on a long non-matching prefix (quadratic).
   let nameStart = prefix.length;
-  while (nameStart > 0 && /[A-Za-z0-9_$]/.test(prefix[nameStart - 1]!)) nameStart--;
-  if (nameStart === prefix.length || !/[A-Za-z_$]/.test(prefix[nameStart]!)) return false;
+  while (nameStart > 0 && /[A-Za-z0-9_$]/.test(prefix.charAt(nameStart - 1))) nameStart--;
+  if (nameStart === prefix.length || !/[A-Za-z_$]/.test(prefix.charAt(nameStart))) return false;
   const returnType = prefix.slice(0, nameStart).trimEnd();
   return returnType.length > 0 && !JAVA_CONTROL_PREFIX.test(returnType);
 }
