@@ -22,15 +22,42 @@ replacement.
 
 ## Executable controls
 
-`run-live-claim-controls.mjs` runs both cases on real OpenCode/FlowGuard tools with
-the same pinned toolchain and checksummed tarball as `run-live-matrix.mjs`:
+`run-live-claim-controls.mjs` runs one case per invocation on real
+OpenCode/FlowGuard tools with the same pinned toolchain and checksummed tarball
+as `run-live-matrix.mjs`. Use a separate root and service lifecycle for each
+case:
 
 ```bash
 OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","provider":{"deepseek":{"models":{"deepseek-flash":{"options":{"reasoningEffort":"none","thinking":{"type":"disabled"}}}}}}}' \
-FLOWGUARD_REVIEWER_EFFORT=none \
+FLOWGUARD_CLAIM_CASES=claim-positive \
 node demos/java-task-manager/run-live-claim-controls.mjs \
-  --root /tmp/flowguard-claim-controls --model deepseek/deepseek-flash
+  --root /tmp/flowguard-claim-positive --model deepseek/deepseek-flash
+
+OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","provider":{"deepseek":{"models":{"deepseek-flash":{"options":{"reasoningEffort":"none","thinking":{"type":"disabled"}}}}}}}' \
+FLOWGUARD_CLAIM_CASES=claim-negative \
+node demos/java-task-manager/run-live-claim-controls.mjs \
+  --root /tmp/flowguard-claim-negative --model deepseek/deepseek-flash
 ```
+
+Run these commands sequentially; the dedicated service requires an unused
+`127.0.0.1:49375`. Supply provider credentials in the environment. OpenCode V2
+selects reasoning through the native model variant/configuration and rejects
+`FLOWGUARD_REVIEWER_EFFORT`; do not export it. The setup installer is pointed
+at an absent run-local service record, so it cannot restart the user's shared
+service; the runner starts and verifies its own child. Native `/start` is
+dispatched through that child's session command API; prompt templates continue
+through the headless CLI. The runner
+sets the JUnit skip in the negative case's actual service process and removes
+any inherited skip from the positive case. It will not reuse a running service.
+The negative approval is accepted only with a unique audit refusal and its
+closing error record, a complete session-bound audit window, and unchanged
+persisted state. Ticket adoption and plan creation are separate turns: `/task`
+must leave the exact repository ticket in `TICKET` with no plan before `/plan`
+is dispatched. The ticket must carry `inputOrigin: workspace` and its
+`TICKET_CLAIM_CONTROL.md` document reference. The shared plan prompt treats the
+`-DskipTests` counterexample as hypothetical plan reasoning only; it is never
+added to the delivered notes. A transport failure or an unanswered final transcript turn is
+not a passing control.
 
 Before `/start`, each case receives the same committed fixtures: a documentation
 ticket and two JUnit classes — a positive assertion
@@ -42,6 +69,38 @@ the two evidence roles come from distinct executions and attempts. A critical
 adversarial assertion. The runtime mints the claim id, review evidence and approval
 certificate. The workspace opts into reduced ceremony so the evidence gate is the
 real final gate.
+
+## Controlled plan candidate
+
+The reference experiment supplies both controls with the same fixed,
+repository-grounded plan candidate through the normal `/plan` command. The
+candidate contains the exact retained claim, the observed active checks, the
+`## Getting started` deliverable and a read-only heading check that is explicitly
+human-review evidence, not a new FlowGuard check. It does not add API or port
+claims beyond the ticket. The candidate separates the positive `UsageNotesHintTest`
+observable from the adversarial probe counterexample per assertion, and records
+the heading/order checks as read-only manual inspections. The hypothetical
+`-DskipTests` counterexample is plan reasoning only; the assertion-skip
+environment variable is never used to simulate a failing assertion.
+
+The exact plan and claims are written to git-ignored files under `.flowguard/`
+and read back by the agent before the initial `/plan` call. The prompt deliberately
+does not embed them: the headless host JSON-encodes prompt text, and escaped
+quotes inside the fenced `flowguard-evidence-design` block would otherwise be
+submitted as literal backslashes. The candidate files are removed before
+implementation. On a reviewed revision, the `flowguard-finding-resolutions`
+block may reference only the bound `blockingIssues`; minor `majorRisks`,
+`missingVerification` and other non-blocking feedback stay out of that block.
+
+The product still performs the genuine independent review, binds findings and
+requires normal revisions. After review, the harness binds persisted plan
+version 1 to the prepared candidate using the installed product's
+`normalizeReviewArtifactText` and records the expected and observed plan digest;
+a rewritten initial plan is `NOT_VERIFIED`. Normal later revisions remain
+allowed. The candidate removes free-form planning as an experimental variable;
+it does not seed accepted review state, verdicts, certificates or evidence.
+Reference evidence produced this way is not an evaluation of autonomous plan
+generation.
 
 ## Positive case
 
@@ -87,19 +146,33 @@ NOT_VERIFIED. It is not interchangeable with the required ProofGraph denial.
 No override, claim withdrawal, fabricated reviewer acceptance or state edit may
 be used to reach the desired result.
 
-## Status
+## Historical observations, not final reference evidence
 
-Verified on the integrated head with DeepSeek V4.1 Flash and explicit thinking
-disabled (76 wire requests, 3 structured, 0 non-200). Both controls passed with
-real host sessions and validated parent/reviewer transcripts:
+On checkout `61a3380317404cdef6a9a492e69edcbb94d4cb00` (`demo-harness.v6`,
+OpenCode `2.2.5`, Node `22.22.2`, model `deepseek/deepseek-flash`), local
+provider-backed runs reported:
 
-- **claim-positive:** the retained critical claim reached `PROVEN` with the
-  adversarial assertion `passed` and both real checks green, passed ordinary
-  approval, and its `/export` package independently verified (`381fd11dee76…`).
-- **claim-negative:** both checks green, the adversarial assertion genuinely
-  `skipped`, the claim `NOT_VERIFIED`, and the real approval was denied with the
-  exact `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN` at unchanged `EVIDENCE_REVIEW`; the
-  persisted review decision was unchanged and no package was created.
+| Case                              | Installed tarball SHA-256                                          | Reported outcome                                                                                                |
+| --------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `claim-positive`                  | `651c1e757c6721d0434301767751eaa9e289eb29adef8fc11080aa3466e0bd12` | `COMPLETE`; offline verifier accepted export `9c8840ec1a586990309a2db7916e4ccc97063c1471875a05f0d71785150a2752` |
+| `claim-negative` (separate retry) | `3f1cab61127ba5d1ada6491e8c78e4ac2f5aa80a030010d405f017e2acf9900e` | `CONTROL_PASSED`; exact `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN` at unchanged `EVIDENCE_REVIEW`; no package         |
+
+The first negative attempt stopped at `TICKET_SOURCE_ORIGIN_CONFLICT` and did
+not verify the expected denial. The successful runs used different tarballs;
+they do not establish a matched final reference run. After harness acceptance
+and integration, pass the same `--tarball` (with its checksum sidecar) to both
+invocations on the integrated HEAD. Original verification and Integrity A/B
+must then use that new positive export. Independent review of the historical
+local originals and final reference verification are `NOT_VERIFIED`.
+
+On integrated commit `466d9570d3d69958939649d6e76fb44c7b5a32a6`, both cases used
+tarball `ec006e4a43f423b93a78acfd3ece8909beda7e4cb76678ba629a3cc98913dc0e`.
+The negative case passed with the exact ProofGraph denial and no export. The
+positive was `NOT_VERIFIED` before approval: the harness's preflight recovery
+expected an obsolete invocation field, although the product had persisted the
+bound V2 acceptance. That run produced no package. Re-evaluating its existing
+evidence read-only verifies the harness correction, not a live control. Both
+cases must be run again on the accepted integrated fix with one new artifact.
 
 Full mutation admission remains a separate requirement with its own selectors and
 records. A correctly blocked negative case is a passed control, not a completed

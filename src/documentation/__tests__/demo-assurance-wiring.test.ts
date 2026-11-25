@@ -7,7 +7,7 @@
  * @version v1
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -16,8 +16,18 @@ const readDemo = (relative: string): string => readFileSync(join(DEMOS, relative
 
 describe('demo assurance wiring', () => {
   describe('HAPPY — shared forensic primitives are used', () => {
+    it('keeps each Java live-runner module within the 650-line production budget', () => {
+      const directory = 'java-task-manager';
+      for (const file of readdirSync(join(DEMOS, directory))) {
+        if (/^(?:run-)?live-.+\.mjs$/.test(file)) {
+          const lines = readDemo(join(directory, file)).trimEnd().split('\n').length;
+          expect(lines, file).toBeLessThanOrEqual(650);
+        }
+      }
+    });
+
     it('matrix recovery is occurrence-bound and fails closed on unreadable transcripts', () => {
-      const matrix = readDemo('java-task-manager/run-live-matrix.mjs');
+      const matrix = readDemo('java-task-manager/live-turn.mjs');
       expect(matrix).toContain('sameTurnRecoveryProofs');
       expect(matrix).toContain('transcriptTrust');
     });

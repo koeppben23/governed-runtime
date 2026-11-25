@@ -235,16 +235,50 @@ between flows.
 toolchain pins from the canonical repository files (`.sdk-baselines/opencode/cli-candidate.json`
 and `.node-version`), verifies the tarball against its `checksums.sha256`
 sidecar before installing, prepares fresh workspaces, opts the repository
-config into raw auditor archives next to the isolated global grant, runs every
-step through real headless `opencode run` processes with an explicit `--dir`,
-verifies the persisted host/worktree binding and each package, exports the
-parent and reviewer-child host transcripts directly to files, validates JSON,
-session/worktree/parent identity and message/part structure before registering
-their hashes, records the installed
+config into raw auditor archives next to the isolated global grant, runs
+prompt-template steps through headless `opencode run` from an explicit working
+directory, and sends native start/check commands and decisions directly through
+the host command API. It creates the root session through the isolated host,
+then verifies the worktree binding and packages and exports the parent and
+reviewer-child transcripts to exclusive files. Each export must match its
+session, worktree and parent and end in a completed assistant response with
+text after the final user request. The matrix records the installed
 build identity, records recovered typed denials and successful reviewer re-arms while
 stopping on any non-recoverable block, removes the isolated raw-export grant on exit, and exits
 non-zero when any requested flow did not complete. It performs no governance
 work itself.
+
+Use a fresh root and a free `127.0.0.1:49375`. The runner starts and authenticates
+its own OpenCode child, with separate configuration and storage, and stops only
+that child on exit. It never attaches to an existing listener. The setup
+installer is pointed at an absent run-local service record, so it cannot
+discover or restart the user's shared OpenCode service; the runner verifies its
+own child and `/start` instead. Supply model
+credentials through the provider environment; the runner does not reuse the
+shared host's credential store. Native commands require a continuous, current,
+session-bound audit window, not just HTTP success. `/start` requires the new
+root's `host_command` activation record; `/check` requires fresh audited
+`flowguard_run_check` calls and matching persisted execution attempts, each
+bound to the baseline plan or implementation subject at dispatch. A
+status-only `/check` is not evidence that a check ran, and execution alone does
+not prove a passing result. Decisions also require canonical state digests
+linking every transition from the pre-dispatch snapshot to the settled state,
+and typed, interpretable tool outcomes. An ambiguous transport outcome stops the
+run without resubmitting the decision. Native HTTP response bodies are not
+written to evidence or logs.
+
+The matrix CLI composes separate setup, scenario, transport, turn/recovery,
+and evidence modules. To verify the witness boundaries without a provider-backed
+Java run:
+
+```bash
+npm run mutation -- stryker.java-live-harness.config.mjs
+OPENCODE_LIVE=1 npx vitest run --project smoke src/cli/opencode-check-command-live.smoke.test.ts
+```
+
+The native check smoke seeds only the validation gate. The pinned host executes
+the real check and persists and audits its attempt; it is not installed-tarball
+or independent review acceptance.
 
 The active preflight requires the exact V2 CLI candidate's `opencode v<version>`
 output. It does not use or rewrite historical V1 comparison pins. Passing
@@ -269,7 +303,11 @@ resolve the denial: the next required step must prove the authorized persistence
 of the bound operation (`next_step_operation_transition:<step>`), otherwise the
 flow stops. A plan/ADR proof binds the exact subject/revision, accepting review
 and newly minted approval certificate; a generic state-file digest change never
-counts. A
+counts. Plan-preflight denials remain `pending_verification` until the exact
+plan revision and consumed independent acceptance observed in that turn match
+the gate and the subsequent native approval is witnessed. The harness uses the
+installed product's invocation schema and native capture validation; historical
+review transport cannot settle a recovery. A
 structured reviewer re-arm is recorded as `structured_rearm` and supersedes a
 terminal capture block only with `retryable: true`, the same explicit obligation
 and a fresh attempt. `CONTINUE_AMBIGUOUS` is

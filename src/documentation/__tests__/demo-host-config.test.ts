@@ -18,7 +18,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   HOST_CONFIG_FILE,
+  HOST_SERVICE_FILE,
+  HOST_SERVICE_PORT,
   HOST_TOOL_OUTPUT_MAX_BYTES,
+  isolatedInstallEnv,
   writeIsolatedHostConfig,
 } from '../../../demos/lib/host-config.mjs';
 // Historical V1 config comparison only: do not retarget this experiment to V2.
@@ -82,6 +85,52 @@ describe('isolated host config for the live demo runners', () => {
     });
   });
 
+  it('isolates the managed service port from the default host port', () => {
+    const configDir = tempConfigDir();
+    writeIsolatedHostConfig(configDir);
+
+    const serviceFile = path.join(configDir, HOST_SERVICE_FILE);
+    expect(JSON.parse(fs.readFileSync(serviceFile, 'utf8'))).toEqual({ port: HOST_SERVICE_PORT });
+    expect(HOST_SERVICE_PORT).not.toBe(49374);
+  });
+
+  it('preserves a pre-existing isolated service configuration', () => {
+    const configDir = tempConfigDir();
+    fs.writeFileSync(
+      path.join(configDir, HOST_SERVICE_FILE),
+      `${JSON.stringify({ port: HOST_SERVICE_PORT, hostname: '127.0.0.1' }, null, 2)}\n`,
+    );
+
+    writeIsolatedHostConfig(configDir);
+
+    expect(JSON.parse(fs.readFileSync(path.join(configDir, HOST_SERVICE_FILE), 'utf8'))).toEqual({
+      port: HOST_SERVICE_PORT,
+      hostname: '127.0.0.1',
+    });
+  });
+
+  it('fails loudly instead of silently overriding a conflicting service port', () => {
+    const configDir = tempConfigDir();
+    fs.writeFileSync(
+      path.join(configDir, HOST_SERVICE_FILE),
+      `${JSON.stringify({ port: 49374 }, null, 2)}\n`,
+    );
+
+    expect(() => writeIsolatedHostConfig(configDir)).toThrow(/refusing to override/);
+  });
+
+  it.each([{}, { port: null }, { port: String(HOST_SERVICE_PORT) }])(
+    'refuses a missing or invalid port without writing the host configuration (%j)',
+    (value) => {
+      const configDir = tempConfigDir();
+      const serviceFile = path.join(configDir, HOST_SERVICE_FILE);
+      fs.writeFileSync(serviceFile, JSON.stringify(value));
+      expect(() => writeIsolatedHostConfig(configDir)).toThrow(/invalid port/);
+      expect(fs.existsSync(path.join(configDir, HOST_CONFIG_FILE))).toBe(false);
+      expect(fs.readFileSync(serviceFile, 'utf8')).toBe(JSON.stringify(value));
+    },
+  );
+
   it('is byte-deterministic across repeated initialization', () => {
     const configDir = tempConfigDir();
     writeIsolatedHostConfig(configDir);
@@ -90,6 +139,24 @@ describe('isolated host config for the live demo runners', () => {
     const second = fs.readFileSync(path.join(configDir, HOST_CONFIG_FILE), 'utf8');
 
     expect(second).toBe(first);
+  });
+
+  it('never lets the installer discover or restart the shared service record', () => {
+    const configDir = tempConfigDir();
+    const foreign = path.join(configDir, 'foreign-service.json');
+    fs.writeFileSync(foreign, '{}');
+    const env = isolatedInstallEnv(configDir, {
+      FLOWGUARD_OPENCODE_SERVICE_RECORD: foreign,
+      PATH: '/kept',
+    });
+    const isolatedRecord = path.join(configDir, 'service-record.unavailable.json');
+    expect(env).toMatchObject({
+      FLOWGUARD_OPENCODE_SERVICE_RECORD: isolatedRecord,
+      PATH: '/kept',
+    });
+    fs.writeFileSync(isolatedRecord, '{}', { flag: 'wx' });
+    isolatedInstallEnv(configDir);
+    expect(fs.existsSync(isolatedRecord)).toBe(false);
   });
 
   it('preserves pre-existing configuration without touching max_lines', () => {
@@ -129,13 +196,14 @@ describe('isolated host config for the live demo runners', () => {
     expect(transportDelivers(HOST_TOOL_OUTPUT_MAX_BYTES + 1)).toBe(false);
   });
 
-  it('wires the identical helper into all four live runners', () => {
+  it('wires the identical helpers into all four live runners', () => {
     for (const relative of runners) {
       const source = fs.readFileSync(path.join(REPO_ROOT, relative), 'utf8');
-      expect(source, relative).toContain(
-        "import { writeIsolatedHostConfig } from '../lib/host-config.mjs';",
+      expect(source, relative).toMatch(
+        /import \{[^}]*writeIsolatedHostConfig[^}]*\} from '\.\.\/lib\/host-config\.mjs';/,
       );
       expect(source, relative).toContain('writeIsolatedHostConfig(configDir);');
+      expect(source, relative).toContain('isolatedInstallEnv(');
     }
   });
 });

@@ -1,63 +1,73 @@
 /** Operation-scoped persistence witnesses; unrelated changes must stay unproven. */
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   expectRecovery,
   implementationReviewAcceptanceProven,
   recoveryPersisted,
 } from '../../../demos/lib/recovery-state.mjs';
+import {
+  loadInstalledReviewInvocationValidator,
+  reviewInvocationValidator,
+} from '../../../demos/lib/review-recovery-authority.mjs';
+import {
+  canonicalTransitionResolver,
+  loadInstalledTransitionResolver,
+} from '../../../demos/lib/product-transition.mjs';
+import { resolveTransition } from '../../machine/topology.js';
 import { hashText } from '../../shared/hashing.js';
-import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
+import { ReviewInvocationEvidence } from '../../state/evidence-review-invocation.js';
+import {
+  approvedPlan,
+  consumedReview,
+  reviewedPlan,
+  validateReviewInvocation,
+} from '../demo-recovery-test-helpers.js';
+
+const foreignId = 'a7704ff0-f4f0-4eed-a8d1-3ca952e71068';
+const expectPlan = (state = reviewedPlan()) =>
+  expectRecovery(state, ['flowguard_plan'], 'COMPLETE', [], 0, [], validateReviewInvocation);
+const persistsReview = (expected: unknown, state: unknown, command: string) =>
+  recoveryPersisted(expected, state, command, [], validateReviewInvocation);
 
 describe('implementation review acceptance witness', () => {
   const digest = 'impl-digest-1';
   function accepting() {
+    const state = reviewedPlan();
     return {
+      ...state,
       phase: 'EVIDENCE_REVIEW',
       implementation: { digest },
-      reviewAssurance: {
-        obligations: [
-          {
-            obligationId: 'ob-1',
-            obligationType: 'implement',
-            subjectDigest: digest,
-            status: 'consumed',
-            consumedAt: '2026-10-16T00:00:00.000Z',
-            invocationId: 'inv-1',
-          },
-        ],
-        invocations: [
-          {
-            invocationId: 'inv-1',
-            obligationId: 'ob-1',
-            attemptId: 'att-1',
-            consumedByObligationId: 'ob-1',
-            capturedVerdict: 'accept',
-            structuredOutputUsed: true,
-          },
-        ],
-        attempts: [{ attemptId: 'att-1', obligationId: 'ob-1', subjectDigest: digest }],
-      },
+      reviewAssurance: consumedReview('implement', digest),
     };
   }
 
   it('proves an implementation recovery only through the bound, consumed acceptance', () => {
-    expect(implementationReviewAcceptanceProven(accepting())).toBe(true);
+    expect(implementationReviewAcceptanceProven(accepting(), validateReviewInvocation)).toBe(true);
 
     const wrongVerdict = structuredClone(accepting());
     wrongVerdict.reviewAssurance.invocations[0]!.capturedVerdict = 'changes_requested';
-    expect(implementationReviewAcceptanceProven(wrongVerdict)).toBe(false);
+    expect(implementationReviewAcceptanceProven(wrongVerdict, validateReviewInvocation)).toBe(
+      false,
+    );
 
     const notConsumed = structuredClone(accepting());
     notConsumed.reviewAssurance.obligations[0]!.status = 'fulfilled';
-    expect(implementationReviewAcceptanceProven(notConsumed)).toBe(false);
+    expect(implementationReviewAcceptanceProven(notConsumed, validateReviewInvocation)).toBe(false);
 
-    const withoutStructured = structuredClone(accepting());
-    withoutStructured.reviewAssurance.invocations[0]!.structuredOutputUsed = false;
-    expect(implementationReviewAcceptanceProven(withoutStructured)).toBe(false);
+    const withoutProvenance = accepting();
+    Reflect.deleteProperty(withoutProvenance.reviewAssurance.invocations[0]!, 'nativeProvenance');
+    expect(implementationReviewAcceptanceProven(withoutProvenance, validateReviewInvocation)).toBe(
+      false,
+    );
 
     const foreignDigest = structuredClone(accepting());
     foreignDigest.implementation.digest = 'impl-digest-2';
-    expect(implementationReviewAcceptanceProven(foreignDigest)).toBe(false);
+    expect(implementationReviewAcceptanceProven(foreignDigest, validateReviewInvocation)).toBe(
+      false,
+    );
 
     expect(implementationReviewAcceptanceProven({})).toBe(false);
   });
@@ -65,39 +75,38 @@ describe('implementation review acceptance witness', () => {
 
 describe('operation-scoped recovery witnesses', () => {
   it('accepts the authorized approval of the exact reviewed plan and obligation', () => {
-    const expected = expectRecovery(reviewedPlan(), ['flowguard_plan'], 'COMPLETE');
+    const expected = expectPlan();
     expect(expected.kind).toBe('subject_approval');
-    expect(recoveryPersisted(expected, approvedPlan(), 'approve')).toBe(true);
+    expect(persistsReview(expected, approvedPlan(), 'approve')).toBe(true);
+    expect(recoveryPersisted(expected, approvedPlan(), 'approve')).toBe(false);
   });
 
   it('rejects arbitrary state/file-digest changes, including a phase-only change', () => {
     const state = reviewedPlan();
-    const expected = expectRecovery(state, ['flowguard_plan'], 'COMPLETE');
-    expect(recoveryPersisted(expected, { ...state, logging: { level: 'debug' } }, 'approve')).toBe(
+    const expected = expectPlan(state);
+    expect(persistsReview(expected, { ...state, logging: { level: 'debug' } }, 'approve')).toBe(
       false,
     );
-    expect(recoveryPersisted(expected, { ...state, phase: 'IMPLEMENTATION' }, 'approve')).toBe(
-      false,
-    );
+    expect(persistsReview(expected, { ...state, phase: 'IMPLEMENTATION' }, 'approve')).toBe(false);
   });
 
   it('rejects a certificate for a different plan, revision, obligation or host', () => {
-    const expected = expectRecovery(reviewedPlan(), ['flowguard_plan'], 'COMPLETE');
+    const expected = expectPlan();
     const approved = approvedPlan();
     const foreignPlan = structuredClone(approved);
     foreignPlan.plan.current.digest = 'plan-B';
     foreignPlan.plan.approvalCertificate.authorityDigest = 'plan-B';
-    expect(recoveryPersisted(expected, foreignPlan, 'approve')).toBe(false);
+    expect(persistsReview(expected, foreignPlan, 'approve')).toBe(false);
     const foreignReview = structuredClone(approved);
     foreignReview.plan.approvalCertificate.reviewBinding.reviewObligationId = 'ob-B';
-    expect(recoveryPersisted(expected, foreignReview, 'approve')).toBe(false);
+    expect(persistsReview(expected, foreignReview, 'approve')).toBe(false);
     const foreignRevision = structuredClone(approved);
     foreignRevision.plan.current.recordDigest = 'record-B';
-    expect(recoveryPersisted(expected, foreignRevision, 'approve')).toBe(false);
+    expect(persistsReview(expected, foreignRevision, 'approve')).toBe(false);
     const foreignHost = structuredClone(approved);
     foreignHost.binding.hostSessionId = 'ses_other';
-    expect(recoveryPersisted(expected, foreignHost, 'approve')).toBe(false);
-    expect(recoveryPersisted(expected, approved, 'status')).toBe(false);
+    expect(persistsReview(expected, foreignHost, 'approve')).toBe(false);
+    expect(persistsReview(expected, approved, 'status')).toBe(false);
   });
 
   it('does not turn unsupported or missing subject evidence into a recovery', () => {
@@ -107,9 +116,15 @@ describe('operation-scoped recovery witnesses', () => {
   });
 
   it('does not bind a denial naming Plan A to the successful persistence of Plan B', () => {
-    const expected = expectRecovery(reviewedPlan(), ['flowguard_plan'], 'COMPLETE', [
-      { bindings: { subjectDigest: 'plan-B' }, conflicts: [] },
-    ]);
+    const expected = expectRecovery(
+      reviewedPlan(),
+      ['flowguard_plan'],
+      'COMPLETE',
+      [{ bindings: { subjectDigest: 'plan-B' }, conflicts: [] }],
+      0,
+      [],
+      validateReviewInvocation,
+    );
     expect(expected.kind).toBe('unproven');
     expect(recoveryPersisted(expected, approvedPlan(), 'approve')).toBe(false);
   });
@@ -127,6 +142,294 @@ describe('operation-scoped recovery witnesses', () => {
     expect(recoveryPersisted(expected, captured, 'task')).toBe(true);
   });
 });
+
+describe('review recovery rejects invalid current authority', () => {
+  type Ledger = ReturnType<typeof consumedReview>;
+  const boundPlan = (reviewAssurance: Ledger) => ({ ...reviewedPlan(), reviewAssurance });
+
+  it('rejects schema-valid historical generation 5', () => {
+    const ledger = consumedReview('plan', 'plan-A');
+    const { nativeProvenance: _nativeProvenance, ...current } = ledger.invocations[0]!;
+    const historical = ReviewInvocationEvidence.parse({
+      ...current,
+      transportVersion: 5,
+      invocationMode: 'native_task_message_json',
+    });
+    ledger.invocations[0] = { ...historical };
+    expect(expectPlan(boundPlan(ledger)).kind).toBe('unproven');
+  });
+
+  it('does not prove acceptance without an installed contract or a bound parent', () => {
+    const state = reviewedPlan();
+    expect(expectRecovery(state, ['flowguard_plan'], 'COMPLETE').kind).toBe('unproven');
+    expect(expectPlan({ ...state, binding: { hostSessionId: '' } }).kind).toBe('unproven');
+    expect(() => reviewInvocationValidator(undefined, () => true)).toThrow(
+      'installed product does not expose its V2 review contract',
+    );
+    expect(() => reviewInvocationValidator(ReviewInvocationEvidence, undefined)).toThrow(
+      'installed product does not expose its V2 review contract',
+    );
+  });
+
+  it.each(['missing', 'incomplete'])(
+    'fails closed on a %s installed review contract',
+    async (scenario) => {
+      const root = await mkdtemp(join(tmpdir(), 'fg-installed-review-'));
+      try {
+        if (scenario === 'incomplete') {
+          const dist = join(root, '.opencode', 'node_modules', '@flowguard', 'core', 'dist');
+          const integration = join(dist, 'integration', 'review', 'validation');
+          const schemas = join(dist, 'state');
+          await mkdir(integration, { recursive: true });
+          await mkdir(schemas, { recursive: true });
+          await writeFile(join(dist, 'package.json'), '{"type":"module"}\n', { flag: 'wx' });
+          await writeFile(join(schemas, 'evidence-review-invocation.js'), 'export {};\n', {
+            flag: 'wx',
+          });
+          await writeFile(join(integration, 'review-validation-acceptance.js'), 'export {};\n', {
+            flag: 'wx',
+          });
+        }
+        await expect(loadInstalledReviewInvocationValidator(root)).rejects.toMatchObject({
+          code: 'DEMO_NOT_VERIFIED',
+          message:
+            scenario === 'missing'
+              ? 'installed product V2 review contract is unreadable'
+              : 'installed product does not expose its V2 review contract',
+        });
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  const defects: Array<[string, (ledger: Ledger) => void]> = [
+    [
+      'missing native provenance',
+      (l) => {
+        Reflect.deleteProperty(l.invocations[0]!, 'nativeProvenance');
+      },
+    ],
+    [
+      'mismatched native provenance',
+      (l) => {
+        const i = l.invocations[0]!;
+        i.nativeProvenance = { ...i.nativeProvenance!, payloadDigest: 'e'.repeat(64) };
+      },
+    ],
+    [
+      'obsolete evidence flag',
+      (l) => {
+        Reflect.set(l.invocations[0]!, 'structuredOutputUsed', true);
+      },
+    ],
+    [
+      'other parent session',
+      (l) => {
+        l.invocations[0]!.parentSessionId = 'ses_other';
+      },
+    ],
+    [
+      'missing consumption timestamp',
+      (l) => {
+        l.obligations[0]!.consumedAt = null;
+      },
+    ],
+    [
+      'other consumer',
+      (l) => {
+        l.invocations[0]!.consumedByObligationId = foreignId;
+      },
+    ],
+    [
+      'wrong invocation',
+      (l) => {
+        l.obligations[0]!.invocationId = foreignId;
+      },
+    ],
+    [
+      'wrong obligation',
+      (l) => {
+        l.invocations[0]!.obligationId = foreignId;
+      },
+    ],
+    [
+      'wrong invocation type',
+      (l) => {
+        l.invocations[0]!.obligationType = 'review';
+      },
+    ],
+    [
+      'wrong capture attempt',
+      (l) => {
+        l.invocations[0]!.attemptId = foreignId;
+        l.attempts[0]!.attemptId = foreignId;
+      },
+    ],
+    [
+      'wrong persisted attempt',
+      (l) => {
+        l.attempts[0]!.attemptId = foreignId;
+      },
+    ],
+    [
+      'attempt under another obligation',
+      (l) => {
+        l.attempts[0]!.obligationId = foreignId;
+      },
+    ],
+    [
+      'attempt for another review type',
+      (l) => {
+        l.attempts[0]!.obligationType = 'architecture';
+      },
+    ],
+    [
+      'unbound attempt',
+      (l) => {
+        l.attempts[0]!.status = 'created';
+      },
+    ],
+    [
+      'attempt for another child',
+      (l) => {
+        l.attempts[0]!.childSessionId = 'ses_other';
+      },
+    ],
+    [
+      'wrong verdict',
+      (l) => {
+        l.invocations[0]!.capturedVerdict = 'changes_requested';
+      },
+    ],
+    [
+      'contradictory captured verdict',
+      (l) => {
+        const i = l.invocations[0]!;
+        i.capturedRawFindings = { ...i.capturedRawFindings, overallVerdict: 'changes_requested' };
+      },
+    ],
+    [
+      'changed captured findings',
+      (l) => {
+        const i = l.invocations[0]!;
+        i.capturedRawFindings = { ...i.capturedRawFindings, planVersion: 20 };
+      },
+    ],
+    [
+      'wrong review mandate',
+      (l) => {
+        l.obligations[0]!.mandateDigest = 'other-mandate';
+      },
+    ],
+    [
+      'different obligation subject',
+      (l) => {
+        l.obligations[0]!.subjectDigest = 'other-subject';
+      },
+    ],
+    [
+      'different attempt subject',
+      (l) => {
+        l.attempts[0]!.subjectDigest = 'other-subject';
+      },
+    ],
+  ];
+  it.each(defects)('rejects %s', (_name, change) => {
+    const ledger = consumedReview('plan', 'plan-A');
+    change(ledger);
+    expect(expectPlan(boundPlan(ledger)).kind).toBe('unproven');
+  });
+
+  it('revalidates a consumed V2 architecture review after certificate issuance', () => {
+    const digest = 'adr-A';
+    const state = {
+      ...reviewedPlan(),
+      phase: 'ARCH_REVIEW',
+      architecture: { digest, reviewCompletion: 'reviewer_accepted' },
+      reviewAssurance: consumedReview('architecture', digest),
+    };
+    const expected = expectRecovery(
+      state,
+      ['flowguard_architecture'],
+      'ARCH_COMPLETE',
+      [],
+      0,
+      [],
+      validateReviewInvocation,
+    );
+    const after = {
+      ...state,
+      phase: 'ARCH_COMPLETE',
+      architecture: {
+        ...state.architecture,
+        approvalCertificate: {
+          certificateId: 'cert-arch',
+          authorityDigest: digest,
+          reviewBinding: {
+            kind: 'current_review',
+            reviewedSubjectDigest: digest,
+            reviewObligationId: state.reviewAssurance.obligations[0]!.obligationId,
+          },
+        },
+      },
+    };
+    expect(expected.kind).toBe('subject_approval');
+    expect(persistsReview(expected, after, 'approve')).toBe(true);
+    after.reviewAssurance.invocations[0]!.parentSessionId = 'ses_other';
+    expect(persistsReview(expected, after, 'approve')).toBe(false);
+  });
+});
+
+describe('installed transition authority', () => {
+  it('fails closed without the installed topology and loads canonical resolution', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fg-installed-topology-'));
+    try {
+      await expect(loadInstalledTransitionResolver(root)).rejects.toMatchObject({
+        code: 'DEMO_NOT_VERIFIED',
+        message: 'installed product transition authority is unreadable',
+      });
+      const directory = join(
+        root,
+        '.opencode',
+        'node_modules',
+        '@flowguard',
+        'core',
+        'dist',
+        'machine',
+      );
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        join(directory, 'topology.js'),
+        'export const resolveTransition = (phase, event) => phase === "TICKET" && event === "PLAN_READY" ? "PLAN" : undefined;\n',
+        { flag: 'wx' },
+      );
+      const resolveTransition = await loadInstalledTransitionResolver(root);
+      expect(resolveTransition('TICKET', 'PLAN_READY')).toBe('PLAN');
+      expect(resolveTransition('TICKET', 'APPROVE')).toBeUndefined();
+      expect(() => canonicalTransitionResolver(undefined)).toThrow(
+        'installed product transition authority is unavailable',
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+const ticketPersisted = (
+  expected: object,
+  state: object,
+  command: string,
+  audit: Array<object | undefined>,
+) =>
+  recoveryPersisted(
+    expected,
+    state,
+    command,
+    audit.map((event) => ({ occurredAt: '2026-01-01T00:00:00.000Z', ...(event ?? {}) })),
+    undefined,
+    resolveTransition,
+  );
 
 const ticketCodes = ['TICKET_SOURCE_CONFLICT', 'TICKET_SOURCE_ORIGIN_CONFLICT'];
 describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
@@ -179,14 +482,18 @@ describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
     const expected = expectedTicket();
     expect(expected.kind).toBe('ticket_adoption');
     expect((expected as { digest?: string }).digest).toBe(ticketDigest);
-    expect(recoveryPersisted(expected, adoptedTicket, 'task', adoptionAudit)).toBe(true);
+    expect(ticketPersisted(expected, adoptedTicket, 'task', adoptionAudit)).toBe(true);
+  });
+
+  it('does not credit adoption without the canonical transition authority', () => {
+    expect(recoveryPersisted(expectedTicket(), adoptedTicket, 'task', adoptionAudit)).toBe(false);
   });
 
   it('rejects content that does not hash to the expected ticket digest', () => {
     const expected = expectedTicket();
     const tampered = structuredClone(adoptedTicket);
     tampered.ticket.text = `${ticketText} (tampered)`;
-    expect(recoveryPersisted(expected, tampered, 'task', adoptionAudit)).toBe(false);
+    expect(ticketPersisted(expected, tampered, 'task', adoptionAudit)).toBe(false);
     // The digest is only trusted when it is the SHA-256 of the stored content.
     const wrongDigest = expectedTicket({
       ...adoptedTicket,
@@ -201,20 +508,20 @@ describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
       ...event,
       flowguardSessionId: 'fg-other',
     }));
-    expect(recoveryPersisted(expected, adoptedTicket, 'task', foreignSession)).toBe(false);
+    expect(ticketPersisted(expected, adoptedTicket, 'task', foreignSession)).toBe(false);
     // Events 1..3 are already persisted before this recovery turn (floor 3).
     const floored = expectedTicket(adoptedTicket, [], 3);
-    expect(recoveryPersisted(floored, adoptedTicket, 'task', adoptionAudit)).toBe(false);
+    expect(ticketPersisted(floored, adoptedTicket, 'task', adoptionAudit)).toBe(false);
     // The denial itself must also lie inside the current turn: a success and
     // transition without their in-turn denial never confirm the recovery.
     const flooredAfterDenial = expectedTicket(adoptedTicket, [], 1);
-    expect(recoveryPersisted(flooredAfterDenial, adoptedTicket, 'task', adoptionAudit)).toBe(false);
+    expect(ticketPersisted(flooredAfterDenial, adoptedTicket, 'task', adoptionAudit)).toBe(false);
   });
 
   it('does not turn a missing or empty persisted ticket into a recovery', () => {
     const missing = expectedTicket({ ...actor, phase: 'TICKET' });
     expect(missing.kind).toBe('unproven');
-    expect(recoveryPersisted(missing, adoptedTicket, 'task', adoptionAudit)).toBe(false);
+    expect(ticketPersisted(missing, adoptedTicket, 'task', adoptionAudit)).toBe(false);
     const empty = expectedTicket({ ...adoptedTicket, ticket: { digest: '', text: '' } });
     expect(empty.kind).toBe('unproven');
   });
@@ -223,43 +530,43 @@ describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
     const expected = expectedTicket();
     const other = structuredClone(adoptedTicket);
     other.ticket.digest = 'ticket-B';
-    expect(recoveryPersisted(expected, other, 'task', adoptionAudit)).toBe(false);
+    expect(ticketPersisted(expected, other, 'task', adoptionAudit)).toBe(false);
     expect(
-      recoveryPersisted(expected, { ...adoptedTicket, ticket: null }, 'task', adoptionAudit),
+      ticketPersisted(expected, { ...adoptedTicket, ticket: null }, 'task', adoptionAudit),
     ).toBe(false);
     const foreignPhase = { ...adoptedTicket, phase: 'PLAN_REVIEW' };
-    expect(recoveryPersisted(expected, foreignPhase, 'task', adoptionAudit)).toBe(false);
+    expect(ticketPersisted(expected, foreignPhase, 'task', adoptionAudit)).toBe(false);
     const foreignContent = structuredClone(adoptedTicket);
     foreignContent.ticket.text = '';
-    expect(recoveryPersisted(expected, foreignContent, 'task', adoptionAudit)).toBe(false);
+    expect(ticketPersisted(expected, foreignContent, 'task', adoptionAudit)).toBe(false);
   });
 
   it('requires the operational audit sequence, not a bare tool-level success', () => {
     const expected = expectedTicket();
-    expect(recoveryPersisted(expected, adoptedTicket, 'task', [])).toBe(false);
+    expect(ticketPersisted(expected, adoptedTicket, 'task', [])).toBe(false);
     const [denial, success] = adoptionAudit;
-    expect(recoveryPersisted(expected, adoptedTicket, 'task', [denial, success])).toBe(false);
+    expect(ticketPersisted(expected, adoptedTicket, 'task', [denial, success])).toBe(false);
     expect(
-      recoveryPersisted(expected, adoptedTicket, 'task', [
+      ticketPersisted(expected, adoptedTicket, 'task', [
         denial,
         success,
         { auditSequence: 4, event: 'transition:PLAN_READY', detail: {} },
       ]),
     ).toBe(false);
     const transitionBeforeSuccess = [denial, adoptionAudit[2], success];
-    expect(recoveryPersisted(expected, adoptedTicket, 'task', transitionBeforeSuccess)).toBe(false);
+    expect(ticketPersisted(expected, adoptedTicket, 'task', transitionBeforeSuccess)).toBe(false);
     const successBeforeDenial = [success, denial, adoptionAudit[2]];
-    expect(recoveryPersisted(expected, adoptedTicket, 'task', successBeforeDenial)).toBe(false);
+    expect(ticketPersisted(expected, adoptedTicket, 'task', successBeforeDenial)).toBe(false);
   });
 
   it('rejects a ticket adopted before the conflict denial and a foreign actor or command', () => {
     const adoptionBeforeDenial = [adoptionAudit[2], adoptionAudit[0], adoptionAudit[1]];
     const expected = expectedTicket();
-    expect(recoveryPersisted(expected, adoptedTicket, 'task', adoptionBeforeDenial)).toBe(false);
-    expect(recoveryPersisted(expected, adoptedTicket, 'plan', adoptionAudit)).toBe(false);
+    expect(ticketPersisted(expected, adoptedTicket, 'task', adoptionBeforeDenial)).toBe(false);
+    expect(ticketPersisted(expected, adoptedTicket, 'plan', adoptionAudit)).toBe(false);
     const foreignHost = structuredClone(adoptedTicket);
     foreignHost.binding.hostSessionId = 'ses_other';
-    expect(recoveryPersisted(expected, foreignHost, 'task', adoptionAudit)).toBe(false);
+    expect(ticketPersisted(expected, foreignHost, 'task', adoptionAudit)).toBe(false);
   });
 
   it('reproduces the former reduced-on failure with the real ticket identity and audit sequence', () => {
@@ -304,9 +611,228 @@ describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
     ];
     const expected = expectedTicket(state);
     expect(expected.kind).toBe('ticket_adoption');
-    expect(recoveryPersisted(expected, state, 'task', audit)).toBe(true);
+    expect(ticketPersisted(expected, state, 'task', audit)).toBe(true);
     // The persisted ticket alone, without the operational sequence, stays unproven.
-    expect(recoveryPersisted(expected, state, 'task', [audit[1]])).toBe(false);
+    expect(ticketPersisted(expected, state, 'task', [audit[1]])).toBe(false);
+  });
+
+  it('accepts a proven forward progression from ticket adoption to the settled phase', () => {
+    const state = { ...adoptedTicket, phase: 'PLAN_REVIEW' };
+    const audit = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:PLAN_READY',
+        detail: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY' },
+      },
+      {
+        auditSequence: 5,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:SELF_REVIEW_MET',
+        detail: { from: 'PLAN', to: 'PLAN_REVIEW', event: 'SELF_REVIEW_MET' },
+      },
+    ];
+    expect(ticketPersisted(expectedTicket(), state, 'task', audit)).toBe(true);
+    expect(ticketPersisted(expectedTicket(), { ...state, phase: 'COMPLETE' }, 'task', audit)).toBe(
+      false,
+    );
+  });
+
+  it('rejects incomplete, foreign, duplicate or non-canonical audit windows', () => {
+    const valid = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:PLAN_READY',
+        detail: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY' },
+      },
+      {
+        auditSequence: 5,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:SELF_REVIEW_MET',
+        detail: { from: 'PLAN', to: 'PLAN_REVIEW', event: 'SELF_REVIEW_MET' },
+      },
+    ];
+    const state = { ...adoptedTicket, phase: 'PLAN_REVIEW' };
+    expect(ticketPersisted(expectedTicket(), state, 'task', valid)).toBe(true);
+    const foreignEvent = [
+      ...valid,
+      {
+        auditSequence: 6,
+        flowguardSessionId: 'fg-1',
+        hostSessionId: 'ses_other',
+        event: 'note',
+        detail: {},
+      },
+    ];
+    expect(ticketPersisted(expectedTicket(), state, 'task', foreignEvent)).toBe(false);
+    const incomplete = valid.filter((_, index) => index !== 1);
+    expect(ticketPersisted(expectedTicket(), state, 'task', incomplete)).toBe(false);
+    const duplicate = structuredClone(valid);
+    duplicate[1]!.auditSequence = 1;
+    expect(ticketPersisted(expectedTicket(), state, 'task', duplicate)).toBe(false);
+    const outOfOrder = structuredClone(valid);
+    outOfOrder[0]!.auditSequence = 2;
+    outOfOrder[1]!.auditSequence = 1;
+    expect(ticketPersisted(expectedTicket(), state, 'task', outOfOrder)).toBe(false);
+    const nonCanonical = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:APPROVE',
+        detail: { from: 'TICKET', to: 'COMPLETE', event: 'APPROVE' },
+      },
+    ];
+    expect(
+      ticketPersisted(
+        expectedTicket(),
+        { ...adoptedTicket, phase: 'COMPLETE' },
+        'task',
+        nonCanonical,
+      ),
+    ).toBe(false);
+    const invalidName = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:NOT_A_TRANSITION',
+        detail: { from: 'TICKET', to: 'PLAN', event: 'NOT_A_TRANSITION' },
+      },
+      {
+        auditSequence: 5,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:SELF_REVIEW_MET',
+        detail: { from: 'PLAN', to: 'PLAN_REVIEW', event: 'SELF_REVIEW_MET' },
+      },
+    ];
+    expect(ticketPersisted(expectedTicket(), state, 'task', invalidName)).toBe(false);
+    const unrelated = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:ARCHITECTURE_SELECTED',
+        detail: { from: 'TICKET', to: 'ARCHITECTURE', event: 'ARCHITECTURE_SELECTED' },
+      },
+    ];
+    expect(
+      ticketPersisted(
+        expectedTicket(),
+        { ...adoptedTicket, phase: 'ARCHITECTURE' },
+        'task',
+        unrelated,
+      ),
+    ).toBe(false);
+    const mismatchedEvent = structuredClone(valid);
+    mismatchedEvent[2]!.event = 'transition:WRONG';
+    expect(ticketPersisted(expectedTicket(), state, 'task', mismatchedEvent)).toBe(false);
+  });
+
+  it('rejects gaps, unrelated transitions and a foreign-session progression', () => {
+    const state = { ...adoptedTicket, phase: 'PLAN_REVIEW' };
+    const gap = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:SELF_REVIEW_MET',
+        detail: { from: 'PLAN', to: 'PLAN_REVIEW', event: 'SELF_REVIEW_MET' },
+      },
+    ];
+    expect(ticketPersisted(expectedTicket(), state, 'task', gap)).toBe(false);
+    const unrelated = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:PLAN_READY',
+        detail: { from: 'READY', to: 'PLAN', event: 'PLAN_READY' },
+      },
+    ];
+    expect(ticketPersisted(expectedTicket(), state, 'task', unrelated)).toBe(false);
+    const foreign = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        hostSessionId: 'ses_other',
+        event: 'transition:PLAN_READY',
+        detail: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY' },
+      },
+      {
+        auditSequence: 5,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:SELF_REVIEW_MET',
+        detail: { from: 'PLAN', to: 'PLAN_REVIEW', event: 'SELF_REVIEW_MET' },
+      },
+    ];
+    expect(ticketPersisted(expectedTicket(), state, 'task', foreign)).toBe(false);
+    const cycle = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:PLAN_READY',
+        detail: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY' },
+      },
+      {
+        auditSequence: 5,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:TICKET_REOPENED',
+        detail: { from: 'PLAN', to: 'TICKET', event: 'TICKET_REOPENED' },
+      },
+    ];
+    expect(ticketPersisted(expectedTicket(), state, 'task', cycle)).toBe(false);
+  });
+
+  it('rejects competing adoption, later unresolved denials and a non-canonical first transition', () => {
+    const state = { ...adoptedTicket, phase: 'PLAN_REVIEW' };
+    const competing = [
+      ...adoptionAudit,
+      { ...adoptionAudit[1]!, auditSequence: 4 },
+      { ...adoptionAudit[2]!, auditSequence: 5 },
+    ];
+    expect(ticketPersisted(expectedTicket(), state, 'task', competing)).toBe(false);
+    const laterDenial = [
+      ...adoptionAudit,
+      {
+        ...adoptionAudit[0]!,
+        auditSequence: 4,
+      },
+    ];
+    expect(ticketPersisted(expectedTicket(), state, 'task', laterDenial)).toBe(false);
+    const nonCanonicalFirst = [
+      adoptionAudit[0]!,
+      adoptionAudit[1]!,
+      {
+        auditSequence: 3,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:PLAN_READY',
+        detail: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY' },
+      },
+      { ...adoptionAudit[2]!, auditSequence: 4 },
+    ];
+    expect(ticketPersisted(expectedTicket(), state, 'task', nonCanonicalFirst)).toBe(false);
+  });
+
+  it('rejects a ticket source or successful transition that no longer matches the adoption', () => {
+    expect(
+      ticketPersisted(
+        expectedTicket(),
+        { ...adoptedTicket, ticket: { ...adoptedTicket.ticket, source: 'repository' } },
+        'task',
+        adoptionAudit,
+      ),
+    ).toBe(false);
+    const noTransition = structuredClone(adoptionAudit);
+    noTransition[1]!.detail.transitionCount = 0;
+    expect(ticketPersisted(expectedTicket(), adoptedTicket, 'task', noTransition)).toBe(false);
+    const secondSelection = [...adoptionAudit, { ...adoptionAudit[2]!, auditSequence: 4 }];
+    expect(ticketPersisted(expectedTicket(), adoptedTicket, 'task', secondSelection)).toBe(false);
   });
 
   it('keeps a conflicting denial identity unproven', () => {
@@ -314,7 +840,7 @@ describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
       { bindings: {}, conflicts: ['subjectDigest'] },
     ]);
     expect(expected.kind).toBe('unproven');
-    expect(recoveryPersisted(expected, adoptedTicket, 'task', adoptionAudit)).toBe(false);
+    expect(ticketPersisted(expected, adoptedTicket, 'task', adoptionAudit)).toBe(false);
   });
 
   it('does not substitute a different denial code for the observed conflict', () => {
@@ -323,9 +849,9 @@ describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
       code === 'TICKET_SOURCE_CONFLICT'
         ? 'TICKET_SOURCE_ORIGIN_CONFLICT'
         : 'TICKET_SOURCE_CONFLICT';
-    expect(recoveryPersisted(expectedTicket(), adoptedTicket, 'task', audit)).toBe(false);
+    expect(ticketPersisted(expectedTicket(), adoptedTicket, 'task', audit)).toBe(false);
     expect(
-      recoveryPersisted(
+      ticketPersisted(
         { ...expectedTicket(), denialCodes: [] },
         adoptedTicket,
         'task',
@@ -333,7 +859,7 @@ describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
       ),
     ).toBe(false);
     expect(
-      recoveryPersisted(
+      ticketPersisted(
         { ...expectedTicket(), auditSequenceFloor: -1 },
         adoptedTicket,
         'task',
@@ -351,7 +877,7 @@ describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
       code,
       other,
     ]);
-    expect(recoveryPersisted(expected, adoptedTicket, 'task', adoptionAudit)).toBe(false);
+    expect(ticketPersisted(expected, adoptedTicket, 'task', adoptionAudit)).toBe(false);
     const audit = [
       adoptionAudit[0],
       {
@@ -362,10 +888,10 @@ describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
       { ...adoptionAudit[1]!, auditSequence: 3 },
       { ...adoptionAudit[2]!, auditSequence: 4 },
     ];
-    expect(recoveryPersisted(expected, adoptedTicket, 'task', audit)).toBe(true);
+    expect(ticketPersisted(expected, adoptedTicket, 'task', audit)).toBe(true);
     const unsupported = { ...expected, denialCodes: [code, 'OTHER'] };
     audit[1]!.detail.errorCode = 'OTHER';
-    expect(recoveryPersisted(unsupported, adoptedTicket, 'task', audit)).toBe(false);
+    expect(ticketPersisted(unsupported, adoptedTicket, 'task', audit)).toBe(false);
     expect(
       expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE', [], 0, [code, 'OTHER']).kind,
     ).toBe('unproven');
@@ -399,6 +925,6 @@ describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
     if (kind === 'wrong-from') audit[2]!.detail.from = 'PLAN';
     if (kind === 'wrong-to') audit[2]!.detail.to = 'PLAN';
     if (kind === 'wrong-detail-event') audit[2]!.detail.event = 'PLAN_READY';
-    expect(recoveryPersisted(expectedTicket(), adoptedTicket, 'task', audit)).toBe(false);
+    expect(ticketPersisted(expectedTicket(), adoptedTicket, 'task', audit)).toBe(false);
   });
 });

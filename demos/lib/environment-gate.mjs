@@ -166,17 +166,9 @@ function main() {
     try {
       const output = execFileSync(
         'opencode',
-        [
-          'run',
-          '--dir',
-          dir,
-          '-m',
-          options.model,
-          '--format',
-          'json',
-          'Reply with the single word OK.',
-        ],
+        ['run', '-m', options.model, '--format', 'json', 'Reply with the single word OK.'],
         {
+          cwd: dir,
           encoding: 'utf8',
           env: { ...process.env, OPENCODE_CONFIG_DIR: configDir, OPENCODE_DISABLE_AUTOUPDATE: '1' },
           timeout: 120_000,

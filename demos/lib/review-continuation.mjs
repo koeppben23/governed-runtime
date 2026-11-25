@@ -170,8 +170,12 @@ const CONTINUATION_PROMPTS = {
   [PLAN_GATE.SUBMIT_BOUND_VERDICT]:
     'The plan review loop is active and the host already captured the bound independent reviewer ' +
     'verdict. Submit that bound reviewVerdict now through flowguard_plan; for changes_requested ' +
-    'include the revised planText and the same claims array. Do not submit an unbound plan and do ' +
-    'not withdraw or weaken the retained claim.',
+    'include the revised planText and the same claims array. Resolve only the bound ' +
+    '`blockingIssues`; never put `majorRisks`, minor findings, `missingVerification` or findings ' +
+    'outside the current obligation into the flowguard-finding-resolutions block. Use exactly ' +
+    '`findingId`, `planSection` and `response` per entry; `planSection` must be an existing heading ' +
+    'in the revised plan. Do not submit an unbound plan and do not withdraw or weaken the retained ' +
+    'claim.',
   [PLAN_GATE.TRANSPORT_RETRY]:
     'The reviewer capture failed and the host re-armed a fresh authorized attempt on the same ' +
     'frozen review obligation. Invoke the reviewer Task again immediately for that obligation, ' +
@@ -179,7 +183,11 @@ const CONTINUATION_PROMPTS = {
   [PLAN_GATE.REVISE_PLAN]:
     'The independent review returned changes_requested and its obligation is consumed. Address ' +
     'the bound reviewer findings, submit a revised plan through flowguard_plan with planText and ' +
-    'the same claims array, and complete the resulting independent review.',
+    'the same claims array, and complete the resulting independent review. Resolve only the bound ' +
+    '`blockingIssues`; never put `majorRisks`, minor findings, `missingVerification` or findings ' +
+    'outside the current obligation into the flowguard-finding-resolutions block. Use exactly ' +
+    '`findingId`, `planSection` and `response` per entry; `planSection` must be an existing heading ' +
+    'in the revised plan.',
 };
 
 /**
