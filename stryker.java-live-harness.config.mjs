@@ -37,6 +37,7 @@ export default {
     `${demo}/live-native-command-witness.mjs`,
     `${demo}/live-plan-preflight.mjs`,
     'demos/lib/review-recovery-authority.mjs',
+    'demos/lib/product-transition.mjs',
     range(
       'recovery-state',
       'function acceptingReview(',

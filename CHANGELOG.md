@@ -2168,9 +2168,11 @@ stop`, reviewer child reported it could not complete the falsification).
 
 - Separate Java claim-control ticket adoption from plan creation: `/task` must
   settle at `TICKET` with the exact repository ticket and no plan before `/plan`
-  is dispatched; a planning spill is `NOT_VERIFIED`. Accept ticket recovery only
-  through a continuous, session-bound transition chain from the canonical
-  `READY -> TICKET` adoption to the settled phase. Keep one shared plan prompt
+  is dispatched; a planning spill is `NOT_VERIFIED`. Require the repository
+  ticket's `inputOrigin: workspace` and file reference, and accept ticket
+  recovery only through the complete audit window plus a canonical product
+  transition chain from the `READY -> TICKET` adoption to the settled phase.
+  Keep one shared plan prompt
   that describes the hypothetical `-DskipTests` counterexample without
   implementing it, and bind finding resolutions to the current review.
 - Harden the live Java demo harness (`demo-harness.v6`): run prompt templates

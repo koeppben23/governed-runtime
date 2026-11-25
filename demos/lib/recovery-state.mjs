@@ -340,12 +340,13 @@ const isTicketCall = (event) =>
 const isTransitionEvent = (event) =>
   typeof event?.event === 'string' && event.event.startsWith('transition:');
 
-function ticketAdoptionPersisted(expected, state, auditEvents) {
+function ticketAdoptionPersisted(expected, state, auditEvents, resolveTransition) {
+  if (typeof resolveTransition !== 'function') return false;
   const ticket = state?.ticket;
   if (typeof ticket?.digest !== 'string' || ticket.digest !== expected.digest) return false;
   if (typeof ticket.text !== 'string' || ticket.text.length === 0) return false;
   if (ticketContentDigest(ticket.text) !== expected.digest) return false;
-  if (expected.source !== null && ticket.source !== expected.source) return false;
+  if (expected.source != null && ticket.source !== expected.source) return false;
 
   const floor = expected.auditSequenceFloor;
   if (
@@ -356,13 +357,12 @@ function ticketAdoptionPersisted(expected, state, auditEvents) {
     expected.denialCodes.some((code) => !TICKET_SOURCE_CONFLICT_CODES.has(code))
   )
     return false;
-  const scoped = auditEvents.filter(
-    (event) =>
-      Number.isSafeInteger(event?.auditSequence) &&
-      event.auditSequence > floor &&
-      event?.flowguardSessionId === expected.flowguardSessionId &&
-      (event.hostSessionId === undefined || event.hostSessionId === expected.hostSessionId),
-  );
+  let scoped;
+  try {
+    scoped = assertCompleteAuditWindow(state, floor, auditEvents);
+  } catch {
+    return false;
+  }
   const failures = scoped.filter(
     (event) =>
       isTicketCall(event) &&
@@ -404,7 +404,8 @@ function ticketAdoptionPersisted(expected, state, auditEvents) {
   if (
     adoptionIndex === -1 ||
     firstTransitionIndex !== adoptionIndex ||
-    scoped.slice(adoptionIndex + 1).some((event) => event.event === 'transition:TICKET_SELECTED')
+    scoped.slice(adoptionIndex + 1).some((event) => event.event === 'transition:TICKET_SELECTED') ||
+    resolveTransition('READY', 'TICKET_SELECTED') !== 'TICKET'
   )
     return false;
   let current = 'TICKET';
@@ -414,6 +415,9 @@ function ticketAdoptionPersisted(expected, state, auditEvents) {
       event.detail?.from !== current ||
       typeof event.detail?.to !== 'string' ||
       event.detail.to.length === 0 ||
+      typeof event.detail?.event !== 'string' ||
+      event.event !== `transition:${event.detail.event}` ||
+      resolveTransition(current, event.detail.event) !== event.detail.to ||
       visited.has(event.detail.to)
     )
       return false;
@@ -424,7 +428,14 @@ function ticketAdoptionPersisted(expected, state, auditEvents) {
 }
 
 /** An unrelated phase, audit or metadata update is never an operation witness. */
-export function recoveryPersisted(expected, state, command, auditEvents = [], validateInvocation) {
+export function recoveryPersisted(
+  expected,
+  state,
+  command,
+  auditEvents = [],
+  validateInvocation,
+  resolveTransition,
+) {
   if (
     !expected ||
     expected.command !== command ||
@@ -435,7 +446,7 @@ export function recoveryPersisted(expected, state, command, auditEvents = [], va
   if (typeof expected.flowguardSessionId !== 'string' || typeof expected.hostSessionId !== 'string')
     return false;
   if (expected.kind === 'ticket_adoption') {
-    return ticketAdoptionPersisted(expected, state, auditEvents);
+    return ticketAdoptionPersisted(expected, state, auditEvents, resolveTransition);
   }
   if (expected.kind === 'flow_selection') {
     if (command === 'task')

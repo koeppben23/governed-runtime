@@ -254,7 +254,13 @@ describe('claim-control orchestration boundary', () => {
       phase,
       flowguardSessionId: 'fg-claim',
       binding: { hostSessionId: 'ses_claim' },
-      ticket: { digest: ticketDigest, text: ticketText, source: 'user' },
+      ticket: {
+        digest: ticketDigest,
+        text: ticketText,
+        source: 'user',
+        inputOrigin: 'workspace',
+        references: [{ ref: TICKET_FILE, type: 'doc' }],
+      },
       plan:
         claims === null
           ? null
@@ -289,6 +295,36 @@ describe('claim-control orchestration boundary', () => {
         { digest: ticketDigest, text: ticketText },
       ),
     ).toThrow(/repository ticket source/);
+    expect(() =>
+      assertPostTaskAdoption(
+        { ...state, ticket: { ...state.ticket, inputOrigin: undefined } },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/workspace input origin/);
+    expect(() =>
+      assertPostTaskAdoption(
+        { ...state, ticket: { ...state.ticket, inputOrigin: 'external_reference' } },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/workspace input origin/);
+    expect(() =>
+      assertPostTaskAdoption(
+        { ...state, ticket: { ...state.ticket, references: [] } },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/does not reference the repository ticket/);
+    expect(() =>
+      assertPostTaskAdoption(
+        {
+          ...state,
+          ticket: {
+            ...state.ticket,
+            references: [{ ref: 'TICKET_DOCS.md', type: 'doc' }],
+          },
+        },
+        { digest: ticketDigest, text: ticketText },
+      ),
+    ).toThrow(/does not reference the repository ticket/);
     expect(() =>
       assertPostTaskAdoption(
         { ...state, plan: { claimDeclarations: { claims: [] } } },

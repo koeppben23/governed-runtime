@@ -200,6 +200,19 @@ export function assertPostTaskAdoption(state, expected) {
   if (ticket?.source !== 'user') {
     throw new DemoNotVerifiedError('task adoption did not bind the repository ticket source');
   }
+  if (ticket?.inputOrigin !== 'workspace') {
+    throw new DemoNotVerifiedError('task adoption did not record the workspace input origin');
+  }
+  if (
+    !Array.isArray(ticket.references) ||
+    !ticket.references.some(
+      (reference) => reference?.ref === TICKET_FILE && reference?.type === 'doc',
+    )
+  ) {
+    throw new DemoNotVerifiedError(
+      `task adoption does not reference the repository ticket ${TICKET_FILE}`,
+    );
+  }
   if (state.plan !== null && state.plan !== undefined) {
     throw new DemoNotVerifiedError(
       'task adoption created a plan; planning must be a separate turn',
