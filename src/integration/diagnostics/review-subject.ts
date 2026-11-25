@@ -6,8 +6,7 @@
  * output. They never imply approval authority.
  */
 
-import { open } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { SafeFileReadError, readRegularFileBounded } from '../../shared/safe-file-read.js';
 import path from 'node:path';
 
 import type { DiagnosticWarning } from '../../adapters/diagnostics/export-schema.js';
@@ -199,11 +198,18 @@ async function readImplementationDiff(
     return { content: null, bytes: 0, truncated: false, verified: 'not_available' };
   }
   const diffPath = path.join(sessDir, `implementation-diff.${implementation.diffDigest}.patch`);
-  let handle;
   try {
-    handle = await open(diffPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-    const info = await handle.stat();
-    if (info.size > maxSubjectBytes) {
+    const result = await readRegularFileBounded(diffPath, { maxBytes: maxSubjectBytes });
+    if (result === null) throw new SafeFileReadError('MISSING', 'diff missing');
+    const bounded = boundContent(result.content, maxSubjectBytes);
+    return {
+      content: bounded.content,
+      bytes: bounded.bytes,
+      truncated: bounded.truncated,
+      verified: verifiedDigest(result.content, implementation.diffDigest, hashText),
+    };
+  } catch (error) {
+    if (error instanceof SafeFileReadError && error.code === 'OVERSIZED') {
       warnings.push(
         sanitizedWarning(
           'IMPLEMENTATION_DIFF_TOO_LARGE',
@@ -212,17 +218,13 @@ async function readImplementationDiff(
           'state',
         ),
       );
-      return { content: null, bytes: info.size, truncated: true, verified: 'not_available' };
+      return {
+        content: null,
+        bytes: error.bytes ?? 0,
+        truncated: true,
+        verified: 'not_available',
+      };
     }
-    const raw = await handle.readFile({ encoding: 'utf8' });
-    const bounded = boundContent(raw, maxSubjectBytes);
-    return {
-      content: bounded.content,
-      bytes: bounded.bytes,
-      truncated: bounded.truncated,
-      verified: verifiedDigest(raw, implementation.diffDigest, hashText),
-    };
-  } catch {
     warnings.push(
       sanitizedWarning(
         'IMPLEMENTATION_DIFF_UNAVAILABLE',
@@ -232,8 +234,6 @@ async function readImplementationDiff(
       ),
     );
     return { content: null, bytes: 0, truncated: false, verified: 'not_available' };
-  } finally {
-    await handle?.close();
   }
 }
 

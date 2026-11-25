@@ -13,12 +13,10 @@ import { createFileSink, getLogDir } from './file-sink.js';
 import type { LogEntry } from './logger.js';
 
 describe('createFileSink', () => {
-  const getTestDir = () =>
-    '/tmp/flowguard-file-sink-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = getTestDir();
+    testDir = await mkdtemp(join(tmpdir(), 'flowguard-file-sink-'));
     await mkdir(join(testDir, '.opencode/logs'), { recursive: true });
   });
 

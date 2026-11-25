@@ -13,8 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   confirmed findings in Markdown/diagnostic escaping, file reads, owner-file
   removal, the Java method detector, transport error responses, changelog
   parsing and test fixtures; document false positives with reachability
-  evidence; and record five operator-harness TOCTOU findings as accepted risks
-  **pending explicit owner approval**. No alert has been dismissed or
+  evidence; and record four operator-harness TOCTOU findings as accepted risks
+  **pending explicit owner approval**, and document one uninstall path-replacement
+  residual after pinned-identity revalidation. The shared bounded
+  `O_NOFOLLOW` reader, Markdown/Java adversarial regressions and eval snapshot
+  hardening are included. No alert has been dismissed or
   suppressed; the release remains blocked until the triage is reviewed and
   CodeQL plus the remaining gates pass. See
   `docs/security/codeql-triage-2026-11-25.md`.
