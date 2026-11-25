@@ -1,0 +1,28 @@
+Java Task Manager red-green reproduction
+========================================
+
+Baseline seed (unmodified):
+  ./mvnw test
+  Tests run: 16, Failures: 0, Errors: 0, Skipped: 1
+  BUILD SUCCESS
+
+Red control (separate copy of the unmodified seed, only @Disabled removed):
+  ./mvnw -q test -Dtest=TaskControllerTest#update_taskNotFound_returns404
+  Exit code: 1
+
+  jakarta.servlet.ServletException: Request processing failed:
+  java.lang.NullPointerException: Cannot invoke
+  "com.example.taskmanager.model.Task.setTitle(String)" because "existing" is null
+
+HTTP probe against the same unmodified copy:
+  PUT /tasks/non-existent-id
+  HTTP status: 500
+  Body: {"timestamp":"2026-11-24T14:41:25.211+00:00","status":500,
+         "error":"Internal Server Error","path":"/tasks/non-existent-id"}
+
+Green control (governed positive run after the approved fix):
+  The governed workspace's validation attempts report 16 passed tests,
+  0 failed, 0 errored, 0 skipped for the bound build and test checks.
+  The architecture/implementation review and evidence approval completed,
+  and the exported package's archived state is EXPORT_READY while the live
+  session reached COMPLETE after materialization.

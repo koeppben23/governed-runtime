@@ -1,0 +1,167 @@
+{
+  "schemaVersion": "java-reference-evidence.v1",
+  "generatedAt": "2026-11-25T10:54:03.000Z",
+  "product": {
+    "commit": "ede07f02df05ebee7a4e01751429a4df2e508f66",
+    "version": "2.0.0-tp.2",
+    "tarballSha256": "bafe4c57e97ce31bd7700092c4aab8d721b0017371c1868172dba6692a1d3486",
+    "tarballBuiltAt": "2026-11-25T10:45:36.974Z",
+    "buildShaSource": "git"
+  },
+  "environment": {
+    "host": "OpenCode CLI 2.2.5",
+    "model": "deepseek/deepseek-flash",
+    "thinking": "disabled",
+    "reasoningEffort": "none",
+    "node": "22.22.2",
+    "npm": "10.9.7",
+    "java": "21.0.13.1",
+    "maven": "3.9.5",
+    "os": "macOS 27.2.1 arm64"
+  },
+  "harness": {
+    "status": "VERIFIED",
+    "baseCommit": "ede07f02df05ebee7a4e01751429a4df2e508f66",
+    "worktree": "integrated_develop",
+    "patchDigest": null,
+    "knownHardeningCommitsRemovedFromThisPr": [],
+    "limitation": null,
+    "verifier": {
+      "script": "demos/java-task-manager/verify-evidence-package.mjs",
+      "commit": "ede07f02df05ebee7a4e01751429a4df2e508f66",
+      "exitCode": 0
+    }
+  },
+  "policy": {
+    "mode": "team",
+    "effectiveGateBehavior": "human_gated",
+    "hash": "4ed5e5858689c7345205ffb5b74178eddbe98246e3ef68d8ae3fd2db4b1b5a34",
+    "hashVersion": "policy-digest.v4"
+  },
+  "positiveControl": {
+    "result": "PASS",
+    "scope": "documentation_only",
+    "productCommit": "ede07f02df05ebee7a4e01751429a4df2e508f66",
+    "livePhase": "COMPLETE",
+    "archivedPhase": "EXPORT_READY",
+    "verificationState": "PROVEN",
+    "adversarialStatus": "passed",
+    "hostSessionId": "ses_dedafedf2ffeRyFyTwVJod0xwc",
+    "flowguardSessionId": "97c1fd5e-82bc-4a24-a171-275452714507",
+    "reviewerSessionIds": [
+      "ses_dedaf6f4affe0VN4Rj149vWg0K",
+      "ses_dedad7ef6ffeX1AAUinDP4SYTE",
+      "ses_dedae24fcffezaza1GtapgKgKg"
+    ],
+    "claimId": "67d21212-7976-57fe-a2e6-59349c54e378",
+    "buildAttemptId": "f8cb1390-1ab4-472e-909b-9b1eb887dbe5",
+    "testAttemptId": "5b563f1b-0cdf-45da-a920-a2842388d660",
+    "planApprovalCertificateId": "7102d028-2d0f-448f-8f92-29089c6afec2",
+    "initialPlanDigest": "0e572224d6c7e0b47e4f2f4a3dd4a037ed67708a8499c09f509873cde32ac33e",
+    "planDigest": "6e8a432e98650f1f096dfd38a522d445de79bc206d2faa9eed11c4482c651dde",
+    "verificationCandidateIds": {
+      "build": "vc_753d3155403ed59a8c6868e0e70d077b0fef6720b0e7b1d10d9bce4fe8adacc9",
+      "test": "vc_3f19a45cf6effbb244b4d9ec810d4093766d1e0eec1853f0a21367cc0cd5bf45"
+    },
+    "implementationDigest": "c461946a9de0e2b0c142a4b971a362057ee926624b9f7031d91c37fc1ae5aa31",
+    "implementationDiffDigest": "f7302823050b665b41e0600f1aacfbb91484851e35693026466ba46f9b7009c3",
+    "exportPackageSha256": "ddce83743a4747152644c2d368e9b5799014338a34127d523113a5df8a3e41dc",
+    "offlineVerifierExitCode": 0,
+    "verifierResult": "verified",
+    "gettingStartedCheck": {
+      "headingLine": 2,
+      "runningTestsLine": 7
+    }
+  },
+  "redGreen": {
+    "result": "PASS",
+    "provenance": {
+      "scenario": "historical Java task-manager bugfix (HTTP 500 to 404)",
+      "productCommit": "7a01f4c209b6875aad3fc65947ac6b7b78a7dc9d",
+      "harness": "historical modified local harness",
+      "harnessStatus": "NOT_VERIFIED",
+      "limitation": "The exact local harness patch was not preserved. This historical scenario is not the final documentation-only control pair and is not evidence for the new positive control.",
+      "artifact": "red-green.txt",
+      "partOfFinalControlPair": false
+    },
+    "baseline": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    },
+    "red": {
+      "testExitCode": 1,
+      "failure": "NullPointerException: existing is null",
+      "httpStatus": 500
+    },
+    "green": {
+      "boundValidationTestsPassed": 16,
+      "failed": 0,
+      "errored": 0,
+      "skipped": 0
+    }
+  },
+  "negativeControl": {
+    "result": "PASS",
+    "status": "VERIFIED",
+    "scope": "documentation_only",
+    "productCommit": "ede07f02df05ebee7a4e01751429a4df2e508f66",
+    "livePhase": "EVIDENCE_REVIEW",
+    "hostSessionId": "ses_dedac4888ffetYRaWRpekeRXDu",
+    "flowguardSessionId": "88ab9405-9a91-4e84-917e-fcead6773e51",
+    "reviewerSessionIds": ["ses_dedabd8ffffe2LmJbX41KMQsl5", "ses_dedaad04fffeOHKVekqRvzp7kN"],
+    "claimId": "67d21212-7976-57fe-a2e6-59349c54e378",
+    "buildAttemptId": "1911a988-d0d8-4c59-8506-2b3955cfac4e",
+    "testAttemptId": "77d456a6-f622-4545-8001-105014e16044",
+    "planApprovalCertificateId": "a36c1d59-d099-442c-8822-236c8cd54704",
+    "initialPlanDigest": "0e572224d6c7e0b47e4f2f4a3dd4a037ed67708a8499c09f509873cde32ac33e",
+    "planDigest": "5934ddcc2af15dd627014b6e0c842096d54847a7fc956139977bcca0f7f9abb3",
+    "verificationCandidateIds": {
+      "build": "vc_753d3155403ed59a8c6868e0e70d077b0fef6720b0e7b1d10d9bce4fe8adacc9",
+      "test": "vc_3f19a45cf6effbb244b4d9ec810d4093766d1e0eec1853f0a21367cc0cd5bf45"
+    },
+    "implementationDigest": "a74336cc5f220ec54197e919bfe6d23f219bde247e0b8e9aeb8a4197ba47fc7c",
+    "implementationDiffDigest": "c155a534e63d1d21edabdfce5fc6019eb39fca214f4251a0792ce7e76c8dbd88",
+    "verificationState": "NOT_VERIFIED",
+    "adversarialStatus": "skipped",
+    "denial": "PROOFGRAPH_CRITICAL_FACTS_UNPROVEN",
+    "packageProduced": false,
+    "gettingStartedCheck": {
+      "headingLine": 2,
+      "runningTestsLine": 8
+    },
+    "priorRelatedEvidence": "../../../../demos/java-task-manager/PROOFGRAPH_LIVE_CONTROLS.md"
+  },
+  "publication": {
+    "status": "withheld_pending_explicit_owner_approval",
+    "packageFile": "export-ses_dedafedf2ffeRyFyTwVJod0xwc.tar.gz",
+    "packageSha256": "ddce83743a4747152644c2d368e9b5799014338a34127d523113a5df8a3e41dc"
+  },
+  "integrityControls": {
+    "result": "PASS",
+    "original": {
+      "verified": true,
+      "exitCode": 0
+    },
+    "manipulationA": {
+      "finding": "archive_checksum_mismatch",
+      "exitCode": 1
+    },
+    "manipulationB": {
+      "finding": "file_digest_mismatch",
+      "exitCode": 1
+    },
+    "originalAfterManipulations": {
+      "verified": true,
+      "exitCode": 0
+    }
+  },
+  "limits": [
+    "The negative control is the genuine skipped adversarial assertion at otherwise green checks; it is not a faulty content execution.",
+    "Offline verification establishes internal consistency, not origin authenticity or external publication binding.",
+    "The locally retained package is a raw synthetic export; it is not published in this tree.",
+    "The runs were executed with an isolated HOME and service port to avoid the running Desktop host.",
+    "The synthetic raw package is withheld pending explicit owner approval; only its manifest and hashes are published."
+  ]
+}

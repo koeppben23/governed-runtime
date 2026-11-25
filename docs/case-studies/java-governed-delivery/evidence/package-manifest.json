@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "java-reference-package-manifest.v1",
+  "package": {
+    "file": "export-ses_dedafedf2ffeRyFyTwVJod0xwc.tar.gz",
+    "sha256": "ddce83743a4747152644c2d368e9b5799014338a34127d523113a5df8a3e41dc",
+    "sidecarSha256": "edff58026d8ac2a1d0e3f2de9e07afb1ba8c2c37b735d51ac40206b15b14f1bf",
+    "productCommit": "ede07f02df05ebee7a4e01751429a4df2e508f66",
+    "sessionId": "ses_dedafedf2ffeRyFyTwVJod0xwc",
+    "flow": "development",
+    "archivedPhase": "EXPORT_READY"
+  },
+  "publication": {
+    "status": "withheld_pending_explicit_owner_approval",
+    "reason": "The synthetic raw package is not published in this draft. Publication requires an explicit owner approval after the recorded sensitivity review."
+  },
+  "history": {
+    "previouslyPresentInDraftCommit": "c545d4eb6596042d2dd85fcaf4945375d7c12e18",
+    "removedInCommit": "30e725eb5c8f081275db6808342a02023c9b8b56",
+    "earlierPackage": {
+      "file": "export-ses_df179688dffektuwvOOVINJBIc.tar.gz",
+      "sha256": "2b52c7690f7591e8cf39dbce38c3a88a8b29a843f1a5cc61669d00aceae9d259"
+    },
+    "note": "The earlier draft package was publicly visible in the earlier draft commit. Withholding the current package is not a confidentiality guarantee for that history."
+  }
+}

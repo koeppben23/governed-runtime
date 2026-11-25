@@ -5,6 +5,10 @@ presentation and repeatability scenario. The demo **contract** is enforced in
 the unit suite by `src/documentation/__tests__/demo-contract.test.ts`, which
 runs with the unit test suite (`npm run test:unit`).
 
+See the
+[Java reference evidence case study](../../docs/case-studies/java-governed-delivery.md)
+for the observed red-green, positive, negative, and integrity controls.
+
 ## What This Demo Proves
 
 The Java bug is deliberately small. This demo does **not** prove that an LLM
