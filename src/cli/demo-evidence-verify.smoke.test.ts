@@ -720,6 +720,7 @@ describe('demo evidence package verifier', () => {
       await fs.writeFile(
         unsafePath,
         buildTarGz([{ name: '../outside/archive-manifest.json', content: '{}' }]),
+        { flag: 'wx' },
       );
 
       const result = await runVerifier([unsafePath, '--expect-session', SESSION_A], spy.env);
@@ -746,10 +747,11 @@ describe('demo evidence package verifier', () => {
       }));
       const [firstMember] = members;
       if (!firstMember) throw new Error('expected at least one archive member');
-      await fs.writeFile(duplicatePath, buildTarGz([...members, firstMember]));
+      await fs.writeFile(duplicatePath, buildTarGz([...members, firstMember]), { flag: 'wx' });
       await fs.writeFile(
         `${duplicatePath}.sha256`,
         `${await sha256(duplicatePath)}  ${path.basename(duplicatePath)}\n`,
+        { flag: 'wx' },
       );
 
       const spy = await makeTarSpy();

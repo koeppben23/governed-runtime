@@ -3,8 +3,8 @@
  * @description Platform-specific uninstall helpers for non-OpenCode host artifacts.
  */
 
-import { lstat, readFile, readdir, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { open, lstat, readFile, readdir, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
+import { constants, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { CliInstallError } from './errors.js';
@@ -77,6 +77,30 @@ export async function uninstallCodexPlugin(scope: InstallScope): Promise<FileOp[
   return ops;
 }
 
+type OwnedFileState = 'match' | 'skip' | 'missing';
+
+/** Read through one pinned handle; symlinks are refused by O_NOFOLLOW. */
+async function inspectOwnedFile(
+  fullPath: string,
+  expectedContent: string,
+): Promise<OwnedFileState> {
+  let handle;
+  try {
+    handle = await open(fullPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const stat = await handle.stat();
+    if (!stat.isFile()) return 'skip';
+    const actual = await handle.readFile({ encoding: 'utf-8' });
+    if (actual !== expectedContent) return 'skip';
+    const current = await lstat(fullPath);
+    return current.isSymbolicLink() || !current.isFile() ? 'skip' : 'match';
+  } catch (error) {
+    if (isErrno(error, 'ENOENT') || isErrno(error, 'ELOOP')) return 'missing';
+    throw error;
+  } finally {
+    await handle?.close();
+  }
+}
+
 async function removeOwnedPluginFiles(
   pluginRoot: string,
   expected: Record<string, string>,
@@ -96,22 +120,14 @@ async function removeOwnedPluginFiles(
   const ops: FileOp[] = [];
   for (const [relativePath, expectedContent] of Object.entries(expected)) {
     const fullPath = join(pluginRoot, relativePath);
-    try {
-      const stat = await lstat(fullPath);
-      if (stat.isSymbolicLink() || !stat.isFile()) {
-        ops.push({ path: fullPath, action: 'skipped', reason: 'ownership/content mismatch' });
-        continue;
-      }
-      const actual = await readFile(fullPath, 'utf-8');
-      if (actual !== expectedContent) {
-        ops.push({ path: fullPath, action: 'skipped', reason: 'ownership/content mismatch' });
-        continue;
-      }
-      await unlink(fullPath);
-      ops.push({ path: fullPath, action: 'removed', reason });
-    } catch (error) {
-      if (!isErrno(error, 'ENOENT')) throw error;
+    const state = await inspectOwnedFile(fullPath, expectedContent);
+    if (state === 'missing') continue;
+    if (state === 'skip') {
+      ops.push({ path: fullPath, action: 'skipped', reason: 'ownership/content mismatch' });
+      continue;
     }
+    await unlink(fullPath);
+    ops.push({ path: fullPath, action: 'removed', reason });
   }
   await pruneEmptyPluginDirectories(pluginRoot);
   return ops.length > 0 ? ops : [{ path: pluginRoot, action: 'not_found' }];

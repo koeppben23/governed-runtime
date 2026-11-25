@@ -214,8 +214,7 @@ const JAVA_MAPPING_ANNOTATION =
   /@(?:RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)\b/;
 const JAVA_TYPE_DECLARATION = /\b(?:class|interface|enum|record)\b/;
 const JAVA_ANNOTATION = /^@[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/;
-const JAVA_METHOD_DECLARATION =
-  /^(?:(?:public|protected|private|static|final|abstract|synchronized|native|default|strictfp)\s+)*(?:<[^{}()]+>\s*)?(?:[A-Za-z_$][\w$.]*(?:\s*<[^{}()]+>)?(?:\s*\[\])?\s+)+[A-Za-z_$][\w$]*\s*\(/;
+const JAVA_METHOD_DECLARATION = /^(?:<[^{}()]+>\s*)?[A-Za-z_$][^;{}()]*\(/;
 
 interface JavaSourcePosition {
   readonly lineIndex: number;
