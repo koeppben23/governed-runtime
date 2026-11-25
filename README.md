@@ -9,6 +9,18 @@ which checks passed, or who approved the change. FlowGuard makes those steps
 explicit through deterministic workflows, policy-bound decisions, and evidence
 gates in supported host environments.
 
+## Green checks are not enough
+
+In a controlled Java reference experiment, build and tests passed in both runs.
+In the positive run, the required adversarial assertion passed, the critical
+claim was `PROVEN`, and FlowGuard completed the workflow with a verified export.
+In the negative run, the adversarial assertion was skipped, the claim stayed
+`NOT_VERIFIED`, and FlowGuard refused approval. No export was produced.
+
+[Explore the reference evidence](docs/case-studies/java-governed-delivery.md) ·
+This experiment used `develop@ede07f02`. The published Technical Preview is a
+separate, version-bound artifact.
+
 ## Explore the Java demo
 
 See how FlowGuard governs AI-assisted software delivery in a Java Spring Boot
@@ -27,6 +39,16 @@ peer review.
 
 This is a reading path through the demo documentation, not an executable quick
 start.
+
+## Request a hands-on evaluation
+
+FlowGuard is proprietary software. The public repository is available for
+read-only evaluation. Hands-on use requires prior written permission from the
+copyright holder.
+
+[Contact the author via LinkedIn](https://www.linkedin.com/in/benjamin-fuchs-ba6986190/)
+to request an authorized technical evaluation or discuss your organization's
+governance requirements.
 
 ## Core Capabilities
 

@@ -63,6 +63,15 @@ See [SECURITY.md](../SECURITY.md) for the full disclosure policy.
 
 Open a [GitHub Issue](https://github.com/koeppben23/governed-runtime/issues) with the `question` label.
 
+### Hands-on Evaluation Requests
+
+FlowGuard is proprietary software. The public repository is available for
+read-only evaluation; hands-on use requires prior written permission from the
+copyright holder. Contact the author via
+[LinkedIn](https://www.linkedin.com/in/benjamin-fuchs-ba6986190/) to request an
+authorized technical evaluation or discuss your organization's governance
+requirements.
+
 ---
 
 ## Response Expectations
