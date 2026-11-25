@@ -18,8 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Document the trusted-directory assumption for uninstall and reconcile the
   baseline and follow-up alerts separately. The bounded `O_NOFOLLOW` reader,
   linear Java method-name scan, adversarial regressions, and eval snapshot
-  hardening are included. No alert has been dismissed or suppressed; release
-  remains blocked on CodeQL and the remaining verification gates. See
+  hardening are included. Alerts are closed only as fixed or individually
+  dismissed with a documented rule-scoped reason; release remains blocked on
+  CodeQL and the remaining verification gates. See
   `docs/security/codeql-triage-2026-11-25.md`.
 - Create demo lease and stale-lock guard owner records with owner-only
   permissions on POSIX. Use one file handle per audit tamper operation and

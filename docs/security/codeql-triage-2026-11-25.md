@@ -11,8 +11,10 @@ analysis `2249651388` on merge SHA `c2c1c32292871b7a1a8b139167d648e5775384b6`.
 The eight branch alerts without an annotation in that check are
 #64, #74, #75, #96, #97, #103, #112 and #113. Both sets are in scope.
 
-No alert has been dismissed or suppressed. Fixed findings have code changes
-and regression evidence; false positives state why the rule does not apply.
+No alert is bulk-dismissed. Fixed findings have code changes and regression
+evidence; false positives are dismissed individually with the rule-scoped
+reason recorded here; the five accepted risks are dismissed under the
+owner decisions below.
 The historical inventory records the five then-pending risks; their
 subsequent [owner decisions](#individual-owner-decisions) are separate from
 CodeQL status and release authorization.
