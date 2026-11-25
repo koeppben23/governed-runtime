@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Split the PR smoke gate into four measured groups that run on separate
+  runners, all consuming one SHA-256-verified release tarball packed from the
+  built dist. Every existing smoke file, real installation, isolated workspace,
+  installation scope and native host scenario is retained; a `smoke` aggregator
+  passes only when all groups succeed. The split adds runner minutes to shorten
+  the smoke critical path and does not change `ci-gate` or branch protection.
+
 - Align public support and security statements with the V2-only development
   model: V2 Technical Preview is best-effort with no production support or
   response-time commitment; V1.x is historical with no active maintenance;

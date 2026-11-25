@@ -7,6 +7,7 @@ dist/
 # Test coverage
 coverage/
 coverage-shards/
+smoke-package/
 
 # Governance runtime data
 .governance/

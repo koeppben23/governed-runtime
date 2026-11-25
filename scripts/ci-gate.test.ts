@@ -1,10 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+
+const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 const workflow = parse(
   readFileSync(fileURLToPath(new URL('../.github/workflows/ci.yml', import.meta.url)), 'utf8'),
@@ -20,7 +22,13 @@ const workflow = parse(
       strategy?: {
         matrix: {
           os?: string[];
-          include?: Array<{ suite: string; file: string; filter: string }>;
+          include?: Array<{
+            name?: string;
+            files?: string;
+            suite?: string;
+            file?: string;
+            filter?: string;
+          }>;
         };
       };
       steps: {
@@ -43,6 +51,19 @@ function requiredJob(id: string) {
   const job = workflow.jobs[id];
   if (!job) throw new TypeError(`Missing CI job: ${id}`);
   return job;
+}
+
+function smokeTestFiles(directory = join(REPO_ROOT, 'src')): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const file = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...smokeTestFiles(file));
+    } else if (entry.name.endsWith('.smoke.test.ts')) {
+      files.push(relative(REPO_ROOT, file).split(sep).join('/'));
+    }
+  }
+  return files.sort();
 }
 const gate = requiredJob('test');
 const dependencies = [
@@ -308,6 +329,67 @@ describe('required ci-gate documentation enforcement', () => {
       job.steps.find((step) => step.run?.includes('test:coverage:merge'))?.['continue-on-error'],
     ).toBeUndefined();
     expect(gate.needs).toContain('coverage');
+  });
+
+  it('splits smoke into three complete groups sharing one checksum-bound artifact', () => {
+    const suite = requiredJob('smoke-suite');
+    expect(suite['timeout-minutes']).toBe(15);
+    expect(suite.needs).toBe('smoke-package');
+    const includes = suite.strategy?.matrix.include ?? [];
+    expect(includes.map((entry) => entry.name)).toEqual([
+      'native-parity',
+      'installed-host',
+      'package-install',
+      'runtime-install',
+    ]);
+    const listed = includes.flatMap((entry) =>
+      (entry.files ?? '').trim().split(/\s+/).filter(Boolean),
+    );
+    expect(listed.length, 'a smoke file must appear in exactly one group').toBe(
+      new Set(listed).size,
+    );
+    expect(listed.sort()).toEqual(smokeTestFiles());
+
+    const suiteCommands = suite.steps.flatMap((step) => (step.run ? [step.run] : [])).join('\n');
+    expect(suiteCommands).toContain('npx vitest run --project smoke ${{ matrix.files }}');
+    expect(suiteCommands).toContain('sha256sum -c checksums.sha256');
+    expect(suiteCommands).toContain('FLOWGUARD_TARBALL=');
+    expect(suiteCommands).not.toContain('npm run test:smoke');
+    expect(
+      suite.steps.some(
+        (step) =>
+          step.uses?.includes('actions/download-artifact') && step.with?.name === 'smoke-package',
+      ),
+    ).toBe(true);
+    expect(suite.steps.every((step) => step['continue-on-error'] !== true)).toBe(true);
+
+    const pack = requiredJob('smoke-package');
+    expect(pack.needs).toBe('build');
+    expect(pack.steps.some((step) => step.run?.includes('npm run pack:checksums'))).toBe(true);
+    expect(
+      pack.steps.some((step) =>
+        step.run?.includes('mv flowguard-core-*.tgz checksums.sha256 smoke-package/'),
+      ),
+    ).toBe(true);
+    expect(
+      pack.steps.some(
+        (step) =>
+          step.uses?.includes('actions/upload-artifact') &&
+          step.with?.name === 'smoke-package' &&
+          step.with?.path === 'smoke-package/',
+      ),
+    ).toBe(true);
+
+    const smoke = requiredJob('smoke');
+    expect(smoke.needs).toBe('smoke-suite');
+    expect(smoke.if).toBe('always()');
+    const aggregator = smoke.steps.flatMap((step) => (step.run ? [step.run] : [])).join('\n');
+    expect(aggregator).toContain('needs.smoke-suite.result');
+    expect(aggregator).toContain('exit 1');
+    expect(dependencies).not.toContain('smoke');
+    expect(requiredJob('ci-runtime-report').needs).toEqual(
+      expect.arrayContaining(['smoke-package', 'smoke-suite', 'smoke']),
+    );
   });
 
   it('waits for documentation and every existing test dependency even on upstream failures', () => {
