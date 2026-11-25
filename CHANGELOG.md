@@ -25,7 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Disable wall-clock PERF budgets inside Stryker's coverage-instrumented
   test run (`FLOWGUARD_PERF=0`), matching the existing coverage boundary.
   The dedicated `integration-perf` gate still enforces the real budgets,
-  so mutation admission is not blocked by instrumentation overhead.
+  so mutation admission is not blocked by instrumentation overhead. The
+  instrumented initial run takes about eight minutes locally and previously
+  hit Stryker's five-minute default; the configured 45-minute dry-run bound
+  prevents a truncated admission run while the job timeout still caps it.
 - Create demo lease and stale-lock guard owner records with owner-only
   permissions on POSIX. Use one file handle per audit tamper operation and
   lock snapshot so the security regressions compare the intended file.
