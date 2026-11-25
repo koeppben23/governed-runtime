@@ -69,10 +69,13 @@ describe('V2 README development lifecycle', () => {
   });
 
   it('states activation, override, policy and omitted-path limits without claiming V2 acceptance', () => {
-    const visible = svg
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ');
+    let withoutComments = svg;
+    let previous;
+    do {
+      previous = withoutComments;
+      withoutComments = withoutComments.replace(/<!--[\s\S]*?-->/g, '');
+    } while (withoutComments !== previous);
+    const visible = withoutComments.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
     expect(visible).toContain('Activate with /start');
     expect(visible).toContain('/hydrate reloads workflow state; it does not activate governance.');
     expect(visible).not.toContain('/start or /hydrate');

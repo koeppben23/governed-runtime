@@ -84,7 +84,7 @@ describe('audit/iso27001/render-markdown', () => {
     });
 
     it('escapes representative hostile text and cell values', () => {
-      expect(escapeMarkdownText(HOSTILE)).not.toMatch(/<script>/);
+      expect(escapeMarkdownText(HOSTILE)).not.toMatch(/<script>/i);
       expect(escapeMarkdownText(HOSTILE)).toContain('\\`');
       expect(escapeMarkdownCell(HOSTILE)).toContain('\\|');
       expect(escapeMarkdownText('a|b')).toBe('a|b');

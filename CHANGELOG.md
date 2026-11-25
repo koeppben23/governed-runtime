@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Start the forensic CodeQL triage for the `v2.0.0-tp.3` release diff. Fix
+  confirmed findings in Markdown/diagnostic escaping, file reads, owner-file
+  removal, the Java method detector, transport error responses, changelog
+  parsing and test fixtures; document false positives with reachability
+  evidence; and record five operator-harness TOCTOU findings as accepted risks
+  **pending explicit owner approval**. No alert has been dismissed or
+  suppressed; the release remains blocked until the triage is reviewed and
+  CodeQL plus the remaining gates pass. See
+  `docs/security/codeql-triage-2026-11-25.md`.
+
 ### Added
 
 - Prepare the `v2.0.0-tp.3` Technical Preview release from the current

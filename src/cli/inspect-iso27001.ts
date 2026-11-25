@@ -20,7 +20,8 @@
  * @version v1
  */
 
-import { lstat, readFile, writeFile } from 'node:fs/promises';
+import { open, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import path from 'node:path';
 
 import { readAuditTrail } from '../adapters/persistence-audit.js';
@@ -57,30 +58,29 @@ function reportError(message: string): number {
 async function readMappingFile(
   mappingPath: string,
 ): Promise<{ ok: true; content: string } | { ok: false; exitCode: number }> {
-  let stats;
+  let handle;
   try {
-    stats = await lstat(mappingPath);
+    handle = await open(mappingPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const stats = await handle.stat();
+    if (!stats.isFile()) {
+      return {
+        ok: false,
+        exitCode: reportError(`Mapping path is not a regular file: ${mappingPath}`),
+      };
+    }
+    if (stats.size > MAX_MAPPING_BYTES) {
+      return {
+        ok: false,
+        exitCode: reportError(
+          `Mapping file exceeds the ${MAX_MAPPING_BYTES}-byte limit: ${mappingPath}`,
+        ),
+      };
+    }
+    return { ok: true, content: await handle.readFile({ encoding: 'utf-8' }) };
   } catch {
     return { ok: false, exitCode: reportError(`Cannot read mapping file: ${mappingPath}`) };
-  }
-  if (!stats.isFile()) {
-    return {
-      ok: false,
-      exitCode: reportError(`Mapping path is not a regular file: ${mappingPath}`),
-    };
-  }
-  if (stats.size > MAX_MAPPING_BYTES) {
-    return {
-      ok: false,
-      exitCode: reportError(
-        `Mapping file exceeds the ${MAX_MAPPING_BYTES}-byte limit: ${mappingPath}`,
-      ),
-    };
-  }
-  try {
-    return { ok: true, content: await readFile(mappingPath, 'utf-8') };
-  } catch {
-    return { ok: false, exitCode: reportError(`Cannot read mapping file: ${mappingPath}`) };
+  } finally {
+    await handle?.close();
   }
 }
 

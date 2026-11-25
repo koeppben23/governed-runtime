@@ -6,7 +6,8 @@
  * output. They never imply approval authority.
  */
 
-import { readFile, stat } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import path from 'node:path';
 
 import type { DiagnosticWarning } from '../../adapters/diagnostics/export-schema.js';
@@ -198,8 +199,10 @@ async function readImplementationDiff(
     return { content: null, bytes: 0, truncated: false, verified: 'not_available' };
   }
   const diffPath = path.join(sessDir, `implementation-diff.${implementation.diffDigest}.patch`);
+  let handle;
   try {
-    const info = await stat(diffPath);
+    handle = await open(diffPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const info = await handle.stat();
     if (info.size > maxSubjectBytes) {
       warnings.push(
         sanitizedWarning(
@@ -211,7 +214,7 @@ async function readImplementationDiff(
       );
       return { content: null, bytes: info.size, truncated: true, verified: 'not_available' };
     }
-    const raw = await readFile(diffPath, 'utf8');
+    const raw = await handle.readFile({ encoding: 'utf8' });
     const bounded = boundContent(raw, maxSubjectBytes);
     return {
       content: bounded.content,
@@ -229,6 +232,8 @@ async function readImplementationDiff(
       ),
     );
     return { content: null, bytes: 0, truncated: false, verified: 'not_available' };
+  } finally {
+    await handle?.close();
   }
 }
 

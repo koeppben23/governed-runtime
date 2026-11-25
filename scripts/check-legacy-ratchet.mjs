@@ -84,7 +84,7 @@ function parseBaseline(bytes, label) {
   if (duplicates.length > 0) {
     fail(
       `${label} contains duplicate entries: ${duplicates
-        .map((key) => key.replace('\n', ': '))
+        .map((key) => key.replaceAll('\n', ': '))
         .join(', ')}`,
     );
   }
@@ -157,7 +157,7 @@ if (base !== null) {
   if (additions.length > 0) {
     fail(
       `legacy baseline grew by ${additions.length} entr${additions.length === 1 ? 'y' : 'ies'}: ` +
-        `${additions.map((key) => key.replace('\n', ': ')).join(', ')}. ` +
+        `${additions.map((key) => key.replaceAll('\n', ': ')).join(', ')}. ` +
         'Admit the targets or make the baseline change a deliberate, reviewed decision.',
     );
   }

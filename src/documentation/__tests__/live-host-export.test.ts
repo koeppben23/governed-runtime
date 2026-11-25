@@ -79,9 +79,10 @@ describe('live host transcript export', () => {
     const serialized = JSON.stringify(value);
     await fs.writeFile(payload, serialized);
     const file = await capture();
-    expect((await fs.stat(file)).size).toBeGreaterThan(3 * 65_536);
-    expect(await fs.readFile(file, 'utf8')).toBe(serialized);
-    expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual(value);
+    const captured = await fs.readFile(file, 'utf8');
+    expect(Buffer.byteLength(captured, 'utf8')).toBeGreaterThan(3 * 65_536);
+    expect(captured).toBe(serialized);
+    expect(JSON.parse(captured)).toEqual(value);
     expect(path.basename(file)).toBe('architecture-host-ses_parent.json');
   });
 

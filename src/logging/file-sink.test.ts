@@ -200,7 +200,10 @@ describe('createFileSink', () => {
     it('rejects when a log path component exists but is not a directory', async () => {
       const root = join(testDir, 'opencode-is-a-file');
       await mkdir(root, { recursive: true });
-      await writeFile(join(root, '.opencode'), 'not a directory', 'utf-8');
+      await writeFile(join(root, '.opencode'), 'not a directory', {
+        encoding: 'utf-8',
+        flag: 'wx',
+      });
       const onFailure = vi.fn();
       const sink = createFileSink(root, { retentionDays: 7, onFailure });
 
@@ -215,7 +218,7 @@ describe('createFileSink', () => {
 
     it('rejects with the anomaly code when the workspace root is not a directory', async () => {
       const fileRoot = join(testDir, 'root-is-a-file');
-      await writeFile(fileRoot, 'not a directory', 'utf-8');
+      await writeFile(fileRoot, 'not a directory', { encoding: 'utf-8', flag: 'wx' });
       const onFailure = vi.fn();
       const sink = createFileSink(fileRoot, { retentionDays: 7, onFailure });
       const entry: LogEntry = { level: 'info', service: 'test', message: 'anomaly' };

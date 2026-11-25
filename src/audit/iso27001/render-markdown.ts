@@ -29,34 +29,33 @@ function bounded(value: string): string {
   );
 }
 
-/** Escape prose Markdown structure and raw HTML. */
+/** Escape prose Markdown structure and raw HTML in one pass. */
 export function escapeMarkdownText(value: string): string {
-  return bounded(value)
-    .replace(/\\/g, '\\\\')
-    .replace(/`/g, '\\`')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]')
-    .replace(/([()*_])/g, '\\$1');
+  return bounded(value).replace(/[\\`<>[\]()*_]/g, (character) => {
+    if (character === '<') return '&lt;';
+    if (character === '>') return '&gt;';
+    return `\\${character}`;
+  });
 }
 
 /** Escape a table cell: pipes always break cells, even inside code spans. */
 export function escapeMarkdownCell(value: string): string {
-  return escapeMarkdownText(value).replace(/\|/g, '\\|');
+  return bounded(value).replace(/[\\`<>[\]()*_|]/g, (character) => {
+    if (character === '<') return '&lt;';
+    if (character === '>') return '&gt;';
+    return `\\${character}`;
+  });
 }
 
 /** Render an untrusted value as an escaped inline code span. */
 function code(value: string): string {
-  return `\`${bounded(value)
-    .replace(/`/g, "'")
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)')
-    .replace(/\|/g, '\\|')}\``;
+  const escaped = bounded(value).replace(/[\\`<>[\]()|]/g, (character) => {
+    if (character === '`') return "'";
+    if (character === '<') return '&lt;';
+    if (character === '>') return '&gt;';
+    return `\\${character}`;
+  });
+  return `\`${escaped}\``;
 }
 
 function renderEvidenceRef(ref: EvidenceRef): string {
