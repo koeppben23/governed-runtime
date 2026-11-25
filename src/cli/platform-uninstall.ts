@@ -16,6 +16,7 @@ import {
 import { resolveCodexMarketplacePath, resolveCodexPluginRoot } from './codex-plugin-install.js';
 import { CODEX_PLUGIN_NAME, claudeCodePluginFiles, codexPluginFiles } from './templates.js';
 import { ensureDir } from '../adapters/persistence.js';
+import { SafeFileReadError, readRegularFileBounded } from '../shared/safe-file-read.js';
 
 interface CodexMarketplaceEntry {
   name?: string;
@@ -77,6 +78,68 @@ export async function uninstallCodexPlugin(scope: InstallScope): Promise<FileOp[
   return ops;
 }
 
+type OwnedFileInspection =
+  | { readonly kind: 'match'; readonly identity: { readonly dev: number; readonly ino: number } }
+  | { readonly kind: 'skip' }
+  | { readonly kind: 'missing' };
+
+/** Read through one pinned, bounded handle; symlinks are refused. */
+async function inspectOwnedFile(
+  fullPath: string,
+  expectedContent: string,
+): Promise<OwnedFileInspection> {
+  try {
+    const result = await readRegularFileBounded(fullPath, {
+      maxBytes: Buffer.byteLength(expectedContent, 'utf8'),
+      allowMissing: true,
+    });
+    if (result === null) return { kind: 'missing' };
+    if (result.content !== expectedContent) return { kind: 'skip' };
+    return { kind: 'match', identity: result.identity };
+  } catch (error) {
+    if (error instanceof SafeFileReadError) return { kind: 'skip' };
+    throw error;
+  }
+}
+
+/**
+ * Remove a path only after re-checking the pinned inode identity.
+ *
+ * Node exposes no portable unlink-by-fd operation. The re-check narrows the
+ * path-replacement window but cannot make path `unlink` atomic; the residual
+ * platform limitation is documented in the release security triage.
+ */
+interface PinnedStat {
+  isSymbolicLink(): boolean;
+  isFile(): boolean;
+  readonly dev: number | bigint;
+  readonly ino: number | bigint;
+}
+
+export async function unlinkPinnedOwnedFile(
+  fullPath: string,
+  identity: { readonly dev: number; readonly ino: number },
+  lookup: (path: string) => Promise<PinnedStat> = lstat,
+): Promise<'removed' | 'skipped' | 'missing'> {
+  let current;
+  try {
+    current = await lookup(fullPath);
+  } catch (error) {
+    if (isErrno(error, 'ENOENT')) return 'missing';
+    throw error;
+  }
+  if (
+    current.isSymbolicLink() ||
+    !current.isFile() ||
+    current.dev !== identity.dev ||
+    current.ino !== identity.ino
+  ) {
+    return 'skipped';
+  }
+  await unlink(fullPath);
+  return 'removed';
+}
+
 async function removeOwnedPluginFiles(
   pluginRoot: string,
   expected: Record<string, string>,
@@ -96,22 +159,16 @@ async function removeOwnedPluginFiles(
   const ops: FileOp[] = [];
   for (const [relativePath, expectedContent] of Object.entries(expected)) {
     const fullPath = join(pluginRoot, relativePath);
-    try {
-      const stat = await lstat(fullPath);
-      if (stat.isSymbolicLink() || !stat.isFile()) {
-        ops.push({ path: fullPath, action: 'skipped', reason: 'ownership/content mismatch' });
-        continue;
-      }
-      const actual = await readFile(fullPath, 'utf-8');
-      if (actual !== expectedContent) {
-        ops.push({ path: fullPath, action: 'skipped', reason: 'ownership/content mismatch' });
-        continue;
-      }
-      await unlink(fullPath);
-      ops.push({ path: fullPath, action: 'removed', reason });
-    } catch (error) {
-      if (!isErrno(error, 'ENOENT')) throw error;
+    const inspected = await inspectOwnedFile(fullPath, expectedContent);
+    if (inspected.kind === 'missing') continue;
+    if (inspected.kind === 'skip') {
+      ops.push({ path: fullPath, action: 'skipped', reason: 'ownership/content mismatch' });
+      continue;
     }
+    const removed = await unlinkPinnedOwnedFile(fullPath, inspected.identity);
+    if (removed === 'removed') ops.push({ path: fullPath, action: 'removed', reason });
+    else if (removed === 'skipped')
+      ops.push({ path: fullPath, action: 'skipped', reason: 'ownership/content mismatch' });
   }
   await pruneEmptyPluginDirectories(pluginRoot);
   return ops.length > 0 ? ops : [{ path: pluginRoot, action: 'not_found' }];

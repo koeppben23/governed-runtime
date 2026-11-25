@@ -20,13 +20,14 @@
  * @version v1
  */
 
-import { lstat, readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { readState } from '../adapters/persistence.js';
 import { evaluateLiveExportBinding } from '../audit/iso27001/live-binding.js';
 import { workspacesHome } from '../adapters/workspace/init.js';
+import { SafeFileReadError, readRegularFileBounded } from '../shared/safe-file-read.js';
 import {
   describeBlockedExport,
   readVerifiedCompletionExport,
@@ -57,29 +58,30 @@ function reportError(message: string): number {
 async function readMappingFile(
   mappingPath: string,
 ): Promise<{ ok: true; content: string } | { ok: false; exitCode: number }> {
-  let stats;
   try {
-    stats = await lstat(mappingPath);
-  } catch {
-    return { ok: false, exitCode: reportError(`Cannot read mapping file: ${mappingPath}`) };
-  }
-  if (!stats.isFile()) {
-    return {
-      ok: false,
-      exitCode: reportError(`Mapping path is not a regular file: ${mappingPath}`),
-    };
-  }
-  if (stats.size > MAX_MAPPING_BYTES) {
-    return {
-      ok: false,
-      exitCode: reportError(
-        `Mapping file exceeds the ${MAX_MAPPING_BYTES}-byte limit: ${mappingPath}`,
-      ),
-    };
-  }
-  try {
-    return { ok: true, content: await readFile(mappingPath, 'utf-8') };
-  } catch {
+    const result = await readRegularFileBounded(mappingPath, { maxBytes: MAX_MAPPING_BYTES });
+    if (result === null) {
+      return { ok: false, exitCode: reportError(`Cannot read mapping file: ${mappingPath}`) };
+    }
+    return { ok: true, content: result.content };
+  } catch (error) {
+    if (error instanceof SafeFileReadError && error.code === 'OVERSIZED') {
+      return {
+        ok: false,
+        exitCode: reportError(
+          `Mapping file exceeds the ${MAX_MAPPING_BYTES}-byte limit: ${mappingPath}`,
+        ),
+      };
+    }
+    if (
+      error instanceof SafeFileReadError &&
+      ['NOT_REGULAR', 'SYMLINK', 'CHANGED'].includes(error.code)
+    ) {
+      return {
+        ok: false,
+        exitCode: reportError(`Mapping path is not a regular file: ${mappingPath}`),
+      };
+    }
     return { ok: false, exitCode: reportError(`Cannot read mapping file: ${mappingPath}`) };
   }
 }

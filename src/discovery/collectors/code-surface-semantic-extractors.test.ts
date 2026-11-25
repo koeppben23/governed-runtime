@@ -18,6 +18,57 @@ describe('Java Spring semantic endpoint extraction', () => {
     expect(result.endpoints).toHaveLength(0);
   });
 
+  it('detects a mapped method but not control-flow expressions', () => {
+    const result = extractSemanticCodeSurfaces(
+      `
+        class Controller {
+          @GetMapping("/users")
+          public String users() { return "users"; }
+          @GetMapping("/other")
+          if (ready) { return "no"; }
+          @GetMapping("/third")
+          return helper();
+        }
+      `,
+      'src/main/java/com/acme/Controller.java',
+    );
+
+    expect(result.endpoints).toEqual([
+      expect.objectContaining({ id: 'semantic-java-spring-controller' }),
+    ]);
+  });
+
+  it('preserves generic methods and generic return types', () => {
+    const result = extractSemanticCodeSurfaces(
+      `
+        class Controller {
+          @GetMapping("/generic")
+          public <T extends Comparable<T>> List<T> generic(T input) { return List.of(input); }
+          @GetMapping("/generic-return")
+          Map<String, Integer> counts() { return Map.of(); }
+        }
+      `,
+      'src/main/java/com/acme/Controller.java',
+    );
+
+    expect(result.endpoints).toHaveLength(2);
+  });
+
+  it('reaches identifier extraction with a long non-matching prefix', () => {
+    const prefix = 'a'.repeat(20_000);
+    const result = extractSemanticCodeSurfaces(
+      `@GetMapping("/x")\n${prefix} + (\n`,
+      'src/main/java/com/acme/LongPrefix.java',
+    );
+    expect(result.endpoints).toHaveLength(0);
+  });
+
+  it('scans adversarial annotation remainders in linear time', () => {
+    const hostile = `@GetMapping("/x")\n${'$<'.repeat(20_000)}${'> $<'.repeat(20_000)}\n`;
+    const result = extractSemanticCodeSurfaces(hostile, 'src/main/java/com/acme/Hostile.java');
+    expect(result.endpoints).toHaveLength(0);
+  });
+
   it('continues scanning after a multiline block comment ending before the mapped method', () => {
     const result = extractSemanticCodeSurfaces(
       `

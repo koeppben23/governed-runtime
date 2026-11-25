@@ -173,7 +173,9 @@ async function readRequestBodyOrRespond(
         res,
         protocolDenyEvent,
         'HOOK_STDIN_INVALID',
-        err instanceof Error ? err.message : String(err),
+        err instanceof BodyTooLargeError
+          ? 'Request body too large'
+          : 'Request body could not be read',
       );
       return undefined;
     }

@@ -15,7 +15,13 @@ const CATEGORIES = new Set(['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed'
 /** Parse the repository's categorized, top-level bullet-entry changelog format. */
 function unreleasedEntries(content) {
   if (typeof content !== 'string') return null;
-  const text = content.replace(/\r\n/g, '\n').replace(/<!--[\s\S]*?-->/g, '');
+  let text = content.replace(/\r\n/g, '\n');
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(/<!--[\s\S]*?-->/g, '');
+  } while (text !== previous);
+  if (text.includes('<!--')) return null;
   const sections = [...text.matchAll(/^## (.+)$/gm)];
   const unreleased = sections.filter((match) => match[1].trim() === '[Unreleased]');
   if (unreleased.length !== 1 || sections[0] !== unreleased[0]) return null;

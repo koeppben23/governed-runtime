@@ -57,7 +57,7 @@ export function acquireLease(repo, { pid = process.pid } = {}) {
   const token = randomUUID();
   const record = JSON.stringify({ pid, token, repo, startedAt: new Date().toISOString() });
   try {
-    writeFileSync(leaseFile, record, { flag: 'wx' });
+    writeFileSync(leaseFile, record, { flag: 'wx', mode: 0o600 });
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error;
     const owner = readOwner(leaseFile);

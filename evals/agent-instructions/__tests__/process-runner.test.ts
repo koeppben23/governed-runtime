@@ -319,7 +319,7 @@ describe('process-runner', () => {
     rmSync(fixtureDir, { recursive: true, force: true });
   });
 
-  it('does not traverse directory symlinks in workspace snapshots', () => {
+  it('does not traverse directory symlinks in workspace snapshots', async () => {
     const fixtureDir = mkdtempSync(join(tmpdir(), 'eval-symlink-test-'));
     const outsideDir = mkdtempSync(join(tmpdir(), 'eval-outside-'));
 
@@ -334,7 +334,7 @@ describe('process-runner', () => {
       return;
     }
 
-    const { entries } = snapshotWorkspace(fixtureDir);
+    const { entries } = await snapshotWorkspace(fixtureDir);
     const paths = Array.from(entries.keys());
 
     expect(paths).toContain('real.txt');

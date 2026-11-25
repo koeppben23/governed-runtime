@@ -32,7 +32,11 @@ function fenced(value: string): string {
 }
 
 function cell(value: string | null, max = 120): string {
-  const text = (value ?? '—').replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
+  const text = (value ?? '—').replace(/[\\|\r\n]/g, (character) => {
+    if (character === '|') return '\\|';
+    if (character === '\\') return '\\\\';
+    return ' ';
+  });
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 

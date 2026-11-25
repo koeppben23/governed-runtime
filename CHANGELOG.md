@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Start the forensic CodeQL triage for the `v2.0.0-tp.3` release diff. Fix
+  confirmed findings in Markdown/diagnostic escaping, file reads, owner-file
+  removal, the Java method detector, transport error responses, changelog
+  parsing and test fixtures; document false positives with reachability
+  evidence; and track four operator-harness TOCTOU findings and the production
+  uninstall pathname race with individual owner decisions scoped to TP.3.
+  Document the trusted-directory assumption for uninstall and reconcile the
+  baseline and follow-up alerts separately. The bounded `O_NOFOLLOW` reader,
+  linear Java method-name scan, adversarial regressions, and eval snapshot
+  hardening are included. Alerts are closed only as fixed or individually
+  dismissed with a documented rule-scoped reason; release remains blocked on
+  CodeQL and the remaining verification gates. See
+  `docs/security/codeql-triage-2026-11-25.md`.
+- Create demo lease and stale-lock guard owner records with owner-only
+  permissions on POSIX. Use one file handle per audit tamper operation and
+  lock snapshot so the security regressions compare the intended file.
+
 ### Added
 
 - Split the PR smoke gate into four measured groups that run on separate

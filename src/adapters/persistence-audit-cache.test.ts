@@ -59,14 +59,21 @@ describe('audit append proof cache', () => {
 
   it('detects content tampering even when size and mtime are restored', async () => {
     await appendAuditEvent(dir, body());
-    const filePath = auditPath(dir);
-    const before = await fs.stat(filePath);
-    const raw = await fs.readFile(filePath, 'utf8');
-    const event = JSON.parse(raw.trim()) as Record<string, unknown>;
-    const chainHash = String(event['chainHash']);
-    event['chainHash'] = `${chainHash.charAt(0) === 'a' ? 'b' : 'a'}${chainHash.slice(1)}`;
-    await fs.writeFile(filePath, `${JSON.stringify(event)}\n`, 'utf8');
-    await fs.utimes(filePath, before.atime, before.mtime);
+    const trail = await fs.open(auditPath(dir), 'r+');
+    try {
+      const before = await trail.stat();
+      const raw = await trail.readFile('utf8');
+      const event = JSON.parse(raw.trim()) as Record<string, unknown>;
+      const chainHash = String(event['chainHash']);
+      event['chainHash'] = `${chainHash.charAt(0) === 'a' ? 'b' : 'a'}${chainHash.slice(1)}`;
+      const tampered = Buffer.from(`${JSON.stringify(event)}\n`, 'utf8');
+      expect(tampered.length).toBe(before.size);
+      const { bytesWritten } = await trail.write(tampered, 0, tampered.length, 0);
+      expect(bytesWritten).toBe(tampered.length);
+      await trail.utimes(before.atime, before.mtime);
+    } finally {
+      await trail.close();
+    }
 
     await expect(appendAuditEvent(dir, body())).rejects.toThrow(/invalid audit chain/i);
   });
