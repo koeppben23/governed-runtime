@@ -22,6 +22,7 @@
  *   FLOWGUARD_CLAIM_CASES=claim-positive node demos/java-task-manager/run-live-claim-controls.mjs --root <dir> [--tarball <tgz>]
  */
 
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -36,6 +37,7 @@ import {
 } from './run-live-matrix.mjs';
 import { assertNoCompletionPackage, assertProofEvidence } from '../lib/control-oracles.mjs';
 import { buildPlanCandidate, planCandidatePrompt } from './live-claim-plan-candidate.mjs';
+import { loadInstalledPlanNormalizer } from '../lib/product-plan-normalizer.mjs';
 import {
   PLAN_GATE,
   convergePlanGate,
@@ -224,6 +226,30 @@ export function assertPostTaskAdoption(state, expected) {
   return ticket;
 }
 
+/** Bind the actually persisted initial plan to the controlled candidate. */
+export function assertInitialPlanCandidate(state, planText, normalize) {
+  if (typeof normalize !== 'function') {
+    throw new DemoNotVerifiedError('initial plan normalizer is unavailable');
+  }
+  const plan = state?.plan;
+  if (!plan || !Array.isArray(plan.history) || !plan.current) {
+    throw new DemoNotVerifiedError('initial plan lineage is unavailable');
+  }
+  const initial = [...plan.history, plan.current].find((revision) => revision?.planVersion === 1);
+  if (!initial || typeof initial.body !== 'string' || initial.body.length === 0) {
+    throw new DemoNotVerifiedError('initial plan version 1 is unavailable');
+  }
+  const expected = normalize(planText);
+  const observed = normalize(initial.body);
+  const expectedDigest = createHash('sha256').update(expected).digest('hex');
+  if (observed !== expected || initial.digest !== expectedDigest) {
+    throw new DemoNotVerifiedError(
+      `initial plan does not match the controlled candidate [expected ${expectedDigest}, observed ${String(initial.digest)}]`,
+    );
+  }
+  return { planVersion: 1, expectedDigest, observedDigest: initial.digest };
+}
+
 /** Read-only check of the ticket deliverable; never a FlowGuard check or claim. */
 export function assertGettingStartedSection(workspace) {
   const file = path.join(workspace, 'docs/usage-notes.md');
@@ -240,16 +266,21 @@ export function assertGettingStartedSection(workspace) {
   const runningLines = lines
     .map((line, index) => (line.trim() === '## Running the tests' ? index : -1))
     .filter((index) => index >= 0);
+  const nextSectionOffset =
+    headingLines.length === 1
+      ? lines.slice(headingLines[0] + 1).findIndex((line) => /^##\s+/.test(line))
+      : -1;
+  const gettingStartedEnd =
+    nextSectionOffset === -1 ? lines.length : headingLines[0] + 1 + nextSectionOffset;
   const gettingStarted =
-    headingLines.length === 1 && runningLines.length === 1
-      ? lines.slice(headingLines[0] + 1, runningLines[0]).join('\n')
-      : '';
+    headingLines.length === 1 ? lines.slice(headingLines[0] + 1, gettingStartedEnd).join('\n') : '';
+  const hasRequiredLine = lines.some((line) => line.trim() === REQUIRED_HINT);
   if (
     headingLines.length !== 1 ||
     runningLines.length !== 1 ||
     headingLines[0] >= runningLines[0] ||
     !gettingStarted.includes(REQUIRED_START_COMMAND) ||
-    !text.includes(REQUIRED_HINT) ||
+    !hasRequiredLine ||
     text.includes('-DskipTests')
   ) {
     throw new DemoNotVerifiedError(
@@ -359,6 +390,11 @@ export async function runCase(runner, name, workspace, negative) {
       const reason = planGateNotConvergedReason(gate.outcome);
       throw new DemoNotVerifiedError(`${name}: ${reason}; the control proof is NOT_VERIFIED`);
     }
+    record.initialPlan = assertInitialPlanCandidate(
+      runner.requireBoundState(session).state,
+      planText,
+      await loadInstalledPlanNormalizer(workspace),
+    );
     assertRetainedCriticalClaim(runner.requireBoundState(session).state);
     await runner.approve(session, `${name}-04-approve-plan`, 'PLAN_REVIEW');
     assertRetainedCriticalClaim(runner.requireBoundState(session).state);

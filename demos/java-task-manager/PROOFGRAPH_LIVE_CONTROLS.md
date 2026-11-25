@@ -82,10 +82,14 @@ reasoning only; the assertion-skip environment variable is never used to simulat
 a failing assertion.
 
 The product still performs the genuine independent review, binds findings and
-requires normal revisions. The candidate removes free-form planning as an
-experimental variable; it does not seed accepted review state, verdicts,
-certificates or evidence. Reference evidence produced this way is not an
-evaluation of autonomous plan generation.
+requires normal revisions. After review, the harness binds persisted plan
+version 1 to the prepared candidate using the installed product's
+`normalizeReviewArtifactText` and records the expected and observed plan digest;
+a rewritten initial plan is `NOT_VERIFIED`. Normal later revisions remain
+allowed. The candidate removes free-form planning as an experimental variable;
+it does not seed accepted review state, verdicts, certificates or evidence.
+Reference evidence produced this way is not an evaluation of autonomous plan
+generation.
 
 ## Positive case
 

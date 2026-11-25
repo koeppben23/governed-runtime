@@ -38,6 +38,7 @@ export default {
     `${demo}/live-plan-preflight.mjs`,
     'demos/lib/review-recovery-authority.mjs',
     'demos/lib/product-transition.mjs',
+    'demos/lib/product-plan-normalizer.mjs',
     range(
       'recovery-state',
       'function acceptingReview(',

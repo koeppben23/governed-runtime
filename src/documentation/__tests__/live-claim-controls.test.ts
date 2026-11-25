@@ -14,6 +14,7 @@ import {
   TICKET_FILE,
   assertClaimEvidence,
   assertGettingStartedSection,
+  assertInitialPlanCandidate,
   assertPostTaskAdoption,
   assertRetainedCriticalClaim,
   criticalClaimDeclaration,
@@ -27,6 +28,11 @@ import {
   planCandidatePrompt,
 } from '../../../demos/java-task-manager/live-claim-plan-candidate.mjs';
 import { validateEvidenceDesign } from '../../integration/tools/plan/plan-evidence-design.js';
+import {
+  canonicalPlanNormalizer,
+  loadInstalledPlanNormalizer,
+} from '../../../demos/lib/product-plan-normalizer.mjs';
+import { normalizeReviewArtifactText } from '../../shared/review-artifact-text.js';
 import { RESULT } from '../../../demos/lib/results.mjs';
 
 const CLAIM_ID = '11111111-1111-4111-8111-111111111111';
@@ -425,8 +431,24 @@ describe('claim-control orchestration boundary', () => {
       ['duplicate heading', `${valid}\n## Getting started\n`],
       ['missing start command', valid.replace('    ./mvnw spring-boot:run\n', '')],
       [
+        'start command in an unrelated section',
+        valid
+          .replace('    ./mvnw spring-boot:run\n', '')
+          .replace(
+            '## Running the tests',
+            '## Notes\n\n    ./mvnw spring-boot:run\n\n## Running the tests',
+          ),
+      ],
+      [
         'missing required line',
         valid.replace('    Run ./mvnw test to run the task-manager tests.\n', ''),
+      ],
+      [
+        'modified required line',
+        valid.replace(
+          '    Run ./mvnw test to run the task-manager tests.\n',
+          '    Run ./mvnw test to run the task-manager tests. Extra.\n',
+        ),
       ],
       ['skipping command', `${valid}\n    ./mvnw test -DskipTests\n`],
     ];
@@ -436,6 +458,96 @@ describe('claim-control orchestration boundary', () => {
         /required Getting started section/,
       );
     }
+  });
+
+  it('binds the persisted initial plan to the controlled candidate while allowing revisions', () => {
+    const candidate = '\n# Implementation Plan\n\nControlled body.\n';
+    const normalized = normalizeReviewArtifactText(candidate);
+    const digest = (body: string) => createHash('sha256').update(body).digest('hex');
+    const initial = { planVersion: 1, body: normalized, digest: digest(normalized) };
+    const later = {
+      planVersion: 2,
+      body: `${normalized}\n\nLegitimate reviewed revision.`,
+      digest: digest(`${normalized}\n\nLegitimate reviewed revision.`),
+    };
+    expect(
+      assertInitialPlanCandidate(
+        { plan: { current: initial, history: [] } },
+        candidate,
+        normalizeReviewArtifactText,
+      ),
+    ).toEqual({
+      planVersion: 1,
+      expectedDigest: initial.digest,
+      observedDigest: initial.digest,
+    });
+    expect(
+      assertInitialPlanCandidate(
+        { plan: { current: later, history: [initial] } },
+        candidate,
+        normalizeReviewArtifactText,
+      ),
+    ).toEqual({
+      planVersion: 1,
+      expectedDigest: initial.digest,
+      observedDigest: initial.digest,
+    });
+    expect(() =>
+      assertInitialPlanCandidate(
+        {
+          plan: {
+            current: { ...initial, body: `${normalized}\nrewritten` },
+            history: [],
+          },
+        },
+        candidate,
+        normalizeReviewArtifactText,
+      ),
+    ).toThrow(/does not match the controlled candidate/);
+    expect(() =>
+      assertInitialPlanCandidate(
+        { plan: { current: { ...initial, digest: '0'.repeat(64) }, history: [] } },
+        candidate,
+        normalizeReviewArtifactText,
+      ),
+    ).toThrow(/does not match the controlled candidate/);
+    expect(() =>
+      assertInitialPlanCandidate(
+        { plan: { current: later, history: [] } },
+        candidate,
+        normalizeReviewArtifactText,
+      ),
+    ).toThrow(/initial plan version 1 is unavailable/);
+    expect(() => assertInitialPlanCandidate({}, candidate, normalizeReviewArtifactText)).toThrow(
+      /initial plan lineage is unavailable/,
+    );
+  });
+
+  it('loads the installed plan normalizer and fails closed without it', async () => {
+    await expect(loadInstalledPlanNormalizer(workspace)).rejects.toMatchObject({
+      code: 'DEMO_NOT_VERIFIED',
+      message: 'installed product plan normalizer is unreadable',
+    });
+    const directory = path.join(
+      workspace,
+      '.opencode',
+      'node_modules',
+      '@flowguard',
+      'core',
+      'dist',
+      'shared',
+    );
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(
+      path.join(directory, 'review-artifact-text.js'),
+      'export const normalizeReviewArtifactText = (text) => text.trim();\n',
+      { flag: 'wx' },
+    );
+    const normalize = await loadInstalledPlanNormalizer(workspace);
+    expect(normalize('  plan  ')).toBe('plan');
+    expect(() => canonicalPlanNormalizer(undefined)).toThrow(
+      'installed product plan normalizer is unavailable',
+    );
   });
 
   it('uses one shared, structurally valid plan candidate for both controls', () => {
@@ -460,13 +572,13 @@ describe('claim-control orchestration boundary', () => {
     expect(plan).toContain('spring-boot-maven-plugin');
     expect(plan).toContain('./mvnw spring-boot:run');
     expect(plan).not.toContain('/tasks');
-    expect(plan).toContain('awk');
+    expect(plan).not.toContain('awk');
     expect(plan).toContain('plan reasoning only');
     expect(plan).toContain('separate conflicting command containing -DskipTests');
     expect(plan).toContain('not used to simulate a failing assertion');
     expect(buildPlanCandidate(options)).toBe(plan);
     expect(createHash('sha256').update(plan).digest('hex')).toBe(
-      'f3e46cd049d83f6c63d7c38c788fc3d3147499c7a8c85c1707af84f51c9b804e',
+      '4469a67e0658ac2f721faceaa17148fdbd3dab923afefb5e3ff70814820d661c',
     );
 
     expect(
