@@ -9,12 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add a governed Java reference evidence case study with red-green proof,
-  positive delivery evidence, integrity controls A/B, and an explicitly
-  `NOT_VERIFIED` negative control. Publish the package manifest and hashes; the
-  synthetic raw package remains withheld pending explicit owner approval after
-  the sensitivity review. Harness hardening needed to reproduce the live run is
-  tracked separately. No runtime or license change.
+- Add a governed Java reference evidence case study with red-green proof, a
+  completed positive control, an exact `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN`
+  negative control with no package, and integrity controls A/B on the new
+  export. Record the integrated harness, product tarball, sessions, plans,
+  implementation, package and verifier identities. Publish only the package
+  manifest and hashes; the synthetic raw package remains withheld pending
+  explicit owner approval. No runtime or license change.
 - Rework the root README for product positioning and discoverability: lead with
   the governance problem, add a read-only "Explore the Java demo" entry, group
   capabilities into deterministic governance, independent review, evidence and

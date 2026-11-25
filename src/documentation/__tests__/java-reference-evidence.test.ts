@@ -15,23 +15,35 @@ const read = (path: string): string => readFileSync(path, 'utf8');
 const json = (path: string): unknown => JSON.parse(read(path));
 
 describe('Java reference evidence contract', () => {
-  it('states the observed controls and the blocked negative control honestly', () => {
+  it('states the completed controls honestly', () => {
     const study = read(join(CASE_DIR, 'java-governed-delivery.md'));
     expect(study).toContain('Positive control — governed delivery');
     expect(study).toContain('Negative control — missing evidence');
-    expect(study).toContain('BLOCKED / NOT_VERIFIED');
-    expect(study).toContain('Overall: PARTIAL');
-    expect(study).toMatch(/must not be presented\s+as a completed three-control reference/);
+    expect(study).toContain('**PASS**');
+    expect(study).toContain('Overall: COMPLETE');
+    expect(study).toContain('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
+    expect(study).not.toContain('BLOCKED / NOT_VERIFIED');
+    expect(study).not.toContain('Overall: PARTIAL');
   });
 
-  it('binds the positive evidence to the withheld package manifest', () => {
+  it('binds the completed controls to the withheld package manifest', () => {
     const evidence = json(join(EVIDENCE_DIR, 'reference-evidence.json')) as {
       positiveControl?: {
         exportPackageSha256?: string;
         livePhase?: string;
         archivedPhase?: string;
+        initialPlanDigest?: string;
+        verificationCandidateIds?: unknown;
       };
-      negativeControl?: { result?: string; status?: string; priorRelatedEvidence?: string };
+      negativeControl?: {
+        result?: string;
+        status?: string;
+        denial?: string;
+        packageProduced?: boolean;
+        initialPlanDigest?: string;
+        verificationCandidateIds?: unknown;
+        priorRelatedEvidence?: string;
+      };
       harness?: { status?: string; patchDigest?: string | null };
     };
     expect(evidence.positiveControl).toMatchObject({
@@ -39,13 +51,21 @@ describe('Java reference evidence contract', () => {
       archivedPhase: 'EXPORT_READY',
     });
     expect(evidence.negativeControl).toMatchObject({
-      result: 'BLOCKED',
-      status: 'NOT_VERIFIED',
+      result: 'PASS',
+      status: 'VERIFIED',
+      denial: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
+      packageProduced: false,
     });
     expect(evidence.harness).toMatchObject({
-      status: 'NOT_VERIFIED',
+      status: 'VERIFIED',
       patchDigest: null,
     });
+    expect(evidence.positiveControl?.initialPlanDigest).toBe(
+      evidence.negativeControl?.initialPlanDigest,
+    );
+    expect(evidence.positiveControl?.verificationCandidateIds).toEqual(
+      evidence.negativeControl?.verificationCandidateIds,
+    );
     expect(
       existsSync(join(EVIDENCE_DIR, evidence.negativeControl?.priorRelatedEvidence ?? 'missing')),
     ).toBe(true);

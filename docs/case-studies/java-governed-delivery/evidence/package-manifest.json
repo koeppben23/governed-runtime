@@ -1,10 +1,10 @@
 {
   "schemaVersion": "java-reference-package-manifest.v1",
   "package": {
-    "file": "export-ses_df179688dffektuwvOOVINJBIc.tar.gz",
-    "sha256": "2b52c7690f7591e8cf39dbce38c3a88a8b29a843f1a5cc61669d00aceae9d259",
-    "sidecarSha256": "a6583e875b6b0e69d14a40052e30f50b6371ab1c70ec3f0244b07d25a86e96a7",
-    "sessionId": "ses_df179688dffektuwvOOVINJBIc",
+    "file": "export-ses_dedafedf2ffeRyFyTwVJod0xwc.tar.gz",
+    "sha256": "ddce83743a4747152644c2d368e9b5799014338a34127d523113a5df8a3e41dc",
+    "sidecarSha256": "edff58026d8ac2a1d0e3f2de9e07afb1ba8c2c37b735d51ac40206b15b14f1bf",
+    "sessionId": "ses_dedafedf2ffeRyFyTwVJod0xwc",
     "flow": "development",
     "archivedPhase": "EXPORT_READY"
   },
@@ -15,6 +15,10 @@
   "history": {
     "previouslyPresentInDraftCommit": "c545d4eb6596042d2dd85fcaf4945375d7c12e18",
     "removedInCommit": "30e725eb5c8f081275db6808342a02023c9b8b56",
-    "note": "The package was publicly visible in the earlier draft commit. Withholding in the current tree is not a confidentiality guarantee for that earlier commit."
+    "earlierPackage": {
+      "file": "export-ses_df179688dffektuwvOOVINJBIc.tar.gz",
+      "sha256": "2b52c7690f7591e8cf39dbce38c3a88a8b29a843f1a5cc61669d00aceae9d259"
+    },
+    "note": "The earlier draft package was publicly visible in the earlier draft commit. Withholding the current package is not a confidentiality guarantee for that history."
   }
 }

@@ -7,8 +7,7 @@ runs with the unit test suite (`npm run test:unit`).
 
 See the
 [Java reference evidence case study](../../docs/case-studies/java-governed-delivery.md)
-for the observed red-green, positive, and integrity controls and the explicitly
-blocked negative control.
+for the observed red-green, positive, negative, and integrity controls.
 
 ## What This Demo Proves
 

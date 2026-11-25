@@ -1,9 +1,9 @@
 {
   "schemaVersion": "java-reference-integrity-controls.v1",
   "package": {
-    "file": "export-ses_df179688dffektuwvOOVINJBIc.tar.gz",
-    "sha256": "2b52c7690f7591e8cf39dbce38c3a88a8b29a843f1a5cc61669d00aceae9d259",
-    "sessionId": "ses_df179688dffektuwvOOVINJBIc",
+    "file": "export-ses_dedafedf2ffeRyFyTwVJod0xwc.tar.gz",
+    "sha256": "ddce83743a4747152644c2d368e9b5799014338a34127d523113a5df8a3e41dc",
+    "sessionId": "ses_dedafedf2ffeRyFyTwVJod0xwc",
     "flow": "development",
     "archivedPhase": "EXPORT_READY"
   },
@@ -14,14 +14,14 @@
   },
   "manipulationA": {
     "description": "Package bytes changed while the original sidecar digest was retained.",
-    "sha256": "e92e4c59f375ad75180ddac9cb1ebf3feca64729a9f8276431640eb1958a3361",
+    "sha256": "8dc6f3e562d93aacbe576c61c4f8a2c5413c1321462553e26705dfce0c2b0b2d",
     "verified": false,
     "exitCode": 1,
     "findings": ["archive_checksum_mismatch"]
   },
   "manipulationB": {
     "description": "state/session-state.json changed, the package was repacked, and only the outer checksum sidecar was recomputed; the manifest was left unchanged.",
-    "sha256": "1e976552eefc46459690808630d8a6d821ac97bc418dc809ea1630337da41697",
+    "sha256": "b65c477f873e690c502c54c2249b61c2497659173832609355b6abc4bc9e99a0",
     "verified": false,
     "exitCode": 1,
     "findings": ["file_digest_mismatch"]
