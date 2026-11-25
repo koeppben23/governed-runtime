@@ -26,7 +26,7 @@ describe('safe-file-read', () => {
     expect(result?.identity.ino).toBeGreaterThan(0);
   });
 
-  it('rejects a regular file above the limit before and during the read', async () => {
+  it('rejects a regular file already above the limit', async () => {
     const file = join(root(), 'large.txt');
     writeFileSync(file, 'x'.repeat(17));
     await expect(readRegularFileBounded(file, { maxBytes: 16 })).rejects.toMatchObject({
@@ -76,7 +76,7 @@ describe('safe-file-read', () => {
     });
   });
 
-  it('rejects a directory created between the path and handle checks', async () => {
+  it('rejects a directory path', async () => {
     const file = join(root(), 'swapped');
     mkdirSync(file);
     await expect(readRegularFileBounded(file, { maxBytes: 16 })).rejects.toMatchObject({

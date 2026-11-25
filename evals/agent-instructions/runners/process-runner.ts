@@ -134,11 +134,12 @@ async function walk(
     if (!stat.isFile()) continue;
 
     try {
+      // A file that vanishes after readdir is an observation failure, never a
+      // silent omission. The reader pins the final inode; ancestor-directory
+      // replacement remains an operator-controlled fixture-root assumption.
       const result = await readRegularFileBounded(fullPath, {
         maxBytes: MAX_SNAPSHOT_FILE_BYTES,
-        allowMissing: true,
       });
-      if (result === null) continue;
       const snapshotPath = relPath.split(sep).join('/');
       entries.set(snapshotPath, { sha256: sha256(result.raw), bytes: result.bytes });
       contents.set(snapshotPath, result.content);

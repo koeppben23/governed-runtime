@@ -38,6 +38,22 @@ describe('Java Spring semantic endpoint extraction', () => {
     ]);
   });
 
+  it('preserves generic methods and generic return types', () => {
+    const result = extractSemanticCodeSurfaces(
+      `
+        class Controller {
+          @GetMapping("/generic")
+          public <T extends Comparable<T>> List<T> generic(T input) { return List.of(input); }
+          @GetMapping("/generic-return")
+          Map<String, Integer> counts() { return Map.of(); }
+        }
+      `,
+      'src/main/java/com/acme/Controller.java',
+    );
+
+    expect(result.endpoints).toHaveLength(2);
+  });
+
   it('scans adversarial annotation remainders in linear time', () => {
     const hostile = `@GetMapping("/x")\n${'$<'.repeat(20_000)}${'> $<'.repeat(20_000)}\n`;
     const result = extractSemanticCodeSurfaces(hostile, 'src/main/java/com/acme/Hostile.java');
