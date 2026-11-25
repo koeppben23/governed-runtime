@@ -217,7 +217,7 @@ describe('verify-mutation-admission', () => {
 
   it('turns a below-threshold admitted target into a violation under --require-admitted', () => {
     const report = baseReport();
-    report.files['src/adapters/host-adapter.ts'] = fileEntry(
+    report.files['src/adapters/persistence.ts'] = fileEntry(
       mutants(['Killed', 'Survived', 'Survived', 'Survived']),
     );
     const reportPath = writeReport(report);
@@ -234,7 +234,7 @@ describe('verify-mutation-admission', () => {
       '--require-admitted',
     ]);
     expect(gatedResult.status).toBe(1);
-    expect(gatedResult.stderr).toContain('src/adapters/host-adapter.ts');
+    expect(gatedResult.stderr).toContain('src/adapters/persistence.ts');
     expect(gatedResult.stderr).toContain('(required per-target)');
   });
 
@@ -262,7 +262,7 @@ describe('verify-mutation-admission', () => {
       '--manifest',
       manifestPath,
       '--require-selectors',
-      'src/adapters/host-adapter.ts',
+      'src/adapters/persistence.ts',
       '--require-admitted',
       '--emit-admission',
     ]);

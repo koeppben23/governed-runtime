@@ -339,13 +339,12 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       admission: admissionRecord('src/adapters/persistence-lock.ts'),
     },
   ),
-  required(
+  notSuitable(
     'src/adapters/host-adapter.ts',
     'Host runtime adapter boundary',
-    ['src/adapters/host-adapter.test.ts'],
-    {
-      admission: admissionRecord('src/adapters/host-adapter.ts'),
-    },
+    'Type-only host adapter port: the file contains interfaces only and no runtime statements. The 2026-11-23 base profile produced no report entry and a file with no executable code cannot produce valid runtime mutants.',
+    'base',
+    { source: [SOURCE.trustBoundaries] },
   ),
   required(
     'src/adapters/persistence.ts',
@@ -1887,13 +1886,12 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Targeted 2026-11-14 run: 87.50% (7 killed / 1 survived). Included in the base mutate list; full-profile admission evidence is pending the CI base mutation run.',
     { source: [SOURCE.integration], critical: true },
   ),
-  candidate(
+  notSuitable(
     'src/integration/review/evidence/finding-identity.ts',
     'Host-authoritative finding identity minting',
+    'Base-profile full run 2026-11-23 (9e42696d) and a targeted 2026-11-25 diagnostic produced six mutants, all rejected by the TypeScript checker (0 valid). The object-spread/map shape cannot produce checker-valid mutants under the base regime, so the file contributes no mutation signal.',
     'base',
-    ['src/integration/review/evidence/finding-identity.test.ts'],
-    'Targeted 2026-11-14 run: 100% (6 killed / 0 survived). Included in the base mutate list; full-profile admission evidence is pending the CI base mutation run.',
-    { source: [SOURCE.integration], critical: true },
+    { source: [SOURCE.integration] },
   ),
   candidate(
     'src/integration/plugin-audit-context.ts',

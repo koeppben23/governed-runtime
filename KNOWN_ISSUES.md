@@ -84,7 +84,7 @@ trail retains that exact order.
 
 ## OpenCode V2 candidate — confirmed opt-in violations (2026-11-01, PR #1190)
 
-**P0 / Open / Merge blocked.** The V2 branch at `46671919` does not conform to
+**P0 / Fixed (2026-11-25 re-triage).** The historical V2 branch at `46671919` does not conform to
 [ADR-010 D2/D8](docs/decisions/010-host-neutral-opt-in-governance.md). A loaded but
 never-started product can veto ordinary shell/edit work: real OpenCode 2.2.4
 comparisons show `SESSION_DIR_NOT_FOUND` in Git directories and `NOT_GIT_REPO`
@@ -108,6 +108,30 @@ PR #1190 remains Draft and ACTIVE V2 NO-GO. Installer/catalogue lifecycle succes
 does not establish INACTIVE parity. Existing reviewer, regular-error recovery and
 operator-source proof gaps remain independent acceptance blockers; see the
 [implementation inventory](docs/host-probes/opencode-v2/implementation-inventory.md).
+
+**2026-11-25 re-triage:** PR #1190 was merged as `a0225c50`; the current
+`develop` executes the three named suites. The packed-installed parity smoke
+suite passes 7/7, and `plugin-inactive-event-scope.test.ts` plus
+`plugin-bootstrap.test.ts` pass 43/43 on 2026-11-25. This closes the opt-in
+violations for the tested CLI/server and unstarted-session scope. Desktop
+2.2.x acceptance and live remote model refresh remain `NOT_VERIFIED` and are not
+claimed by this closure; the historical host-probe documents keep their
+original dated status.
+
+## 2026-11-25 — Mutation scope correction (host-adapter, finding-identity)
+
+The 2026-11-23 scheduled mutation run measured a base aggregate of 80.77 % and
+failed admission on two configured selectors that produced no valid mutants:
+
+- `src/adapters/host-adapter.ts` is interface-only (no runtime statements).
+- `src/integration/review/evidence/finding-identity.ts` generated six mutants,
+  all rejected by the TypeScript checker (targeted diagnostic 2026-11-25).
+
+Both are reclassified `not-mutation-suitable` for the base profile with that
+evidence, and their stale mutate selectors, admission record and candidate entry
+are removed. No admitted target, aggregate threshold, production test or
+runtime behavior changed; the remaining 41 below-threshold targets stay visible
+as aggregate notes.
 
 ## Status Legend
 
