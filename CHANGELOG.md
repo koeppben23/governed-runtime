@@ -2190,7 +2190,10 @@ stop`, reviewer child reported it could not complete the falsification).
   `/start` and `/check` through the generated session's host command API; the
   headless CLI is reserved for prompt templates. Require a fresh host-command
   activation record for `/start` and audited, persisted check attempts for
-  `/check`, both within a complete, dispatch-bound audit window.
+  `/check`, both within a complete, dispatch-bound audit window. Bind every
+  new check attempt to the dispatch's baseline or implementation subject.
+- Split the Java live matrix into bounded modules for setup, scenarios, host
+  transport, turn recovery and evidence, preserving its CLI and runner API.
 - Treat current plan-preflight edits (evidence design, finding resolutions,
   claim lineage, claim submission, pending-subject guard) as correctable
   observations. Keep them pending until the same plan revision and consumed

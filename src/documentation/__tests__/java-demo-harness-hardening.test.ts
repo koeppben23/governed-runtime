@@ -120,6 +120,20 @@ const server = http.createServer(async (req,res) => {
       ...(scenario === 'check-stale-call' ? {occurredAt:'2001-01-01T00:00:00.000Z'} : {}),
     });
     if (scenario === 'check-duplicate-call') append('tool_call:flowguard_run_check',call);
+    if (scenario.startsWith('check-two-')) {
+      const second = {
+        ...attempt,
+        attemptId:'attempt-2',
+        result:{...attempt.result,checkId:'lint',executedAt:new Date().toISOString()},
+      };
+      if (scenario === 'check-two-wrong-digest') {
+        if (second.scope === 'baseline') second.planDigest = 'f'.repeat(64);
+        else second.implementationDigest = 'f'.repeat(64);
+      }
+      if (scenario === 'check-two-wrong-id') second.implementationId = 'other-implementation';
+      fs.writeFileSync(stateFile,JSON.stringify({...before,validationAttempts:[...before.validationAttempts,attempt,second]}));
+      append('tool_call:flowguard_run_check',{...call,argsSummary:{...call.argsSummary,callID:'check-2'}});
+    }
     return res.writeHead(204).end();
   }
   if(scenario === 'non204') return res.writeHead(500).end(secret);
@@ -374,6 +388,23 @@ describe('Java live harness', () => {
       ]);
     },
   );
+
+  it.each(['VALIDATION', 'IMPL_VALIDATION'])(
+    'pairs two native check calls with two attempts on the dispatch subject: %s',
+    async (phase) => {
+      expect((await check('two-valid', phase)).auditEvidence).toHaveLength(2);
+    },
+  );
+
+  it.each([
+    ['VALIDATION', 'wrong-digest'],
+    ['IMPL_VALIDATION', 'wrong-digest'],
+    ['IMPL_VALIDATION', 'wrong-id'],
+  ])('rejects a foreign second %s attempt (%s)', async (phase, defect) => {
+    await expect(check(`two-${defect}`, phase)).rejects.toMatchObject({
+      code: 'DEMO_NOT_VERIFIED',
+    });
+  });
 
   it.each([
     'no-witness',

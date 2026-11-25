@@ -119,7 +119,9 @@ describe('Java Task Manager demo contract', () => {
     });
 
     // Explicit host context and the isolated config environment.
-    expect(runner).toContain('cwd: workspace');
+    expect(await fs.readFile(path.join(DEMO_DIR, 'live-host-transport.mjs'), 'utf-8')).toContain(
+      'cwd: workspace',
+    );
     expect(runner).toContain('OPENCODE_CONFIG_DIR');
 
     // The README points operators at the runner instead of ad-hoc drivers.

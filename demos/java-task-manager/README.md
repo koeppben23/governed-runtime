@@ -253,13 +253,27 @@ credentials through the provider environment; the runner does not reuse the
 shared host's credential store. Native commands require a continuous, current,
 session-bound audit window, not just HTTP success. `/start` requires the new
 root's `host_command` activation record; `/check` requires fresh audited
-`flowguard_run_check` calls and matching persisted execution attempts. A
+`flowguard_run_check` calls and matching persisted execution attempts, each
+bound to the baseline plan or implementation subject at dispatch. A
 status-only `/check` is not evidence that a check ran, and execution alone does
 not prove a passing result. Decisions also require canonical state digests
 linking every transition from the pre-dispatch snapshot to the settled state,
 and typed, interpretable tool outcomes. An ambiguous transport outcome stops the
 run without resubmitting the decision. Native HTTP response bodies are not
 written to evidence or logs.
+
+The matrix CLI composes separate setup, scenario, transport, turn/recovery,
+and evidence modules. To verify the witness boundaries without a provider-backed
+Java run:
+
+```bash
+npm run mutation -- stryker.java-live-harness.config.mjs
+OPENCODE_LIVE=1 npx vitest run --project smoke src/cli/opencode-check-command-live.smoke.test.ts
+```
+
+The native check smoke seeds only the validation gate. The pinned host executes
+the real check and persists and audits its attempt; it is not installed-tarball
+or independent review acceptance.
 
 The active preflight requires the exact V2 CLI candidate's `opencode v<version>`
 output. It does not use or rewrite historical V1 comparison pins. Passing

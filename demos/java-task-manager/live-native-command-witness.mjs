@@ -24,6 +24,21 @@ function activationProven(window, after, sessionId) {
   );
 }
 
+function matchesCheckSubject(before, attempt) {
+  return (
+    (before.phase === 'VALIDATION' &&
+      attempt?.scope === 'baseline' &&
+      digest(attempt.planDigest) &&
+      attempt.planDigest === before.plan?.current?.digest) ||
+    (before.phase === 'IMPL_VALIDATION' &&
+      attempt?.scope === 'implementation' &&
+      nonempty(attempt.implementationId) &&
+      attempt.implementationId === before.implementation?.implementationId &&
+      digest(attempt.implementationDigest) &&
+      attempt.implementationDigest === before.implementation?.digest)
+  );
+}
+
 function checksProven(before, after, auditBefore, window, inDispatch, sessionId) {
   const tool = 'flowguard_run_check';
   const calls = window.filter(
@@ -42,23 +57,13 @@ function checksProven(before, after, auditBefore, window, inDispatch, sessionId)
   const attempts = ledgerAfter.slice(ledgerBefore.length);
   const callIds = new Set(auditBefore.map((event) => event.detail.argsSummary?.callID));
   const attemptIds = new Set(ledgerBefore.map((attempt) => attempt?.attemptId));
-  const first = attempts[0];
-  const correctSubject =
-    (before.phase === 'VALIDATION' &&
-      first?.scope === 'baseline' &&
-      digest(first.planDigest) &&
-      first.planDigest === before.plan?.current?.digest) ||
-    (before.phase === 'IMPL_VALIDATION' &&
-      first?.scope === 'implementation' &&
-      nonempty(first.implementationId) &&
-      first.implementationId === before.implementation?.implementationId &&
-      digest(first.implementationDigest) &&
-      first.implementationDigest === before.implementation?.digest);
-  if (!correctSubject || attempts.length !== calls.length) return false;
+  if (attempts.length !== calls.length) return false;
   return calls.every((call, index) => {
     const { detail } = call;
     const callId = detail.argsSummary?.callID;
-    const { attemptId, result } = attempts[index] ?? {};
+    const attempt = attempts[index];
+    if (!matchesCheckSubject(before, attempt)) return false;
+    const { attemptId, result } = attempt;
     if (
       call.event !== `tool_call:${tool}` ||
       detail.tool !== tool ||
