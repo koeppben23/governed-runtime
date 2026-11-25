@@ -43,6 +43,37 @@ describe('README positioning contract', () => {
     }
   });
 
+  it('leads with the reference result and keeps the release boundary explicit', () => {
+    const evidence = section('Green checks are not enough');
+    expect(evidence).toContain('build and tests passed in both runs');
+    expect(evidence).toContain('required adversarial assertion passed');
+    expect(evidence).toContain('`PROVEN`');
+    expect(evidence).toContain('adversarial assertion was skipped');
+    expect(evidence).toContain('`NOT_VERIFIED`');
+    expect(evidence).toContain('No export was produced');
+    expect(evidence).toContain('](docs/case-studies/java-governed-delivery.md)');
+    expect(existsSync(join(REPO_ROOT, 'docs/case-studies/java-governed-delivery.md'))).toBe(true);
+    expect(evidence).toContain('`develop@ede07f02`');
+    expect(evidence).toContain('published Technical Preview is a');
+    expect(evidence).toContain('separate, version-bound artifact');
+
+    expect(README.indexOf('## Green checks are not enough')).toBeLessThan(
+      README.indexOf('## Explore the Java demo'),
+    );
+    expect(README.indexOf('## Explore the Java demo')).toBeLessThan(
+      README.indexOf('## Request a hands-on evaluation'),
+    );
+  });
+
+  it('offers an authorized evaluation path under the proprietary boundary', () => {
+    const evaluation = section('Request a hands-on evaluation');
+    expect(evaluation).toContain('proprietary software');
+    expect(evaluation).toContain('read-only evaluation');
+    expect(evaluation).toContain('prior written permission');
+    expect(evaluation).toMatch(/\[Contact the author\]\(mailto:[^)]+\)/);
+    expect(evaluation).not.toMatch(/download|install|run-demo-setup/i);
+  });
+
   it('links the Java demo as a relative reading path without an executable promise', () => {
     const demo = section('Explore the Java demo');
     for (const target of [

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Lead the public README with the reference experiment's "green checks are not
+  enough" result and a version-bound evidence link, and add a direct authorized
+  hands-on evaluation contact path that preserves the proprietary read-only
+  boundary.
 - Add a governed Java reference evidence case study with red-green proof, a
   completed positive control, an exact `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN`
   negative control with no package, and integrity controls A/B on the new
