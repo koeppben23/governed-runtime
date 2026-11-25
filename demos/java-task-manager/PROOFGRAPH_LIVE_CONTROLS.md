@@ -70,6 +70,27 @@ adversarial assertion. The runtime mints the claim id, review evidence and appro
 certificate. The workspace opts into reduced ceremony so the evidence gate is the
 real final gate.
 
+## Controlled plan candidate
+
+The reference experiment supplies both controls with the same fixed,
+repository-grounded plan candidate through the normal `/plan` command. The
+candidate contains the exact retained claim, the observed active checks, the
+`## Getting started` deliverable and a read-only heading check that is explicitly
+human-review evidence, not a new FlowGuard check. It does not add API or port
+claims beyond the ticket. The hypothetical `-DskipTests` counterexample is plan
+reasoning only; the assertion-skip environment variable is never used to simulate
+a failing assertion.
+
+The product still performs the genuine independent review, binds findings and
+requires normal revisions. After review, the harness binds persisted plan
+version 1 to the prepared candidate using the installed product's
+`normalizeReviewArtifactText` and records the expected and observed plan digest;
+a rewritten initial plan is `NOT_VERIFIED`. Normal later revisions remain
+allowed. The candidate removes free-form planning as an experimental variable;
+it does not seed accepted review state, verdicts, certificates or evidence.
+Reference evidence produced this way is not an evaluation of autonomous plan
+generation.
+
 ## Positive case
 
 1. Create the honest Java/JUnit fixture before starting governance. Record a task

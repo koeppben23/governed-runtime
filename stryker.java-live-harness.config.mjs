@@ -38,6 +38,7 @@ export default {
     `${demo}/live-plan-preflight.mjs`,
     'demos/lib/review-recovery-authority.mjs',
     'demos/lib/product-transition.mjs',
+    'demos/lib/product-plan-normalizer.mjs',
     range(
       'recovery-state',
       'function acceptingReview(',
@@ -55,7 +56,7 @@ export default {
       'export function assertPostTaskAdoption',
       'export function assertRetainedCriticalClaim',
     ),
-    range('run-live-claim-controls', 'export const PLAN_PROMPT', 'export async function runCase'),
+    `${demo}/live-claim-plan-candidate.mjs`,
     range(
       'live-host-transport',
       'export async function hostNativeCommandTransport',
