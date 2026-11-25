@@ -54,11 +54,9 @@ The following are considered breaking governance semantics changes (major versio
 
 ### Version Lifecycle
 
-| Status       | Description            | Duration            |
-| ------------ | ---------------------- | ------------------- |
-| **Latest**   | Current stable release | Until next release  |
-| **Previous** | Prior release          | Best-effort support |
-| **Older**    | Unsupported            | No updates          |
+Version availability does not imply active maintenance or production support.
+The applicable support status and maintenance commitments are defined in
+[Support Lifecycle](#support-lifecycle).
 
 ---
 

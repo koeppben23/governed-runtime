@@ -245,7 +245,7 @@ describe('developer onboarding documentation contract', () => {
   });
 
   it('keeps the security support matrix aligned with the V2-only development model', () => {
-    for (const path of ['SECURITY.md', 'docs/support-model.md']) {
+    for (const path of ['SECURITY.md', 'docs/support-model.md', 'docs/release-policy.md']) {
       const document = read(path);
       expect(document, path).toContain('2.0.0-tp.x');
       expect(document, path).toContain('Active development — Technical Preview');
