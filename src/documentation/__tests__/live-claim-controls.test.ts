@@ -24,8 +24,12 @@ import {
 } from '../../../demos/java-task-manager/run-live-claim-controls.mjs';
 import { finalizeControlRecord } from '../../../demos/java-task-manager/run-live-matrix.mjs';
 import {
+  PLAN_CANDIDATE_FILE,
+  PLAN_CLAIMS_FILE,
   buildPlanCandidate,
   planCandidatePrompt,
+  removePlanCandidateFiles,
+  writePlanCandidateFiles,
 } from '../../../demos/java-task-manager/live-claim-plan-candidate.mjs';
 import { validateEvidenceDesign } from '../../integration/tools/plan/plan-evidence-design.js';
 import {
@@ -573,12 +577,13 @@ describe('claim-control orchestration boundary', () => {
     expect(plan).toContain('./mvnw spring-boot:run');
     expect(plan).not.toContain('/tasks');
     expect(plan).not.toContain('awk');
-    expect(plan).toContain('plan reasoning only');
-    expect(plan).toContain('separate conflicting command containing -DskipTests');
-    expect(plan).toContain('not used to simulate a failing assertion');
+    expect(plan).toContain('design reasoning only');
+    expect(plan).toContain('separate conflicting command line containing `-DskipTests`');
+    expect(plan).toContain('absence-of-skip detection');
+    expect(plan).not.toContain('FLOWGUARD_LIVE_SKIP_ASSERTION');
     expect(buildPlanCandidate(options)).toBe(plan);
     expect(createHash('sha256').update(plan).digest('hex')).toBe(
-      '4469a67e0658ac2f721faceaa17148fdbd3dab923afefb5e3ff70814820d661c',
+      'ded8286f4705b4007af8b0be0c9984a20430ed0875a8a50d894ba268c0a1e389',
     );
 
     expect(
@@ -592,30 +597,101 @@ describe('claim-control orchestration boundary', () => {
       }),
     ).toEqual({ kind: 'ok' });
 
-    const prompt = planCandidatePrompt(plan, [claim]);
-    expect(prompt).toContain(plan);
-    expect(prompt).toContain(JSON.stringify([claim], null, 2));
+    const prompt = planCandidatePrompt();
+    expect(prompt).toContain(PLAN_CANDIDATE_FILE);
+    expect(prompt).toContain(PLAN_CLAIMS_FILE);
+    expect(prompt).not.toContain(plan);
+    expect(prompt).not.toContain(JSON.stringify([claim], null, 2));
     expect(prompt).toContain('flowguard-finding-resolutions');
+    expect(prompt).toContain('`blockingIssues` only');
+    expect(prompt).toContain('Never include `majorRisks`');
+    expect(prompt).toContain('Do not call flowguard_plan before reading both files');
+    expect(prompt).toContain('preserve its literal double quotes exactly');
+    expect(prompt).toContain('strip them');
+    expect(prompt).toContain('`findingId`, `planSection` and `response`');
+    expect(prompt).toContain('exact existing heading');
+    expect(prompt).toContain('Do not modify the candidate files');
     expect(prompt).toContain('FLOWGUARD_LIVE_SKIP_ASSERTION');
   });
 
-  it.each(['ticketFile', 'claim', 'positiveAssertion', 'buildCandidateId', 'testCandidateId'])(
-    'rejects a plan candidate without %s',
-    (field) => {
-      const claim = criticalClaimDeclaration();
-      const options: Record<string, unknown> = {
-        ticketFile: TICKET_FILE,
-        claim,
-        positiveAssertion: POSITIVE_ASSERTION,
-        buildCandidateId: 'vc_build',
-        testCandidateId: 'vc_test',
-      };
-      options[field] = field === 'claim' ? {} : '';
-      expect(() => buildPlanCandidate(options as never)).toThrow(
-        'plan candidate requires the exact claim and verification-candidate identities',
+  it('moves the authoritative plan and claims into git-ignored files', async () => {
+    const claim = criticalClaimDeclaration();
+    const plan = buildPlanCandidate({
+      ticketFile: TICKET_FILE,
+      claim,
+      positiveAssertion: POSITIVE_ASSERTION,
+      buildCandidateId: 'vc_build',
+      testCandidateId: 'vc_test',
+    });
+    try {
+      expect(writePlanCandidateFiles(workspace, plan, [claim])).toEqual({
+        planFile: PLAN_CANDIDATE_FILE,
+        claimsFile: PLAN_CLAIMS_FILE,
+      });
+      expect(await fs.readFile(path.join(workspace, PLAN_CANDIDATE_FILE), 'utf8')).toBe(plan);
+      expect(JSON.parse(await fs.readFile(path.join(workspace, PLAN_CLAIMS_FILE), 'utf8'))).toEqual(
+        [claim],
       );
-    },
-  );
+      expect((await fs.stat(path.join(workspace, PLAN_CANDIDATE_FILE))).mode & 0o777).toBe(0o600);
+      expect((await fs.stat(path.join(workspace, '.flowguard'))).mode & 0o777).toBe(0o700);
+      expect(() => writePlanCandidateFiles(workspace, plan, [claim])).toThrow(/EEXIST/);
+      removePlanCandidateFiles(workspace);
+      await expect(fs.stat(path.join(workspace, PLAN_CANDIDATE_FILE))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      await expect(fs.stat(path.join(workspace, PLAN_CLAIMS_FILE))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      expect(() => removePlanCandidateFiles(workspace)).not.toThrow();
+    } finally {
+      removePlanCandidateFiles(workspace);
+    }
+  });
+
+  it('fails closed without a usable plan-candidate file input', () => {
+    const claim = criticalClaimDeclaration();
+    const cases: Array<[string, unknown, unknown]> = [
+      ['workspace', 123, ['plan', [claim]]],
+      ['empty workspace', '', ['plan', [claim]]],
+      ['plan text', 123, [workspace, [claim]]],
+      ['empty plan text', '', [workspace, [claim]]],
+      ['claims', null, [workspace, 'plan']],
+      ['empty claims', [], [workspace, 'plan']],
+    ];
+    for (const [label, first, rest] of cases) {
+      expect(
+        () => writePlanCandidateFiles(first as string, ...(rest as [string, unknown[]])),
+        label,
+      ).toThrow('plan candidate files require a workspace, plan text and claims');
+    }
+  });
+
+  const invalidPlanInputs: Array<[string, unknown]> = [
+    ['ticketFile', 123],
+    ['ticketFile', ''],
+    ['claim', { statement: '' }],
+    ['claim', { statement: 123 }],
+    ['claim', { statement: 'valid statement without a counterexample' }],
+    ['positiveAssertion', 123],
+    ['positiveAssertion', ''],
+    ['buildCandidateId', 123],
+    ['buildCandidateId', ''],
+    ['testCandidateId', 123],
+    ['testCandidateId', ''],
+  ];
+  it.each(invalidPlanInputs)('rejects a plan candidate with invalid %s', (field, value) => {
+    const options: Record<string, unknown> = {
+      ticketFile: TICKET_FILE,
+      claim: criticalClaimDeclaration(),
+      positiveAssertion: POSITIVE_ASSERTION,
+      buildCandidateId: 'vc_build',
+      testCandidateId: 'vc_test',
+    };
+    options[field] = value;
+    expect(() => buildPlanCandidate(options as never)).toThrow(
+      'plan candidate requires the exact claim and verification-candidate identities',
+    );
+  });
 });
 
 describe('live claim control host integration', () => {

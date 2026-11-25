@@ -77,9 +77,20 @@ repository-grounded plan candidate through the normal `/plan` command. The
 candidate contains the exact retained claim, the observed active checks, the
 `## Getting started` deliverable and a read-only heading check that is explicitly
 human-review evidence, not a new FlowGuard check. It does not add API or port
-claims beyond the ticket. The hypothetical `-DskipTests` counterexample is plan
-reasoning only; the assertion-skip environment variable is never used to simulate
-a failing assertion.
+claims beyond the ticket. The candidate separates the positive `UsageNotesHintTest`
+observable from the adversarial probe counterexample per assertion, and records
+the heading/order checks as read-only manual inspections. The hypothetical
+`-DskipTests` counterexample is plan reasoning only; the assertion-skip
+environment variable is never used to simulate a failing assertion.
+
+The exact plan and claims are written to git-ignored files under `.flowguard/`
+and read back by the agent before the initial `/plan` call. The prompt deliberately
+does not embed them: the headless host JSON-encodes prompt text, and escaped
+quotes inside the fenced `flowguard-evidence-design` block would otherwise be
+submitted as literal backslashes. The candidate files are removed before
+implementation. On a reviewed revision, the `flowguard-finding-resolutions`
+block may reference only the bound `blockingIssues`; minor `majorRisks`,
+`missingVerification` and other non-blocking feedback stay out of that block.
 
 The product still performs the genuine independent review, binds findings and
 requires normal revisions. After review, the harness binds persisted plan

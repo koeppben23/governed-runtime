@@ -4,6 +4,13 @@
  * owns every acceptance decision; this module only removes free-form plan drift.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+
+/** Git-ignored harness inputs; never part of the delivered repository change. */
+export const PLAN_CANDIDATE_FILE = '.flowguard/plan-candidate.md';
+export const PLAN_CLAIMS_FILE = '.flowguard/plan-candidate-claims.json';
+
 export function buildPlanCandidate({
   ticketFile,
   claim,
@@ -41,6 +48,7 @@ export function buildPlanCandidate({
 - Do not add API-path or port claims that are not needed by the ticket.
 - Use the existing active checks and assertion fixtures unchanged; the new section is checked by a read-only harness inspection, not as a new FlowGuard check or claim.
 - Treat the \`-DskipTests\` counterexample as design reasoning only; never add it to the delivered file.
+- Judge each declared evidence role by its own assertion, not by the exit status of the shared lifecycle: both candidates execute the same Surefire fixture set, so role separation is described per assertion below.
 
 ## Implementation
 
@@ -52,7 +60,7 @@ export function buildPlanCandidate({
 
 **Edge cases:** Keep exactly one \`## Getting started\` heading; keep the required command line present and unchanged; do not introduce \`-DskipTests\` or a second test command.
 
-**Validation:** The delivered file contains the heading above \`## Running the tests\`, retains the exact required line, and contains no \`-DskipTests\`.
+**Validation:** The delivered file contains the heading above \`## Running the tests\`, retains the exact required line, and contains no \`-DskipTests\`. The heading-count/order and start-command-in-section checks are manual inspections of the frozen file bytes with no candidate assertion backing them; only the presence-of-required-line and no-\`-DskipTests\` substrings are covered by executable assertions.
 
 ## Change Inventory
 
@@ -79,14 +87,15 @@ export function buildPlanCandidate({
 - [ ] The exact line \`Run ./mvnw test to run the task-manager tests.\` is present and unchanged.
 - [ ] The delivered file contains no \`-DskipTests\`.
 - [ ] No file other than \`docs/usage-notes.md\` changes.
+- [ ] The heading-count/order and \`spring-boot:run\`-in-section criteria are verified against the frozen file bytes (manual inspection), not by an executable check; the presence and no-\`-DskipTests\` criteria are also covered by the fixture assertions.
 
 ## Verification
 
-1. Baseline and post-implementation validation execute every active check in full: \`build\` (Source: \`package.json#scripts.build\`) and \`test\` (Source: \`package.json#scripts.test\`). No check is substituted, re-bound, added, or omitted.
-2. Read-only ticket-deliverable inspection (not a FlowGuard active check or claim): after implementation the harness verifies exactly one \`## Getting started\` heading above \`## Running the tests\`; the \`./mvnw spring-boot:run\` command inside that actual section (before any next \`##\` heading); the required test line as a complete line; and no \`-DskipTests\` in \`docs/usage-notes.md\`.
-3. Confirm the exact required line is present and that no \`-DskipTests\` appears in the delivered documentation.
-4. The hypothetical counterexample keeps the complete required line intact and adds a separate conflicting command containing \`-DskipTests\`: the presence assertion passes and the conflicting-command assertion fails. This is plan reasoning only; it is not executed or added to the delivered file. The assertion-skip environment variable is not used to simulate a failing assertion.
-5. The assertion-skip environment variable is only an execution control for the negative case; it is not used to simulate a failing assertion or to replace the hypothetical counterexample. The negative case obtains its denial from the genuine skipped adversarial assertion at the evidence gate.
+1. Baseline and post-implementation validation execute every active check in full: \`build\` (Source: \`package.json#scripts.build\`, command \`./mvnw verify\`, candidate \`${buildCandidateId}\`) and \`test\` (Source: \`package.json#scripts.test\`, command \`./mvnw test\`, candidate \`${testCandidateId}\`). No check is substituted, re-bound, added, or omitted.
+2. Positive evidence: the retained claim is judged on the \`test\` candidate's captured \`${positiveAssertion}\` assertion result (presence of the exact required line). That assertion is the observable for the claim. The \`./mvnw test\` lifecycle also runs \`UsageNotesFalsificationProbeTest\`; the probe is not part of the positive observable and is not counted as positive evidence.
+3. Counterexample (negative case): the \`build\` candidate (\`./mvnw verify\`) carries the adversarial probe assertion \`${assertion}\`. That probe keeps the complete required line intact and additionally asserts the absence of \`-DskipTests\`. Its concrete faulty variant is a delivered \`docs/usage-notes.md\` that retains \`Run ./mvnw test to run the task-manager tests.\` and adds a separate conflicting command line containing \`-DskipTests\`; in that variant \`${positiveAssertion}\` and the probe's own required-line check still pass, while the probe's \`assertFalse(text.contains("-DskipTests"))\` fails. The counterexample is therefore carried by a distinct assertion with a distinct detection mechanism (absence-of-skip detection) from the presence detection used as positive evidence, even though both candidates execute the same fixture set.
+4. The counterexample faulty variant is design reasoning only. It is not added to the delivered \`docs/usage-notes.md\`; no environment variable is used to simulate the counterexample failure, no assertion is disabled or skipped in the counterexample execution, and no failure is simulated. The counterexample is the genuine probe assertion evaluating a content variant containing \`-DskipTests\`.
+5. Read-only ticket-deliverable inspection (not a FlowGuard active check or claim, and with no candidate assertion): after implementation the harness verifies against the frozen file bytes exactly one \`## Getting started\` heading above \`## Running the tests\`; the \`./mvnw spring-boot:run\` command inside that actual section (before any next \`##\` heading); the required test line as a complete line; and no \`-DskipTests\` in \`docs/usage-notes.md\`.
 
 ### Claim declaration
 
@@ -114,21 +123,69 @@ The plan uses exactly one retained critical claim:
 `;
 }
 
-export function planCandidatePrompt(planText, claims) {
+/**
+ * Write the exact plan and claims to git-ignored files. The prompt must not
+ * embed them: the headless host transport JSON-encodes the prompt, and literal
+ * backslashes in the fenced evidence-design JSON then reach the model as part
+ * of the plan text. Files are read back as raw bytes instead.
+ */
+export function writePlanCandidateFiles(workspace, planText, claims) {
+  if (
+    typeof workspace !== 'string' ||
+    !workspace ||
+    typeof planText !== 'string' ||
+    !planText ||
+    !Array.isArray(claims) ||
+    claims.length === 0
+  ) {
+    throw new Error('plan candidate files require a workspace, plan text and claims');
+  }
+  const directory = path.join(workspace, path.dirname(PLAN_CANDIDATE_FILE));
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(workspace, PLAN_CANDIDATE_FILE), planText, {
+    flag: 'wx',
+    mode: 0o600,
+  });
+  fs.writeFileSync(path.join(workspace, PLAN_CLAIMS_FILE), `${JSON.stringify(claims, null, 2)}\n`, {
+    flag: 'wx',
+    mode: 0o600,
+  });
+  return { planFile: PLAN_CANDIDATE_FILE, claimsFile: PLAN_CLAIMS_FILE };
+}
+
+export function removePlanCandidateFiles(workspace) {
+  for (const file of [PLAN_CANDIDATE_FILE, PLAN_CLAIMS_FILE]) {
+    fs.rmSync(path.join(workspace, file), { force: true });
+  }
+}
+
+/**
+ * The prompt intentionally contains neither the plan nor the claims. It points
+ * at the raw files so the host's JSON encoding cannot corrupt the fenced
+ * evidence-design JSON. Revisions must resolve only the bound blocking set.
+ */
+export function planCandidatePrompt() {
   return (
-    'Submit this exact initial plan candidate through flowguard_plan({ planText, claims }). ' +
-    'Do not rewrite, shorten, add to, or replace the plan text on the initial submission. ' +
-    'Use EXACTLY the claims JSON below. Complete the normal independent review. ' +
-    'If the reviewer returns changes_requested, address every bound blocking finding, preserve ' +
-    'all fixed constraints, the exact claim, the evidence design and the Getting started ' +
-    'verification, and include a flowguard-finding-resolutions block bound only to the current ' +
-    'review obligation, iteration, plan version and finding IDs. Never use ' +
-    'FLOWGUARD_LIVE_SKIP_ASSERTION to simulate a failing assertion.\n\n' +
-    '--- PLAN TEXT START ---\n' +
-    `${planText}\n` +
-    '--- PLAN TEXT END ---\n' +
-    '--- CLAIMS JSON START ---\n' +
-    `${JSON.stringify(claims, null, 2)}\n` +
-    '--- CLAIMS JSON END ---'
+    'Submit the controlled initial plan candidate through flowguard_plan({ planText, claims }). ' +
+    `Read \`${PLAN_CANDIDATE_FILE}\` and \`${PLAN_CLAIMS_FILE}\` with the read tool. ` +
+    'The plan file contains the exact authoritative Markdown bytes; the claims file contains the ' +
+    'exact authoritative JSON array. If the read tool displays line-number prefixes, strip them: ' +
+    'planText must contain the raw Markdown only and claims must contain the parsed JSON array. ' +
+    'The plan contains a fenced flowguard-evidence-design JSON block: preserve its literal double ' +
+    'quotes exactly; do not backslash-escape them. Do not call flowguard_plan before reading both ' +
+    'files. Do not reconstruct, rewrite, shorten, add to, or replace either from this prompt, ' +
+    'which deliberately omits both. Submit both in one flowguard_plan call in this turn. Complete ' +
+    'the normal independent review. If the reviewer ' +
+    'returns ' +
+    'changes_requested, address every bound finding in `blockingIssues` only; include a ' +
+    'flowguard-finding-resolutions block bound only to the current review obligation, iteration, ' +
+    'plan version and those blocking finding IDs. Each resolutions entry must contain exactly ' +
+    '`findingId`, `planSection` and `response`; `planSection` must be an exact existing heading ' +
+    'in the revised plan, such as `Verification`, not a prose location. Never include `majorRisks`, ' +
+    'minor findings, `missingVerification` or any finding outside `blockingIssues` in that block. ' +
+    'Preserve all ' +
+    'fixed constraints, the exact claim, the evidence design and the Getting started verification. ' +
+    'Never use FLOWGUARD_LIVE_SKIP_ASSERTION to simulate a failing assertion. Do not modify the ' +
+    'candidate files.'
   );
 }
