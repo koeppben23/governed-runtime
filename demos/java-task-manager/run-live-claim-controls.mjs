@@ -240,12 +240,16 @@ export function assertGettingStartedSection(workspace) {
   const runningLines = lines
     .map((line, index) => (line.trim() === '## Running the tests' ? index : -1))
     .filter((index) => index >= 0);
+  const gettingStarted =
+    headingLines.length === 1 && runningLines.length === 1
+      ? lines.slice(headingLines[0] + 1, runningLines[0]).join('\n')
+      : '';
   if (
     headingLines.length !== 1 ||
     runningLines.length !== 1 ||
     headingLines[0] >= runningLines[0] ||
+    !gettingStarted.includes(REQUIRED_START_COMMAND) ||
     !text.includes(REQUIRED_HINT) ||
-    !text.includes(REQUIRED_START_COMMAND) ||
     text.includes('-DskipTests')
   ) {
     throw new DemoNotVerifiedError(
