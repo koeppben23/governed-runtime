@@ -12,8 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Align public support and security statements with the V2-only development
   model: V2 Technical Preview is best-effort with no production support or
   response-time commitment; V1.x is historical with no active maintenance;
-  earlier versions are unsupported. Neutralize company-specific and implied
-  pilot references in current documentation and demo text, preserve the
+  earlier versions are unsupported. Generalize examples in public documentation
+  and demo text, add a current-tree public-disclosure guard, preserve the
   synthetic ISO 27001 demo boundary, and clarify the reference demonstration
   wording. No runtime, license, release or evidence change.
 - Lead the public README with the reference demonstration's "green checks are not
