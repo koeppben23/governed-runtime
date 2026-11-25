@@ -128,10 +128,55 @@ jobs:
             exit 1
           fi
 
+  coverage-unit:
+    name: coverage-unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Run unit coverage shard
+        run: npm run test:coverage:shard -- unit
+        env:
+          FORCE_COLOR: 0
+      - name: Upload unit coverage shard
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
+        with:
+          name: coverage-shard-unit
+          path: coverage-shards/unit/
+          if-no-files-found: error
+          retention-days: 1
+
+  coverage-integration:
+    name: coverage-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Run integration coverage shard
+        run: npm run test:coverage:shard -- integration
+        env:
+          FORCE_COLOR: 0
+      - name: Upload integration coverage shard
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
+        with:
+          name: coverage-shard-integration
+          path: coverage-shards/integration/
+          if-no-files-found: error
+          retention-days: 1
+
   coverage:
     name: coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    needs:
+      - coverage-unit
+      - coverage-integration
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write
@@ -141,8 +186,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
-      - name: Run coverage
-        run: npm run test:coverage:ci
+      - name: Download unit coverage shard
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
+        with:
+          name: coverage-shard-unit
+          path: coverage-shards/unit
+      - name: Download integration coverage shard
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
+        with:
+          name: coverage-shard-integration
+          path: coverage-shards/integration
+      - name: Merge shards and enforce the global coverage gate
+        run: npm run test:coverage:merge -- --ci
         env:
           FORCE_COLOR: 0
       - name: Upload coverage report
@@ -868,6 +923,8 @@ jobs:
     needs:
       - unit
       - test
+      - coverage-unit
+      - coverage-integration
       - coverage
       - integration_perf
       - architecture

@@ -74,7 +74,14 @@ branches. Mutation testing is deliberately NOT a PR gate: it runs on the
 scheduled/release cadence via `.github/workflows/mutation.yml` (the full-suite
 Stryker run is too expensive for per-PR execution; per-PR mutation was
 evaluated and rejected). The real-plugin mutation-episode E2E runs inside
-`coverage` (unit + integration projects on the final SHA).
+`coverage` (both sharded projects merged on the final SHA).
+
+`coverage-unit` and `coverage-integration` are implementation details of the
+`coverage` job and are not configured individually in the ruleset. The merge job
+fails closed unless both shards contribute one completeness-bound artifact for
+the same commit and workflow run; `ci-gate` therefore depends on every shard
+transitively. The recorded run attempt keeps a merge-job-only rerun compatible
+with shards from the same run.
 
 From `.github/workflows/conventional-commits.yml`:
 
