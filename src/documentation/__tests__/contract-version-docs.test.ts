@@ -169,11 +169,16 @@ describe('developer contract version documentation', () => {
       // list when a new cut lands.
       const sections = changelog.split(/\n## /);
       const releaseSection = sections.find((candidate) => candidate.startsWith('[2.0.0-tp.2]'));
+      const currentReleaseSection = sections.find((candidate) =>
+        candidate.startsWith('[2.0.0-tp.3]'),
+      );
       const unreleasedSection = sections.find((candidate) => candidate.startsWith('[Unreleased]'));
       expect(releaseSection, '2.0.0-tp.2 section').toBeDefined();
+      expect(currentReleaseSection, '2.0.0-tp.3 section').toBeDefined();
       expect(unreleasedSection, 'Unreleased section').toBeDefined();
 
       const entries = releaseSection!.split(/\n(?=- )/);
+      const currentReleaseEntries = currentReleaseSection!.split(/\n(?=- )/);
       const currentEntries = unreleasedSection!.split(/\n(?=- )/);
       const historicalHardCuts = [
         'state schema v6',
@@ -193,10 +198,10 @@ describe('developer contract version documentation', () => {
           `2.0.0-tp.2 lacks a BREAKING hard-cut entry for ${version} with the rejection contract`,
         ).toBeDefined();
       }
-      // The current cut is unreleased until its release section is cut; it must
-      // already be documented as a BREAKING entry with the rejection contract.
+      // The current cut is unreleased until its release section is cut; once
+      // the release section exists it must already carry the BREAKING entry.
       const currentVersion = `session state ${CURRENT_SESSION_STATE_SCHEMA_VERSION}`;
-      const currentEntry = [...currentEntries, ...entries].find(
+      const currentEntry = [...currentEntries, ...currentReleaseEntries, ...entries].find(
         (candidate) =>
           candidate.startsWith('- **BREAKING') &&
           candidate.includes(currentVersion) &&

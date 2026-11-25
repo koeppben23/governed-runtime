@@ -244,5 +244,5 @@ instead of restoring session files across a schema boundary.
 
 ---
 
-FlowGuard Version: 2.0.0-tp.2
+FlowGuard Version: 2.0.0-tp.3
 _Last Updated: 2026-04-15_

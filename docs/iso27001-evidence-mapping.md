@@ -250,5 +250,5 @@ report outside the worktree; it is not an ISO conformity assessment.
 
 _Reference: ISO/IEC 27001:2022 — Information security, cybersecurity and
 privacy protection — Information security management systems — Requirements_
-FlowGuard Version: 2.0.0-tp.2
+FlowGuard Version: 2.0.0-tp.3
 _Last Updated: 2026-10-13_

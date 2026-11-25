@@ -113,7 +113,7 @@ For technical evaluation or pilot discussions, contact the FlowGuard project own
 
 **Released Technical Preview:** [2.0.0-tp.2](https://github.com/koeppben23/governed-runtime/releases/tag/v2.0.0-tp.2) (2026-10-04)
 
-**Current snapshot: 2.0.0-tp.2** — `develop` may contain changes after the released artifact.
+**Current snapshot: 2.0.0-tp.3** — `develop` integration state prepared for the next Technical Preview; not published until the protected tag workflow completes.
 
 **Installed host acceptance:** version-bound; tracked in #1196.
 

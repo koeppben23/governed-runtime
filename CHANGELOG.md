@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Prepare the `v2.0.0-tp.3` Technical Preview release from the current
+  `develop` integration state: synchronize the version and generated
+  documentation, cut the changelog, and run the release verification gates
+  before the protected release PR and tag. This preparation commit does not
+  claim publication; the artifact is published only after the tag-triggered
+  workflow completes.
+
+## [2.0.0-tp.3] - 2026-11-25
+
+### Added
+
 - Correct the base mutation target inventory: reclassify the interface-only
   `host-adapter.ts` and the TypeScript-checker-rejected `finding-identity.ts`
   as not mutation suitable with measured evidence, and remove their stale

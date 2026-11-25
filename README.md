@@ -20,7 +20,9 @@ In the negative run, the adversarial assertion was skipped, the claim stayed
 
 [Explore the reference evidence](docs/case-studies/java-governed-delivery.md) ·
 This experiment used `develop@ede07f02`. The published Technical Preview is a
-separate, version-bound artifact.
+separate, version-bound artifact. The Java reference evidence remains bound to
+its recorded product commit and `2.0.0-tp.2`; it is not live acceptance evidence
+for `v2.0.0-tp.3`.
 
 ## Explore the Java demo
 
@@ -215,7 +217,7 @@ subagent attestation, and the `/review` evidence model.
 
 ## Current Release Status
 
-> **Version:** 2.0.0-tp.2 | TypeScript | Host-aware | OpenCode synchronous enforcement path
+> **Version:** 2.0.0-tp.3 | TypeScript | Host-aware | OpenCode synchronous enforcement path
 
 | Status                           | Meaning                                                                                                                                                                                            |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -223,6 +225,10 @@ subagent attestation, and the `/review` evidence model.
 | **Current Development Snapshot** | The `develop` branch contains changes after the published artifact and is not a new release.                                                                                                       |
 | **Installed Host Acceptance**    | Version- and host-bound capabilities only; tracked in #1196 and the host-probe records. Command availability alone is not acceptance.                                                              |
 | **Production Readiness**         | Not complete. The published artifact is a technical preview, not a GA release.                                                                                                                     |
+
+> **Release preparation:** `v2.0.0-tp.3` is being prepared from `develop` and
+> has no published artifact until the protected tag workflow completes. The last
+> published artifact remains `v2.0.0-tp.2` (2026-10-04).
 
 > **OpenCode V2 status:** the V2-only port (#1169/#1190) and the native Desktop
 > Workbench (#1207) are merged on `develop`. Remaining #1196 product and
