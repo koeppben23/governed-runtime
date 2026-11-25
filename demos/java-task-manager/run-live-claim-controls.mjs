@@ -36,7 +36,12 @@ import {
   verifyChecksumSidecar,
 } from './run-live-matrix.mjs';
 import { assertNoCompletionPackage, assertProofEvidence } from '../lib/control-oracles.mjs';
-import { buildPlanCandidate, planCandidatePrompt } from './live-claim-plan-candidate.mjs';
+import {
+  buildPlanCandidate,
+  planCandidatePrompt,
+  removePlanCandidateFiles,
+  writePlanCandidateFiles,
+} from './live-claim-plan-candidate.mjs';
 import { loadInstalledPlanNormalizer } from '../lib/product-plan-normalizer.mjs';
 import {
   PLAN_GATE,
@@ -382,7 +387,8 @@ export async function runCase(runner, name, workspace, negative) {
       buildCandidateId: buildCandidate.candidateId,
       testCandidateId: testCandidate.candidateId,
     });
-    await runner.turn(session, `${name}-03-plan`, planCandidatePrompt(planText, [claim]), {
+    writePlanCandidateFiles(workspace, planText, [claim]);
+    await runner.turn(session, `${name}-03-plan`, planCandidatePrompt(), {
       command: 'plan',
     });
     const gate = await convergePlanGate({ runner, session, label: `${name}-03-plan` });
@@ -396,6 +402,7 @@ export async function runCase(runner, name, workspace, negative) {
       await loadInstalledPlanNormalizer(workspace),
     );
     assertRetainedCriticalClaim(runner.requireBoundState(session).state);
+    removePlanCandidateFiles(workspace);
     await runner.approve(session, `${name}-04-approve-plan`, 'PLAN_REVIEW');
     assertRetainedCriticalClaim(runner.requireBoundState(session).state);
 

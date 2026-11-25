@@ -15,6 +15,7 @@ import {
   PLAN_GATE,
   boundPlanVerdict,
   classifyPlanGate,
+  convergePlanGate,
   planGateNotConvergedReason,
   planGateProgressKey,
 } from '../../../demos/lib/review-continuation.mjs';
@@ -228,6 +229,38 @@ describe('demo review continuation classification', () => {
         ],
       });
       expect(planGateProgressKey(afterRearm)).not.toBe(planGateProgressKey(before));
+    });
+  });
+
+  describe('EDGE — continuation prompt scope', () => {
+    it('asks revisions to resolve only blocking findings', async () => {
+      for (const initial of [
+        planState({
+          obligation: { id: 'ob-7', status: 'fulfilled', invocationId: 'inv-7' },
+          invocations: [boundInvocation],
+          findings: 1,
+          iteration: 0,
+        }),
+        planState({ obligation: null, findings: 1, iteration: 1, planVersion: 2 }),
+      ]) {
+        let state = initial;
+        const prompts: string[] = [];
+        const runner = {
+          requireBoundState: () => ({ state }),
+          turn: async (_session: unknown, _label: string, prompt: string) => {
+            prompts.push(prompt);
+            state = planState({
+              phase: 'PLAN_REVIEW',
+              reviewCompletion: 'reviewer_accepted',
+            });
+          },
+        };
+        const result = await convergePlanGate({ runner, session: {}, label: 'test' });
+        expect(result.outcome).toBe(PLAN_GATE.ACCEPTED);
+        expect(prompts).toHaveLength(1);
+        expect(prompts[0]).toContain('`blockingIssues`');
+        expect(prompts[0]).toContain('majorRisks');
+      }
     });
   });
 
