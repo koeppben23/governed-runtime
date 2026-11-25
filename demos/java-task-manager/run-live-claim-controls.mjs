@@ -35,6 +35,7 @@ import {
   verifyChecksumSidecar,
 } from './run-live-matrix.mjs';
 import { assertNoCompletionPackage, assertProofEvidence } from '../lib/control-oracles.mjs';
+import { buildPlanCandidate, planCandidatePrompt } from './live-claim-plan-candidate.mjs';
 import {
   PLAN_GATE,
   convergePlanGate,
@@ -57,6 +58,8 @@ export const ADVERSARIAL_ASSERTION =
 export const POSITIVE_ASSERTION = 'com.example.taskmanager.UsageNotesHintTest#documentsTestCommand';
 /** Exact documentation line both assertions act on. */
 export const REQUIRED_HINT = 'Run ./mvnw test to run the task-manager tests.';
+/** Repository-grounded start command for the ticket's Getting started section. */
+export const REQUIRED_START_COMMAND = './mvnw spring-boot:run';
 export { SKIP_ASSERTION_ENV };
 export const TICKET_FILE = 'TICKET_CLAIM_CONTROL.md';
 
@@ -221,6 +224,37 @@ export function assertPostTaskAdoption(state, expected) {
   return ticket;
 }
 
+/** Read-only check of the ticket deliverable; never a FlowGuard check or claim. */
+export function assertGettingStartedSection(workspace) {
+  const file = path.join(workspace, 'docs/usage-notes.md');
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    throw new DemoNotVerifiedError('delivered usage notes are missing');
+  }
+  const lines = text.split('\n');
+  const headingLines = lines
+    .map((line, index) => (line.trim() === '## Getting started' ? index : -1))
+    .filter((index) => index >= 0);
+  const runningLines = lines
+    .map((line, index) => (line.trim() === '## Running the tests' ? index : -1))
+    .filter((index) => index >= 0);
+  if (
+    headingLines.length !== 1 ||
+    runningLines.length !== 1 ||
+    headingLines[0] >= runningLines[0] ||
+    !text.includes(REQUIRED_HINT) ||
+    !text.includes(REQUIRED_START_COMMAND) ||
+    text.includes('-DskipTests')
+  ) {
+    throw new DemoNotVerifiedError(
+      'delivered usage notes do not contain the required Getting started section',
+    );
+  }
+  return { headingLine: headingLines[0], runningTestsLine: runningLines[0] };
+}
+
 /** Reject withdrawal, weakening, reclassification or replacement of the claim. */
 export function assertRetainedCriticalClaim(state) {
   const expected = criticalClaimDeclaration();
@@ -268,20 +302,6 @@ export function assertClaimEvidence(state, { negative }) {
   };
 }
 
-export const PLAN_PROMPT = (claims) =>
-  `Create a complete plan for the ticket in ${TICKET_FILE}. Its ## Verification section must state ` +
-  `that baseline and post-implementation validation execute every active check of this workspace (do not ` +
-  `substitute, re-bind, add or omit checks) and that the supplied fixtures assert the documented command. ` +
-  `Use EXACTLY this claims array: ${JSON.stringify(claims)}. ` +
-  `The assertion fixtures already exist. Retain this claim through every stage: do not withdraw, ` +
-  `reclassify, replace or weaken it. Complete the full independent plan review. ` +
-  `For the hypothetical counterexample, keep the complete required documentation line unchanged and ` +
-  `add a separate conflicting command containing -DskipTests: the presence assertion passes and the ` +
-  `conflicting-command assertion fails. Describe this as plan reasoning only; do not implement the ` +
-  `counterexample in the delivered documentation. ` +
-  `When responding to findings, use a flowguard-finding-resolutions block that references only the ` +
-  `current bound review obligation, review iteration, plan version and that review's finding IDs.`;
-
 export async function runCase(runner, name, workspace, negative) {
   const record = { name, negative, workspace, result: RESULT.FAILED };
   const session = { workspace, terminal: 'COMPLETE' };
@@ -309,8 +329,25 @@ export async function runCase(runner, name, workspace, negative) {
         'do not create, review or implement a plan.',
       { command: 'task' },
     );
-    assertPostTaskAdoption(runner.requireBoundState(session).state, expectedTicket);
-    await runner.turn(session, `${name}-03-plan`, PLAN_PROMPT([criticalClaimDeclaration()]), {
+    const afterTaskState = runner.requireBoundState(session).state;
+    assertPostTaskAdoption(afterTaskState, expectedTicket);
+    const candidates = afterTaskState.verificationCandidates ?? [];
+    const buildCandidate = candidates.find((candidate) => candidate.kind === 'build');
+    const testCandidate = candidates.find((candidate) => candidate.kind === 'test');
+    if (!buildCandidate || !testCandidate) {
+      throw new DemoNotVerifiedError(
+        'claim control has no canonical build/test verification candidates',
+      );
+    }
+    const claim = criticalClaimDeclaration();
+    const planText = buildPlanCandidate({
+      ticketFile: TICKET_FILE,
+      claim,
+      positiveAssertion: POSITIVE_ASSERTION,
+      buildCandidateId: buildCandidate.candidateId,
+      testCandidateId: testCandidate.candidateId,
+    });
+    await runner.turn(session, `${name}-03-plan`, planCandidatePrompt(planText, [claim]), {
       command: 'plan',
     });
     const gate = await convergePlanGate({ runner, session, label: `${name}-03-plan` });
@@ -331,6 +368,7 @@ export async function runCase(runner, name, workspace, negative) {
         'human evidence gate; do not approve, override or export. Report any missing scoped evidence honestly.',
       { command: 'implement' },
     );
+    record.gettingStartedCheck = assertGettingStartedSection(workspace);
     const evidence = assertClaimEvidence(runner.requireBoundState(session).state, { negative });
 
     if (negative) {

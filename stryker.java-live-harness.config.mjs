@@ -55,7 +55,7 @@ export default {
       'export function assertPostTaskAdoption',
       'export function assertRetainedCriticalClaim',
     ),
-    range('run-live-claim-controls', 'export const PLAN_PROMPT', 'export async function runCase'),
+    `${demo}/live-claim-plan-candidate.mjs`,
     range(
       'live-host-transport',
       'export async function hostNativeCommandTransport',

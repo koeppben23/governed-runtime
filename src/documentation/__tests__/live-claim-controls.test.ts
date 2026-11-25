@@ -10,10 +10,10 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ADVERSARIAL_ASSERTION,
-  PLAN_PROMPT,
   POSITIVE_ASSERTION,
   TICKET_FILE,
   assertClaimEvidence,
+  assertGettingStartedSection,
   assertPostTaskAdoption,
   assertRetainedCriticalClaim,
   criticalClaimDeclaration,
@@ -22,6 +22,11 @@ import {
   selectedClaimCases,
 } from '../../../demos/java-task-manager/run-live-claim-controls.mjs';
 import { finalizeControlRecord } from '../../../demos/java-task-manager/run-live-matrix.mjs';
+import {
+  buildPlanCandidate,
+  planCandidatePrompt,
+} from '../../../demos/java-task-manager/live-claim-plan-candidate.mjs';
+import { validateEvidenceDesign } from '../../integration/tools/plan/plan-evidence-design.js';
 import { RESULT } from '../../../demos/lib/results.mjs';
 
 const CLAIM_ID = '11111111-1111-4111-8111-111111111111';
@@ -387,18 +392,118 @@ describe('claim-control orchestration boundary', () => {
     }
   });
 
-  it('uses one shared plan prompt with the hypothetical counterexample and finding binding', () => {
-    const prompt = PLAN_PROMPT([criticalClaimDeclaration()]);
-    expect(prompt).toContain('keep the complete required documentation line unchanged');
-    expect(prompt).toContain('add a separate conflicting command containing -DskipTests');
-    expect(prompt).toContain('presence assertion passes');
-    expect(prompt).toContain('conflicting-command assertion fails');
-    expect(prompt).toContain('plan reasoning only');
-    expect(prompt).toContain('do not implement the counterexample');
-    expect(prompt).toContain('current bound review obligation');
-    expect(prompt).toContain('review iteration, plan version and that review');
-    expect(JSON.stringify(prompt)).not.toContain('negative');
+  it('verifies the ticket deliverable read-only after implementation', async () => {
+    const docs = path.join(workspace, 'docs');
+    await fs.mkdir(docs, { recursive: true });
+    const valid = [
+      '# Usage Notes',
+      '',
+      '## Getting started',
+      '',
+      'Start the application:',
+      '',
+      '    ./mvnw spring-boot:run',
+      '',
+      '## Running the tests',
+      '',
+      '    Run ./mvnw test to run the task-manager tests.',
+      '',
+    ].join('\n');
+    await fs.writeFile(path.join(docs, 'usage-notes.md'), valid);
+    expect(assertGettingStartedSection(workspace)).toEqual({
+      headingLine: 2,
+      runningTestsLine: 8,
+    });
+    const invalid: Array<[string, string]> = [
+      ['missing heading', valid.replace('## Getting started', '## Start')],
+      [
+        'wrong order',
+        valid
+          .replace('## Getting started', '## Start')
+          .replace('## Running the tests', '## Running the tests\n\n## Getting started'),
+      ],
+      ['duplicate heading', `${valid}\n## Getting started\n`],
+      ['missing start command', valid.replace('    ./mvnw spring-boot:run\n', '')],
+      [
+        'missing required line',
+        valid.replace('    Run ./mvnw test to run the task-manager tests.\n', ''),
+      ],
+      ['skipping command', `${valid}\n    ./mvnw test -DskipTests\n`],
+    ];
+    for (const [label, content] of invalid) {
+      await fs.writeFile(path.join(docs, 'usage-notes.md'), content);
+      expect(() => assertGettingStartedSection(workspace), label).toThrow(
+        /required Getting started section/,
+      );
+    }
   });
+
+  it('uses one shared, structurally valid plan candidate for both controls', () => {
+    const claim = criticalClaimDeclaration();
+    const options = {
+      ticketFile: TICKET_FILE,
+      claim,
+      positiveAssertion: POSITIVE_ASSERTION,
+      buildCandidateId: 'vc_build',
+      testCandidateId: 'vc_test',
+    };
+    const plan = buildPlanCandidate(options);
+    expect(plan).toContain('# Implementation Plan');
+    expect(plan).toContain('## Approach');
+    expect(plan).toContain('## Implementation');
+    expect(plan).toContain('## Change Inventory');
+    expect(plan).toContain('## Contracts');
+    expect(plan).toContain('## Authority Decisions');
+    expect(plan).toContain('## Acceptance Criteria');
+    expect(plan).toContain('## Verification');
+    expect(plan).toContain('## Getting started');
+    expect(plan).toContain('spring-boot-maven-plugin');
+    expect(plan).toContain('./mvnw spring-boot:run');
+    expect(plan).not.toContain('/tasks');
+    expect(plan).toContain('awk');
+    expect(plan).toContain('plan reasoning only');
+    expect(plan).toContain('separate conflicting command containing -DskipTests');
+    expect(plan).toContain('not used to simulate a failing assertion');
+    expect(buildPlanCandidate(options)).toBe(plan);
+    expect(createHash('sha256').update(plan).digest('hex')).toBe(
+      'f3e46cd049d83f6c63d7c38c788fc3d3147499c7a8c85c1707af84f51c9b804e',
+    );
+
+    expect(
+      validateEvidenceDesign({
+        planText: plan,
+        claims: [claim] as never,
+        verificationCandidates: [
+          { candidateId: 'vc_build', kind: 'build' },
+          { candidateId: 'vc_test', kind: 'test' },
+        ] as never,
+      }),
+    ).toEqual({ kind: 'ok' });
+
+    const prompt = planCandidatePrompt(plan, [claim]);
+    expect(prompt).toContain(plan);
+    expect(prompt).toContain(JSON.stringify([claim], null, 2));
+    expect(prompt).toContain('flowguard-finding-resolutions');
+    expect(prompt).toContain('FLOWGUARD_LIVE_SKIP_ASSERTION');
+  });
+
+  it.each(['ticketFile', 'claim', 'positiveAssertion', 'buildCandidateId', 'testCandidateId'])(
+    'rejects a plan candidate without %s',
+    (field) => {
+      const claim = criticalClaimDeclaration();
+      const options: Record<string, unknown> = {
+        ticketFile: TICKET_FILE,
+        claim,
+        positiveAssertion: POSITIVE_ASSERTION,
+        buildCandidateId: 'vc_build',
+        testCandidateId: 'vc_test',
+      };
+      options[field] = field === 'claim' ? {} : '';
+      expect(() => buildPlanCandidate(options as never)).toThrow(
+        'plan candidate requires the exact claim and verification-candidate identities',
+      );
+    },
+  );
 });
 
 describe('live claim control host integration', () => {

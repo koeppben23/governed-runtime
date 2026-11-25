@@ -2166,6 +2166,11 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- Use one fixed, repository-grounded plan candidate for both Java reference
+  controls, submitted through the normal `/plan` path while preserving
+  independent review and revision. The candidate verifies the ticket-required
+  `Getting started` section as human-review evidence, avoids unrequested API
+  claims, and describes the `-DskipTests` counterexample as plan reasoning only.
 - Separate Java claim-control ticket adoption from plan creation: `/task` must
   settle at `TICKET` with the exact repository ticket and no plan before `/plan`
   is dispatched; a planning spill is `NOT_VERIFIED`. Require the repository
