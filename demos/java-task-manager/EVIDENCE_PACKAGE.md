@@ -62,7 +62,7 @@ verified package onto a synthetic ISO/IEC 27001:2022 demo mapping:
 This is a read-only companion report. It does not alter or replace the export,
 does not create new session evidence, and calls no model or network service.
 The report is written outside the worktree and FlowGuard config directory. The
-mapping is explicitly synthetic: it is not an adorsys Statement of
+mapping is explicitly synthetic: it is not an organization-specific Statement of
 Applicability, organizational approval, or ISO conformity assessment. The
 report's `EVIDENCE_*` statuses and limitations remain authoritative; a missing
 control is not converted into a successful headline.

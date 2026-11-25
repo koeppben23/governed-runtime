@@ -77,7 +77,10 @@ describe('java demo ISO/IEC 27001 evidence projection contract', () => {
       'implementation.revision',
       'review.human_approval_decision',
     ]);
-    expect(read(MAPPING_PATH).toLowerCase()).not.toContain('adorsys');
+    expect(mapping.organizationId).toBe('flowguard-demo');
+    expect(mapping.ismsScopeId).toBe('java-task-manager-demo');
+    expect(mapping.owner).toBe('FlowGuard Java Demo');
+    expect(mapping.approval.reference).toContain('DEMO-NOT-AN-ORGANIZATIONAL-APPROVAL');
   });
 
   it('keeps the wrapper a thin, deterministic inspect caller with no side-channel tooling', () => {

@@ -244,11 +244,15 @@ describe('developer onboarding documentation contract', () => {
     expect(debug).not.toContain('debug.bun.sh');
   });
 
-  it('keeps the security support matrix aligned with the technical preview', () => {
+  it('keeps the security support matrix aligned with the V2-only development model', () => {
     for (const path of ['SECURITY.md', 'docs/support-model.md']) {
       const document = read(path);
       expect(document, path).toContain('2.0.0-tp.x');
-      expect(document, path).toContain('Technical preview');
+      expect(document, path).toContain('Active development — Technical Preview');
+      expect(document, path).toContain('Legacy — no active maintenance');
+      expect(document, path).toContain('no production support commitment');
+      expect(document, path).not.toContain('receives bug fixes and security patches');
+      expect(document, path).not.toContain('72 hours');
     }
     expect(read('SECURITY.md')).toContain('docs/security-assurance.md');
   });

@@ -12,7 +12,7 @@
 
 FlowGuard provides an actor identity bridge via `FLOWGUARD_ACTOR_CLAIMS_PATH`. The original `assurance` model was binary (`best_effort | verified`) and tied directly to the claim source.
 
-For Bank/DATEV/Adorsys pilots, this is insufficient:
+For regulated enterprise deployments, this is insufficient:
 
 - `best_effort` covers `env`/`git`/`unknown` but has no tier for validated local claims.
 - `verified` conflates "validated local claim file" with "IdP-verified identity", creating semantic ambiguity.
@@ -101,7 +101,7 @@ The following tiers are defined in ascending order of assurance strength:
 
 **When it applies:** The actor's identity has been established by a trusted IdP and the token/assertion has been cryptographically verified by FlowGuard. This is the strongest assurance level for human actor identity.
 
-**Policy behavior:** Satisfies all approval gates. This is the target for Bank/DATEV regulated workflows.
+**Policy behavior:** Satisfies all approval gates. This is the target for regulated enterprise workflows.
 
 ---
 

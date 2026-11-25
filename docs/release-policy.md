@@ -150,15 +150,21 @@ Release notes are published on the GitHub Releases page, including:
 
 ### Version Support
 
-| Version Type       | Support Level                              |
-| ------------------ | ------------------------------------------ |
-| **Latest patch**   | Full support — bug fixes, security patches |
-| **Previous minor** | Best-effort — security patches only        |
-| **Older major**    | Unsupported                                |
+| Version    | Support level                                                                                 |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| 2.0.0-tp.x | Active development — Technical Preview, best-effort support; no production support commitment |
+| 1.x        | Legacy — no active maintenance or security patch commitment                                   |
+| < 1.0      | Unsupported                                                                                   |
+
+FlowGuard's active development is focused exclusively on V2. V1.x releases remain
+available as historical artifacts but are not actively maintained.
 
 ### Security Updates
 
-Critical security vulnerabilities are addressed in the latest patch release. Organizations should:
+Security reports are reviewed on a best-effort basis. Triage and remediation are
+prioritized according to severity, impact, exploitability, and maintainer
+availability. No guaranteed response, remediation, or patch time applies unless
+explicitly agreed under a separate support contract. Organizations should:
 
 - Monitor releases for security updates
 - Test security patches before deploying
@@ -167,6 +173,9 @@ Critical security vulnerabilities are addressed in the latest patch release. Org
 ---
 
 ## Upgrade Considerations
+
+The following upgrade guidance is historical. It does not imply active
+maintenance of V1.x.
 
 ### Minor Upgrades (1.x → 1.y)
 

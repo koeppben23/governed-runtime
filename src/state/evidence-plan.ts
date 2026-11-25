@@ -103,7 +103,7 @@ function planRevisionIssuePath(
 
 /**
  * Plan record with version history.
- * Compliance requirement for regulated environments (banks, DATEV):
+ * Compliance requirement for regulated environments:
  * every plan revision must be preserved for audit trail.
  *
  * - current: the active plan version
