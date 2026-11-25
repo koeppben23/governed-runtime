@@ -2848,8 +2848,10 @@ stop`, reviewer child reported it could not complete the falsification).
   uninstall pathname race with individual owner decisions scoped to TP.3.
   The bounded `O_NOFOLLOW` reader, linear Java method-name scan, adversarial
   regressions, and eval snapshot hardening are included. Alerts are closed only
-  as fixed or individually dismissed with a documented rule-scoped reason. See
-  `docs/security/codeql-triage-2026-11-25.md`.
+  as fixed or individually dismissed with a documented rule-scoped reason.
+  Stryker's coverage-instrumented test run disables wall-clock PERF budgets,
+  matching the coverage boundary; the integration-perf gate still enforces
+  them. See `docs/security/codeql-triage-2026-11-25.md`.
 
 ## [2.0.0-tp.2] - 2026-10-04
 

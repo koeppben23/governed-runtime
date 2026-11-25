@@ -21,6 +21,8 @@ CodeQL status and release authorization.
 
 ## Summary
 
+At independent review (history):
+
 | Disposition                         | Release baseline | Baseline + still-open follow-ups | All reviewed IDs |
 | ----------------------------------- | ---------------: | -------------------------------: | ---------------: |
 | Fixed                               |               26 |                               26 |               30 |
@@ -28,16 +30,29 @@ CodeQL status and release authorization.
 | Accepted risk (TP.3 owner decision) |                5 |                                5 |                5 |
 | **Total**                           |           **46** |                           **47** |           **51** |
 
-The 47-alert tally includes #142 but excludes #138–#141, which CodeQL
-marked fixed on the triage PR. The baseline rows and all follow-up rows are
-listed separately below.
+After the release scan and the six follow-up corrections:
 
-The counts report the reviewed SHA-bound scans. The comment follow-up below
-records subsequent source changes separately until CodeQL checks them.
+| Final disposition                      |  Count |
+| -------------------------------------- | -----: |
+| Fixed                                  |     36 |
+| False positive, individually dismissed |     10 |
+| Accepted risk (TP.3 owner decision)    |      5 |
+| Open                                   |      0 |
+| **Total**                              | **51** |
+
+CodeQL's state on the release ref is 33 fixed and 14 dismissed (nine
+rule-scoped false positives, four owner-accepted harness risks, and #142),
+with zero open. The difference from the substantive table is #103: CodeQL
+marks it fixed while its owner-accepted residual remains documented.
+#138–#141 are fixed on the triage ref and absent from the release inventory.
+
+The historical inventory rows below keep the disposition from the reviewed
+scan; the release review comment follow-up records the six corrections that
+were subsequently verified.
 
 ## Release baseline inventory
 
-|                                                                             Alert | Rule                                          | Severity | Location                                                            | Class               | Disposition                         | Evidence                                                                                                                                                                                                                                                                                                            |
+|                                                                             Alert | Rule                                          | Severity | Location                                                            | Class               | Disposition at review               | Evidence                                                                                                                                                                                                                                                                                                            |
 | --------------------------------------------------------------------------------: | --------------------------------------------- | -------- | ------------------------------------------------------------------- | ------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 |   [#64](https://github.com/koeppben23/governed-runtime/security/code-scanning/64) | `js/redos`                                    | high     | `src/discovery/collectors/code-surface-semantic-extractors.ts:218`  | Runtime discovery   | Fixed                               | The scanner walks backward over the method name using constant-size character checks, without an unanchored suffix regex. The code-surface suite covers control flow, generic methods and return types, and a long non-matching prefix with an opening parenthesis that reaches the name check.                     |
 |   [#73](https://github.com/koeppben23/governed-runtime/security/code-scanning/73) | `js/bad-tag-filter`                           | high     | `src/audit/iso27001/render-markdown.test.ts:87`                     | Test                | Fixed                               | Case-insensitive hostile-tag assertion; render-markdown suite passed.                                                                                                                                                                                                                                               |
@@ -111,33 +126,35 @@ records subsequent source changes separately until CodeQL checks them.
   failed only on #142. The six follow-up corrections generated no new
   CodeQL findings on the triage ref. Their baseline alert IDs still need
   verification on the updated release ref.
-- **Release PR #1274:** Head `93e01e5d6b47f306d55985c71e3b1ef1ff566532`,
-  merge SHA `01da78a891d60eff46ebbbb1c12fa86a2699ff42`, analysis
-  `2250857219`. The alert API and the
-  [failed CodeQL alert check](https://github.com/koeppben23/governed-runtime/runs/139452491709)
-  agree on 20 open alerts (11 high, nine medium): all 16 documented false
-  positives and #87, #92, #93 and #94. The other 27 baseline IDs are marked
-  fixed by GitHub: the 26 fixed rows above plus #103. The latter remains a
-  production residual, regardless of the scanner's state. #138–#141 were
-  triage-only results and are absent from the release-ref inventory.
-  Reconcile again if the candidate SHA changes.
-- **Mutation:** [Run 45683742443](https://github.com/koeppben23/governed-runtime/actions/runs/45683742443)
-  on release head `93e01e5d6` failed in Stryker's initial test run: the
-  native V2 non-mutating-tool performance test measured 185.65 ms against
-  a 150 ms limit. It did not reach mutation admission. A retry was
-  requested on the same revision with unchanged gates.
+- **Release PR #1274:** Head `42b301ce0102cf1a60dd9e00cf9b72628c0ff57a`,
+  merge SHA `2cea04c700c3df19e67e9843ab4c3aa98ad429d2`, analysis
+  `2251154566`. The scan produced 14 results: the six follow-up corrections
+  are fixed, and the nine rule-scoped false positives plus four
+  owner-accepted harness risks were individually dismissed. #142 remains
+  dismissed as a rule-scoped false positive. Final state on the release ref:
+  33 fixed, 14 dismissed, zero open; the
+  [CodeQL alert check](https://github.com/koeppben23/governed-runtime/runs/139476973107)
+  passes. #103 remains a documented production residual even though the
+  scanner marks it fixed. #138–#141 are triage-only results.
+- **Mutation:** [Run 45690515859](https://github.com/koeppben23/governed-runtime/actions/runs/45690515859)
+  on release head `42b301ce0` failed in Stryker's initial test run for the
+  same reason: the instrumented PERF test measured 184.15 ms against a
+  150 ms limit. The Stryker vitest config now sets `FLOWGUARD_PERF=0`,
+  matching the documented coverage-instrumentation boundary; the dedicated
+  `integration-perf` gate still enforces the real budgets. A new mutation
+  run is required before publication.
 
 ## Release review comment follow-up
 
 The Triage follow-up scan detected no new findings. The table tracks
 the baseline IDs that still need verification on the updated release ref.
 
-| Alert IDs  | Source change awaiting a fresh CodeQL scan                                                                                                                                                                              |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #98, #99   | The audit-cache fixture now stats, reads, overwrites, and restores timestamps through one handle to the same file. It still asserts unchanged size and rejection of the tamper.                                         |
-| #100, #101 | Each lock snapshot reads file identity and bytes through one handle. The test independently reopens the final pathname and verifies both identity and bytes after the contender times out.                              |
-| #107       | The demo lease was already created exclusively. Exclusive creation does not set access permissions; the new `0600` mode prevents group/other access to fresh lease records on POSIX, independent of a permissive umask. |
-| #108       | The reclamation guard keeps exclusive creation and now specifies `0600` for each fresh owner entry on POSIX. The ownership and stale-entry protocol is unchanged.                                                       |
+| Alert IDs  | Result in release scan `2251154566`                                                                                                                                        |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #98, #99   | Fixed. The audit-cache fixture stats, reads, overwrites, and restores timestamps through one handle to the same file; unchanged size and tamper rejection remain asserted. |
+| #100, #101 | Fixed. Each lock snapshot reads file identity and bytes through one handle, and the final pathname is reopened and compared after the contender times out.                 |
+| #107       | Fixed. The demo lease adds explicit `0600` to the existing exclusive create so group/other access cannot depend on umask on POSIX.                                         |
+| #108       | Fixed. The reclamation guard keeps exclusive creation and specifies `0600` for each fresh owner entry on POSIX; the ownership protocol is unchanged.                       |
 
 ## Fixed findings — verification
 
@@ -192,6 +209,8 @@ and conditions for each alert:
 - [Release PR #1274](https://github.com/koeppben23/governed-runtime/pull/1274#pullrequestreview-6063973415)
   at head `93e01e5d6b47f306d55985c71e3b1ef1ff566532`.
 
-These decisions do not change CodeQL alert state, waive any required check,
-or authorize a merge, tag, or publication. The release remains blocked
-on the remaining CodeQL dispositions and SHA-bound verification.
+These decisions did not by themselves change CodeQL alert state. The four
+harness alerts were subsequently dismissed as `won't fix` under these
+conditions; #103 is marked fixed by CodeQL but remains a documented residual.
+The decisions waive no required check and do not authorize a merge, tag, or
+publication. The release remains blocked on the final candidate's verification.
