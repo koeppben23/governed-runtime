@@ -2,14 +2,15 @@
 
 ## Supported Versions
 
-| Version      | Status                                                                              |
-| ------------ | ----------------------------------------------------------------------------------- |
-| 2.0.0-tp.x   | Technical preview — no production support commitment; security reports are reviewed |
-| 1.x (latest) | Supported — receives bug fixes and security patches                                 |
-| < 1.0        | Not supported                                                                       |
+| Version    | Support status                                                                                |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| 2.0.0-tp.x | Active development — Technical Preview, best-effort support; no production support commitment |
+| 1.x        | Legacy — no active maintenance or security patch commitment                                   |
+| < 1.0      | Unsupported                                                                                   |
 
-Only the latest 1.x release receives patches. `2.0.0-tp.x` is a technical preview
-line; it is not a GA support claim.
+FlowGuard's active development is focused exclusively on V2. V1.x releases remain
+available as historical artifacts but are not actively maintained. `2.0.0-tp.x`
+is a technical preview line; it is not a GA support claim.
 
 ## Security Assurance
 
@@ -23,8 +24,12 @@ private vulnerability reporting setting. The live setting was last verified on
 
 ## Security Update Policy
 
-- **Critical vulnerabilities**: Acknowledgment within 72 hours, best-effort fix timeline
-- **High/Medium/Low**: Next planned release
+Security reports are reviewed on a best-effort basis. Triage and remediation are
+prioritized according to severity, impact, exploitability, and maintainer
+availability.
+
+No guaranteed response or remediation times apply unless explicitly agreed under
+a separate support contract.
 
 ## Reporting a Vulnerability
 
@@ -36,7 +41,7 @@ Use GitHub's private vulnerability reporting:
 2. Click **"Report a vulnerability"**
 3. Provide a description of the vulnerability, steps to reproduce, and impact assessment
 
-You will receive an acknowledgment within 72 hours. We aim to provide a fix or mitigation plan within 14 days for critical issues.
+Reports are reviewed on a best-effort basis. No guaranteed response or remediation time applies unless separately agreed under a support contract.
 
 ## Scope
 

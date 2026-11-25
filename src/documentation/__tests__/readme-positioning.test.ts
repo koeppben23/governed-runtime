@@ -45,7 +45,9 @@ describe('README positioning contract', () => {
 
   it('leads with the reference result and keeps the release boundary explicit', () => {
     const evidence = section('Green checks are not enough');
-    expect(evidence).toContain('build and tests passed in both runs');
+    expect(evidence).toContain('Java reference demonstration');
+    expect(evidence).toContain('controlled positive and negative run');
+    expect(evidence).toContain('build and tests passed in both cases');
     expect(evidence).toContain('required adversarial assertion passed');
     expect(evidence).toContain('`PROVEN`');
     expect(evidence).toContain('adversarial assertion was skipped');
@@ -74,7 +76,6 @@ describe('README positioning contract', () => {
       '[Contact the author via LinkedIn](https://www.linkedin.com/in/benjamin-fuchs-ba6986190/)',
     );
     expect(evaluation).not.toContain('mailto:');
-    expect(evaluation).not.toContain('@adorsys.com');
     expect(evaluation).not.toMatch(/download|install|run-demo-setup/i);
   });
 

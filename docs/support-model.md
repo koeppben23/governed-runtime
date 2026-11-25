@@ -16,21 +16,21 @@ Contractual support is not generally available as a public self-service offering
 
 ## Responsibility Matrix
 
-| Area                     | Responsible Party       | Description                                           |
-| ------------------------ | ----------------------- | ----------------------------------------------------- |
-| FlowGuard source code    | **Maintainer**          | Bug fixes, security patches, releases                 |
-| Installation and CLI     | **Maintainer**          | Installer, doctor, upgrade path                       |
-| Documentation            | **Maintainer**          | Accuracy of docs, guides, and references              |
-| Security vulnerabilities | **Maintainer**          | Triage, fix, coordinated disclosure                   |
-| OpenCode integration     | **Maintainer**          | Tool bindings, plugin, command prompts                |
-| OpenCode runtime         | **OpenCode project**    | OpenCode bugs, updates, LLM integration               |
-| Node.js / Bun runtime    | **Runtime project**     | Node.js or Bun bugs and updates                       |
-| Host environment         | **Organization / User** | OS, filesystem, network, permissions                  |
-| Policy configuration     | **Organization / User** | Choosing policy mode, profile, active checks          |
-| Compliance assessment    | **Organization / User** | Mapping FlowGuard controls to regulatory requirements |
-| Audit trail retention    | **Organization / User** | Storing, archiving, and managing session data         |
-| Access control           | **Organization / User** | Who can run FlowGuard, who can review                 |
-| CI/CD integration        | **Organization / User** | Wrapping FlowGuard in pipeline scripts                |
+| Area                     | Responsible Party       | Description                                                   |
+| ------------------------ | ----------------------- | ------------------------------------------------------------- |
+| FlowGuard source code    | **Maintainer**          | V2 development, releases, and best-effort security triage     |
+| Installation and CLI     | **Maintainer**          | Installer, doctor, upgrade path                               |
+| Documentation            | **Maintainer**          | Accuracy of docs, guides, and references                      |
+| Security vulnerabilities | **Maintainer**          | Triage and coordinated disclosure; remediation is best-effort |
+| OpenCode integration     | **Maintainer**          | Tool bindings, plugin, command prompts                        |
+| OpenCode runtime         | **OpenCode project**    | OpenCode bugs, updates, LLM integration                       |
+| Node.js / Bun runtime    | **Runtime project**     | Node.js or Bun bugs and updates                               |
+| Host environment         | **Organization / User** | OS, filesystem, network, permissions                          |
+| Policy configuration     | **Organization / User** | Choosing policy mode, profile, active checks                  |
+| Compliance assessment    | **Organization / User** | Mapping FlowGuard controls to regulatory requirements         |
+| Audit trail retention    | **Organization / User** | Storing, archiving, and managing session data                 |
+| Access control           | **Organization / User** | Who can run FlowGuard, who can review                         |
+| CI/CD integration        | **Organization / User** | Wrapping FlowGuard in pipeline scripts                        |
 
 ---
 
@@ -76,44 +76,37 @@ requirements.
 
 ## Response Expectations
 
-FlowGuard is maintained as a proprietary commercial product. Response times are best-effort, not contractual SLAs.
+FlowGuard is maintained as a proprietary commercial product. Security reports
+and support requests are reviewed on a best-effort basis. Triage and remediation
+are prioritized according to severity, impact, exploitability, and maintainer
+availability.
 
-| Category                    | Target Response           | Target Resolution |
-| --------------------------- | ------------------------- | ----------------- |
-| **Security — Critical**     | 72 hours (acknowledgment) | 14 days           |
-| **Security — Non-critical** | 1 week                    | Next release      |
-| **Bug — Workflow blocked**  | 1 week                    | Best effort       |
-| **Bug — Non-blocking**      | 2 weeks                   | Best effort       |
-| **Feature request**         | 2 weeks (triage)          | Roadmap dependent |
-| **Question**                | 2 weeks                   | Best effort       |
-
-These are targets, not guarantees. Response and resolution times depend on severity, complexity, and maintainer availability.
+No guaranteed response or remediation times apply unless explicitly agreed under
+a separate support contract.
 
 ### What "Response" Means
 
-- The issue has been read and triaged
-- A severity/priority label has been assigned
-- An initial assessment or request for more information has been posted
+When capacity permits, the maintainer reads and triages the report, assigns a
+severity or priority where possible, and may request more information.
 
 ### What "Resolution" Means
 
-- A fix, workaround, or documented decision has been provided
-- For bugs: a patch release or a commit on main
-- For features: acceptance or rejection with rationale
+A resolution may be a fix, workaround, documented decision, or no action if the
+request is out of scope or cannot be prioritized.
 
 ---
 
 ## Supported Versions
 
-| Version      | Status                                                                              |
-| ------------ | ----------------------------------------------------------------------------------- |
-| 2.0.0-tp.x   | Technical preview — no production support commitment; security reports are reviewed |
-| 1.x (latest) | Supported — receives bug fixes and security patches                                 |
-| < 1.0        | Not supported                                                                       |
+| Version    | Support status                                                                                |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| 2.0.0-tp.x | Active development — Technical Preview, best-effort support; no production support commitment |
+| 1.x        | Legacy — no active maintenance or security patch commitment                                   |
+| < 1.0      | Unsupported                                                                                   |
 
-Only the latest 1.x release receives patches. The `2.0.0-tp.x` line is a technical
-preview; it is not a GA support claim. Users should upgrade to the latest 1.x
-release before reporting issues that affect the supported line.
+FlowGuard's active development is focused exclusively on V2. V1.x releases remain
+available as historical artifacts but are not actively maintained. The
+`2.0.0-tp.x` line is a technical preview; it is not a GA support claim.
 
 ---
 
@@ -155,11 +148,12 @@ Organizations deploying FlowGuard in regulated environments should:
 
 ### Commercial / Contractual Support Path
 
-For organizations that require contractual support terms (for example banks, DATEV ecosystem partners, and other regulated buyers), use the following path:
+For organizations that require contractual support terms (for example regulated
+enterprise buyers), use the following path:
 
 1. Open a GitHub issue labeled `enterprise-support-request` with non-sensitive context (deployment model, expected scale, regulatory scope).
 2. Request private follow-up for commercial terms.
-3. Align on support scope (security advisories, response targets, patch windows, upgrade guidance) before production rollout.
+3. Agree support scope, response targets, patch windows, and upgrade guidance separately in a support contract before production rollout.
 
 This creates a documented procurement path even when no public standard support SKU is listed.
 

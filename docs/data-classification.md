@@ -152,7 +152,9 @@ External references recorded on `/ticket`, including URLs, tracker IDs, and bran
 | **Archives**             | Indefinite (customer-managed) | **10 years** when records are accounting/tax-relevant  | Customer responsibility |
 | **Discovery snapshots**  | Until archived                | Align with archive retention if used as audit evidence | Customer responsibility |
 
-For GoBD-relevant deployments (for example DATEV/accounting-adjacent change evidence), organizations should retain audit trail and archive artifacts for at least 10 years and document this in their retention policy.
+For GoBD-relevant deployments (for example accounting-related change evidence),
+organizations should retain audit trail and archive artifacts for at least 10
+years and document this in their retention policy.
 
 **Customer Responsibility:**
 

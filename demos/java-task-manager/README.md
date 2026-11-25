@@ -214,8 +214,8 @@ this is not crash-atomic publication of the pair.
 The demo mapping relates the verified technical evidence to A.8.15, A.8.25,
 A.8.29, and A.8.32. A.8.29 is explicitly a functional regression assertion
 example, not a claim of complete security-test coverage. The mapping is
-synthetic: it is not an adorsys SoA, organizational approval, or ISO
-conformity assessment. Read the Markdown report's limitations and the
+synthetic: it is not an organization-specific Statement of Applicability,
+organizational approval, or ISO conformity assessment. Read the Markdown report's limitations and the
 `EVIDENCE_*` status values; do not reduce them to a pass/fail headline.
 
 The wrapper resolves the installed FlowGuard CLI from the repo-scoped

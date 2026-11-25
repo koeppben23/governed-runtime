@@ -11,7 +11,8 @@ gates in supported host environments.
 
 ## Green checks are not enough
 
-In a controlled Java reference experiment, build and tests passed in both runs.
+In a Java reference demonstration with a controlled positive and negative run,
+build and tests passed in both cases.
 In the positive run, the required adversarial assertion passed, the critical
 claim was `PROVEN`, and FlowGuard completed the workflow with a verified export.
 In the negative run, the adversarial assertion was skipped, the claim stayed

@@ -341,7 +341,8 @@ covers it.
 > the verified `/export` package through the existing
 > `flowguard inspect --iso27001-mapping` CLI. It does not call a model, does not
 > change the session, and does not create new evidence. The mapping is a
-> synthetic demo input, not an adorsys Statement of Applicability or approval.
+> synthetic demo input, not an organization-specific Statement of Applicability
+> or approval.
 
 | Action                                             | What I Say                                                                                                                                                                                                                                                                                                                                                                                         |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

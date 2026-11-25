@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Lead the public README with the reference experiment's "green checks are not
+- Align public support and security statements with the V2-only development
+  model: V2 Technical Preview is best-effort with no production support or
+  response-time commitment; V1.x is historical with no active maintenance;
+  earlier versions are unsupported. Generalize examples in public documentation
+  and demo text, add a current-tree public-disclosure guard, preserve the
+  synthetic ISO 27001 demo boundary, and clarify the reference demonstration
+  wording. No runtime, license, release or evidence change.
+- Lead the public README with the reference demonstration's "green checks are not
   enough" result and a version-bound evidence link, and add a LinkedIn contact
   path for authorized hands-on evaluation that preserves the proprietary
   read-only boundary.
