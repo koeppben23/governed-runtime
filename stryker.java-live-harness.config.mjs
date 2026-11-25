@@ -30,6 +30,7 @@ export default {
     'demo-rearm-lifecycle',
     'demo-audit-witness',
     'demo-recovery-state',
+    'live-claim-controls',
   ].map((name) => `${tests}/${name}.test.ts`),
   mutate: [
     `${demo}/live-decision-witness.mjs`,
@@ -42,6 +43,18 @@ export default {
       'function ticketContentDigest(',
       'demos/lib',
     ),
+    range(
+      'recovery-state',
+      'function ticketAdoptionPersisted(',
+      'An unrelated phase, audit or metadata update',
+      'demos/lib',
+    ),
+    range(
+      'run-live-claim-controls',
+      'export function assertPostTaskAdoption',
+      'export function assertRetainedCriticalClaim',
+    ),
+    range('run-live-claim-controls', 'export const PLAN_PROMPT', 'export async function runCase'),
     range(
       'live-host-transport',
       'export async function hostNativeCommandTransport',

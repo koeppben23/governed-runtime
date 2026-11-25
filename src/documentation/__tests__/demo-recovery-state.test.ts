@@ -557,6 +557,132 @@ describe.each(ticketCodes)('ticket-adoption recovery (%s)', (code) => {
     expect(recoveryPersisted(expected, state, 'task', [audit[1]])).toBe(false);
   });
 
+  it('accepts a proven forward progression from ticket adoption to the settled phase', () => {
+    const state = { ...adoptedTicket, phase: 'PLAN_REVIEW' };
+    const audit = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:PLAN_READY',
+        detail: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY' },
+      },
+      {
+        auditSequence: 5,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:SELF_REVIEW_MET',
+        detail: { from: 'PLAN', to: 'PLAN_REVIEW', event: 'SELF_REVIEW_MET' },
+      },
+    ];
+    expect(recoveryPersisted(expectedTicket(), state, 'task', audit)).toBe(true);
+    expect(
+      recoveryPersisted(expectedTicket(), { ...state, phase: 'COMPLETE' }, 'task', audit),
+    ).toBe(false);
+  });
+
+  it('rejects gaps, unrelated transitions and a foreign-session progression', () => {
+    const state = { ...adoptedTicket, phase: 'PLAN_REVIEW' };
+    const gap = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:SELF_REVIEW_MET',
+        detail: { from: 'PLAN', to: 'PLAN_REVIEW', event: 'SELF_REVIEW_MET' },
+      },
+    ];
+    expect(recoveryPersisted(expectedTicket(), state, 'task', gap)).toBe(false);
+    const unrelated = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:PLAN_READY',
+        detail: { from: 'READY', to: 'PLAN', event: 'PLAN_READY' },
+      },
+    ];
+    expect(recoveryPersisted(expectedTicket(), state, 'task', unrelated)).toBe(false);
+    const foreign = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        hostSessionId: 'ses_other',
+        event: 'transition:PLAN_READY',
+        detail: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY' },
+      },
+      {
+        auditSequence: 5,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:SELF_REVIEW_MET',
+        detail: { from: 'PLAN', to: 'PLAN_REVIEW', event: 'SELF_REVIEW_MET' },
+      },
+    ];
+    expect(recoveryPersisted(expectedTicket(), state, 'task', foreign)).toBe(false);
+    const cycle = [
+      ...adoptionAudit,
+      {
+        auditSequence: 4,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:PLAN_READY',
+        detail: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY' },
+      },
+      {
+        auditSequence: 5,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:TICKET_REOPENED',
+        detail: { from: 'PLAN', to: 'TICKET', event: 'TICKET_REOPENED' },
+      },
+    ];
+    expect(recoveryPersisted(expectedTicket(), state, 'task', cycle)).toBe(false);
+  });
+
+  it('rejects competing adoption, later unresolved denials and a non-canonical first transition', () => {
+    const state = { ...adoptedTicket, phase: 'PLAN_REVIEW' };
+    const competing = [
+      ...adoptionAudit,
+      { ...adoptionAudit[1]!, auditSequence: 4 },
+      { ...adoptionAudit[2]!, auditSequence: 5 },
+    ];
+    expect(recoveryPersisted(expectedTicket(), state, 'task', competing)).toBe(false);
+    const laterDenial = [
+      ...adoptionAudit,
+      {
+        ...adoptionAudit[0]!,
+        auditSequence: 4,
+      },
+    ];
+    expect(recoveryPersisted(expectedTicket(), state, 'task', laterDenial)).toBe(false);
+    const nonCanonicalFirst = [
+      adoptionAudit[0]!,
+      adoptionAudit[1]!,
+      {
+        auditSequence: 3,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:PLAN_READY',
+        detail: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY' },
+      },
+      { ...adoptionAudit[2]!, auditSequence: 4 },
+    ];
+    expect(recoveryPersisted(expectedTicket(), state, 'task', nonCanonicalFirst)).toBe(false);
+  });
+
+  it('rejects a ticket source or successful transition that no longer matches the adoption', () => {
+    expect(
+      recoveryPersisted(
+        expectedTicket(),
+        { ...adoptedTicket, ticket: { ...adoptedTicket.ticket, source: 'repository' } },
+        'task',
+        adoptionAudit,
+      ),
+    ).toBe(false);
+    const noTransition = structuredClone(adoptionAudit);
+    noTransition[1]!.detail.transitionCount = 0;
+    expect(recoveryPersisted(expectedTicket(), adoptedTicket, 'task', noTransition)).toBe(false);
+    const secondSelection = [...adoptionAudit, { ...adoptionAudit[2]!, auditSequence: 4 }];
+    expect(recoveryPersisted(expectedTicket(), adoptedTicket, 'task', secondSelection)).toBe(false);
+  });
+
   it('keeps a conflicting denial identity unproven', () => {
     const expected = expectedTicket(adoptedTicket, [
       { bindings: {}, conflicts: ['subjectDigest'] },

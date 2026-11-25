@@ -51,7 +51,10 @@ sets the JUnit skip in the negative case's actual service process and removes
 any inherited skip from the positive case. It will not reuse a running service.
 The negative approval is accepted only with a unique audit refusal and its
 closing error record, a complete session-bound audit window, and unchanged
-persisted state. A transport failure or an unanswered final transcript turn is
+persisted state. Ticket adoption and plan creation are separate turns: `/task`
+must leave the exact repository ticket in `TICKET` with no plan before `/plan`
+is dispatched. The shared plan prompt treats the `-DskipTests` counterexample as
+hypothetical plan reasoning only; it is never added to the delivered notes. A transport failure or an unanswered final transcript turn is
 not a passing control.
 
 Before `/start`, each case receives the same committed fixtures: a documentation
