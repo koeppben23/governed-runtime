@@ -1049,6 +1049,12 @@ last read` without a click, while a completion in another session left the
 
 ### Fixed
 
+- Serialize duplicate native reviewer capture completions per child. Two
+  concurrent settlements could release the shared result-integrity tails while
+  the winner was verifying, leaving zero recorded invocations. The existing
+  exactly-once suite now passes 10/10 consecutive runs; no test, threshold or
+  timeout changed.
+
 - Publish archives without destroying the previously attested generation. The
   current archive/checksum pair is retained as `.previous` before any canonical
   name is rewritten, restored byte for byte when the new publication fails, and
@@ -2824,14 +2830,6 @@ stop`, reviewer child reported it could not complete the falsification).
   they had no production importer after the global mandate instruction was
   dropped. `opencode-runtime-compat.ts` keeps only the retained old-generation
   exact host pin used by demo/live harnesses and SDK update tests.
-
-### Fixed
-
-- Serialize duplicate native reviewer capture completions per child. Two
-  concurrent settlements could release the shared result-integrity tails while
-  the winner was verifying, leaving zero recorded invocations. The existing
-  exactly-once suite now passes 10/10 consecutive runs; no test, threshold or
-  timeout changed.
 
 ## [2.0.0-tp.2] - 2026-10-04
 
