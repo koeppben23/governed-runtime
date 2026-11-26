@@ -237,6 +237,46 @@ describe('handlePluginEvent', () => {
     expect(runtime.ws.invalidateChainState).not.toHaveBeenCalled();
   });
 
+  it('wakes interrupted system work only for the governed session', async () => {
+    const runtime = makeRuntime();
+    await handlePluginEvent(
+      runtime,
+      { type: 'session.idle', data: { sessionID: SESSION_ID } },
+      SESSION_ID,
+    );
+    expect(runtime.riskDeps.getWorktreeRoot).toHaveBeenCalledTimes(1);
+
+    await handlePluginEvent(
+      runtime,
+      { type: 'session.idle', data: { sessionID: 'delegated-session' } },
+      SESSION_ID,
+    );
+    expect(runtime.riskDeps.getWorktreeRoot).toHaveBeenCalledTimes(1);
+    expect(runtime.logError).not.toHaveBeenCalled();
+  });
+
+  it('checks the governed worktree on an idle wakeup', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const runtime = makeRuntime({
+        riskDeps: {
+          resolveSessionAuthority: vi.fn(() => authorityAt(ws.tmpDir)),
+          getWorktreeRoot: vi.fn(() => ws.tmpDir),
+        },
+      });
+      await expect(
+        handlePluginEvent(
+          runtime,
+          { type: 'session.idle', data: { sessionID: SESSION_ID } },
+          SESSION_ID,
+        ),
+      ).resolves.toBeUndefined();
+      expect(runtime.riskDeps.getWorktreeRoot).toHaveBeenCalledTimes(1);
+    } finally {
+      await fs.rm(ws.tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it('cleans all session-scoped runtime state on session.deleted', async () => {
     const runtime = makeRuntime();
     runtime.activeCommandScopes.set(SESSION_ID, 'check');
@@ -544,6 +584,51 @@ describe('toolAfter - diagnostic latency fields on tool.execute.after', () => {
     expect(afterLogFields(runtime).hostToolOutcome).toBe('unknown');
   });
 
+  it('BAD: a JSON array from a FlowGuard tool stays unknown, never returned', async () => {
+    const runtime = primedRuntime('c-array');
+    await toolAfter(
+      runtime,
+      { tool: 'flowguard_status', sessionID: SESSION_ID, callID: 'c-array', args: {} },
+      hookOutput('[]'),
+    );
+    expect(afterLogFields(runtime).hostToolOutcome).toBe('unknown');
+  });
+
+  it('BAD: an empty FlowGuard error code is returned, not blocked', async () => {
+    const runtime = primedRuntime('c-empty-code');
+    await toolAfter(
+      runtime,
+      { tool: 'flowguard_status', sessionID: SESSION_ID, callID: 'c-empty-code', args: {} },
+      hookOutput('{"error":true,"code":""}'),
+    );
+    expect(afterLogFields(runtime).hostToolOutcome).toBe('flowguard_returned');
+  });
+
+  it('BAD: a non-boolean FlowGuard error flag is returned, not blocked', async () => {
+    const runtime = primedRuntime('c-non-bool-error');
+    await toolAfter(
+      runtime,
+      {
+        tool: 'flowguard_status',
+        sessionID: SESSION_ID,
+        callID: 'c-non-bool-error',
+        args: {},
+      },
+      hookOutput('{"error":"yes","code":"NO_SESSION"}'),
+    );
+    expect(afterLogFields(runtime).hostToolOutcome).toBe('flowguard_returned');
+  });
+
+  it('EDGE: an empty callID is omitted from the latency fields', async () => {
+    const runtime = makeRuntime();
+    await toolAfter(
+      runtime,
+      { tool: 'read', sessionID: SESSION_ID, callID: '', args: {} },
+      hookOutput('ok'),
+    );
+    expect(afterLogFields(runtime).callId).toBeUndefined();
+  });
+
   it('BAD: a missing start is reported as unavailable, never as zero', async () => {
     const runtime = makeRuntime();
     await toolAfter(
@@ -554,6 +639,24 @@ describe('toolAfter - diagnostic latency fields on tool.execute.after', () => {
     const fields = afterLogFields(runtime);
     expect(fields.beforeToAfterMs).toBeUndefined();
     expect(fields.durationUnavailable).toBe('start_not_observed');
+  });
+
+  it('EDGE: a throw before outcome classification still records unknown', async () => {
+    const runtime = primedRuntime('c-throw-before');
+    let reads = 0;
+    const input = { tool: 'flowguard_status', sessionID: SESSION_ID, args: {} } as Record<
+      string,
+      unknown
+    >;
+    Object.defineProperty(input, 'callID', {
+      get() {
+        reads += 1;
+        if (reads === 1) throw new Error('one-shot accessor');
+        return 'c-throw-before';
+      },
+    });
+    await toolAfter(runtime, input, hookOutput('{"phase":"PLAN"}'));
+    expect(afterLogFields(runtime).hostToolOutcome).toBe('unknown');
   });
 
   it('EDGE: a throwing input accessor never changes the hook result', async () => {
@@ -577,5 +680,6 @@ describe('toolAfter - diagnostic latency fields on tool.execute.after', () => {
     const fields = afterLogFields(runtime);
     expect(fields.statusProjection).toBeUndefined();
     expect(fields.beforeToAfterMs).toBeGreaterThanOrEqual(0);
+    expect(fields.hostToolOutcome).toBe('flowguard_returned');
   });
 });

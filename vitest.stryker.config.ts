@@ -94,6 +94,7 @@ export default defineConfig({
       'src/integration/services/decision-audit-intent.test.ts',
       'src/integration/plugin-afterhooks.test.ts',
       'src/integration/plugin-afterhooks-more.test.ts',
+      'src/integration/plugin-afterhooks-review-authority.test.ts',
       'src/integration/plugin-beforehooks.test.ts',
       'src/integration/plugin-bootstrap.test.ts',
       'src/integration/plugin-integration.test.ts',

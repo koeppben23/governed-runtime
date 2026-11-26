@@ -42,6 +42,7 @@ checksums.sha256
 
 # Stryker mutation testing (base and per-profile temp directories)
 .stryker-tmp*/
+stryker-shard-*.conf.json
 reports/mutation/
 
 # fast-check fuzz testing counterexamples

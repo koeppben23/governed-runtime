@@ -6,6 +6,7 @@ import {
   publishArchiveArtifacts,
   recoverInterruptedArchivePublication,
   removeArchiveTemporaries,
+  writeArchiveChecksum,
 } from './archive-publish.js';
 import { hashText } from '../../shared/hashing.js';
 
@@ -213,6 +214,233 @@ describe('archive publication', () => {
       message: expect.stringContaining('journal'),
     });
   });
+
+  it('writes the checksum sidecar for the archive bytes', async () => {
+    const paths = await makeFixture();
+    await fs.writeFile(paths.archivePath, 'archive bytes', 'utf8');
+
+    await writeArchiveChecksum(paths.archivePath, paths.checksumPath, 'session.tar.gz');
+
+    await expect(fs.readFile(paths.checksumPath, 'utf8')).resolves.toBe(
+      `${hashText('archive bytes')}  session.tar.gz\n`,
+    );
+  });
+
+  it('fails closed when the checksum sidecar cannot read its archive', async () => {
+    const paths = await makeFixture();
+
+    await expect(
+      writeArchiveChecksum(paths.archivePath, paths.checksumPath, 'session.tar.gz'),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
+
+  const validJournal = {
+    schemaVersion: 'archive-publish-journal.v1',
+    archiveFile: 'session.tar.gz',
+    next: { archiveDigest: 'archive', checksumDigest: 'checksum' },
+  };
+
+  it.each([
+    ['an unknown schema version', { ...validJournal, schemaVersion: 'archive-publish-journal.v2' }],
+    ['a non-string archiveFile', { ...validJournal, archiveFile: 7 }],
+    ['a missing next block', { ...validJournal, next: undefined }],
+    [
+      'a non-string archive digest',
+      { ...validJournal, next: { ...validJournal.next, archiveDigest: 1 } },
+    ],
+    [
+      'a non-string checksum digest',
+      { ...validJournal, next: { ...validJournal.next, checksumDigest: 1 } },
+    ],
+  ])('fails closed on a journal with %s', async (_label, payload) => {
+    const paths = await makeFixture();
+    await seedPublished(paths, 'archive', 'checksum');
+    await fs.writeFile(journalPath(paths), JSON.stringify(payload), 'utf8');
+
+    await expect(recoverInterruptedArchivePublication(paths)).rejects.toMatchObject({
+      code: 'ARCHIVE_FAILED',
+    });
+  });
+
+  it('fails closed when the journal path cannot be read for a non-ENOENT reason', async () => {
+    const paths = await makeFixture();
+    await seedPublished(paths, 'archive', 'checksum');
+    await fs.mkdir(journalPath(paths));
+
+    await expect(recoverInterruptedArchivePublication(paths)).rejects.toMatchObject({
+      code: 'ARCHIVE_FAILED',
+    });
+  });
+
+  it.each([
+    ['a null journal', 'null'],
+    ['a JSON array journal', '[]'],
+    ['a JSON string journal', '"journal"'],
+  ])('fails closed on %s', async (_label, raw) => {
+    const paths = await makeFixture();
+    await seedPublished(paths, 'archive', 'checksum');
+    await fs.writeFile(journalPath(paths), raw, 'utf8');
+
+    await expect(recoverInterruptedArchivePublication(paths)).rejects.toMatchObject({
+      code: 'ARCHIVE_FAILED',
+    });
+  });
+
+  it('fails closed when the checksum sidecar cannot be written', async () => {
+    const paths = await makeFixture();
+    await fs.writeFile(paths.archivePath, 'archive bytes', 'utf8');
+
+    await expect(
+      writeArchiveChecksum(
+        paths.archivePath,
+        path.join(path.dirname(paths.checksumPath), 'missing', 'sidecar.sha256'),
+        'session.tar.gz',
+      ),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
+
+  it('rolls back when only the archive digest matches the journal', async () => {
+    const paths = await makeFixture();
+    await seedPublished(paths, 'new archive', 'other checksum');
+    await fs.writeFile(`${paths.archivePath}.previous`, 'old archive', 'utf8');
+    await fs.writeFile(`${paths.checksumPath}.previous`, 'old checksum', 'utf8');
+    await writeJournal(paths, { archive: 'new archive', checksum: 'new checksum' });
+
+    await expect(recoverInterruptedArchivePublication(paths)).resolves.toBe(true);
+
+    await expect(fs.readFile(paths.archivePath, 'utf8')).resolves.toBe('old archive');
+    await expect(fs.readFile(paths.checksumPath, 'utf8')).resolves.toBe('old checksum');
+  });
+
+  it('rolls back when only the checksum digest matches the journal', async () => {
+    const paths = await makeFixture();
+    await seedPublished(paths, 'other archive', 'new checksum');
+    await fs.writeFile(`${paths.archivePath}.previous`, 'old archive', 'utf8');
+    await fs.writeFile(`${paths.checksumPath}.previous`, 'old checksum', 'utf8');
+    await writeJournal(paths, { archive: 'new archive', checksum: 'new checksum' });
+
+    await expect(recoverInterruptedArchivePublication(paths)).resolves.toBe(true);
+
+    await expect(fs.readFile(paths.archivePath, 'utf8')).resolves.toBe('old archive');
+    await expect(fs.readFile(paths.checksumPath, 'utf8')).resolves.toBe('old checksum');
+  });
+
+  it('publishes over an archive-only generation without a checksum', async () => {
+    const paths = await makeFixture();
+    await fs.writeFile(paths.archivePath, 'old archive', 'utf8');
+    await seedStaged(paths, 'new archive', 'new checksum');
+
+    await publishArchiveArtifacts(paths);
+
+    await expect(fs.readFile(paths.archivePath, 'utf8')).resolves.toBe('new archive');
+    await expect(fs.readFile(paths.checksumPath, 'utf8')).resolves.toBe('new checksum');
+    await expectMissing(`${paths.archivePath}.previous`);
+    await expectMissing(`${paths.checksumPath}.previous`);
+  });
+
+  it('publishes over a checksum-only generation without an archive', async () => {
+    const paths = await makeFixture();
+    await fs.writeFile(paths.checksumPath, 'old checksum', 'utf8');
+    await seedStaged(paths, 'new archive', 'new checksum');
+
+    await publishArchiveArtifacts(paths);
+
+    await expect(fs.readFile(paths.archivePath, 'utf8')).resolves.toBe('new archive');
+    await expect(fs.readFile(paths.checksumPath, 'utf8')).resolves.toBe('new checksum');
+    await expectMissing(`${paths.archivePath}.previous`);
+    await expectMissing(`${paths.checksumPath}.previous`);
+  });
+
+  it('restores a retained archive when the checksum was never retained', async () => {
+    const paths = await makeFixture();
+    await fs.writeFile(paths.archivePath, 'current archive', 'utf8');
+    await fs.writeFile(`${paths.archivePath}.previous`, 'retained archive', 'utf8');
+    await fs.writeFile(paths.checksumPath, 'current checksum', 'utf8');
+    await writeJournal(paths, { archive: 'new archive', checksum: 'new checksum' });
+
+    await expect(recoverInterruptedArchivePublication(paths)).resolves.toBe(true);
+
+    await expect(fs.readFile(paths.archivePath, 'utf8')).resolves.toBe('retained archive');
+    await expect(fs.readFile(paths.checksumPath, 'utf8')).resolves.toBe('current checksum');
+    await expectMissing(`${paths.archivePath}.previous`);
+  });
+
+  it('restores a retained checksum when the archive was never retained', async () => {
+    const paths = await makeFixture();
+    await fs.writeFile(paths.archivePath, 'current archive', 'utf8');
+    await fs.writeFile(paths.checksumPath, 'current checksum', 'utf8');
+    await fs.writeFile(`${paths.checksumPath}.previous`, 'retained checksum', 'utf8');
+    await writeJournal(paths, { archive: 'new archive', checksum: 'new checksum' });
+
+    await expect(recoverInterruptedArchivePublication(paths)).resolves.toBe(true);
+
+    await expect(fs.readFile(paths.archivePath, 'utf8')).resolves.toBe('current archive');
+    await expect(fs.readFile(paths.checksumPath, 'utf8')).resolves.toBe('retained checksum');
+    await expectMissing(`${paths.checksumPath}.previous`);
+  });
+
+  it('rolls back the retained checksum when the archive retain fails', async () => {
+    const paths = await makeFixture();
+    await seedPublished(paths, 'old archive', 'old checksum');
+    await seedStaged(paths, 'new archive', 'new checksum');
+
+    await expect(
+      publishArchiveArtifacts(paths, async (source, destination) => {
+        if (destination === `${paths.archivePath}.previous`) throw new Error('retain failure');
+        await fs.rename(source, destination);
+      }),
+    ).rejects.toThrow('previous generation was restored');
+
+    await expect(fs.readFile(paths.checksumPath, 'utf8')).resolves.toBe('old checksum');
+    await expect(fs.readFile(paths.archivePath, 'utf8')).resolves.toBe('old archive');
+  });
+
+  it('keeps the canonical checksum when its own retain fails', async () => {
+    const paths = await makeFixture();
+    await fs.writeFile(paths.checksumPath, 'old checksum', 'utf8');
+    await seedStaged(paths, 'new archive', 'new checksum');
+
+    await expect(
+      publishArchiveArtifacts(paths, async (source, destination) => {
+        if (destination === `${paths.checksumPath}.previous`) throw new Error('retain failure');
+        await fs.rename(source, destination);
+      }),
+    ).rejects.toThrow('previous generation was restored');
+
+    await expect(fs.readFile(paths.checksumPath, 'utf8')).resolves.toBe('old checksum');
+  });
+
+  it('keeps the canonical archive when its own retain fails', async () => {
+    const paths = await makeFixture();
+    await fs.writeFile(paths.archivePath, 'old archive', 'utf8');
+    await seedStaged(paths, 'new archive', 'new checksum');
+
+    await expect(
+      publishArchiveArtifacts(paths, async (source, destination) => {
+        if (destination === `${paths.archivePath}.previous`) throw new Error('retain failure');
+        await fs.rename(source, destination);
+      }),
+    ).rejects.toThrow('previous generation was restored');
+
+    await expect(fs.readFile(paths.archivePath, 'utf8')).resolves.toBe('old archive');
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'fails closed when the publish journal cannot be written',
+    async () => {
+      const paths = await makeFixture();
+      await seedStaged(paths, 'new archive', 'new checksum');
+      const root = path.dirname(paths.archivePath);
+      await fs.chmod(root, 0o500);
+      try {
+        await expect(publishArchiveArtifacts(paths)).rejects.toThrow(
+          'Cannot write archive publish journal',
+        );
+      } finally {
+        await fs.chmod(root, 0o700);
+      }
+    },
+  );
 
   it('removes only temporary inputs', async () => {
     const paths = await makeFixture();

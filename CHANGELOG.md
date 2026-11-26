@@ -44,7 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `develop` using the passing packed-installed parity and unstarted-session
   integration suites. Desktop 2.2.x acceptance and live remote model refresh
   remain `NOT_VERIFIED`; historical host-probe documents are unchanged.
-
+- Shard the full mutation gate across eight disjoint target shards. Each shard
+  runs the canonical profile with only its `mutate` subset and a disabled
+  per-shard break threshold; a merge job rejects missing, duplicate or foreign
+  targets, restores the canonical thresholds and runs the unchanged admission
+  check on the merged report. The canonical profile pins four workers, matching
+  the hosted 4-vCPU runner. No mutant, threshold, test scope or branch-protection
+  change.
 - Split the PR smoke gate into four measured groups that run on separate
   runners, all consuming one SHA-256-verified release tarball packed from the
   built dist. Every existing smoke file, real installation, isolated workspace,
