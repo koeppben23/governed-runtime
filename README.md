@@ -275,14 +275,29 @@ Codex are technical previews.
 
 ### Installation
 
+**Host requirement:** FlowGuard `2.0.0-tp.x` requires **OpenCode V2**. The native API baseline is 2.2.7; the independently verified CLI smoke pin is 2.2.5. OpenCode 1.x — including 1.3.3 — is the V1 host line and is **not supported**. Check with `opencode --version` and upgrade before installing. Other 2.2.x builds are not independently verified, and the plugin cannot load on V1.
+
 FlowGuard is distributed as a pre-built proprietary release artifact via GitHub Releases.
 
-1. Download `flowguard-core-{version}.tgz` and `checksums.sha256` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases) and keep both files in the same directory. Missing or mismatched checksum evidence blocks installation before any artifacts are written.
-2. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
-3. OpenCode V2 watches plugin/config changes; its native reload action forces rediscovery. Installation does not activate governance. Verify the installed host with `flowguard doctor`; remaining installed Desktop/product and accessibility acceptance is tracked in #1196.
-4. Verify: `npx --package ./flowguard-core-{version}.tgz flowguard doctor`
+1. **Download.** Fetch `flowguard-core-{version}.tgz` and `checksums.sha256` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases) and keep both files in the same directory. Missing or mismatched checksum evidence blocks installation before any artifacts are written.
+2. **Install.** Run:
 
-If you installed with `--install-scope repo`, use the same flag for `doctor`.
+   ```bash
+   npx --package ./flowguard-core-{version}.tgz flowguard install \
+     --core-tarball ./flowguard-core-{version}.tgz
+   ```
+
+   This writes the native plugin and managed files into the selected OpenCode directory. It does not activate governance.
+
+3. **Verify.** Run:
+
+   ```bash
+   npx --package ./flowguard-core-{version}.tgz flowguard doctor
+   ```
+
+   `flowguard` is not a global command unless you installed the package globally; this guide does not require that. Always use the `npx --package ...` form, and add `--install-scope repo` if you installed with that scope. The command must exit 0 and report `Status: HEALTHY` or `Status: HEALTHY_WITH_WARNINGS`; `NOT_VERIFIED` or a non-zero exit means the installation is not verified.
+
+4. **Reload the host.** OpenCode V2 watches plugin/config changes; run `/reload` to force rediscovery. Remaining installed Desktop/product and accessibility acceptance is tracked in #1196.
 
 See [docs/installation.md](./docs/installation.md) for full instructions.
 

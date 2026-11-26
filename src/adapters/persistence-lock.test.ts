@@ -136,6 +136,22 @@ describe('persistence-lock', () => {
     await lock.release();
   });
 
+  it('BAD: a non-EEXIST publish failure surfaces as WRITE_FAILED', async () => {
+    vi.mocked(fs.link).mockRejectedValueOnce(errno('EACCES', 'permission denied'));
+
+    await expect(acquireSessionWriteLock(sessionDir, 100)).rejects.toMatchObject({
+      code: 'WRITE_FAILED',
+    });
+  });
+
+  it('BAD: a staging failure surfaces as WRITE_FAILED', async () => {
+    vi.mocked(fs.open).mockRejectedValueOnce(errno('EACCES', 'permission denied'));
+
+    await expect(acquireSessionWriteLock(sessionDir, 100)).rejects.toMatchObject({
+      code: 'WRITE_FAILED',
+    });
+  });
+
   it('BAD: malformed lockfile is not auto-deleted and times out fail-closed', async () => {
     const lockPath = sessionLockPath(sessionDir);
     await fs.writeFile(lockPath, 'not a valid persistence lock\n');

@@ -313,7 +313,7 @@ describe('documentation/user-docs-drift', () => {
 
       // Each host documents its activation boundary, not governance activation
       expect(content).toMatch(
-        /Installer verifies\/restarts the running host; not governance activation/,
+        /Verifies\/restarts the running service when provable; not governance activation/,
       );
       expect(content).toContain('Installed INACTIVE parity');
       expect(content).toMatch(/Restart Claude/);

@@ -2852,9 +2852,14 @@ stop`, reviewer child reported it could not complete the falsification).
   Stryker's coverage-instrumented test run disables wall-clock PERF budgets,
   matching the coverage boundary; the integration-perf gate still enforces
   them.
-- Raise the mutation job timeout to 300 minutes. The candidate run reached 93%
-  at 3h55m with about 15 minutes remaining; the previous 240-minute cap
-  truncated it. No mutant, scope, admission rule or score threshold changed.
+- Raise the mutation job timeout to 360 minutes (the GitHub-hosted maximum).
+  The candidate run reached 93% at 3h55m and needed about 4h10m; the previous
+  240-minute cap truncated it, and 300 minutes left little margin. No mutant,
+  scope, admission rule or score threshold changed.
+- Harden mutation coverage for archive publication and after-hook review
+  authority: isolated journal-schema failures, one-sided retention recovery,
+  retain-failure rollback, review-dispatch mismatch blocking, and idle
+  system-work wakeup. No thresholds, selectors or admission rules changed.
   See `docs/security/codeql-triage-2026-11-25.md`.
 
 ## [2.0.0-tp.2] - 2026-10-04

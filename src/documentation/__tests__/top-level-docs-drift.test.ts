@@ -121,9 +121,12 @@ describe('documentation/top-level-docs-drift', () => {
 
   describe('HAPPY — canonical command and alias names', () => {
     it('top-level docs mention only catalogued slash commands', () => {
+      // /reload is an OpenCode V2 host command, not a FlowGuard command template.
+      const hostNativeCommands = ['/reload'];
       for (const doc of TOP_LEVEL_DOCS) {
         const unknownCommands = extractSlashCommands(readDoc(doc)).filter(
-          (command) => !installedCommands.includes(command),
+          (command) =>
+            !installedCommands.includes(command) && !hostNativeCommands.includes(command),
         );
         expect(unknownCommands, `${doc} must not mention phantom slash commands`).toEqual([]);
       }

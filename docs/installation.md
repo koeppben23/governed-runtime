@@ -5,11 +5,26 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 ## Prerequisites
 
-- Node.js 20+
-- npm
+- Node.js 20, 22, or 24 (the supported `engines` majors; odd-numbered majors are not supported)
+- npm 10.x (the supported `engines` range; npm 11 is outside it)
 - OpenCode V2 (native API baseline: 2.2.7; independently verified host smoke pin: 2.2.5; complete product acceptance remains NO-GO)
 
+> **OpenCode 1.x is not supported.** The `2.0.0-tp.x` line targets the V2 host API. OpenCode 1.3.3 and every other 1.x release are the V1 line; the plugin cannot load there, and `doctor` cannot verify V2 runtime load. Run `opencode --version` and upgrade to a 2.2.x build before continuing; the independently verified CLI smoke pin is 2.2.5, and other 2.2.x builds are not independently verified.
+
 ## Installation Steps
+
+The commands, separated from their explanation:
+
+| Step | Run this                                                                                                       | What it does                         |
+| ---- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| 1    | Download the `.tgz` and `checksums.sha256`                                                                     | Obtain the verified artifact         |
+| 2    | `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz` | Install the plugin and managed files |
+| 3    | `npx --package ./flowguard-core-{version}.tgz flowguard doctor`                                                | Verify the installed files           |
+
+Elsewhere in the FlowGuard documentation, `flowguard ...` is shorthand for the
+CLI. Without a global install, invoke it as
+`npx --package ./flowguard-core-{version}.tgz flowguard ...`; the bare command
+is not on `PATH`.
 
 ### 1. Download the Release Artifact
 
@@ -24,6 +39,8 @@ You can also verify the checksum manually before install:
 ```bash
 sha256sum -c checksums.sha256
 ```
+
+On macOS, use `shasum -a 256 -c checksums.sha256` instead.
 
 For automated integrity verification with an explicit checksum path, use the
 `--checksums-file` flag:
@@ -46,11 +63,13 @@ operator has verified the artifact through another controlled channel.
 Before installing, choose the host platform. Enforcement and activation guarantees
 differ per host.
 
-| Host        | Enforcement   | Global Target                 | Repo Target            | Activation                                                              | Key Limitation                    |
-| ----------- | ------------- | ----------------------------- | ---------------------- | ----------------------------------------------------------------------- | --------------------------------- |
-| OpenCode V2 | `synchronous` | `~/.config/opencode/`         | `./.opencode/`         | Installer verifies/restarts the running host; not governance activation | Installed acceptance NOT_VERIFIED |
-| Claude Code | `hook_gated`  | `~/.claude/`                  | `./.claude/`           | Restart Claude                                                          | Hook timeout = tool proceeds      |
-| Codex       | `hook_gated`  | `~/.codex/plugins/flowguard/` | `./plugins/flowguard/` | Restart Codex                                                           | `NOT_VERIFIED_NATIVE_LOAD`        |
+| Host        | Enforcement   | Global Target                 | Repo Target            | Activation                                                                     | Key Limitation                    |
+| ----------- | ------------- | ----------------------------- | ---------------------- | ------------------------------------------------------------------------------ | --------------------------------- |
+| OpenCode V2 | `synchronous` | `~/.config/opencode/`         | `./.opencode/`         | Verifies/restarts the running service when provable; not governance activation | Installed acceptance NOT_VERIFIED |
+| Claude Code | `hook_gated`  | `~/.claude/`                  | `./.claude/`           | Restart Claude                                                                 | Hook timeout = tool proceeds      |
+| Codex       | `hook_gated`  | `~/.codex/plugins/flowguard/` | `./plugins/flowguard/` | Restart Codex                                                                  | `NOT_VERIFIED_NATIVE_LOAD`        |
+
+`OPENCODE_CONFIG_DIR` and `CLAUDE_CONFIG_DIR` override the default global targets shown above.
 
 OpenCode provides the strongest enforcement path through its synchronous plugin.
 Claude Code and Codex are supported through MCP, hooks, and native packaging with
@@ -159,10 +178,10 @@ The approved local tarball is the authoritative package source. npm/npx may use 
 ```bash
 npx --package ./flowguard-core-{version}.tgz flowguard install \
   --core-tarball ./flowguard-core-{version}.tgz
-
-# Verify
-npx --package ./flowguard-core-{version}.tgz flowguard doctor
 ```
+
+This step installs the files. It does **not** verify the host; verification is
+step 3.
 
 ### 2b. Initialize Claude Code Or Codex Plugin
 
@@ -171,11 +190,31 @@ and uninstall guidance, see [Host Installation](./host-installation.md).
 
 ### 3. Verify Installation
 
+Run the command for the host you installed:
+
 ```bash
+# OpenCode V2 (default)
 npx --package ./flowguard-core-{version}.tgz flowguard doctor
+
+# Claude Code
 npx --package ./flowguard-core-{version}.tgz flowguard doctor --host claude-code
+
+# Codex
 npx --package ./flowguard-core-{version}.tgz flowguard doctor --host codex
 ```
+
+Use the `npx --package ...` form exactly as shown. `flowguard` is not on your
+`PATH` unless you installed the package globally, and this guide does not require
+a global install. A bare `flowguard doctor` therefore fails with "command not
+found" before step 2 has completed — and still fails afterwards unless you
+installed globally.
+
+If you installed with `--install-scope repo`, pass the same flag to `doctor`.
+The command must exit 0 and report `Status: HEALTHY` or
+`Status: HEALTHY_WITH_WARNINGS`. Warnings do not fail the command; a
+`Status: NOT_VERIFIED` or a non-zero exit means the installation is not verified.
+The final line counts successful checks out of all actionable checks, for example
+`6/7 actionable checks passed`.
 
 `doctor --host opencode|claude-code|codex` reports host-specific installation files plus a projection-only trust/capability report. This report is diagnostic evidence only; it does not create a new runtime, approval, review, policy, or risk authority. File presence can mean `configured`, but it never proves native plugin load, active governance, trust approval, or review approval.
 
@@ -203,8 +242,12 @@ Expected output:
   [warn] OpenCode V2 runtime load, INACTIVE parity, operator UI and reviewer assurance NOT_VERIFIED
   [ok] flowguard.json — config valid (defaults only)
 
-  N/N checks passed
+  Status: HEALTHY_WITH_WARNINGS
+  6/7 actionable checks passed
 ```
+
+This output is illustrative; the number and kind of checks depend on the host and
+scope.
 
 `/start` is registered natively by the FlowGuard plugin and is never installed as
 a command file. Install and `doctor` refuse a target that contains
