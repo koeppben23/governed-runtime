@@ -2852,6 +2852,13 @@ stop`, reviewer child reported it could not complete the falsification).
   dropped. `opencode-runtime-compat.ts` keeps only the retained old-generation
   exact host pin used by demo/live harnesses and SDK update tests.
 
+### Changed
+
+- Record `v2.0.0-tp.3` as the current published Technical Preview in the
+  `develop` README with a direct release link. The `develop` snapshot remains
+  `2.0.0-tp.2` until the next release cut synchronizes version, lockfile and
+  the full changelog. No tag, artifact, mutation or runtime change.
+
 ## [2.0.0-tp.2] - 2026-10-04
 
 ### Added

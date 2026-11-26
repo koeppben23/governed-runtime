@@ -219,10 +219,17 @@ subagent attestation, and the `/review` evidence model.
 
 | Status                           | Meaning                                                                                                                                                                                            |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Released Technical Preview**   | [`2.0.0-tp.2`](https://github.com/koeppben23/governed-runtime/releases/tag/v2.0.0-tp.2), published 2026-10-04 as a GitHub Release artifact. Later `develop` changes are not part of that artifact. |
+| **Released Technical Preview**   | [`2.0.0-tp.3`](https://github.com/koeppben23/governed-runtime/releases/tag/v2.0.0-tp.3), published 2026-11-26 as a GitHub Release artifact. Later `develop` changes are not part of that artifact. |
 | **Current Development Snapshot** | The `develop` branch contains changes after the published artifact and is not a new release.                                                                                                       |
 | **Installed Host Acceptance**    | Version- and host-bound capabilities only; tracked in #1196 and the host-probe records. Command availability alone is not acceptance.                                                              |
 | **Production Readiness**         | Not complete. The published artifact is a technical preview, not a GA release.                                                                                                                     |
+
+> **Current Technical Preview:** [`v2.0.0-tp.3`](https://github.com/koeppben23/governed-runtime/releases/tag/v2.0.0-tp.3)
+> was published on 2026-11-26 as a GitHub Release artifact. The `develop`
+> snapshot remains `2.0.0-tp.2` until the next release cut synchronizes the
+> version metadata. The release remains a prerelease, so GitHub's
+> `/releases/latest` link stays on the last non-prerelease release; use the
+> direct release link above.
 
 > **OpenCode V2 status:** the V2-only port (#1169/#1190) and the native Desktop
 > Workbench (#1207) are merged on `develop`. Remaining #1196 product and
