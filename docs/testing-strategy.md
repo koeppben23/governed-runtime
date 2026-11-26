@@ -556,6 +556,23 @@ bytes and HEAD, and `--emit-admission` refuses to emit without a verified
 manifest. Admission records are historical and immutable; later runs never
 rewrite them.
 
+### Sharded Execution
+
+CI may partition a profile full run into disjoint target shards. The profile
+config remains the authority: every shard runs the canonical config with exactly
+two overrides — its `mutate` subset and `thresholds.break: 0`. The per-shard
+break is disabled because a valid subset can score below the profile aggregate;
+it is not an admission decision. `scripts/mutation-shard-plan.mjs` keeps every
+range selector for a file in one shard and balances shards by source bytes.
+`scripts/merge-mutation-reports.mjs` fails closed on a missing shard, a target
+that appears twice or not at all, a shard report whose test runner, coverage,
+mutator, reporter or other semantic settings differ from the canonical config,
+or a shard threshold other than the disabled break. It restores the canonical
+full mutate list and thresholds in the merged report. The unchanged
+`verify-mutation-admission.mjs` then applies the aggregate and per-target
+admission rules to that merged report. A shard report is measurement only and
+is never admission evidence on its own.
+
 The machine-readable scope authority is
 `src/architecture/support/mutation-authority-inventory-data.ts`. It classifies
 every authority under the declared roots as `required`, `admission-backlog`, or
