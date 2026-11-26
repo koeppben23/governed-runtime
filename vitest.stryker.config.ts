@@ -9,6 +9,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     setupFiles: ['./vitest.setup.ts'],
+    // Stryker instruments every test (perTest coverage), which inflates
+    // wall-clock measurements far beyond any budget. This is the same
+    // instrumentation boundary as the coverage run; the dedicated
+    // integration-perf gate still enforces the real budgets.
+    env: { FLOWGUARD_PERF: '0' },
     include: [
       'src/adapters/**/*.test.ts',
       'src/archive/**/*.test.ts',

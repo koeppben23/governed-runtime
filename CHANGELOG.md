@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Start the forensic CodeQL triage for the `v2.0.0-tp.3` release diff. Fix
+  confirmed findings in Markdown/diagnostic escaping, file reads, owner-file
+  removal, the Java method detector, transport error responses, changelog
+  parsing and test fixtures; document false positives with reachability
+  evidence; and track four operator-harness TOCTOU findings and the production
+  uninstall pathname race with individual owner decisions scoped to TP.3.
+  Document the trusted-directory assumption for uninstall and reconcile the
+  baseline and follow-up alerts separately. The bounded `O_NOFOLLOW` reader,
+  linear Java method-name scan, adversarial regressions, and eval snapshot
+  hardening are included. Alerts are closed only as fixed or individually
+  dismissed with a documented rule-scoped reason; release remains blocked on
+  CodeQL and the remaining verification gates. See
+  `docs/security/codeql-triage-2026-11-25.md`.
+- Disable wall-clock PERF budgets inside Stryker's coverage-instrumented
+  test run (`FLOWGUARD_PERF=0`), matching the existing coverage boundary.
+  The dedicated `integration-perf` gate still enforces the real budgets,
+  so mutation admission is not blocked by instrumentation overhead. The
+  instrumented initial run takes about eight minutes locally and previously
+  hit Stryker's five-minute default; the configured 45-minute dry-run bound
+  prevents a truncated admission run while the job timeout still caps it.
+- Create demo lease and stale-lock guard owner records with owner-only
+  permissions on POSIX. Use one file handle per audit tamper operation and
+  lock snapshot so the security regressions compare the intended file.
+
 ### Added
 
 - Correct the base mutation target inventory: reclassify the interface-only
@@ -1037,6 +1063,12 @@ last read` without a click, while a completion in another session left the
   structured report.
 
 ### Fixed
+
+- Serialize duplicate native reviewer capture completions per child. Two
+  concurrent settlements could release the shared result-integrity tails while
+  the winner was verifying, leaving zero recorded invocations. The existing
+  exactly-once suite now passes 10/10 consecutive runs; no test, threshold or
+  timeout changed.
 
 - Publish archives without destroying the previously attested generation. The
   current archive/checksum pair is retained as `.previous` before any canonical

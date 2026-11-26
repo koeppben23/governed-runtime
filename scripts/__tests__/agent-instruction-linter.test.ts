@@ -1,14 +1,6 @@
 import { afterEach, describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import {
-  cpSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
   DEFAULT_IGNORED_PATHS,
@@ -508,9 +500,9 @@ function crlfFixtureCopy(name: string): string {
   temporaryDirectories.push(destination);
   cpSync(join(FIXTURES, name), destination, { recursive: true });
   const convert = (directory: string): void => {
-    for (const entry of readdirSync(directory)) {
-      const full = join(directory, entry);
-      if (statSync(full).isDirectory()) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const full = join(directory, entry.name);
+      if (entry.isDirectory()) {
         convert(full);
         continue;
       }

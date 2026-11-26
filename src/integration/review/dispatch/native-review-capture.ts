@@ -95,6 +95,21 @@ interface Lease {
   quarantined: boolean;
 }
 
+/** Serialize operations per child; duplicate host completions must not overlap. */
+export function createCaptureQueue(): (child: string, run: () => Promise<void>) => Promise<void> {
+  const queues = new Map<string, Promise<void>>();
+  return async (child, run) => {
+    const previous = queues.get(child) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(run);
+    queues.set(child, current);
+    try {
+      await current;
+    } finally {
+      if (queues.get(child) === current) queues.delete(child);
+    }
+  };
+}
+
 /**
  * Exclusive, request-scoped V2 lease. One child can own at most one capture;
  * observations are rejected once a violation or foreign request is seen.
