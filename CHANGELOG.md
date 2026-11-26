@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   assumption and record five individual owner decisions scoped to TP.3.
   CodeQL and the remaining verification gates still block publication.
 
+### Changed
+
+- Record `v2.0.0-tp.3` as the current published Technical Preview in the
+  README and link directly to its GitHub Release. The release remains a
+  prerelease, so GitHub's "latest" label and `/releases/latest` continue to
+  point at the last non-prerelease release. No tag, artifact or version change.
+
 ## [2.0.0-tp.3] - 2026-11-25
 
 ### Added
