@@ -208,7 +208,9 @@ jobs:
     name: mutation
     needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Measured release-candidate run reached 93% at 3h55m with ~15m remaining;
+    # 300 minutes provides margin without changing mutants, scope or thresholds.
+    timeout-minutes: 300
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1

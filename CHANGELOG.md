@@ -2851,7 +2851,11 @@ stop`, reviewer child reported it could not complete the falsification).
   as fixed or individually dismissed with a documented rule-scoped reason.
   Stryker's coverage-instrumented test run disables wall-clock PERF budgets,
   matching the coverage boundary; the integration-perf gate still enforces
-  them. See `docs/security/codeql-triage-2026-11-25.md`.
+  them.
+- Raise the mutation job timeout to 300 minutes. The candidate run reached 93%
+  at 3h55m with about 15 minutes remaining; the previous 240-minute cap
+  truncated it. No mutant, scope, admission rule or score threshold changed.
+  See `docs/security/codeql-triage-2026-11-25.md`.
 
 ## [2.0.0-tp.2] - 2026-10-04
 
