@@ -14,8 +14,9 @@ import type { ProofClaim } from '../../state/proofgraph.js';
 import { summarizePersistedProofGraph } from '../../audit/proofgraph/summary.js';
 import type { ProofGraphGateDecision } from '../../audit/proofgraph/gate.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
-import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval-context.js';
 import { isFlowPhase } from '../../machine/topology.js';
+import { assessProofGraphEvidence } from '../../audit/proofgraph/evidence-integrity.js';
 
 import type {
   CompactProofClaim,
@@ -327,6 +328,16 @@ function primReason(gate: ProofGraphGateDecision): { primaryReason?: string } {
         primaryReason:
           'At least one mandatory critical claim is undeclared. Declare the claim in your plan first.',
       };
+    case 'risk_trigger_uncovered':
+      return {
+        primaryReason:
+          'Detected risk triggers have no certificate-authorized critical claim coverage. Declare coversRiskTriggers on the critical plan claim.',
+      };
+    case 'certified_claim_mismatch':
+      return {
+        primaryReason:
+          'A materialized claim no longer matches its certified declaration and cannot authorize the gate.',
+      };
     case 'certificate_invalid':
       return {
         primaryReason:
@@ -345,28 +356,23 @@ function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision
   return (
     opts?.gate ??
     (() => {
-      const plan = state.plan;
-      const authorization = authorizedCriticalPlanClaimIds(
-        plan
-          ? {
-              current: plan.current,
-              ...(plan.claimDeclarations !== undefined
-                ? { claimDeclarations: plan.claimDeclarations }
-                : {}),
-              ...(plan.approvalCertificate !== undefined
-                ? { approvalCertificate: plan.approvalCertificate }
-                : {}),
-            }
-          : undefined,
-      );
+      const authorization = authorizedCriticalPlanClaimIds(state);
       const riskAssessment = state.implementationRiskAssessment;
       const implementationDigest = state.implementation?.digest;
       return evaluateProofGraphGate({
+        contract: state.proofContract,
+        validationAttempts: state.validationAttempts,
         projection: state.proofGraph,
         authorizedCriticalClaimIds:
           authorization.kind === 'authorized' ? authorization.claimIds : [],
+        ...(authorization.kind === 'authorized'
+          ? { authorizedRiskTriggerCoverage: authorization.coverage }
+          : {}),
+        ...(authorization.kind === 'authorized'
+          ? { authorizedClaimBindings: authorization.bindings }
+          : {}),
         certificateValid: authorization.kind === 'authorized',
-        ...(implementationDigest !== undefined ? { implementationDigest } : {}),
+        implementationDigest,
         riskAssessment:
           riskAssessment !== null
             ? {
@@ -384,7 +390,11 @@ function buildEvaluationResult(
   gateResult: ProofGraphGateDecision,
   decisionContext: ProofDecisionContext,
 ): CompactProofPresentation {
-  const claims = state.proofGraph.claims;
+  const claims = assessProofGraphEvidence(state.proofGraph, {
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
+    implementationDigest: state.implementation?.digest,
+  }).projection.claims;
   const summary = summarizePersistedProofGraph(state);
   if (claims.length === 0) {
     return {

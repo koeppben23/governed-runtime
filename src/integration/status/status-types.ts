@@ -54,7 +54,11 @@ export interface StatusProjection {
     integrityCapability: 'verifiable' | 'not_verifiable' | null;
     verificationStatus: 'not_run' | 'passed' | 'failed' | null;
   };
-  /** Commands that are currently admissible. */
+  /**
+   * Phase-admissible commands only, from isCommandAllowed(). This list neither
+   * evaluates command prerequisites nor authorizes execution. Use the directive,
+   * blocker, readiness and conclusion for current action/recovery guidance.
+   */
   allowedCommands: string[];
   /**
    * Derived execution disposition — never persisted. `blocked` never destroys
@@ -70,7 +74,10 @@ export interface StatusProjection {
   blocker: {
     reasonCode: string | null;
     reasonText: string | null;
+    reasonParams?: Readonly<Record<string, string>>;
   } | null;
+  /** Open dispatch identities, including episodes that require fenced recovery. */
+  mutationEpisodes: readonly OpenMutationEpisodeProjection[];
   /** Evidence completeness summary. */
   evidenceSummary: {
     present: number;
@@ -183,12 +190,15 @@ export interface BlockedProjection {
   blocked: boolean;
   reasonCode: string | null;
   reasonText: string | null;
+  reasonParams?: Readonly<Record<string, string>>;
   recoveryHint: string | null;
   missingEvidence: Array<{
     slot: string;
     hint: string | null;
   }>;
+  /** Null means no unconditional progress recommendation from persisted state; conditional recovery remains possible. */
   nextResolvableCommand: string | null;
+  mutationEpisodes: readonly OpenMutationEpisodeProjection[];
   /**
    * Whether a human decision is required at a User Gate.
    *
@@ -203,6 +213,13 @@ export interface BlockedProjection {
    * `directive` for user guidance.
    */
   humanActionRequired: boolean | null;
+}
+
+interface OpenMutationEpisodeProjection {
+  readonly hostCallId: string;
+  readonly toolName: string;
+  readonly authorizedAt: string;
+  readonly leaseGeneration: number;
 }
 
 /** Context surface for /status --context. */
@@ -242,6 +259,14 @@ export interface ReviewFeedbackFindingProjection {
   readonly category: ReviewFindings['blockingIssues'][number]['category'];
   readonly message: string;
   readonly findingId?: string | undefined;
+  /**
+   * Untrusted, bounded relation of the finding: the subject anchors and
+   * repository evidence locations the reviewer bound it to. The revising author
+   * needs them to act on the exact location; this is never an alternative
+   * findings submission surface.
+   */
+  readonly subjectAnchors: ReviewFindings['blockingIssues'][number]['relation']['subjectAnchors'];
+  readonly evidenceLocations: ReviewFindings['blockingIssues'][number]['relation']['evidenceLocations'];
 }
 
 /**
@@ -272,6 +297,17 @@ export interface ReviewFeedbackProjection {
   readonly missingVerification: readonly string[];
   readonly scopeCreep: readonly string[];
   readonly unknowns: readonly string[];
+}
+
+/** Read-only reference to the current plan's critical claim identities. */
+export interface PlanClaimAuthorityProjection {
+  readonly planVersion: number;
+  readonly subjectDigest: string;
+  readonly criticalClaims: readonly {
+    readonly claimId: string;
+    readonly statement: string;
+    readonly authoritySectionId: string;
+  }[];
 }
 
 /**

@@ -17,6 +17,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import { makeState } from '../fixtures.js';
+import { absentAuthority, resolvedAuthority } from './plugin-audit-test-helpers.js';
 
 // ÔöÇÔöÇÔöÇ Mock readState ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 
@@ -36,8 +37,12 @@ function createMockDeps(sessionDirMap: Record<string, string> = {}): CompactionD
   const warnings: { message: string; extra: Record<string, unknown> }[] = [];
   return {
     warnings,
-    getSessionDir(sessionId: string): string | null {
-      return sessionDirMap[sessionId] ?? null;
+    // Delegate to the mocked readState so per-test state sequencing is unchanged.
+    async resolveSessionAuthority(sessionId: string) {
+      const sessDir = sessionDirMap[sessionId];
+      if (!sessDir) return absentAuthority('/tmp/unmapped');
+      const state = await readState(sessDir);
+      return state === null ? absentAuthority(sessDir) : resolvedAuthority(state, sessDir);
     },
     log: {
       info() {},
@@ -173,7 +178,7 @@ describe('integration/plugin-compaction', () => {
 
   // ÔöÇÔöÇÔöÇ BAD ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   describe('BAD', () => {
-    it('returns null when getSessionDir returns null', async () => {
+    it('returns null when the session authority is absent', async () => {
       const deps = createMockDeps({}); // No session dirs
       const result = await buildCompactionContext(deps, 'nonexistent');
       expect(result).toBeNull();

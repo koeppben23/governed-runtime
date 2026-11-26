@@ -13,12 +13,10 @@ import { createFileSink, getLogDir } from './file-sink.js';
 import type { LogEntry } from './logger.js';
 
 describe('createFileSink', () => {
-  const getTestDir = () =>
-    '/tmp/flowguard-file-sink-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = getTestDir();
+    testDir = await mkdtemp(join(tmpdir(), 'flowguard-file-sink-'));
     await mkdir(join(testDir, '.opencode/logs'), { recursive: true });
   });
 
@@ -200,7 +198,10 @@ describe('createFileSink', () => {
     it('rejects when a log path component exists but is not a directory', async () => {
       const root = join(testDir, 'opencode-is-a-file');
       await mkdir(root, { recursive: true });
-      await writeFile(join(root, '.opencode'), 'not a directory', 'utf-8');
+      await writeFile(join(root, '.opencode'), 'not a directory', {
+        encoding: 'utf-8',
+        flag: 'wx',
+      });
       const onFailure = vi.fn();
       const sink = createFileSink(root, { retentionDays: 7, onFailure });
 
@@ -215,7 +216,7 @@ describe('createFileSink', () => {
 
     it('rejects with the anomaly code when the workspace root is not a directory', async () => {
       const fileRoot = join(testDir, 'root-is-a-file');
-      await writeFile(fileRoot, 'not a directory', 'utf-8');
+      await writeFile(fileRoot, 'not a directory', { encoding: 'utf-8', flag: 'wx' });
       const onFailure = vi.fn();
       const sink = createFileSink(fileRoot, { retentionDays: 7, onFailure });
       const entry: LogEntry = { level: 'info', service: 'test', message: 'anomaly' };

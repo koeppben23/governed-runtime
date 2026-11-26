@@ -31,6 +31,8 @@ function snapshot(): RepositoryDiscoverySnapshot {
     drift: {
       status: 'clean',
       drifted: false,
+      currentDigest: null,
+      persistedDigest: null,
       changedContributorNames: [],
       notVerified: [],
     },
@@ -41,10 +43,12 @@ function snapshot(): RepositoryDiscoverySnapshot {
     verificationCandidates: [
       {
         candidateId: 'vc-1',
+        assertionCapability: 'unsupported',
         kind: 'build',
         command: 'npm run build --',
         source: 'package.json:scripts.build',
         confidence: 'high',
+        reason: 'repo-native build script',
       },
     ],
     riskSurfaces: ['data-access'],

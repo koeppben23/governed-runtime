@@ -17,6 +17,7 @@ import type { ActorInfo, AuditEvent, ReviewDecision } from '../../state/evidence
 import type { PendingAuditOperation } from '../../state/schema.js';
 import type { TransitionRecord } from '../../rails/types.js';
 import type { SemanticAuditIntent } from '../audit-outbox.js';
+import type { WorkflowDecisionOperation } from '../../state/governance-activation.js';
 
 export interface BuildDecisionAuditIntentInput {
   readonly transition: TransitionRecord;
@@ -29,6 +30,7 @@ export interface BuildDecisionAuditIntentInput {
    */
   readonly actor: string;
   readonly actorInfo?: ActorInfo;
+  readonly operation?: WorkflowDecisionOperation;
 }
 
 /** Build the durable semantic intent for one human decision. Pure. */
@@ -53,7 +55,9 @@ export function buildDecisionAuditIntent(
       fromPhase: transition.from,
       toPhase: transition.to,
       transitionEvent: transition.event,
+      transitionAt: transition.at,
       policyMode,
+      ...(input.operation === undefined ? {} : { operation: input.operation }),
     },
     actor: input.actor,
     ...(input.actorInfo !== undefined ? { actorInfo: input.actorInfo } : {}),

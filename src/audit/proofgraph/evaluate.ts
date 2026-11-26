@@ -13,15 +13,23 @@
  * policy-layer decision and is intentionally not encoded here.
  *
  * Verification-state precedence (first match wins):
+ *   0. conflicting counterexample history        -> NOT_VERIFIED
  *   1. missing provenance                       -> NOT_VERIFIED
  *   2. a FRESH counterexample contradicted it    -> CONTRADICTED
  *  2.5 a FRESH counterexample is blocked         -> BLOCKED
- *   3. a provider errored (execution)            -> BLOCKED
+ *   3. a provider errored on the CURRENT revision -> BLOCKED
  *   4. a required provider was unavailable       -> NOT_VERIFIED
- *   5. a provider reported a failure             -> UNPROVEN
+ *   5. a provider failed on the CURRENT revision -> UNPROVEN
+ *  5.5 a specific_behavior claim without claim-carrying binding -> NOT_VERIFIED
+ *  5.6 positive/adversarial roles not independent (shared execution or
+ *      unknown positive execution identity)      -> NOT_VERIFIED
  *   6. required positive (fresh) + adversarial evidence all satisfied -> PROVEN
  *   7. required adversarial evidence missing/unresolved -> NOT_VERIFIED
- *   8. positive evidence only stale -> STALE, otherwise -> UNPROVEN
+ *   8. only superseded revision-bound evidence -> STALE, otherwise -> UNPROVEN
+ *
+ * Failure evidence bound to a superseded revision is historical: it neither
+ * blocks nor proves the current revision. Failure evidence on the current
+ * revision remains fail-closed and is never superseded by a later pass.
  *
  * @version v1
  */
@@ -37,6 +45,7 @@ import type {
 } from '../../state/proofgraph.js';
 import { PROOFGRAPH_SCHEMA_VERSION } from '../../state/proofgraph.js';
 import type { ClaimVerificationState, Freshness } from '../../state/proofgraph-primitives.js';
+import { assessEvidenceRoleIndependence } from './evidence-role-independence.js';
 
 /** No explicit evidence requirement: any fresh pass proves, no adversarial needed. */
 const EMPTY_REQUIRED: RequiredEvidence = { positive: [], adversarial: [] };
@@ -180,73 +189,152 @@ function analyzeCounterexamples(
   };
 }
 
+/** Provider kinds that carry a specific behavior claim beyond plain execution. */
+const SPECIFIC_CARRYING_KINDS: readonly ProofProviderResult['providerKind'][] = [
+  'structural_assertion',
+  'schema_compare',
+  'fault_injection',
+];
+
+/**
+ * Whether a `specific_behavior` claim declares claim-carrying evidence: a
+ * counterexample (assertion/aggregate) requirement or a required specific
+ * provider kind. Old persisted contracts without any such binding can never be
+ * PROVEN from a check pass alone; the evaluator reports them NOT_VERIFIED.
+ */
+function hasClaimCarryingBinding(claim: DeclaredClaim): boolean {
+  if (claim.counterexampleRequirement !== undefined) return true;
+  return (claim.requiredEvidence?.positive ?? []).some((kind) =>
+    SPECIFIC_CARRYING_KINDS.includes(kind),
+  );
+}
+
+/** Analyzed evidence for one claim: passing results, adversarial analysis, staleness. */
+interface ClaimEvidenceAnalysis {
+  readonly passing: readonly ProofProviderResult[];
+  readonly counterexamples: readonly ProofCounterexample[];
+  readonly adversarial: AdversarialAnalysis;
+  readonly hasStaleBoundEvidence: boolean;
+}
+
+/** Whether every required positive and adversarial class is satisfied. */
+function requirementsSatisfied(
+  required: RequiredEvidence,
+  freshPassKinds: ReadonlySet<ProofProviderResult['providerKind']>,
+  cx: AdversarialAnalysis,
+): { readonly adversarial: boolean; readonly positive: boolean } {
+  // Required adversarial evidence: a FRESH 'supported' counterexample. A missing,
+  // stale, or 'not_verified' counterexample is unmet, never a pass-by-fallback.
+  const adversarial = required.adversarial.every(
+    (kind) => kind === 'counterexample' && cx.freshSupported,
+  );
+  // Required positive evidence: every required kind needs a fresh pass; with no
+  // explicit positive requirement, any single fresh pass suffices.
+  const positive =
+    required.positive.length > 0
+      ? required.positive.every((kind) => freshPassKinds.has(kind))
+      : freshPassKinds.size > 0;
+  return { adversarial, positive };
+}
+
+/** Whether the claim's positive and adversarial evidence come from independent executions. */
+function hasIndependentEvidenceRoles(
+  claim: DeclaredClaim,
+  evidence: ClaimEvidenceAnalysis,
+): boolean {
+  const assessment = assessEvidenceRoleIndependence({
+    ...(claim.counterexampleRequirement !== undefined
+      ? { counterexampleRequirement: claim.counterexampleRequirement }
+      : {}),
+    adversarialCounterexampleRequired: (claim.requiredEvidence?.adversarial ?? []).includes(
+      'counterexample',
+    ),
+    providerResults: evidence.passing,
+    counterexamples: evidence.counterexamples,
+  });
+  return assessment.kind === 'independent';
+}
+
 /** Resolve a claim's state once precedence 1-5 has not already decided it. */
 function deriveFromRequiredEvidence(
   claim: DeclaredClaim,
-  passing: readonly ProofProviderResult[],
-  cx: AdversarialAnalysis,
+  evidence: ClaimEvidenceAnalysis,
   input: ProofGraphEvaluationInput,
 ): ClaimVerificationState {
-  const required = claim.requiredEvidence ?? EMPTY_REQUIRED;
+  // Execution evidence (a fresh check pass) is NECESSARY but never sufficient
+  // for a specific behavior: without a claim-carrying binding the claim stays
+  // not verified instead of inheriting a verdict from an unrelated check.
+  if (claim.claimScope === 'specific_behavior' && !hasClaimCarryingBinding(claim)) {
+    return 'NOT_VERIFIED';
+  }
+  // One execution must never satisfy both evidence roles. A persisted contract
+  // that reuses an attempt (or leaves the positive execution identity unknown)
+  // never reaches PROVEN, regardless of freshness.
+  if (!hasIndependentEvidenceRoles(claim, evidence)) return 'NOT_VERIFIED';
   const freshPassKinds = new Set(
-    passing
+    evidence.passing
       .filter((r) => r.attestation !== 'external_self_reported')
       .filter((r) => isFresh(bindingOf(r), input))
       .map((r) => r.providerKind),
   );
-  // Required adversarial evidence: a FRESH 'supported' counterexample. A missing,
-  // stale, or 'not_verified' counterexample is unmet, never a pass-by-fallback.
-  const adversarialSatisfied = required.adversarial.every((kind) =>
-    kind === 'counterexample' ? cx.freshSupported : false,
+  const satisfied = requirementsSatisfied(
+    claim.requiredEvidence ?? EMPTY_REQUIRED,
+    freshPassKinds,
+    evidence.adversarial,
   );
-  // Required positive evidence: every required kind needs a fresh pass; with no
-  // explicit positive requirement, any single fresh pass suffices.
-  const positiveSatisfied =
-    required.positive.length > 0
-      ? required.positive.every((kind) => freshPassKinds.has(kind))
-      : freshPassKinds.size > 0;
-  if (adversarialSatisfied && positiveSatisfied) {
+  if (satisfied.adversarial && satisfied.positive) {
     // A stale, unsuperseded adversarial result leaves the claim not fully fresh.
-    return cx.hasStaleAdversarial && !cx.hasFreshAdversarial ? 'STALE' : 'PROVEN';
+    return evidence.adversarial.hasStaleAdversarial && !evidence.adversarial.hasFreshAdversarial
+      ? 'STALE'
+      : 'PROVEN';
   }
-  if (!adversarialSatisfied) return 'NOT_VERIFIED';
-  const hasStalePositive = passing.some(
-    (r) => bindingOf(r) !== undefined && !isFresh(bindingOf(r), input),
-  );
-  return hasStalePositive ? 'STALE' : 'UNPROVEN';
+  if (!satisfied.adversarial) return 'NOT_VERIFIED';
+  return evidence.hasStaleBoundEvidence ? 'STALE' : 'UNPROVEN';
 }
 
 function deriveVerificationState(
   claim: DeclaredClaim,
   results: readonly ProofProviderResult[],
-  counterexamples: readonly ProofCounterexample[],
+  selectedCounterexamples: readonly ProofCounterexample[],
+  rawCounterexamples: readonly ProofCounterexample[],
   input: ProofGraphEvaluationInput,
 ): ClaimVerificationState {
   // 1. Provenance is mandatory; an unsourced manifest assertion is an assumption.
   if (claim.provenance === null) return 'NOT_VERIFIED';
-  const cx = analyzeCounterexamples(counterexamples, input.currentImplementationDigest);
+  const cx = analyzeCounterexamples(selectedCounterexamples, input.currentImplementationDigest);
   // 2. Only a FRESH executed counterexample that falsified the claim contradicts it.
   if (cx.freshContradicted) return 'CONTRADICTED';
   // 2.5 A fresh blocked counterexample blocks the claim — evidence provider could not
   //      produce an answerative result (timeout, crash, empty output).
   if (cx.freshBlocked) return 'BLOCKED';
   // ── Positive evidence retry policy ──────────────────────────────────────
-  // Any historical same-subject failure, error, or unavailable blocks the
-  // claim. No silent supersession: a transient failure on the current
-  // implementation digest persists as blocking evidence. To clear it, produce
-  // a new implementation digest via a new /implement record with actual
-  // source changes. Rerunning /run_check on the same subject without changes
-  // will not override the prior outcome.
+  // A failure, error, or unavailable on the CURRENT implementation digest
+  // blocks the claim. No silent supersession: a transient failure on the
+  // current revision persists as blocking evidence. To clear it, produce a new
+  // implementation digest via a new /implement record with actual source
+  // changes. Rerunning /run_check on the same subject without changes will not
+  // override the prior outcome. Evidence bound to a superseded revision stays
+  // historical and neither blocks nor proves the current revision.
   // 3./4. Distinguish an execution error (BLOCKED) from a missing provider (NOT_VERIFIED).
-  if (results.some((r) => r.status === 'error')) return 'BLOCKED';
+  if (results.some((r) => r.status === 'error' && isFresh(bindingOf(r), input))) return 'BLOCKED';
   if (results.some((r) => r.status === 'unavailable')) return 'NOT_VERIFIED';
-  // 5. A failing verdict leaves the claim unproven.
-  if (results.some((r) => r.status === 'fail')) return 'UNPROVEN';
+  // 5. A failing verdict on the current revision leaves the claim unproven.
+  if (results.some((r) => r.status === 'fail' && isFresh(bindingOf(r), input))) return 'UNPROVEN';
+  // A claim whose only revision-bound evidence is superseded is STALE, not
+  // UNPROVEN: an old error/fail is historical evidence, not missing evidence.
+  const hasStaleBoundEvidence = results.some((r) => {
+    const binding = bindingOf(r);
+    return binding !== undefined && !isFresh(binding, input);
+  });
   // 6.-8. Enforce the claim's policy-required evidence classes.
   return deriveFromRequiredEvidence(
     claim,
-    results.filter((r) => r.status === 'pass'),
-    cx,
+    {
+      passing: results.filter((r) => r.status === 'pass'),
+      counterexamples: rawCounterexamples,
+      adversarial: cx,
+      hasStaleBoundEvidence,
+    },
     input,
   );
 }
@@ -262,7 +350,7 @@ function evaluateClaim(
 
   const verificationState = selection.conflicting
     ? 'NOT_VERIFIED'
-    : deriveVerificationState(claim, results, selection.counterexamples, input);
+    : deriveVerificationState(claim, results, selection.counterexamples, rawCounterexamples, input);
 
   const freshness = computeFreshness(
     results.filter((r) => r.status === 'pass'),
@@ -377,5 +465,21 @@ export function evaluateProofGraph(
   const claims: ProofClaim[] = [...input.claims]
     .sort((a, b) => (a.claimId < b.claimId ? -1 : a.claimId > b.claimId ? 1 : 0))
     .map((claim) => evaluateClaim(claim, input, evaluatedAt));
-  return { version: PROOFGRAPH_SCHEMA_VERSION, claims, evaluatedAt };
+  const conflicts = input.claims.filter(
+    (claim) =>
+      selectCurrentCounterexamples(input.counterexamples.filter((c) => c.claimId === claim.claimId))
+        .conflicting,
+  );
+  return {
+    version: PROOFGRAPH_SCHEMA_VERSION,
+    claims,
+    evaluatedAt,
+    ...(conflicts.length > 0
+      ? {
+          claimDiagnostics: Object.fromEntries(
+            conflicts.map((claim) => [claim.claimId, 'counterexample_conflict' as const]),
+          ),
+        }
+      : {}),
+  };
 }

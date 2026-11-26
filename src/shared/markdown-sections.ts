@@ -17,6 +17,8 @@ export interface MarkdownSectionPathSegment {
 export interface MarkdownSection {
   readonly headingDepth: number;
   readonly siblingIndex: number;
+  /** Zero-based line index of the heading in the indexed markdown. */
+  readonly lineIndex: number;
   /** Deterministic identity path, rooted at the nearest shallower heading. */
   readonly sectionPath: readonly MarkdownSectionPathSegment[];
   readonly headingText: string;
@@ -125,12 +127,37 @@ export function indexMarkdownSections(markdown: string): MarkdownSection[] {
     return {
       headingDepth: heading.headingDepth,
       siblingIndex,
+      lineIndex: heading.lineIndex,
       sectionPath: [...path],
       headingText: heading.headingText,
       excerptText,
       excerptDigest: hashText(excerptText),
     };
   });
+}
+
+/**
+ * Exact section-path equality as enforced by the review subject-anchor
+ * boundary: the paths must have the same length and every segment must match
+ * in depth, sibling index, and heading text. Challenge-evidence refs are
+ * filtered with this predicate so an offered `plan_adr_section` ref is always
+ * an acceptable subject anchor.
+ */
+export function markdownSectionPathsEqual(
+  left: readonly MarkdownSectionPathSegment[],
+  right: readonly MarkdownSectionPathSegment[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((part, index) => {
+      const candidate = right[index];
+      return (
+        candidate?.headingDepth === part.headingDepth &&
+        candidate.siblingIndex === part.siblingIndex &&
+        candidate.headingText === part.headingText
+      );
+    })
+  );
 }
 
 /**

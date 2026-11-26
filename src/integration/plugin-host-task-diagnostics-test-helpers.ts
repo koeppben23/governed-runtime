@@ -4,7 +4,16 @@
  */
 
 import { createSessionState, onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
+import * as fs from 'node:fs/promises';
 import { isTerminalPhase } from '../machine/topology.js';
+import { writeState } from '../adapters/persistence.js';
+import { makeState } from '../fixtures.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
+import {
+  computeFingerprint,
+  sessionDir as resolveSessionDir,
+} from '../adapters/workspace/index.js';
+import { canonicalBinding } from './test-helpers.js';
 import { reviewDispatchRequired } from './review/enforcement/dispatch-signal.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
@@ -15,13 +24,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/obligations/assurance.js';
-import { mintObservationCapability } from './review/obligations/attempt-lifecycle.js';
-import type {
-  RepositoryDiscoverySnapshot,
-  ReviewAttempt,
-  ReviewObligation,
-} from '../state/evidence.js';
-import type { SessionState } from '../state/schema.js';
+import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -220,106 +223,105 @@ export function setupFullCycle(
   return { state, obligation, attempts: [attemptFor(obligation, childSessionId)] };
 }
 
-/** Minimal valid repository Discovery snapshot for a repository-governed attempt. */
-function repositoryDiscoverySnapshot(): RepositoryDiscoverySnapshot {
-  return {
-    observedAt: NOW,
-    discoveryDigest: null,
-    workspaceFingerprint: null,
-    health: {
-      status: 'available',
-      healthy: true,
-      failedCollectorNames: [],
-      hasBudgetExhaustion: false,
-      ageWarning: null,
-      notVerified: [],
-    },
-    drift: { status: 'clean', drifted: false, changedContributorNames: [], notVerified: [] },
-    detectedStack: null,
-    verificationCandidates: [],
-    riskSurfaces: [],
-    warnings: [],
-    notVerified: [],
-  };
-}
+// ─── Session Seeding ─────────────────────────────────────────────────────────
 
 /**
- * Rewrite a seeded plan session so its obligation carries a head-only frozen
- * repository context and its first attempt is repository-governed. This lets a
- * structured citation reach canonical evidence binding instead of failing at
- * the frozen-revision scope gate.
+ * Seed a strict PLAN-phase session with one pending plan review obligation and
+ * its first attempt, plus frozen review material for the native reviewer subagent.
+ * Shared by the plugin native-review transport suites.
  */
-export function withRepositoryHeadAuthority(state: SessionState): SessionState {
-  const headSha = 'c'.repeat(40);
-  const obligation = state.reviewAssurance!.obligations[0]!;
-  const attempt = state.reviewAssurance!.attempts[0]!;
-  return {
-    ...state,
-    reviewAssurance: {
-      ...state.reviewAssurance!,
-      obligations: [
-        {
-          ...obligation,
-          repositoryAuthority: {
-            kind: 'context',
-            context: {
-              kind: 'commit',
-              repositoryIdentity: { host: 'github.com', owner: 'acme', name: 'repo' },
-              objectSha: headSha,
-            },
-          },
-          repositoryRevisionProvenance: { kind: 'available', headSha },
-          repositoryEvidenceFreeze: { kind: 'available' },
-        },
-      ],
-      attempts: [
-        {
-          ...attempt,
-          repositoryDiscovery: { kind: 'repository', snapshot: repositoryDiscoverySnapshot() },
-          observationCapability: mintObservationCapability(),
-        },
-      ],
-    },
-  };
-}
+export async function seedStrictPlanSession(worktree: string, sessionID: string) {
+  const now = new Date().toISOString();
+  const fp = await computeFingerprint(worktree);
+  const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+  const obligationId = '11111111-1111-4111-8111-111111111111';
+  const reviewMaterial = freezeReviewMaterial('## Plan\n1. Fix auth', 'test-subject-digest');
+  const planCurrent = makePlanRevision({ body: '## Plan\n1. Fix auth', createdAt: now });
 
-/**
- * Structured findings whose artifact-anchored relation cites one unobserved
- * head repository path. The path is attacker-influenced data, never a prompt
- * instruction.
- */
-export function unobservedEvidenceFindings(
-  obligationId: string,
-  path: string,
-): Record<string, unknown> {
-  return {
-    iteration: 0,
-    planVersion: 1,
-    reviewMode: 'subagent',
-    overallVerdict: 'changes_requested',
-    blockingIssues: [
-      {
-        severity: 'major',
-        category: 'correctness',
-        message: 'cited but not observed',
-        relation: {
-          subjectAnchors: [
-            {
-              kind: 'artifact_section',
-              artifactKind: 'plan',
-              artifactDigest: 'test-subject-digest',
-              sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
-            },
-          ],
-          evidenceLocations: [{ path, revision: 'head' }],
-        },
+  await fs.mkdir(sessDir, { recursive: true });
+  await writeState(
+    sessDir,
+    makeState('PLAN', {
+      binding: await canonicalBinding(worktree, sessionID),
+      ticket: {
+        text: 'Fix auth issue',
+        digest: 'ticket-digest',
+        source: 'user',
+        createdAt: now,
+        riskDeclaration: { kind: 'absent' },
       },
-    ],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    challenges: [],
-    attestation: { toolObligationId: obligationId },
-  };
+      plan: {
+        current: planCurrent,
+        history: [],
+        reviewCompletion: 'pending',
+        reviewFindings: [],
+      },
+      selfReview: {
+        iteration: 0,
+        reviewCycle: 1,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: planCurrent.digest,
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+      policySnapshot: {
+        ...makeState('PLAN').policySnapshot,
+      },
+      reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
+        obligations: [
+          {
+            obligationId,
+            obligationType: 'plan',
+            reviewCycle: 1,
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+            challengePolicyVersion: 'challenge-policy.v1',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+            subjectDigest: 'test-subject-digest',
+            iteration: 0,
+            planVersion: 1,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerAttempts: 1,
+            createdAt: now,
+            pluginHandshakeAt: null,
+            status: 'pending',
+            invocationId: null,
+            blockedCode: null,
+            fulfilledAt: null,
+            consumedAt: null,
+            reviewSubjectScope: {
+              kind: 'artifact',
+              artifact: {
+                kind: 'plan',
+                digest: 'test-subject-digest',
+                sectionPaths: [[{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }]],
+              },
+            },
+            reviewMaterial,
+          },
+        ],
+        invocations: [],
+        attempts: [
+          {
+            attemptId: '11111111-2222-4111-8111-111111111111',
+            obligationId,
+            obligationType: 'plan' as const,
+            subjectDigest: 'test-subject-digest',
+            ordinal: 0,
+            status: 'created' as const,
+            origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
+            observations: [],
+            createdAt: now,
+          },
+        ],
+        dispatches: [],
+      },
+    }),
+  );
+
+  return { sessDir, obligationId };
 }

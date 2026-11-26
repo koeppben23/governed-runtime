@@ -27,6 +27,14 @@ interface ClassifiedOutcome {
   readonly diagnosticCode?: AssertionBindingReasonCode;
 }
 
+/** Exact persisted observation inputs needed for adversarial binding; no synthesized session authority. */
+export type CounterexampleBindingState = Pick<
+  SessionState,
+  'proofContract' | 'validationAttempts'
+> & {
+  readonly implementation: { readonly digest: string } | null;
+};
+
 function classifyAggregateOutcome(
   result: ValidationResult,
   requirement: Extract<CounterexampleRequirement, { kind: 'aggregate_check' }>,
@@ -91,7 +99,7 @@ function bindClaimCounterexamples(
     counterexampleRefs: readonly { kind: string; attemptId?: string | undefined }[];
     counterexampleRequirement?: CounterexampleRequirement | undefined;
   },
-  state: SessionState,
+  state: CounterexampleBindingState,
   currentDigest: string,
   evaluatedAt: string,
   diagnostics: Map<string, AssertionBindingReasonCode>,
@@ -139,7 +147,7 @@ function bindClaimCounterexamples(
  * executed outcomes against the current implementation revision.
  */
 export function bindCounterexamples(
-  state: SessionState,
+  state: CounterexampleBindingState,
   evaluatedAt: string,
 ): CounterexampleBindingResult {
   const claims = state.proofContract?.claims ?? [];

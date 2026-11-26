@@ -132,10 +132,16 @@ function appendSnapshotCandidates(lines: string[], snapshot: RepositoryDiscovery
     return;
   }
   lines.push('- advisory only; these are not executed checks');
-  for (const candidate of snapshot.verificationCandidates.slice(0, 6)) {
-    const identity = candidate.candidateId ? `; candidateId: ${candidate.candidateId}` : '';
+  // Every persisted candidate is rendered: plan claims bind checks by kind and
+  // candidateId, so an omitted candidate would silently remove check authority
+  // the reviewer is required to assess. The planner bounds the set.
+  for (const candidate of snapshot.verificationCandidates) {
+    const capability =
+      candidate.assertionCapability === 'structured'
+        ? `; assertionCapability: structured; assertionReport: ${candidate.assertionReport.collection}/${candidate.assertionReport.transport}/${candidate.assertionReport.format} via ${candidate.assertionReport.providerId}`
+        : '; assertionCapability: unsupported';
     lines.push(
-      `- ${candidate.kind}: ${candidate.command} (source: ${candidate.source}; confidence: ${candidate.confidence}${identity})`,
+      `- ${candidate.kind}: ${candidate.command} (source: ${candidate.source}; confidence: ${candidate.confidence}; candidateId: ${candidate.candidateId}${capability})`,
     );
   }
   lines.push('');

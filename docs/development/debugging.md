@@ -60,15 +60,15 @@ npm --version
 
 Derive the debug path from the defect class:
 
-| Problem class                            | Primary debug path                            |
-| ---------------------------------------- | --------------------------------------------- |
-| Domain / policy / state / machine        | Vitest unit                                   |
-| Tool / workflow / governance integration | Vitest integration                            |
-| Architecture rules                       | Vitest architecture                           |
-| CLI / doctor / installer entry           | Node debugger                                 |
-| MCP tool invocation                      | Node inspector + MCP client                   |
-| OpenCode hook / host semantics           | Live OpenCode                                 |
-| Host-specific process failure            | OpenCode/Bun debugging only as the last layer |
+| Problem class                            | Primary debug path                               |
+| ---------------------------------------- | ------------------------------------------------ |
+| Domain / policy / state / machine        | Vitest unit                                      |
+| Tool / workflow / governance integration | Vitest integration                               |
+| Architecture rules                       | Vitest architecture                              |
+| CLI / doctor / installer entry           | Node debugger                                    |
+| MCP tool invocation                      | Node inspector + MCP client                      |
+| OpenCode hook / host semantics           | Live OpenCode diagnostics                        |
+| Host-specific process failure            | OpenCode host diagnostics only as the last layer |
 
 > Do not begin debugging a FlowGuard defect through the live AI host unless the
 > defect depends on host lifecycle or host semantics.
@@ -79,9 +79,9 @@ Derive the debug path from the defect class:
   repository's `.node-version` is honored.
 - npm `>=10.9.2`.
 - IntelliJ IDEA Ultimate.
-- Bun may be used to debug the OpenCode host process itself.
 
-> Bun is not the default FlowGuard development runtime.
+> Bun is not part of the verified FlowGuard development path. Do not add a
+> second host debug pipeline for it.
 
 ## 5. IntelliJ IDEA Ultimate setup
 
@@ -117,14 +117,22 @@ fresh clone is debuggable without manual configuration. They contain only
 git clone <repository>
 cd governed-runtime
 
-node --version
-npm --version
+# nvm does not read .node-version by default; pass it explicitly.
+nvm install "$(cat .node-version)"
+nvm use "$(cat .node-version)"
+
+node --version   # v22.22.2
+npm --version    # >=10.9.2
 
 npm ci
 npm run check
 npm test
 npm run build
 ```
+
+For `fnm`, `asdf`, or `mise`, select the version declared in `.node-version`
+with that tool. Do not add a second version file merely to satisfy one manager;
+`.node-version` is the canonical authority.
 
 `npm ci` is the reproducible checkout command: it installs exactly from the
 committed lockfile. Use `npm install` only when intentionally changing
@@ -432,6 +440,35 @@ Session state + audit chain
 
 > Diagnostic logs are not governance evidence.
 
+### Latency diagnostics
+
+Two `info` log lines carry diagnostic latency. They change no state, audit,
+or enforcement behavior, and they contain identifiers, codes, and numbers only.
+
+`hook` / `tool.execute.after` (the existing diagnostic log label) adds the
+following fields. This label is retained diagnostic vocabulary, not a V1 hook
+registration: the host registration is native V2 `execute.after`.
+
+| Field                 | Meaning                                                                                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `callId`              | Host call id, when the host supplies one.                                                                                                                                                                                       |
+| `beforeToAfterMs`     | End of a fully passed FlowGuard before-hook to entry of the after-hook: host execution plus host overhead, not pure tool time.                                                                                                  |
+| `durationUnavailable` | Instead of a number: `call_id_missing`, `session_id_missing`, or `start_not_observed` (restart, eviction, or no passed before-hook). Never reported as 0.                                                                       |
+| `hostToolOutcome`     | Tool result as it reached the after-hook, BEFORE further after-hook processing: `flowguard_blocked` (with `hostToolCode`), `flowguard_returned`, or `unknown`. Non-FlowGuard host tools (bash, edit, ...) are always `unknown`. |
+| `statusProjection`    | `flowguard_status` only: the selected projection (`finish`, `whyBlocked`, ..., `full`).                                                                                                                                         |
+
+`orchestrator` / `review structured followup timing` (one line per structured
+follow-up) carries `obligationId`, `childSessionId`, and either
+`followupPromptMs` with `promptOutcome` (`responded` or `threw`) or
+`followupPromptMsUnavailable: not_invoked` when no host prompt was sent. It
+times only the host prompt, not agent resolution, validation, or binding.
+
+Limits: the native reviewer subagent bypasses the generic tool hooks, so its
+execution is not covered by `beforeToAfterMs`; use the host session export
+for Task and model timings. These lines are absent while the file sink is not
+yet active, when the configured level is above `info`, or when an enabled rate
+limit drops them; absence is not a measurement.
+
 ### Recommended breakpoints
 
 | Boundary                    | Location                                                     |
@@ -467,7 +504,7 @@ Session state + audit chain
 | `flowguard-mcp` appears idle               | Expected: it waits for JSON-RPC on stdin. Use an MCP client.                           |
 | IntelliJ does not find Vitest              | Run `npm ci`, then rescan/reimport; verify `vitest.config.ts` is detected.             |
 | Breakpoints stay unbound in `dist/`        | Rebuild (`npm run build`) and confirm the debugger runs the `dist/` entrypoint.        |
-| OpenCode host differs from the baseline    | Check `opencode --version`; only `1.18.30` is the verified host contract.              |
+| OpenCode host differs from the baseline    | Check `opencode --version` and compare it with the pins in `.sdk-baselines/opencode/`. |
 | Checksum verification fails during install | Rebuild tarball and `checksums.sha256` from the same clean commit.                     |
 
 ## 15. What not to do
@@ -495,16 +532,15 @@ console.log() additions in runtime/plugin paths
   debugger.
 - Do not debug generic domain defects through the live AI host.
 
-## 16. OpenCode live debugging
+## 16. OpenCode V2 live debugging
 
-Live OpenCode debugging is required for:
+Live OpenCode debugging is required only for host-owned behavior:
 
 ```text
-plugin lifecycle
-command.execute.before
-tool.execute.before
-tool.execute.after
-native Task/reviewer orchestration
+plugin discovery and lifecycle
+native command callbacks (command.transform)
+execute.before / execute.after
+native reviewer subagent/reviewer orchestration
 host events
 session compaction
 host process behavior
@@ -523,113 +559,123 @@ generic workflow behavior
 
 Reproduce those through Vitest first.
 
-Check the host version before a live session:
+### 16.1 Verified V2 host baseline
+
+The repository keeps the API baseline and the native CLI candidate separate:
+
+| Contract             | Authority                                    | Value                                         |
+| -------------------- | -------------------------------------------- | --------------------------------------------- |
+| Native API packages  | `.sdk-baselines/opencode/version.json`       | `@opencode/plugin` / `@opencode/client` 2.2.7 |
+| Native CLI candidate | `.sdk-baselines/opencode/cli-candidate.json` | `@opencode/cli` 2.2.5                         |
+
+Check the installed host before a live session:
 
 ```bash
 opencode --version
 ```
 
-```text
-exact tested version 1.18.30
-→ verified host-contract baseline
+Expected for the candidate smoke path: `opencode v2.2.5`. A different version is
+`compatible-unverified` unless the repository records an explicit classification
+for it. The V2 API baseline is not a claim that every 2.2.x binary is accepted.
 
-other version
-→ compatible-unverified unless explicitly classified otherwise
+The following diagnostic commands were verified against OpenCode `v2.2.5` on
+macOS on 2026-11-17:
+
+```bash
+opencode --version
+opencode debug paths
+opencode debug config
+opencode plugin list
 ```
 
-There are two distinct cases; do not mix them:
+`opencode debug paths` is the authority for the host's data, config, state, log,
+and temporary directories. `opencode debug config` shows the configuration
+sources. `opencode plugin list` must show FlowGuard for the installation under
+test. For a repo-scoped install, the plugin source is:
 
 ```text
-A. FlowGuard code loaded by the host   → normal case (section 16.1)
-B. OpenCode itself (host-internal)     → only for host defects (section 16.2)
+<playground>/.opencode/plugins/flowguard/index.ts
 ```
 
-### 16.1 Debugging FlowGuard code loaded by the host
+Start a private V2 server for a live session; do not replace a running user
+service:
 
-Use the OpenCode CLI, not the desktop app. The desktop app wraps the same server
-in an Electron shell, which adds another process layer that only obscures
-breakpoint mapping.
+```bash
+opencode serve --port 4096
+```
+
+Add `--log-level debug --print-logs` to the `serve` invocation when you need the
+host diagnostic stream. Use `/reload` after plugin or configuration changes for
+normal rediscovery, then re-run `opencode plugin list`; file presence alone does
+not prove that the host loaded the plugin.
+
+FlowGuard's structured logs remain the product diagnostic authority. Enable them
+in the target repository's FlowGuard configuration:
+
+```json
+{
+  "schemaVersion": "v1",
+  "logging": {
+    "level": "debug",
+    "mode": "file+console"
+  }
+}
+```
+
+Log path: `<workspace>/.opencode/logs/flowguard-YYYY-MM-DD.log`.
+
+Diagnostic logs are not governance evidence. Keep debugger flow, structured
+logs, and session/audit authority separate.
+
+### 16.2 Debugging FlowGuard code loaded by the host
+
+Use the OpenCode CLI, not the desktop app, for host-boundary debugging. The
+desktop app adds an Electron process layer that obscures breakpoint mapping.
 
 1. Install FlowGuard repo-scoped into the playground and enable debug logging
-   (sections 11 and 12). Confirm the tested host baseline (`1.18.30`).
-2. Use an OpenCode source checkout pinned to the verified host contract, so the
-   host under debug is the same release that FlowGuard classifies as `verified`:
+   (sections 11 and 12).
+2. Verify the host and plugin discovery:
 
    ```bash
-   git clone https://github.com/anomalyco/opencode
-   cd opencode
-   git checkout v1.18.30   # tested host contract; the tag uses bun 1.3.14
-   bun install
+   opencode --version
+   opencode debug paths
+   opencode plugin list
    ```
 
-   A `dev` checkout is a different, `compatible-unverified` host: use it only
-   when the defect is in host development, and record it as such.
-
-3. Start the server from the pinned checkout with the Bun inspector in the first
-   terminal. This split server/TUI path is the canonical FlowGuard workflow: the
-   upstream `bun dev spawn` shorthand cannot be combined with a target directory
-   in `v1.18.30`, because the default command defines only `[project]` and runs
-   under `yargs.strict()` — `spawn` would be resolved as a project directory.
-
-   ```bash
-   bun run \
-     --inspect=ws://localhost:6499/ \
-     --cwd packages/opencode \
-     ./src/index.ts serve --port 4096
-   ```
-
-4. Start the TUI from the same pinned checkout in a second terminal and point it
-   at the playground through the `attach --dir` option. Server, TUI, and target
-   repository then share one reproducible baseline (pinned `v1.18.30` source,
-   Bun inspector on `:6499`, playground as target):
-
-   ```bash
-   bun run \
-     --cwd packages/opencode \
-     ./src/index.ts attach \
-     http://localhost:4096 \
-     --dir ~/dev/flowguard-playground
-   ```
-
-5. Debug the Bun host through Bun's own inspector. Bun speaks the **WebKit
-   Inspector Protocol**, not the Chrome DevTools Protocol, so IntelliJ's
-   `Attach to Node.js/Chrome` does not attach to Bun (JetBrains tracks attaching
-   to an already running Bun process as WEB-68425). `--inspect` prints an
-   inspector banner; open the `debug.bun.sh` URL to set host breakpoints:
+3. Reproduce the host behavior with the native CLI. Start a private server with
+   `opencode serve --port 4096` when you need a separate server, or use the
+   normal TUI/CLI flow when the defect is in the user-facing path.
+4. For a FlowGuard TypeScript breakpoint, run the owning Vitest unit or
+   integration test. The published tarball contains only `dist/` and `VERSION`,
+   so breakpoints in an installed copy bind to generated JavaScript, not
+   `src/**/*.ts`.
+5. For the installed-plugin path, inspect the generated wrapper and dist files:
 
    ```text
-   --------------------- Bun Inspector ---------------------
-   Listening:
-     ws://localhost:6499/<token>
-   Inspect in browser:
-     https://debug.bun.sh/#localhost:6499/<token>
-   ----------------------------------------------------------
+   <playground>/.opencode/plugins/flowguard/index.ts
+   <playground>/.opencode/node_modules/@flowguard/core/dist/integration/plugin.js
    ```
 
-   IntelliJ remains the debugger for the Node boundaries in this guide (Vitest,
-   CLI, MCP). JetBrains' Bun run/debug support applies when the IDE launches the
-   Bun process itself; FlowGuard's verified host workflow starts the host from
-   the pinned source checkout and uses the Bun inspector for that process.
+6. Observe native setup, reload, and cleanup. `/start` is the native activation
+   command; do not use `/hydrate` as an activation substitute. A `/start`
+   callback is not operator provenance. Installed INACTIVE parity remains
+   `NOT_VERIFIED` unless the owning host-probe or acceptance record proves it.
 
-6. First FlowGuard breakpoints (in the `debug.bun.sh` session):
-   - `<playground>/.opencode/plugins/flowguard-audit.ts` — the wrapper; proves
-     that the host discovered the repo-scoped plugin.
-   - `<playground>/.opencode/node_modules/@flowguard/core/dist/integration/plugin.js`
-     — `FlowGuardAuditPlugin` execution.
-7. Trigger `/start` or `/hydrate` in the host TUI.
+FlowGuard TypeScript-level breakpoints are not available for an installed copy.
+Reproduce the logic through Vitest first; that is the canonical path.
 
-FlowGuard TS-level breakpoints are not available for the installed copy: the
-published tarball ships only `dist/` and `VERSION`, so breakpoints bind in the
-installed dist JavaScript. To debug FlowGuard logic at TypeScript level,
-reproduce it through Vitest first — that is the canonical path.
+### 16.3 Debugging OpenCode itself
 
-### 16.2 Debugging OpenCode itself
+Only for defects inside the host. FlowGuard deliberately maintains no second V2
+host debug pipeline. Use the upstream OpenCode contributor workflow for the exact
+V2 source revision and record the version under test.
 
-Only for defects inside the host. Follow the upstream OpenCode contributor
-guide: run OpenCode from a source checkout with Bun's inspector and debug it via
-the `debug.bun.sh` session. The commands in 16.1 are the upstream-recommended
-approaches; the exact flags can evolve with the host. FlowGuard deliberately
-maintains no second host debug pipeline.
+Source-level Bun inspector commands are not part of this guide's verified V2
+baseline. Do not copy the removed V1 source-checkout workflow into a current
+session. If source-level host debugging is required, treat it as
+`NOT_VERIFIED` for this repository until a pinned V2 source revision and inspect
+command are recorded. The verified FlowGuard diagnostic path remains
+`opencode debug ...`, the host logs, and Vitest.
 
 ## 17. Verification checklist
 
@@ -651,8 +697,11 @@ Use this checklist when validating a fresh development setup:
 [ ] Dogfood tarball builds
 [ ] Repo-scoped playground install succeeds
 [ ] flowguard doctor succeeds in playground
-[ ] OpenCode 1.18.30 loads the repo-scoped FlowGuard installation
-[ ] Breakpoint inside FlowGuardAuditPlugin / host boundary is hit
-[ ] /start or /hydrate reaches FlowGuard
+[ ] opencode --version reports the recorded V2 CLI candidate
+[ ] opencode debug paths, debug config, and plugin list succeed
+[ ] Repo-scoped FlowGuard is present in opencode plugin list
+[ ] /reload rediscovers the installation; /start reaches FlowGuard
+[ ] Installed dist breakpoint or structured host log proves plugin setup/reload
 [ ] debug logging appears in the documented location
+[ ] Installed INACTIVE parity remains NOT_VERIFIED unless a host-probe record proves it
 ```

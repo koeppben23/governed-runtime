@@ -10,9 +10,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { makeState, PLAN_RECORD } from '../../fixtures.js';
-import { canonicalJsonStringify } from '../../shared/canonical-json.js';
-import { hashText } from '../../shared/hashing.js';
+import {
+  makePlanApprovalCertificate,
+  makeState,
+  materializedPlanClaim,
+  PLAN_RECORD,
+} from '../../fixtures.js';
 import {
   projectImplementationProofStatus,
   projectCompletionProofStatus,
@@ -70,9 +73,38 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
       },
     })),
   };
-  return {
+  const baseWithPlan: SessionState = {
     ...base,
-    proofGraph: { version: 'proofgraph.v2' as const, claims, evaluatedAt: '2025-01-01T00:00:00Z' },
+    plan: {
+      ...PLAN_RECORD,
+      claimDeclarations,
+    },
+  };
+  // A real, session/policy-bound certificate: the gate only counts a PROVEN
+  // claim whose provenance matches the current certificate.
+  const certificate = makePlanApprovalCertificate(baseWithPlan, {});
+  const boundClaims = claims.map((claim) => {
+    const declaration = claimDeclarations.claims.find((item) => item.claimId === claim.claimId);
+    if (!declaration) throw new Error('fixture requires a matching declaration');
+    return {
+      ...materializedPlanClaim(declaration, certificate),
+      verificationState: claim.verificationState,
+      ...(claim.freshness !== undefined ? { freshness: claim.freshness } : {}),
+    };
+  });
+  return {
+    ...baseWithPlan,
+    proofGraph: {
+      version: 'proofgraph.v2' as const,
+      claims: boundClaims,
+      evaluatedAt: '2025-01-01T00:00:00Z',
+    },
+    proofContract: {
+      version: 'contract.v2' as const,
+      claims: boundClaims.map(
+        ({ verificationState: _state, freshness: _freshness, ...declared }) => declared,
+      ),
+    },
     implementation: {
       digest: 'abc123',
       files: [{ path: 'src/foo.ts', status: 'modified' as const, contentHash: 'abc' }],
@@ -89,27 +121,20 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
     plan: {
       ...PLAN_RECORD,
       claimDeclarations,
-      approvalCertificate: {
-        flow: 'plan' as const,
-        authorityDigest: PLAN_RECORD.current.digest,
-        claimDeclarationsDigest: hashText(canonicalJsonStringify(claimDeclarations)),
-        decisionAttestationDigest: 'd'.repeat(64),
-        approvedAt: '2025-01-01T00:00:00.000Z',
-        approvedBy: 'test-approver',
-        certificateId: '11111111-1111-4111-8111-111111111111',
-        planVersion: PLAN_RECORD.current.planVersion,
-        planRecordDigest: PLAN_RECORD.current.recordDigest,
-        reviewBinding: {
-          kind: 'current_review' as const,
-          reviewObligationId: '11111111-1111-4111-8111-111111111112',
-          reviewEvidenceDigest: 'e'.repeat(64),
-          reviewedSubjectDigest: PLAN_RECORD.current.digest,
-        },
-        reviewObligationId: '11111111-1111-4111-8111-111111111112',
-        reviewEvidenceDigest: 'e'.repeat(64),
-      },
+      approvalCertificate: certificate,
     },
-    implementationRiskAssessment: null,
+    implementationRiskAssessment: {
+      computedMinimumTaskClass: 'STANDARD',
+      effectiveTaskClass: 'STANDARD',
+      declaredTaskClass: null,
+      declarationKind: 'absent' as const,
+      ticketDigest: null,
+      touchedSurfaces: ['src/foo.ts'],
+      assessedFrom: 'implementation_changed_files',
+      assessedFileCount: 1,
+      implementationDigest: 'abc123',
+      riskTriggers: ['ceremony_only'],
+    },
   } as unknown as SessionState;
 }
 

@@ -1,0 +1,259 @@
+/**
+ * @module adapters/session-authority.test
+ * @description Canonical session authority: root canonicalization, binding
+ *              validation, and the unavailable/absent/resolved contract.
+ *
+ * Uses real temporary git repositories (local-only, no `origin`) so the
+ * subdirectory and symlink cases exercise `resolveRoot` end to end.
+ */
+
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { makeState, PLAN_REVIEW_ASSURANCE } from '../fixtures.js';
+import { writeState } from './persistence.js';
+import { resolveSessionAuthority } from './session-authority.js';
+import { computeFingerprint, ensureWorkspace, sessionDir } from './workspace/index.js';
+
+const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
+const RESOLVED_AT = '2026-01-01T00:00:00.000Z';
+
+describe('resolveSessionAuthority', () => {
+  let base: string;
+  let repo: string;
+  let originalConfigDir: string | undefined;
+  let originalRequireTestConfigDir: string | undefined;
+
+  beforeEach(() => {
+    base = mkdtempSync(join(tmpdir(), 'fg-session-authority-'));
+    repo = join(realpathSync(base), 'repo');
+    mkdirSync(repo);
+    execFileSync('git', ['init', '--quiet', repo]);
+
+    originalConfigDir = process.env.OPENCODE_CONFIG_DIR;
+    originalRequireTestConfigDir = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+    process.env.OPENCODE_CONFIG_DIR = join(base, 'config');
+    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+  });
+
+  afterEach(() => {
+    if (originalConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+    else process.env.OPENCODE_CONFIG_DIR = originalConfigDir;
+    if (originalRequireTestConfigDir === undefined)
+      delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+    else process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = originalRequireTestConfigDir;
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  async function fingerprintOf(): Promise<string> {
+    return (await computeFingerprint(repo)).fingerprint;
+  }
+
+  async function writeBoundState(overrides: {
+    worktree?: string;
+    fingerprint?: string;
+  }): Promise<string> {
+    const canonicalFingerprint = await fingerprintOf();
+    const dir = sessionDir(canonicalFingerprint, SESSION_ID);
+    await writeState(
+      dir,
+      makeState('TICKET', {
+        id: SESSION_ID,
+        binding: {
+          hostSessionId: SESSION_ID,
+          worktree: overrides.worktree ?? repo,
+          fingerprint: overrides.fingerprint ?? canonicalFingerprint,
+          resolvedAt: RESOLVED_AT,
+        },
+      }),
+    );
+    return dir;
+  }
+
+  it('resolves the canonical workspace and returns the validated state', async () => {
+    const dir = await writeBoundState({});
+
+    const result = await resolveSessionAuthority({ root: repo, sessionId: SESSION_ID });
+
+    expect(result.status).toBe('resolved');
+    if (result.status === 'resolved') {
+      expect(result.sessDir).toBe(dir);
+      expect(result.worktreeRoot).toBe(repo);
+      expect(result.fingerprint).toBe(await fingerprintOf());
+      expect(result.state.binding.worktree).toBe(repo);
+    }
+  });
+
+  it('rejects a non-terminal session carrying historical V5 review evidence', async () => {
+    const canonicalFingerprint = await fingerprintOf();
+    const invocation = PLAN_REVIEW_ASSURANCE.invocations[0]!;
+    const { nativeProvenance: _nativeProvenance, ...withoutProvenance } = invocation;
+    const dir = sessionDir(canonicalFingerprint, SESSION_ID);
+    await writeState(
+      dir,
+      makeState('PLAN', {
+        id: SESSION_ID,
+        binding: {
+          hostSessionId: SESSION_ID,
+          worktree: repo,
+          fingerprint: canonicalFingerprint,
+          resolvedAt: RESOLVED_AT,
+        },
+        reviewAssurance: {
+          ...PLAN_REVIEW_ASSURANCE,
+          invocations: [
+            {
+              ...withoutProvenance,
+              invocationMode: 'native_task_message_json',
+              transportVersion: 5,
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(
+      resolveSessionAuthority({ root: repo, sessionId: SESSION_ID }),
+    ).resolves.toMatchObject({
+      status: 'unavailable',
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
+  });
+
+  it('bootstraps one workspace fingerprint from the root and from a subdirectory', async () => {
+    const subdir = join(repo, 'src');
+    mkdirSync(subdir);
+
+    const fromRoot = await ensureWorkspace(repo);
+    const fromSubdir = await ensureWorkspace(subdir);
+
+    expect(fromSubdir.fingerprint).toBe(fromRoot.fingerprint);
+    expect(fromSubdir.workspaceDir).toBe(fromRoot.workspaceDir);
+  });
+
+  it('canonicalizes a subdirectory of the worktree', async () => {
+    await writeBoundState({});
+    const subdir = join(repo, 'src');
+    mkdirSync(subdir);
+
+    const result = await resolveSessionAuthority({ root: subdir, sessionId: SESSION_ID });
+
+    expect(result).toMatchObject({ status: 'resolved', worktreeRoot: repo });
+  });
+
+  it.skipIf(process.platform === 'win32')('canonicalizes a symlinked worktree path', async () => {
+    await writeBoundState({});
+    const link = join(realpathSync(base), 'repo-link');
+    symlinkSync(repo, link, 'dir');
+
+    const result = await resolveSessionAuthority({ root: link, sessionId: SESSION_ID });
+
+    expect(result).toMatchObject({ status: 'resolved', worktreeRoot: repo });
+  });
+
+  it('reports absent with the canonical location when no state exists', async () => {
+    const result = await resolveSessionAuthority({ root: repo, sessionId: SESSION_ID });
+
+    expect(result.status).toBe('absent');
+    if (result.status === 'absent') {
+      expect(result.worktreeRoot).toBe(repo);
+      expect(result.sessDir).toBe(sessionDir(await fingerprintOf(), SESSION_ID));
+    }
+  });
+
+  it('reports unavailable with NO_WORKTREE when no root is provided', async () => {
+    await expect(resolveSessionAuthority({ root: '', sessionId: SESSION_ID })).resolves.toEqual({
+      status: 'unavailable',
+      code: 'NO_WORKTREE',
+      reason: expect.any(String),
+    });
+  });
+
+  it('preserves NOT_GIT_REPO for a non-git root', async () => {
+    const unrelated = join(realpathSync(base), 'unrelated');
+    mkdirSync(unrelated);
+
+    const result = await resolveSessionAuthority({ root: unrelated, sessionId: SESSION_ID });
+
+    expect(result).toMatchObject({ status: 'unavailable', code: 'NOT_GIT_REPO' });
+  });
+
+  it('rejects a persisted fingerprint that differs from the canonical workspace', async () => {
+    // Merge-critical: same canonical root, wrong persisted fingerprint.
+    await writeBoundState({ fingerprint: 'f'.repeat(24) });
+
+    const result = await resolveSessionAuthority({ root: repo, sessionId: SESSION_ID });
+
+    expect(result).toMatchObject({ status: 'unavailable', code: 'SESSION_BINDING_MISMATCH' });
+    if (result.status === 'unavailable') expect(result.reason).toContain('does not match');
+  });
+
+  it('rejects a persisted worktree that differs from the canonical root', async () => {
+    await writeBoundState({ worktree: '/other/worktree' });
+
+    const result = await resolveSessionAuthority({ root: repo, sessionId: SESSION_ID });
+
+    expect(result).toMatchObject({ status: 'unavailable', code: 'WORKTREE_MISMATCH' });
+    if (result.status === 'unavailable') expect(result.reason).toContain('/other/worktree');
+  });
+
+  it('rejects a claimed fingerprint that differs from the canonical projection', async () => {
+    // Merge-critical: MCP cross-entrypoint parity. The persisted binding is
+    // correct; only the claimed transport fingerprint is stale.
+    await writeBoundState({});
+
+    const result = await resolveSessionAuthority({
+      root: repo,
+      sessionId: SESSION_ID,
+      claimedFingerprint: 'e'.repeat(24),
+    });
+
+    expect(result).toMatchObject({ status: 'unavailable', code: 'SESSION_BINDING_MISMATCH' });
+  });
+
+  it('accepts a claimed fingerprint that matches the canonical projection', async () => {
+    await writeBoundState({});
+
+    const result = await resolveSessionAuthority({
+      root: repo,
+      sessionId: SESSION_ID,
+      claimedFingerprint: await fingerprintOf(),
+    });
+
+    expect(result.status).toBe('resolved');
+  });
+
+  it('PERF: cold and warm resolution stay bounded by the hook deadline budget', async () => {
+    await writeBoundState({});
+
+    const coldStart = performance.now();
+    const cold = await resolveSessionAuthority({
+      root: repo,
+      sessionId: SESSION_ID,
+      deadlineMs: 4_000,
+    });
+    const coldMs = performance.now() - coldStart;
+
+    const warmStart = performance.now();
+    const warm = await resolveSessionAuthority({
+      root: repo,
+      sessionId: SESSION_ID,
+      deadlineMs: 4_000,
+    });
+    const warmMs = performance.now() - warmStart;
+
+    console.error(
+      `[PERF] session-authority cold=${coldMs.toFixed(1)}ms warm=${warmMs.toFixed(1)}ms ` +
+        `(budget 4000ms, host window 10000ms)`,
+    );
+    expect([cold.status, warm.status]).toEqual(['resolved', 'resolved']);
+    // Sanity bound: far below the host window even on slow CI runners while
+    // still catching a regression to two stacked 5s git timeouts.
+    expect(coldMs).toBeLessThan(4_000);
+    expect(warmMs).toBeLessThan(4_000);
+  });
+});

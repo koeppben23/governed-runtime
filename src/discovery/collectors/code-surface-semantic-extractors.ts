@@ -214,8 +214,46 @@ const JAVA_MAPPING_ANNOTATION =
   /@(?:RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)\b/;
 const JAVA_TYPE_DECLARATION = /\b(?:class|interface|enum|record)\b/;
 const JAVA_ANNOTATION = /^@[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/;
-const JAVA_METHOD_DECLARATION =
-  /^(?:(?:public|protected|private|static|final|abstract|synchronized|native|default|strictfp)\s+)*(?:<[^{}()]+>\s*)?(?:[A-Za-z_$][\w$.]*(?:\s*<[^{}()]+>)?(?:\s*\[\])?\s+)+[A-Za-z_$][\w$]*\s*\(/;
+const JAVA_CONTROL_PREFIX =
+  /^(?:if|for|while|switch|catch|return|throw|new|do|else|try|assert|case)\b/;
+const JAVA_MODIFIERS =
+  /^(?:(?:public|protected|private|static|final|abstract|synchronized|native|default|strictfp)\s+)+/;
+
+function stripJavaModifiers(text: string): string {
+  const match = JAVA_MODIFIERS.exec(text);
+  return match === null ? text : text.slice(match[0].length);
+}
+
+function stripGenericMethodPrefix(text: string): string {
+  if (!text.startsWith('<')) return text;
+  let depth = 0;
+  for (let index = 0; index < text.length; index++) {
+    if (text[index] === '<') depth++;
+    else if (text[index] === '>') {
+      depth--;
+      if (depth === 0) return text.slice(index + 1).trimStart();
+    }
+  }
+  return text;
+}
+
+/** Linear method-declaration scan; no backtracking on annotation remainders. */
+function isJavaMethodDeclaration(line: string): boolean {
+  let text = line.trimStart();
+  if (JAVA_CONTROL_PREFIX.test(text)) return false;
+  text = stripGenericMethodPrefix(stripJavaModifiers(text));
+  const open = text.indexOf('(');
+  if (open <= 0) return false;
+  const prefix = text.slice(0, open).trimEnd();
+  if (prefix.length === 0 || /[;{}=]/.test(prefix)) return false;
+  // Scan the method name backwards. A trailing unanchored regex would retry
+  // every start position on a long non-matching prefix (quadratic).
+  let nameStart = prefix.length;
+  while (nameStart > 0 && /[A-Za-z0-9_$]/.test(prefix.charAt(nameStart - 1))) nameStart--;
+  if (nameStart === prefix.length || !/[A-Za-z_$]/.test(prefix.charAt(nameStart))) return false;
+  const returnType = prefix.slice(0, nameStart).trimEnd();
+  return returnType.length > 0 && !JAVA_CONTROL_PREFIX.test(returnType);
+}
 
 interface JavaSourcePosition {
   readonly lineIndex: number;
@@ -485,8 +523,8 @@ function findJavaAnnotatedDeclaration(
       continue;
     }
 
-    if (JAVA_TYPE_DECLARATION.test(remainder)) return null;
-    if (JAVA_METHOD_DECLARATION.test(remainder)) return codeStart.lineIndex;
+    if (JAVA_TYPE_DECLARATION.test(remainder) || JAVA_CONTROL_PREFIX.test(remainder)) return null;
+    if (isJavaMethodDeclaration(remainder)) return codeStart.lineIndex;
     if (remainder.includes(';') || remainder.includes('{')) return null;
     position = { lineIndex: codeStart.lineIndex + 1, columnIndex: 0 };
   }

@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { OpenCodeSessionId } from './evidence-assurance-internal.js';
+import { HostSessionId } from './host-identity.js';
 import { ActorInfoSchema } from './evidence-identity.js';
 import { TimestampEvidence } from './evidence-timestamp.js';
 
@@ -17,20 +17,23 @@ import { TimestampEvidence } from './evidence-timestamp.js';
  * All persisted events use the single audit-chain.v3 format. Legacy records
  * are rejected at every persistence and verification boundary.
  *
- * Actor identity (P27):
+ * Actor identity (P27, G15):
  * - `actor`: Classification label — "human", "machine", or "system" (string)
  * - `actorInfo`: Optional structured identity (id, email, source). Present on
- *   human-influenced events (lifecycle, tool_call, decision). Absent on
- *   machine-only events (transition, error). When absent, JSON.stringify
- *   omits the field — chain hash stays identical for pre-P27 events.
+ *   human-influenced events (lifecycle, tool_call, decision) and on transition
+ *   events when a session principal is resolved. Classification and identity
+ *   context are orthogonal: a transition is still applied by the machine
+ *   (`actor: "machine"`) even when it names the resolved principal. Error
+ *   events never carry `actorInfo`. When absent, JSON.stringify omits the
+ *   field — chain hash stays identical for pre-P27/pre-G15 events.
  */
 export const AuditEvent = z
   .object({
     id: z.string().uuid(),
     /** FlowGuard session identity — the SAME FlowGuard UUID on every event class. */
     flowguardSessionId: z.string().uuid(),
-    /** Host session identity (OpenCode session id), bound where host context exists. */
-    hostSessionId: OpenCodeSessionId.optional(),
+    /** Host session identity, bound where host context exists. */
+    hostSessionId: HostSessionId.optional(),
     phase: z.string(),
     event: z.string(),
     auditFormatVersion: z.literal('audit-chain.v3'),
@@ -39,7 +42,11 @@ export const AuditEvent = z
     recordedAt: z.string().datetime(),
     actor: z.string(),
     detail: z.record(z.string(), z.unknown()),
-    /** Resolved actor identity. Present on human-influenced events, absent on machine-only. */
+    /**
+     * Resolved actor identity. Present on human-influenced events and on
+     * transitions with a resolved session principal; absent on machine-only
+     * events without identity (for example error).
+     */
     actorInfo: ActorInfoSchema.optional(),
     /** Hash of the previous event in the chain (or "genesis" for the first event). */
     prevHash: z.string().regex(/^[a-f0-9]{64}$|^genesis$/),

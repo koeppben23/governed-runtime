@@ -14,6 +14,7 @@ import type { FlowGuardPolicy } from '../../../config/policy.js';
 import type { EvalResult } from '../../../machine/evaluate.js';
 import type { CompletenessReport } from '../../../audit/completeness.js';
 import { renderPhaseAwareMandates } from '../../../rendering/mandates-renderer.js';
+import { hashText } from '../../../shared/hashing.js';
 import { readDiscovery } from '../../../adapters/persistence-discovery.js';
 import {
   extractDiscoveryHealth,
@@ -31,7 +32,11 @@ import { BUILD_INFO } from '../../../shared/build-info.js';
 import { buildStatusDocument } from '../../status/status-presentation.js';
 import { renderMarkdown } from '../../../presentation/index.js';
 import { buildStatusProjection } from '../../status/status.js';
-import { buildImplementationGuidance } from '../../implementation-guidance.js';
+import {
+  buildImplementationGuidance,
+  IMPLEMENTATION_GUIDANCE_LIMITS,
+  type ImplementationGuidanceProjection,
+} from '../../implementation-guidance.js';
 import type { ResolvedVerificationCandidate } from '../../verification-runtime-resolution.js';
 import { computeProviderCapabilities } from './status-provider-projection.js';
 import { latestReviewSummary } from './status-summary.js';
@@ -171,6 +176,13 @@ export interface FullStatusInput {
   readonly discoveryDrift: DiscoveryDriftStatusProjection;
   readonly presentation: PresentationRenderOptions;
   readonly runtimeCandidates?: readonly ResolvedVerificationCandidate[];
+  /**
+   * Omit the repeated profile-rule and mandate text bodies from the response,
+   * replacing them with digests plus an explicit full-retrieval hint. The full
+   * projection remains the default and is always retrievable via a non-compact
+   * call.
+   */
+  readonly compact?: boolean;
 }
 
 export async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatusContext> {
@@ -306,6 +318,37 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
   };
 }
 
+/** Compact status never derives repository-specific implementation hints.
+ * Keep the existing typed advisory shape, with explicit NOT_VERIFIED contents.
+ * Full status still computes the complete advisory from canonical discovery. */
+function compactImplementationGuidance(
+  state: SessionState,
+  discovery: DiscoveryResult | null,
+): ImplementationGuidanceProjection {
+  return {
+    kind: 'derived_implementation_guidance',
+    advisory: true,
+    runtimeOnly: true,
+    source: {
+      task: state.ticket?.text || state.plan?.current.body ? 'session_ticket_plan' : 'missing',
+      discovery: discovery === null ? 'unavailable' : 'persisted_discovery_result',
+    },
+    confidence: 'none',
+    notVerified: [
+      'NOT_VERIFIED: Compact status skips derived implementation guidance. ' +
+        'Call full flowguard_status to assess current task and repository hints.',
+    ],
+    warnings: [],
+    relevantFiles: [],
+    modules: [],
+    surfaces: [],
+    tests: [],
+    contracts: [],
+    riskHotspots: [],
+    limits: IMPLEMENTATION_GUIDANCE_LIMITS,
+  };
+}
+
 export function buildFullStatusResponse(input: FullStatusInput): string {
   const {
     state,
@@ -318,11 +361,10 @@ export function buildFullStatusResponse(input: FullStatusInput): string {
     presentation,
   } = input;
   const projection = buildStatusProjection(state, policy);
-  const implementationGuidance = buildImplementationGuidance({
-    state,
-    discovery,
-    discoveryHealth,
-  });
+  const implementationGuidance =
+    input.compact === true
+      ? compactImplementationGuidance(state, discovery)
+      : buildImplementationGuidance({ state, discovery, discoveryHealth });
 
   const presentationDoc = buildStatusDocument({
     status: projection,
@@ -367,12 +409,55 @@ export function buildFullStatusResponse(input: FullStatusInput): string {
       phaseRelevantRules: renderPhaseAwareMandates({}, state.phase),
     },
     build: buildIdentityField(),
+    ...(input.compact === true
+      ? {
+          runtimeReadiness: {
+            status: 'not_checked',
+            notVerified:
+              'NOT_VERIFIED: Compact status skips fresh toolchain runtime probes. ' +
+              'Call full flowguard_status for current executable readiness.',
+          },
+        }
+      : {}),
   };
 
-  const enriched = enrichWithWorkflowDirective(responseObj, state);
+  const projectionResponse =
+    input.compact === true ? compactStatusProjection(responseObj) : responseObj;
+  const enriched = enrichWithWorkflowDirective(projectionResponse, state);
 
   return JSON.stringify({
     ...enriched,
+    ...(input.compact === true ? { compact: true } : {}),
     presentation: { markdown: presentationMarkdown },
   });
+}
+
+/**
+ * Digest-addressed compact projection: the routing- and evidence-critical
+ * fields stay; the repeated profile-rule and mandate text bodies are replaced
+ * by their digests with an explicit retrieval hint. The full projection is
+ * never synthesised from this shape.
+ */
+function compactStatusProjection(responseObj: Record<string, unknown>): Record<string, unknown> {
+  const compact: Record<string, unknown> = { ...responseObj };
+  if (typeof compact.profileRules === 'string') {
+    compact.profileRulesDigest = hashText(compact.profileRules);
+    delete compact.profileRules;
+  }
+  const mandates = compact.governanceMandates;
+  if (mandates !== null && typeof mandates === 'object') {
+    const record = mandates as Record<string, unknown>;
+    const rules = record.phaseRelevantRules;
+    compact.governanceMandates = {
+      ...record,
+      // mandatesVerbosity keeps its canonical vocabulary (explicit | concise |
+      // diagnosticSummary); the projection field marks the compact shape.
+      projection: 'phase-aware-compact',
+      ...(typeof rules === 'string' ? { phaseRelevantRulesDigest: hashText(rules) } : {}),
+      fullRulesHint:
+        'Full profile rules and mandate text are omitted in the compact projection; call flowguard_status without `compact` for the complete text.',
+    };
+    delete (compact.governanceMandates as Record<string, unknown>).phaseRelevantRules;
+  }
+  return compact;
 }

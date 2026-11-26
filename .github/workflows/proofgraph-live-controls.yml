@@ -1,0 +1,35 @@
+name: ProofGraph live controls
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Prepare Java
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # actions/setup-java v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install native V2 CLI candidate (not host certification)
+        run: npm install -g "$(node -p "const c = require('./.sdk-baselines/opencode/cli-candidate.json'); c.package + '@' + c.version")"
+      - name: Verify exact candidate executable
+        run: npm run check:opencode-host
+      - name: Run real-host controls
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          test -n "$DEEPSEEK_API_KEY"
+          node demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs --root "$RUNNER_TEMP/proofgraph-live" --evidence-out "$RUNNER_TEMP/proofgraph-live/evidence/result.json"
+      - name: Retain structured result and transcripts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.1
+        with:
+          name: proofgraph-live-controls
+          path: ${{ runner.temp }}/proofgraph-live/evidence/

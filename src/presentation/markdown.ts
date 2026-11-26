@@ -388,6 +388,7 @@ function renderDetailedCommandList(section: DetailedCommandListSection): string 
     lines.push(`**${section.label}:**`);
   }
   for (const item of section.items) {
+    if (item.visibility === 'hidden') continue;
     validateDetailedCommandItem(item);
     const sym = detailedCommandSymbol(item.visibility);
     const aliases =
@@ -396,10 +397,47 @@ function renderDetailedCommandList(section: DetailedCommandListSection): string 
         : '';
     const inv =
       item.visibility === 'recommended' ? `**\`${item.invocation}\`**` : `\`${item.invocation}\``;
-    lines.push(`  ${sym} ${inv} — ${item.description}${aliases}`);
+    lines.push(
+      `  ${sym} ${inv} — ${item.description}${aliases}${detailedCommandMetadataSuffix(
+        item,
+        section.showProvenance === true,
+      )}`,
+    );
     appendDetailedCommandPreflight(lines, item);
   }
   return lines.join('\n');
+}
+
+function commandStatusNote(visibility: DetailedCommandItem['visibility']): string | null {
+  switch (visibility) {
+    case 'not_verified':
+      return 'not verified on this host';
+    case 'unavailable':
+      return 'unavailable on this host';
+    case 'not_applicable':
+      return 'not applicable here';
+    case 'recommended':
+    case 'available':
+    case 'blocked_recoverable':
+    case 'hidden':
+      return null;
+  }
+}
+
+function detailedCommandMetadataSuffix(item: DetailedCommandItem, showProvenance: boolean): string {
+  if (item.visibility === 'hidden') return '';
+  const notes: string[] = [];
+  const surfaceNote =
+    showProvenance || item.visibility === 'not_verified' || item.visibility === 'unavailable';
+  if (surfaceNote && item.surfaces && item.surfaces.length > 0) {
+    notes.push(item.surfaces.join(', '));
+  }
+  if (item.maturity !== undefined && (showProvenance || item.maturity === 'experimental')) {
+    notes.push(item.maturity);
+  }
+  const status = commandStatusNote(item.visibility);
+  if (status) notes.push(status);
+  return notes.length > 0 ? ` (${notes.join('; ')})` : '';
 }
 
 function validateDetailedCommandItem(item: DetailedCommandItem): void {

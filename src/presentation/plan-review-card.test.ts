@@ -143,6 +143,7 @@ describe('buildPlanReviewCard', () => {
             },
             structuralSurface: 'src/payments/validate.ts',
             mutationProfile: 'boundary',
+            coversRiskTriggers: ['state_integrity'],
           },
         ],
       },
@@ -153,6 +154,7 @@ describe('buildPlanReviewCard', () => {
     expect(card).toContain('providerId: vitest');
     expect(card).toContain('localId: rejects-invalid-payment');
     expect(card).toContain('Structural surface: src/payments/validate.ts');
+    expect(card).toContain('Risk triggers covered: state_integrity');
   });
 
   it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
@@ -185,6 +187,22 @@ describe('buildPlanReviewCard', () => {
     expect(card).toContain('**Reviewed obligation:** `00000000-0000-4000-8000-000000000001`');
   });
 
+  it('warns that the exhausting revision was not adopted', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      directive: planDecisionDirective,
+      forcedConvergence: true,
+      reviewedDigest: 'reviewed-digest',
+      currentPlanDigest: 'reviewed-digest',
+    });
+    expect(card).toContain('The revision submitted with the final verdict was NOT adopted.');
+    expect(card).toContain('Only the independently reviewed plan shown here is current');
+    expect(card).toContain('/request-changes');
+    expect(card).toContain('/override-approve <Begründung>');
+  });
+
   it('warns explicitly when the displayed findings apply to a prior plan revision', () => {
     const card = buildPlanReviewCard({
       planText: 'Plan.',
@@ -198,6 +216,7 @@ describe('buildPlanReviewCard', () => {
     expect(card).toContain('⚠ These reviewer findings apply to a prior plan revision.');
     expect(card).toContain('Reviewed digest: `prior-digest`');
     expect(card).toContain('Current digest:  `current-digest`');
+    expect(card).toContain('Re-run `/request-changes`');
   });
 
   it('omits the mismatch warning when the reviewed digest matches the current digest', () => {

@@ -2,14 +2,34 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.x     | :white_check_mark: |
+| Version    | Support status                                                                                |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| 2.0.0-tp.x | Active development — Technical Preview, best-effort support; no production support commitment |
+| 1.x        | Legacy — no active maintenance or security patch commitment                                   |
+| < 1.0      | Unsupported                                                                                   |
+
+FlowGuard's active development is focused exclusively on V2. V1.x releases remain
+available as historical artifacts but are not actively maintained. `2.0.0-tp.x`
+is a technical preview line; it is not a GA support claim.
+
+## Security Assurance
+
+The executable CI security gates and their limits are documented in
+[docs/security-assurance.md](./docs/security-assurance.md). CodeQL analyses are
+configured to upload SARIF to GitHub code scanning; the recorded analysis
+evidence is maintained in that document. The `security-policy` CI job verifies
+only the declarative repository intent file; it does not verify the live GitHub
+private vulnerability reporting setting. The live setting was last verified on
+2026-11-17 and reported `enabled: true`.
 
 ## Security Update Policy
 
-- **Critical vulnerabilities**: Acknowledgment within 72 hours, best-effort fix timeline
-- **High/Medium/Low**: Next planned release
+Security reports are reviewed on a best-effort basis. Triage and remediation are
+prioritized according to severity, impact, exploitability, and maintainer
+availability.
+
+No guaranteed response or remediation times apply unless explicitly agreed under
+a separate support contract.
 
 ## Reporting a Vulnerability
 
@@ -21,7 +41,7 @@ Use GitHub's private vulnerability reporting:
 2. Click **"Report a vulnerability"**
 3. Provide a description of the vulnerability, steps to reproduce, and impact assessment
 
-You will receive an acknowledgment within 72 hours. We aim to provide a fix or mitigation plan within 14 days for critical issues.
+Reports are reviewed on a best-effort basis. No guaranteed response or remediation time applies unless separately agreed under a support contract.
 
 ## Scope
 

@@ -133,6 +133,25 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
   });
 });
 
+describe('unable_to_review prioritization', () => {
+  const PRIORITIZATION_LINE =
+    '- Before declaring unable_to_review, identify the facts your verdict depends on and resolve them through the authorized observation means actually available to this review';
+  const UNABLE_LINE =
+    '- unable_to_review is valid only when honest review is impossible because required context/evidence is missing, corrupt, mismatched, or unavailable AND the necessary facts could not be established through those authorized observation means.';
+
+  it('requires resolving verdict-relevant facts through authorized observation first', () => {
+    const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT });
+
+    expect(prompt).toContain(PRIORITIZATION_LINE);
+    expect(prompt).toContain('the supplied Discovery context and flowguard_observe_repository');
+    expect(prompt).toContain(UNABLE_LINE);
+    // The prioritization rule leads; the inability clause remains the narrow
+    // residual case and keeps the fail-closed semantics unchanged.
+    expect(prompt.indexOf(PRIORITIZATION_LINE)).toBeGreaterThan(-1);
+    expect(prompt.indexOf(PRIORITIZATION_LINE)).toBeLessThan(prompt.indexOf(UNABLE_LINE));
+  });
+});
+
 describe('frozen review subject envelope', () => {
   const frozenReviewerContext: FrozenReviewerContext = {
     reviewMaterial: {
@@ -266,5 +285,172 @@ describe('native implementation review execution-continuity semantics', () => {
   it('does not inject the implementation continuity rule into non-implementation reviews', () => {
     const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT, reviewType: 'content' });
     expect(prompt).not.toContain(CONTINUITY_RULE);
+  });
+});
+
+describe('renderReviewerTaskPrompt plan-review verification authority (p42-v3)', () => {
+  it('projects the verification authority and phase boundary into plan review only', () => {
+    const plan = renderReviewerTaskPrompt({ ...BASE_INPUT, reviewType: 'plan' });
+    expect(plan).toContain(
+      'Verification authority: Assess checks against the persisted verification candidates supplied to this review',
+    );
+    expect(plan).toContain(
+      'The executable command is the selected candidate command; repository script bodies describe its implementation but do not replace that command.',
+    );
+    expect(plan).toContain('treat that authority as NOT_VERIFIED rather than assuming it');
+    expect(plan).toContain(
+      'Verification phase: plan review precedes baseline and implementation validation.',
+    );
+    expect(plan).toContain(
+      'Do not require results of future validation as already-existing evidence',
+    );
+    expect(plan).not.toContain('sourced from repo scripts/contracts');
+
+    const implementation = renderReviewerTaskPrompt({
+      ...BASE_INPUT,
+      reviewType: 'implementation',
+    });
+    expect(implementation).not.toContain('Verification phase: plan review precedes');
+  });
+});
+
+describe('renderReviewerTaskPrompt output boundary', () => {
+  it('requires prose-complete conclusions and forbids a serialized JSON duplicate', () => {
+    const prompt = renderReviewerTaskPrompt(BASE_INPUT);
+    expect(prompt).toContain('### Output Boundary');
+    expect(prompt).toContain('Do NOT emit a serialized ReviewerFindingsInput');
+    expect(prompt).toContain('serialization must be derivable from it without inventing or');
+  });
+
+  it('asks for compact prose that cites refs by number and locations by path:line (p42-v7)', () => {
+    const prompt = renderReviewerTaskPrompt(BASE_INPUT);
+    expect(prompt).toContain(
+      'Write the review as compact, complete prose: lead with the overall verdict; then, for each',
+    );
+    expect(prompt).toContain('subject (the offered Ref number, or the anchor the anchor');
+    expect(prompt).toContain(
+      'evidence locations as path:line (with the revision when more than one is',
+    );
+    expect(prompt).toContain(
+      'Never restate digests, section paths, attempt IDs, or evidence objects: Ref numbers and',
+    );
+    expect(prompt).not.toContain('Report EVERY finding, relation, evidence location');
+  });
+
+  it('settles assessed points without forbidding a reopen on new evidence', () => {
+    const rule =
+      '- Once a review point has been assessed against the available evidence, record the conclusion ' +
+      'and proceed. Do not repeatedly reconsider the same point without new relevant evidence, a ' +
+      'concrete contradiction, or an unresolved requirement. Reopen a conclusion whenever such ' +
+      'evidence emerges. Never suppress findings or shorten required falsification checks merely to ' +
+      'finish the review.';
+    for (const reviewType of ['plan', 'adr', 'implementation', 'content', 'all'] as const) {
+      const lines = renderReviewerTaskPrompt({ ...BASE_INPUT, reviewType }).split('\n');
+      const falsify = lines.indexOf(
+        '- Falsify before accepting. Ground findings in concrete evidence; never fabricate convergence.',
+      );
+      expect(falsify).toBeGreaterThan(-1);
+      // A working instruction directly under the falsification rule, stated once.
+      expect(lines[falsify + 1]).toBe(rule);
+      expect(lines.filter((line) => line === rule)).toHaveLength(1);
+    }
+  });
+
+  it('renders every offered ref object once and keeps the output contract bounded', () => {
+    const refs = Array.from({ length: 11 }, (_, index) => ({
+      kind: 'plan_adr_section',
+      artifactKind: 'plan',
+      artifactDigest: 'a'.repeat(64),
+      sectionPath: [{ headingDepth: 2, siblingIndex: index + 1, headingText: `Section ${index}` }],
+      excerptDigest: String(index % 10).repeat(64),
+    }));
+    const prompt = renderReviewerTaskPrompt({
+      ...BASE_INPUT,
+      challengeContract: {
+        requiredChallengeCount: 1,
+        requiredChallengeKind: 'design_challenge',
+        evidenceRefs: refs,
+      },
+    });
+    refs.forEach((ref, index) => {
+      // Listed once as Ref N; only the shape example repeats the first ref.
+      expect(prompt.split(JSON.stringify(ref)).length - 1).toBe(index === 0 ? 2 : 1);
+      expect(prompt).toContain(`  Ref ${index + 1}: ${JSON.stringify(ref)}`);
+    });
+    const boundary = prompt.slice(
+      prompt.indexOf('### Output Boundary'),
+      prompt.indexOf('## Trusted Runtime Context'),
+    );
+    expect(boundary.length).toBeLessThanOrEqual(OUTPUT_BOUNDARY_BUDGET);
+  });
+});
+
+/** Growth guard for the prose contract; raise only with a deliberate contract change. */
+const OUTPUT_BOUNDARY_BUDGET = 1_200;
+
+describe('renderReviewerTaskPrompt plan evidence roles and blocking bar (p42-v4)', () => {
+  const ROLE_RULE =
+    "- Evidence roles: a claim's positive evidence comes from executions of its positive evidence check and its counterexample evidence from separate executions of its counterexample check, each with its own attempt identity. Different checks may run overlapping test suites; that overlap is allowed and is not a defect. Plan review does not require these executions to exist yet.";
+  const BLOCKING_BAR =
+    'Every blocking issue must let the author act: name the unmet ticket requirement or the concrete plan defect, the exact plan section, the supplied evidence (frozen material, verification candidate, or observed repository bytes) that demonstrates it, and a feasible minimal repair. A fact you could not establish from that evidence is NOT_VERIFIED, not a demonstrated defect. Never fabricate findings: a plan that satisfies the ticket and these criteria is accepted without extra review rounds.';
+
+  function claim(index: number) {
+    return {
+      claimId: `1111111${index}-1111-4111-8111-111111111111`,
+      statement: `Claim ${index} rejects writes without ownership.`,
+      critical: true,
+      authoritySectionId: 'Invariant',
+      claimScope: 'specific_behavior' as const,
+      expectedCheckId: 'test',
+      counterexampleRequirement: {
+        kind: 'assertion' as const,
+        checkId: 'build',
+        assertion: { providerId: 'junit', localId: `fixture.ProbeTest#rejects${index}` },
+      },
+    };
+  }
+
+  function occurrences(text: string, needle: string): number {
+    return text.split(needle).length - 1;
+  }
+
+  it('states the role rule once although claims appear in advisory context and frozen material', () => {
+    const declarations = { flow: 'plan', version: 'v2', claims: [claim(1), claim(2)] } as never;
+    const claims = renderPlanClaimDeclarations(declarations);
+    const content = buildFrozenReviewMaterialContent({
+      obligationType: 'plan',
+      renderPlanClaimDeclarations,
+      state: makeState('PLAN_REVIEW'),
+      artifact: '# Plan\n\nBody.',
+      planClaimDeclarations: declarations,
+    });
+    const prompt = renderReviewerTaskPrompt({
+      ...BASE_INPUT,
+      reviewType: 'plan',
+      proofContext: ['### Plan claim declarations (2)', claims],
+      frozenReviewerContext: {
+        reviewMaterial: {
+          content,
+          materialDigest: 'd'.repeat(64),
+          subjectDigest: 'e'.repeat(64),
+        },
+      },
+    });
+
+    expect(occurrences(prompt, 'Positive evidence check: test')).toBe(4);
+    expect(occurrences(prompt, ROLE_RULE)).toBe(1);
+    expect(occurrences(prompt, 'Evidence roles')).toBe(1);
+    expect(prompt).not.toContain('do not imply that both evidence roles share an attempt');
+  });
+
+  it('carries the plan blocking bar in plan review only', () => {
+    const plan = renderReviewerTaskPrompt({ ...BASE_INPUT, reviewType: 'plan' });
+    expect(occurrences(plan, BLOCKING_BAR)).toBe(1);
+
+    for (const reviewType of ['implementation', 'adr', 'content'] as const) {
+      const other = renderReviewerTaskPrompt({ ...BASE_INPUT, reviewType });
+      expect(other, reviewType).not.toContain(BLOCKING_BAR);
+      expect(other, reviewType).not.toContain(ROLE_RULE);
+    }
   });
 });

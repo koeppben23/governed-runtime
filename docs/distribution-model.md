@@ -73,7 +73,7 @@ FlowGuard provides a CLI wrapper for headless operation:
 
 ```bash
 # Execute FlowGuard commands non-interactively (EXPERIMENTAL)
-flowguard run --host opencode -- "Run /hydrate policyMode=team-ci"
+flowguard run --host opencode -- "Inspect the project without activating FlowGuard"
 flowguard run --host claude-code -- "Run /validate"
 flowguard run --host codex -- "Run /status"
 
@@ -89,13 +89,18 @@ Host resolution is strict: CLI `--host` overrides `host.defaultHost` in `.openco
 
 ```bash
 # Direct host usage (recommended)
-opencode run "Run /hydrate"
+opencode run "Inspect the project without activating FlowGuard"
 opencode serve --port 4096
 claude -p "Run /validate" --output-format stream-json
 codex --non-interactive --prompt "Run /status"
 ```
 
 **Note:** Selecting `codex` or `claude-code` for `flowguard run` selects the host process and argument shape only. It does not prove native plugin load, hook trust, MCP activation, or governance enforcement unless those checks are verified separately.
+
+OpenCode prompt text (including "Run /start" or "Run /hydrate") is not activation
+authority. Activate through the actual native `/start [mode]` command callback,
+or a canonically authorized `StartGovernance` RPC request. The examples above
+are ungoverned host invocations, not evidence of headless governance acceptance.
 
 **Headless ambiguity handling:** In non-interactive automation (`flowguard run`, `flowguard serve`, `opencode run`, API-driven execution), operators must provide all required inputs up front. Missing safety-critical input returns `BLOCKED`; there is no follow-up question loop in headless mode.
 
@@ -107,7 +112,7 @@ Start the OpenCode HTTP server for API access, optionally with basic auth:
 OPENCODE_SERVER_PASSWORD=secret opencode serve --port 4096
 ```
 
-Create a session and send a governed message through the API:
+Create a session and send an ungoverned message through the API:
 
 ```bash
 curl -u opencode:secret -X POST http://localhost:4096/session \
@@ -116,8 +121,13 @@ curl -u opencode:secret -X POST http://localhost:4096/session \
 
 curl -u opencode:secret -X POST http://localhost:4096/session/{sessionId}/message \
   -H "Content-Type: application/json" \
-  -d '{"parts": [{"type": "text", "text": "/hydrate policyMode=team-ci"}]}'
+  -d '{"parts": [{"type": "text", "text": "Inspect the project without activating FlowGuard"}]}'
 ```
+
+This text-message request does not activate governance. Native OpenCode V2
+activation requires the actual `/start [mode]` command callback or a canonically
+authorized `StartGovernance` request; sending either name as prompt text is not
+equivalent. This example is not evidence of governed HTTP/API acceptance.
 
 See the [OpenCode Server Documentation](https://opencode.ai/docs/server/) for
 the full API reference.
@@ -304,5 +314,5 @@ or invoked.
 
 ---
 
-FlowGuard Version: 2.0.0-tp.2
+FlowGuard Version: 2.0.0-tp.3
 _Last Updated: 2026-04-15_

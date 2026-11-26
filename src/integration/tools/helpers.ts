@@ -1,12 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
 // State & Machine
-import { SessionState, type PendingAuditOperation } from '../../state/schema.js';
+import { SessionState, type PendingAuditOperation, type Phase } from '../../state/schema.js';
+import type { SystemWorkOperation } from '../../state/system-work.js';
 import { hashText } from '../../shared/hashing.js';
-import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
-// Rail helpers
-import type { RailContext, AutoAdvanceOverflow } from '../../rails/types.js';
-import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js';
 // Adapters
 import {
   PersistenceError,
@@ -15,43 +12,49 @@ import {
 } from '../../adapters/persistence.js';
 import { prepareStateWithAuditOperations, type SemanticAuditIntent } from '../audit-outbox.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
-import { createRailContext } from '../../adapters/context.js';
 // Workspace
 import {
-  computeFingerprint,
   materializeEvidenceArtifacts,
-  sessionDir as resolveSessionDir,
   verifyEvidenceArtifacts,
   workspaceDir as resolveWorkspaceDir,
 } from '../../adapters/workspace/index.js';
+import {
+  resolveSessionAuthority,
+  type SessionAuthorityResolution,
+} from '../../adapters/session-authority.js';
 // Config
-import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
-import { PHASE_LABELS } from '../../presentation/index.js';
 import { IntegrationInvariantError } from '../errors.js';
+import { createPolicyContext, resolvePolicyFromState } from './workflow-policy-context.js';
+import { assertPreparedOrderMatchesPersisted } from './audit-outbox-order.js';
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
 /**
- * Tool definition shape expected by OpenCode.
- *
- * OpenCode accepts plain objects with { description, args, execute }.
- * The `tool()` helper from @opencode-ai/plugin is a passthrough (identity function)
- * that only provides TypeScript type safety — it adds no runtime behavior.
- *
- * By defining ToolDefinition ourselves and exporting plain objects, we eliminate
- * the runtime dependency on @opencode-ai/plugin. This is critical because:
- * - The thin wrappers in .opencode/ use relative imports back into src/
- * - .opencode/ resolves bare specifiers from .opencode/node_modules/
- * - src/ resolves bare specifiers from the project root node_modules/
- * - A freshly-cloned repo may not have root node_modules/ (no npm install yet)
- * - OpenCode's bun install only runs on .opencode/package.json, not the root
- *
- * The @opencode-ai/plugin docs explicitly support plain object exports:
- * "You can also import Zod directly and return a plain object"
+ * Host-neutral application context. Native OpenCode V2 registrations adapt
+ * signal/progress and resolve canonical worktree authority in plugin.ts;
+ * this application contract is not a native SDK ToolContext.
  */
+export type AutoValidationProgressStage =
+  'starting' | 'check_started' | 'check_finished' | 'finished';
+
+export function isValidationProgressPhase(phase: Phase): phase is 'VALIDATION' | 'IMPL_VALIDATION' {
+  return phase === 'VALIDATION' || phase === 'IMPL_VALIDATION';
+}
+export interface AutoValidationProgressEvent {
+  readonly operation: SystemWorkOperation;
+  readonly runID: string;
+  readonly phase: Phase;
+  readonly checks: readonly string[];
+  /** Presentation lifecycle only; never a check-result or PASS authority. */
+  readonly stage: AutoValidationProgressStage;
+  readonly check?: string;
+}
+
+export type AutoValidationProgress = (event: AutoValidationProgressEvent) => void | Promise<void>;
+
 export interface ToolContext {
   sessionID: string;
   messageID: string;
@@ -61,6 +64,14 @@ export interface ToolContext {
   workspaceFingerprint?: string;
   abort: AbortSignal | undefined;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
+  /** Host-command hook for a visible in-flight validation update. */
+  autoValidationProgress?: AutoValidationProgress;
+  /**
+   * Trusted host-surface capability snapshot for read-only help.
+   * Native plugin composition may assert its own slash-command registration;
+   * MCP and other callers must omit this and remain `not_verified`.
+   */
+  helpCapabilities?: import('../help/command-catalog.js').HelpCapabilities;
 }
 
 /**
@@ -68,16 +79,19 @@ export interface ToolContext {
  * need. Host hooks (which have no message/agent context) can resume canonical
  * system work with this narrower context.
  */
-export type WorkspaceToolContext = Pick<ToolContext, 'sessionID' | 'worktree' | 'directory'>;
+export type WorkspaceToolContext = Pick<
+  ToolContext,
+  'sessionID' | 'worktree' | 'directory' | 'autoValidationProgress'
+>;
 
 /**
  * Result type for FlowGuard tools.
  *
- * Matches the OpenCode SDK `ToolResult` union:
+ * Application result, adapted by the native root to Tool.Result.content:
  * - `string`: plain text result (current default for all FlowGuard tools)
  * - `{ output, metadata? }`: structured result with optional metadata
  *
- * @see https://opencode.ai/docs/custom-tools
+ * @see https://opencode.ai/v2/docs/build/plugins/server
  */
 export type ToolResult = string | { output: string; metadata?: Record<string, unknown> };
 
@@ -92,33 +106,6 @@ export type ToolDefinition = {
   execute(args: any, context: ToolContext): Promise<ToolResult>;
 };
 
-// ─── Formatting Helpers ───────────────────────────────────────────────────────
-
-/**
- * Format an auto-advance overflow (#428) as a fail-closed blocked tool result.
- *
- * Used by boundary tools that call autoAdvance directly. MUST be returned
- * BEFORE any state persistence: an overflow carries no advanced state, so the
- * tool must stop completely rather than write a partially-advanced session.
- *
- * Emits a structured `autoAdvanceOverflow: { phase, limit }` field so the
- * plugin boundary can detect and log the overflow without message parsing.
- */
-export function formatAutoAdvanceOverflow(overflow: AutoAdvanceOverflow): string {
-  const info = defaultReasonRegistry.format(AUTO_ADVANCE_OVERFLOW_CODE, {
-    phase: overflow.phase,
-    limit: String(overflow.limit),
-  });
-  return JSON.stringify({
-    error: true,
-    code: info.code,
-    message: info.reason,
-    recovery: info.recovery,
-    quickFix: info.quickFix,
-    autoAdvanceOverflow: { phase: overflow.phase, limit: overflow.limit },
-  });
-}
-
 // ─── Workspace Helpers ────────────────────────────────────────────────────────
 
 /** Extract worktree from OpenCode tool context. */
@@ -131,27 +118,78 @@ export function getWorktree(context: {
 }
 
 /**
- * Resolve workspace paths from tool context.
- * Returns fingerprint, sessionDir, and workspaceDir.
- * This is the workspace-aware equivalent of getWorktree + readState.
+ * Soft workspace/session resolution: the canonical authority outcome plus
+ * nullable paths. `absent` keeps the canonical paths usable (bootstrap);
+ * `unavailable` carries no paths and callers decide how to fail.
  */
-export async function resolveWorkspacePaths(context: {
-  sessionID: string;
-  worktree: string;
-  directory: string;
-  workspaceFingerprint?: string;
-}): Promise<{
-  worktree: string;
-  fingerprint: string;
-  sessDir: string;
-  wsDir: string;
-}> {
-  const worktree = getWorktree(context);
-  const fingerprint =
-    context.workspaceFingerprint ?? (await computeFingerprint(worktree)).fingerprint;
-  const sessDir = resolveSessionDir(fingerprint, context.sessionID);
-  const wsDir = resolveWorkspaceDir(fingerprint);
-  return { worktree, fingerprint, sessDir, wsDir };
+export type WorkspacePathsResolution =
+  | {
+      readonly authority: Extract<SessionAuthorityResolution, { status: 'resolved' | 'absent' }>;
+      readonly worktree: string;
+      readonly fingerprint: string;
+      readonly sessDir: string;
+      readonly wsDir: string;
+      readonly state: SessionState | null;
+    }
+  | {
+      readonly authority: Extract<SessionAuthorityResolution, { status: 'unavailable' }>;
+      readonly worktree: null;
+      readonly fingerprint: null;
+      readonly sessDir: null;
+      readonly wsDir: null;
+      readonly state: null;
+    };
+
+/** A positively resolved or positively absent session location. */
+export type LocatedWorkspacePaths = Extract<
+  WorkspacePathsResolution,
+  { readonly worktree: string }
+>;
+
+/**
+ * Resolve workspace paths through the single canonical session authority.
+ * Never derives a session path from a cached fingerprint.
+ */
+export async function resolveWorkspacePaths(
+  context: WorkspaceToolContext & { workspaceFingerprint?: string },
+): Promise<WorkspacePathsResolution> {
+  const authority = await resolveSessionAuthority({
+    root: getWorktree(context),
+    sessionId: context.sessionID,
+    claimedFingerprint: context.workspaceFingerprint,
+  });
+  if (authority.status === 'unavailable') {
+    return {
+      authority,
+      worktree: null,
+      fingerprint: null,
+      sessDir: null,
+      wsDir: null,
+      state: null,
+    };
+  }
+  return {
+    authority,
+    worktree: authority.worktreeRoot,
+    fingerprint: authority.fingerprint,
+    sessDir: authority.sessDir,
+    wsDir: resolveWorkspaceDir(authority.fingerprint),
+    state: authority.status === 'resolved' ? authority.state : null,
+  };
+}
+
+/**
+ * Hard variant for tools that cannot proceed without a located workspace.
+ * An unavailable resolution throws a typed integration error.
+ */
+export async function requireWorkspacePaths(
+  context: WorkspaceToolContext & { workspaceFingerprint?: string },
+): Promise<LocatedWorkspacePaths> {
+  const paths = await resolveWorkspacePaths(context);
+  if (paths.authority.status === 'unavailable') {
+    throw new IntegrationInvariantError(paths.authority.code, paths.authority.reason);
+  }
+  return paths as LocatedWorkspacePaths;
 }
 
 // ─── State Helpers ────────────────────────────────────────────────────────────
@@ -162,20 +200,29 @@ export async function requireState(sessDir: string): Promise<SessionState> {
   if (!state) {
     throw new IntegrationInvariantError(
       'NO_SESSION',
-      'No FlowGuard session found. Run /hydrate first to bootstrap a session.',
+      defaultReasonRegistry.format('NO_SESSION').reason,
     );
   }
   return state;
 }
 
 /**
- * Read state and enforce derived evidence integrity for mutating governance paths.
- * Use this for commands that can advance workflow state.
+ * Require the authority-validated state for a mutating tool path.
+ *
+ * `absent` is a legitimate bootstrap fact but not a mutation target; only a
+ * `resolved` authority (binding-validated state) may be mutated.
  */
-export async function requireStateForMutation(sessDir: string): Promise<SessionState> {
-  const state = await requireState(sessDir);
-  await verifyEvidenceArtifacts(sessDir, state);
-  return state;
+export async function requireBoundStateForMutation(
+  paths: LocatedWorkspacePaths,
+): Promise<SessionState> {
+  if (paths.state === null) {
+    throw new IntegrationInvariantError(
+      'NO_SESSION',
+      defaultReasonRegistry.format('NO_SESSION').reason,
+    );
+  }
+  await verifyEvidenceArtifacts(paths.sessDir, paths.state);
+  return paths.state;
 }
 
 /**
@@ -212,6 +259,7 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
 async function commitPreparedStateWithArtifactsAlreadyLocked(
   sessDir: string,
   preparedState: SessionState,
+  approvalAdmission?: unknown,
 ): Promise<SessionState> {
   // 1. Validate BEFORE any I/O — fail-closed
   const result = SessionState.safeParse(preparedState);
@@ -229,7 +277,7 @@ async function commitPreparedStateWithArtifactsAlreadyLocked(
   const preComputedStateHash = hashText(serialized);
 
   await materializeEvidenceArtifacts(sessDir, result.data, preComputedStateHash);
-  await writeStateAlreadyLocked(sessDir, result.data);
+  await writeStateAlreadyLocked(sessDir, result.data, approvalAdmission);
   // Return the persisted state so callers render the prepared ProofGraph.
   return result.data;
 }
@@ -237,8 +285,15 @@ async function commitPreparedStateWithArtifactsAlreadyLocked(
 export async function writeStateWithArtifacts(
   sessDir: string,
   nextState: SessionState,
+  approvalAdmission?: unknown,
 ): Promise<SessionState> {
-  return writeStateWithArtifactsAndAuditOperations(sessDir, nextState);
+  return writeStateWithArtifactsAndAuditOperations(
+    sessDir,
+    nextState,
+    undefined,
+    [],
+    approvalAdmission,
+  );
 }
 
 export async function writeStateWithArtifactsAndAuditOperations(
@@ -246,6 +301,7 @@ export async function writeStateWithArtifactsAndAuditOperations(
   nextState: SessionState,
   transitions?: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
   semanticIntents: readonly SemanticAuditIntent[] = [],
+  approvalAdmission?: unknown,
 ): Promise<SessionState> {
   const persist = (): Promise<SessionState> =>
     writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
@@ -253,6 +309,7 @@ export async function writeStateWithArtifactsAndAuditOperations(
       nextState,
       transitions,
       semanticIntents,
+      approvalAdmission,
     );
 
   if (lockedSessionDir.getStore() === sessDir) {
@@ -287,25 +344,6 @@ function withCarriedAuditOperations(previous: SessionState, next: SessionState):
     persistedById,
   );
   return { ...next, pendingAuditOperations: applyPreparedInsertions(persisted, insertions) };
-}
-
-function assertPreparedOrderMatchesPersisted(
-  prepared: readonly PendingAuditOperation[],
-  persisted: readonly PendingAuditOperation[],
-  persistedById: ReadonlyMap<string, PendingAuditOperation>,
-): void {
-  const commonIds = prepared
-    .map((operation) => operation.operationId)
-    .filter((id) => persistedById.has(id));
-  const persistedCommonIds = persisted
-    .map((operation) => operation.operationId)
-    .filter((id) => commonIds.includes(id));
-  if (!sameOrder(commonIds, persistedCommonIds)) {
-    throw new PersistenceError(
-      'OUTBOX_ORDER_CONFLICT',
-      'Refusing prepared state that reorders persisted pending audit operations',
-    );
-  }
 }
 
 function collectPreparedInsertions(
@@ -381,10 +419,6 @@ function areAdjacentAnchors(
   return beforeIndex !== undefined && afterIndex === beforeIndex + 1;
 }
 
-function sameOrder(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((id, index) => id === right[index]);
-}
-
 function nearestPersistedId(
   operations: readonly PendingAuditOperation[],
   start: number,
@@ -403,6 +437,7 @@ export async function writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
   nextState: SessionState,
   transitions?: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
   semanticIntents: readonly SemanticAuditIntent[] = [],
+  approvalAdmission?: unknown,
 ): Promise<SessionState> {
   const previous = await readState(sessDir);
   const preparedNext =
@@ -413,7 +448,11 @@ export async function writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
     transitions,
     semanticIntents,
   );
-  return commitPreparedStateWithArtifactsAlreadyLocked(sessDir, stateWithOperations);
+  return commitPreparedStateWithArtifactsAlreadyLocked(
+    sessDir,
+    stateWithOperations,
+    approvalAdmission,
+  );
 }
 
 export interface SessionWriteTransaction {
@@ -452,65 +491,15 @@ export async function withSessionWriteTransaction<T>(
 /**
  * Resolve policy from session state's frozen snapshot.
  *
- * P2c: Accepts only non-null SessionState. All callers guard null before calling.
- * Fail-closed: if policySnapshot is missing (corrupt state), throws instead of
- * silently falling back to a reconstructed policy from a mode string.
- *
- * This is the helper/plugin fallback path. Hydrate owns its own
- * developer-friendly solo fallback via the P21 config chain.
+ * Re-exported from {@link ./workflow-policy-context.js} for the tool layer's
+ * existing import surface; the definition lives there.
  */
-export function resolvePolicyFromState(state: SessionState): FlowGuardPolicy {
-  if (state.policySnapshot) {
-    return resolvePolicyFromSnapshot(state.policySnapshot);
-  }
-  // Fail-closed: a hydrated session must always have a policySnapshot.
-  // If missing, this is a data integrity error — not a recoverable fallback.
-  throw new IntegrationInvariantError(
-    'POLICY_SNAPSHOT_MISSING',
-    'Session state is missing policySnapshot. This indicates data corruption — ' +
-      'every hydrated session must have a frozen policy snapshot.',
-  );
-}
-
-/**
- * Create a policy-aware RailContext.
- * Merges the production context with the resolved policy.
- */
-export function createPolicyContext(policy: FlowGuardPolicy): RailContext {
-  return { ...createRailContext(), policy };
-}
-
-/**
- * Machine-readable NextAction routing fields appended by
- * {@link enrichWithWorkflowDirective}. These are NOT a rendered footer — user-facing
- * next-action text is owned by the presentation conclusion where a rendered
- * document exists.
- */
-export interface WorkflowDirectiveFields {
-  directive: ReturnType<typeof resolveWorkflowDirective>;
-  phaseLabel: string;
-}
-
-/**
- * Enrich an arbitrary value object with a workflow directive.
- *
- * Callers serialize the enriched object only at their response boundary.
- *
- * @param value - The object to enrich.
- * @param state - Current session state for workflow-directive resolution.
- * @returns The value augmented with directive and phaseLabel.
- */
-export function enrichWithWorkflowDirective<T extends Record<string, unknown>>(
-  value: T,
-  state: SessionState,
-): T & WorkflowDirectiveFields {
-  const directive = resolveWorkflowDirective(state);
-  return {
-    ...value,
-    directive,
-    phaseLabel: PHASE_LABELS[state.phase],
-  };
-}
+export {
+  createPolicyContext,
+  enrichWithWorkflowDirective,
+  resolvePolicyFromState,
+  type WorkflowDirectiveFields,
+} from './workflow-policy-context.js';
 
 // ─── Session Bootstrap Wrappers ────────────────────────────────────────────────
 
@@ -526,31 +515,87 @@ export async function withMutableSession(context: {
   sessionID: string;
   worktree: string;
   directory: string;
+  workspaceFingerprint?: string;
 }) {
-  const { worktree, fingerprint, sessDir, wsDir } = await resolveWorkspacePaths(context);
-  const state = await requireStateForMutation(sessDir);
+  const paths = await requireWorkspacePaths(context);
+  const state = await requireBoundStateForMutation(paths);
   const policy = resolvePolicyFromState(state);
   const ctx = createPolicyContext(policy);
-  return { worktree, fingerprint, sessDir, wsDir, state, policy, ctx };
+  return {
+    worktree: paths.worktree,
+    fingerprint: paths.fingerprint,
+    sessDir: paths.sessDir,
+    wsDir: paths.wsDir,
+    state,
+    policy,
+    ctx,
+  };
 }
 
 export type MutableSession = Awaited<ReturnType<typeof withMutableSession>>;
+
+/**
+ * Re-resolve the canonical authority under the write lock and hand back its
+ * fresh, validated state.
+ *
+ * The pre-lock resolution is only the *candidate* location: it provides the
+ * directory to lock. Once the lock is held, this re-resolution proves the
+ * locked directory is still the canonical one and returns the state as
+ * persisted by the previous lock holder. A callback can therefore never
+ * compute a mutation from a snapshot that predates its own lock acquisition.
+ */
+async function requireFreshBoundStateUnderLock(
+  context: WorkspaceToolContext & { workspaceFingerprint?: string },
+  locked: LocatedWorkspacePaths,
+): Promise<SessionState> {
+  const authority = await resolveSessionAuthority({
+    root: getWorktree(context),
+    sessionId: context.sessionID,
+    claimedFingerprint: context.workspaceFingerprint,
+  });
+  if (authority.status === 'unavailable') {
+    throw new IntegrationInvariantError(authority.code, authority.reason);
+  }
+  if (authority.status === 'absent') {
+    throw new IntegrationInvariantError(
+      'NO_SESSION',
+      defaultReasonRegistry.format('NO_SESSION').reason,
+    );
+  }
+  if (authority.sessDir !== locked.sessDir || authority.fingerprint !== locked.fingerprint) {
+    throw new IntegrationInvariantError(
+      'SESSION_BINDING_MISMATCH',
+      `Session authority changed while acquiring the write lock (locked "${locked.sessDir}", now "${authority.sessDir}").`,
+    );
+  }
+  await verifyEvidenceArtifacts(authority.sessDir, authority.state);
+  return authority.state;
+}
 
 export async function withMutableSessionTransaction<T>(
   context: {
     sessionID: string;
     worktree: string;
     directory: string;
+    workspaceFingerprint?: string;
   },
   fn: (session: MutableSession) => Promise<T>,
 ): Promise<T> {
-  const { worktree, fingerprint, sessDir, wsDir } = await resolveWorkspacePaths(context);
-  return withSessionWriteLock(sessDir, async () =>
-    lockedSessionDir.run(sessDir, async () => {
-      const state = await requireStateForMutation(sessDir);
+  const paths = await requireWorkspacePaths(context);
+  return withSessionWriteLock(paths.sessDir, async () =>
+    lockedSessionDir.run(paths.sessDir, async () => {
+      const state = await requireFreshBoundStateUnderLock(context, paths);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
-      return fn({ worktree, fingerprint, sessDir, wsDir, state, policy, ctx });
+      return fn({
+        worktree: paths.worktree,
+        fingerprint: paths.fingerprint,
+        sessDir: paths.sessDir,
+        wsDir: paths.wsDir,
+        state,
+        policy,
+        ctx,
+      });
     }),
   );
 }
@@ -560,18 +605,23 @@ export async function withMutableSessionTransaction<T>(
  *
  * Used by: status.
  */
+/** Read-only session resolution: either a validated session or a typed no-session fact. */
+export type ReadOnlySessionResolution =
+  | (LocatedWorkspacePaths & { readonly state: SessionState; readonly policy: FlowGuardPolicy })
+  | (WorkspacePathsResolution & { readonly state: null; readonly policy: null });
+
 export async function withReadOnlySession(context: {
   sessionID: string;
   worktree: string;
   directory: string;
-}) {
-  const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
-  const state = await readState(sessDir);
+  workspaceFingerprint?: string;
+}): Promise<ReadOnlySessionResolution> {
+  const paths = await resolveWorkspacePaths(context);
 
-  if (!state) {
-    return { fingerprint, sessDir, state: null, policy: null };
+  if (paths.state === null) {
+    return { ...paths, state: null, policy: null };
   }
 
-  const policy = resolvePolicyFromState(state);
-  return { fingerprint, sessDir, state, policy };
+  const policy = resolvePolicyFromState(paths.state);
+  return { ...paths, state: paths.state, policy };
 }

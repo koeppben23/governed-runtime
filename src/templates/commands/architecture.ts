@@ -22,7 +22,7 @@ Create or revise an Architecture Decision Record (ADR) for the current FlowGuard
 ### Phase 1: Check State
 
 1. Call \`flowguard_status\` to verify a session exists in READY or ARCHITECTURE phase.
-   - If no session: call \`flowguard_hydrate\` first.
+   - If governance is inactive: recommend explicit \`/start\` and stop; never start it automatically. If session authority is missing or unavailable, report the block without recreating it.
    - If phase does not allow /architecture: report the current phase and stop.
 ${DISCOVERY_REVIEW_CAPTURE}
 
@@ -68,7 +68,7 @@ ${SHARED_REVIEW_LOOP({
   iterationNote: '(max iterations from policy.reviewBudget.architecture)',
   repeatStep: 5,
   subagentExtra:
-    ' with subagent_type "flowguard-reviewer" only — FlowGuard supplies the frozen ADR, ticket/context, iteration, planVersion, and all canonical reviewer instructions by host injection',
+    ' with agent "flowguard-reviewer" and background false only — FlowGuard supplies the frozen ADR, ticket/context, iteration, planVersion, and all canonical reviewer instructions by host injection',
   fallbackExtra: '',
   unableDescription:
     'e.g., contradictory context, missing prerequisites, or scope ambiguity that prevents critique',

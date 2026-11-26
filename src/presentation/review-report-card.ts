@@ -66,7 +66,7 @@ export interface ReviewReportCardInput {
   /** Findings provenance (always host-observed structured model output). */
   reviewOutputMode?: ReviewInvocationEvidence['reviewOutputMode'];
   /** Host-observed structured model output was used. */
-  structuredOutputUsed?: ReviewInvocationEvidence['structuredOutputUsed'];
+  validationAuthority?: 'flowguard';
   /** Output assurance tier for host-observed structured output. */
   reviewAssuranceLevel?: ReviewInvocationEvidence['reviewAssuranceLevel'];
   /** Mandatory state-derived ProofGraph summary. */
@@ -305,7 +305,7 @@ function appendHostEvidenceItems(evidence: KeyValueItem[], input: ReviewReportCa
     hostVisible,
     reviewerSessionId,
     reviewOutputMode,
-    structuredOutputUsed,
+    validationAuthority,
     reviewAssuranceLevel,
   } = input;
   if (typeof hostVisible === 'boolean') {
@@ -315,10 +315,10 @@ function appendHostEvidenceItems(evidence: KeyValueItem[], input: ReviewReportCa
     evidence.push({ label: 'Reviewer session', value: `\`${reviewerSessionId}\`` });
   }
   if (reviewOutputMode) evidence.push({ label: 'Review output mode', value: reviewOutputMode });
-  if (typeof structuredOutputUsed === 'boolean') {
+  if (validationAuthority) {
     evidence.push({
-      label: 'Structured output used',
-      value: structuredOutputUsed ? 'yes' : 'no',
+      label: 'Validation authority',
+      value: validationAuthority,
     });
   }
   if (reviewAssuranceLevel) {

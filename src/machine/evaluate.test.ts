@@ -17,6 +17,7 @@ import {
   ARCHITECTURE_DECISION,
   POLICY_SNAPSHOT,
   VERIFICATION_CANDIDATES,
+  makePolicySnapshot,
 } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import type { SessionState } from '../state/schema.js';
@@ -136,10 +137,10 @@ describe('evaluate', () => {
       const state = makeState('VALIDATION', {
         activeChecks: [],
         validation: [],
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...POLICY_SNAPSHOT,
           validationEvidence: { enforcement: 'required', allowNoCommands: false },
-        },
+        }),
       });
       const result = evaluate(state);
       expect(result.kind).toBe('pending');
@@ -153,10 +154,10 @@ describe('evaluate', () => {
       const state = makeState('VALIDATION', {
         activeChecks: [],
         validation: [],
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...POLICY_SNAPSHOT,
           validationEvidence: { enforcement: 'required', allowNoCommands: true },
-        },
+        }),
       });
       const result = evaluate(state);
       expect(result.kind).toBe('transition');
@@ -189,10 +190,10 @@ describe('evaluate', () => {
           verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
           decidedAt: '2026-01-01T00:00:00.000Z',
         },
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...POLICY_SNAPSHOT,
           validationEvidence: { enforcement: 'required', allowNoCommands: false },
-        },
+        }),
       });
       const result = evaluate(state);
       expect(result.kind).toBe('pending');
@@ -240,6 +241,7 @@ describe('evaluate', () => {
     });
 
     it('IMPL_VALIDATION with a fully bound reduced decision → REDUCED_CEREMONY', () => {
+      const reducedPolicy = makePolicySnapshot({ ...POLICY_SNAPSHOT, allowReducedCeremony: true });
       const attempt = (checkId: string): SessionState['validationAttempts'][number] => ({
         attemptId: checkId === 'test' ? TEST_ATTEMPT_ID : LINT_ATTEMPT_ID,
         scope: 'implementation',
@@ -289,7 +291,7 @@ describe('evaluate', () => {
           touchedSurfaces: ['docs/usage-notes.md'],
           implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: 'digest-of-impl',
-          policyDigest: POLICY_SNAPSHOT.hash,
+          policyDigest: reducedPolicy.hash,
           verificationBasis: {
             checkIds: ['test', 'lint'],
             attempts: [
@@ -299,7 +301,7 @@ describe('evaluate', () => {
           },
           decidedAt: FIXED_TIME,
         },
-        policySnapshot: { ...POLICY_SNAPSHOT, allowReducedCeremony: true },
+        policySnapshot: reducedPolicy,
       });
       const result = evaluate(state);
       expect(result.kind).toBe('transition');

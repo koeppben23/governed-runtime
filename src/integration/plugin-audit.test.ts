@@ -25,10 +25,13 @@ import {
   type AuditDeps,
 } from './plugin-audit.js';
 import {
+  absentAuthority,
   FIXED_DECISION_AT,
   makeDeps,
   resetChainSeq,
+  resolvedAuthority,
   SESSION_ID,
+  unavailableAuthority,
 } from './plugin-audit-test-helpers.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
@@ -36,6 +39,7 @@ import {
   buildToolCallBody,
   finalizeWithTimestampEvidence,
 } from '../audit/types.js';
+import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
 import { MockTimestampAuthorityProvider } from '../audit/tsa-provider.js';
 import type { TimestampAuthorityProvider } from '../audit/tsa-provider.js';
 import { PkijsTimestampVerifier } from '../audit/rfc-3161-pkijs-verifier.js';
@@ -66,6 +70,13 @@ function requireTransition(
   return operation;
 }
 
+/** Mock authority mirroring the canonical file-backed resolution for a real sessDir. */
+async function authorityFromDisk(sessDir: string): Promise<SessionAuthorityResolution> {
+  const state = await readState(sessDir);
+  if (state === null) throw new Error(`No state at ${sessDir}`);
+  return resolvedAuthority(state, sessDir);
+}
+
 // ─── H1: Noop ohne Session-Dir ────────────────────────────────────────────
 
 describe('runAudit', () => {
@@ -77,10 +88,7 @@ describe('runAudit', () => {
       // holding no state. The unavailable case is covered in
       // plugin-audit-session-authority.test.ts.
       const deps = makeDeps({
-        getSessionDir: vi.fn().mockReturnValue(null),
-        resolveCanonicalSessionDir: vi
-          .fn()
-          .mockResolvedValue({ status: 'resolved', sessDir: os.tmpdir() }),
+        resolveSessionAuthority: vi.fn().mockResolvedValue(absentAuthority(os.tmpdir())),
       });
 
       const result = await runAudit(deps, 'flowguard_plan', {}, {}, SESSION_ID);
@@ -91,21 +99,19 @@ describe('runAudit', () => {
     });
 
     it('does not persist audit for an unhydrated host session', async () => {
+      // A resolved-but-unhydrated session is positively absent under the
+      // canonical authority: there is no state to audit and no session mapping
+      // to guess. The unreachable policy override proves the skip never consults
+      // policy for an absent session.
       const deps = makeDeps({
-        resolveSessionPolicy: vi.fn().mockResolvedValue({
-          policy: {
-            audit: { emitToolCalls: true, emitTransitions: true, enableChainHash: true },
-            actorClassification: {},
-            mode: 'team',
-            requireHumanGates: true,
-          },
-          state: null,
-        }),
+        resolveSessionAuthority: vi.fn().mockResolvedValue(absentAuthority()),
+        resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
       });
 
       await expect(
         runAudit(deps, 'flowguard_abort_session', {}, {}, SESSION_ID),
       ).resolves.toBeUndefined();
+      expect(deps.resolveSessionPolicy).not.toHaveBeenCalled();
       expect(deps.initChain).not.toHaveBeenCalled();
       expect(deps.appendAndTrack).not.toHaveBeenCalled();
       expect(deps.log.debug).toHaveBeenCalledWith(
@@ -485,7 +491,7 @@ describe('runAudit', () => {
         });
         await writeState(sessDir, state);
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state, sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: {
@@ -657,7 +663,7 @@ describe('runAudit', () => {
     ): AuditDeps {
       return makeDeps({
         ...overrides,
-        getSessionDir: vi.fn().mockReturnValue(sessDir),
+        resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state, sessDir)),
         resolveSessionPolicy: vi.fn().mockResolvedValue({
           policy: {
             audit: { emitToolCalls: false, emitTransitions: false, enableChainHash: true },
@@ -701,7 +707,7 @@ describe('runAudit', () => {
           policySnapshot: { ...completeState().policySnapshot, mode: 'solo' as const },
         });
         await writeState(sessDir, state);
-        const deps = completionDeps(sessDir, state, { cachedFingerprint: 'fp-abc' });
+        const deps = completionDeps(sessDir, state);
 
         await runAudit(deps, 'flowguard_plan', {}, { phase: 'COMPLETE', error: false }, SESSION_ID);
 
@@ -712,6 +718,7 @@ describe('runAudit', () => {
         );
         expect(lifecycleCall).toBeDefined();
         // The archive attempt is fire-and-forget; its failure surfaces via warn.
+        // The authoritative fingerprint comes from state.binding, not a boot cache.
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(deps.log.warn).toHaveBeenCalledWith(
           'audit',
@@ -730,7 +737,7 @@ describe('runAudit', () => {
           policySnapshot: { ...completeState().policySnapshot, mode: 'team' as const },
         });
         await writeState(sessDir, teamState);
-        const deps = completionDeps(sessDir, teamState, { cachedFingerprint: 'fp-abc' });
+        const deps = completionDeps(sessDir, teamState);
 
         await runAudit(deps, 'flowguard_plan', {}, { phase: 'COMPLETE', error: false }, SESSION_ID);
 
@@ -755,7 +762,7 @@ describe('runAudit', () => {
           policySnapshot: { ...completeState().policySnapshot, mode: 'solo' as const },
         });
         await writeState(sessDir, state);
-        const deps = completionDeps(sessDir, state, { cachedFingerprint: 'fp-abc' });
+        const deps = completionDeps(sessDir, state);
 
         await runAudit(deps, 'flowguard_plan', {}, { phase: 'COMPLETE', error: false }, SESSION_ID);
 
@@ -781,12 +788,12 @@ describe('runAudit', () => {
       }
     });
 
-    it('emits session_completed even without a cached fingerprint', async () => {
+    it('emits session_completed from the authority-resolved persisted session', async () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-complete-'));
       try {
         const state = completeState();
         await writeState(sessDir, state);
-        const deps = completionDeps(sessDir, state, { cachedFingerprint: null });
+        const deps = completionDeps(sessDir, state);
 
         await runAudit(deps, 'flowguard_plan', {}, { phase: 'COMPLETE', error: false }, SESSION_ID);
 
@@ -796,6 +803,7 @@ describe('runAudit', () => {
             'lifecycle',
         );
         expect(lifecycleCall).toBeDefined();
+        expect(deps.resolveSessionAuthority).toHaveBeenCalledWith(SESSION_ID);
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(deps.log.warn).not.toHaveBeenCalled();
       } finally {
@@ -808,7 +816,7 @@ describe('runAudit', () => {
       try {
         const state = completeState();
         await writeState(sessDir, state);
-        const deps = completionDeps(sessDir, state, { cachedFingerprint: 'fp-abc' });
+        const deps = completionDeps(sessDir, state);
 
         await runAudit(
           deps,
@@ -961,7 +969,7 @@ describe('runAudit', () => {
         await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(body, 'genesis'));
 
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -1000,7 +1008,7 @@ describe('runAudit', () => {
         const operation = requireTransition(pending!.pendingAuditOperations[0]!);
 
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -1043,7 +1051,7 @@ describe('runAudit', () => {
         expect(operation.kind).toBe('state_write');
 
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -1125,7 +1133,7 @@ describe('runAudit', () => {
         await writeState(sessDir, tampered);
 
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -1158,7 +1166,7 @@ describe('runAudit', () => {
         });
         await writeState(sessDir, legacy);
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -1209,7 +1217,7 @@ describe('runAudit', () => {
         await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(body, 'genesis'));
 
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -1279,7 +1287,7 @@ describe('runAudit', () => {
         await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(decoyToolCall, 'genesis'));
 
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -1309,7 +1317,7 @@ describe('runAudit', () => {
         await writeState(sessDir, legacy);
         await fs.writeFile(path.join(sessDir, 'audit.jsonl'), '{ malformed json\n', 'utf8');
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -1350,7 +1358,7 @@ describe('runAudit', () => {
         await writeState(sessDir, tampered);
 
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -1411,7 +1419,7 @@ describe('runAudit', () => {
         await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(divergent, 'genesis'));
 
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -1437,17 +1445,14 @@ describe('runAudit', () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-bootstrap-'));
       try {
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(null),
-          resolveCanonicalSessionDir: vi.fn().mockResolvedValue({
-            status: 'resolved',
-            sessDir,
-          }),
+          resolveSessionAuthority: vi.fn().mockResolvedValue(absentAuthority(sessDir)),
           resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
         });
 
         await expect(
           reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_hydrate'),
         ).resolves.toBeUndefined();
+        expect(deps.resolveSessionPolicy).not.toHaveBeenCalled();
 
         const blocked = await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan');
         expect(blocked).toMatchObject({
@@ -1462,8 +1467,7 @@ describe('runAudit', () => {
 
     it('blocks flowguard_hydrate when the canonical resolution authority is unavailable', async () => {
       const deps = makeDeps({
-        getSessionDir: vi.fn().mockReturnValue(null),
-        resolveCanonicalSessionDir: vi.fn().mockResolvedValue({ status: 'unavailable' }),
+        resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
         resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
       });
 
@@ -1472,28 +1476,27 @@ describe('runAudit', () => {
         auditOk: false,
         block: true,
         code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+        causeCode: 'NO_WORKTREE',
       });
     });
 
-    it('blocks flowguard_hydrate when canonical resolution finds existing state despite the missing mapping', async () => {
+    it('reconciles an existing session for flowguard_hydrate instead of opening the bootstrap path', async () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-bootstrap-'));
       try {
-        await writeState(sessDir, makeState('TICKET', { id: SESSION_ID }));
+        const state = makeState('TICKET', { id: SESSION_ID });
+        await writeState(sessDir, state);
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(null),
-          resolveCanonicalSessionDir: vi.fn().mockResolvedValue({
-            status: 'resolved',
-            sessDir,
-          }),
-          resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
+          resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state, sessDir)),
+          appendAndTrack: vi.fn(async () => {}),
         });
 
-        const result = await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_hydrate');
-        expect(result).toMatchObject({
-          auditOk: false,
-          block: true,
-          code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
-        });
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_hydrate'),
+        ).resolves.toBeUndefined();
+        // The resolved authority must route through policy, not the silent
+        // bootstrap skip, and it must not fabricate a reconciliation event.
+        expect(deps.resolveSessionPolicy).toHaveBeenCalledWith(sessDir);
+        expect(deps.appendAndTrack).not.toHaveBeenCalled();
       } finally {
         await fs.rm(sessDir, { recursive: true, force: true });
       }
@@ -1503,17 +1506,14 @@ describe('runAudit', () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-bootstrap-'));
       try {
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(null),
-          resolveCanonicalSessionDir: vi.fn().mockResolvedValue({
-            status: 'resolved',
-            sessDir,
-          }),
+          resolveSessionAuthority: vi.fn().mockResolvedValue(absentAuthority(sessDir)),
           resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
         });
 
         await expect(
           reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_hydrate'),
         ).resolves.toBeUndefined();
+        expect(deps.resolveSessionPolicy).not.toHaveBeenCalled();
       } finally {
         await fs.rm(sessDir, { recursive: true, force: true });
       }
@@ -1540,7 +1540,7 @@ describe('runAudit', () => {
         await writeState(sessDir, modified);
 
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },

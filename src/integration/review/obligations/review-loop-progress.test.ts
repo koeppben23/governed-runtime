@@ -1,3 +1,5 @@
+import { messageCaptureFixture } from '../../../review-invocation-test-helpers.js';
+
 /**
  * @module integration/review/review-loop-progress.test
  * @description Tests for the read-only review loop progress projection.
@@ -69,7 +71,13 @@ describe('getReviewLoopProgress', () => {
               parentSessionId: 'parent',
               childSessionId: 'child',
               agentType: 'flowguard-reviewer',
-              invocationMode: 'native_task_structured_followup',
+              invocationMode: 'native_task_message_json',
+              transportVersion: 5,
+              capture: messageCaptureFixture({
+                childSessionId: 'child',
+                obligationId: 'obl-1',
+                attemptId: '00000000-0000-4000-8000-0000000000b1',
+              }),
               hostVisible: true,
               transcriptNavigable: true,
               source: 'host-orchestrated',
@@ -80,9 +88,8 @@ describe('getReviewLoopProgress', () => {
               invokedAt: '2026-01-01T00:00:00.000Z',
               fulfilledAt: null,
               consumedByObligationId: null,
-              reviewOutputMode: 'structured_output',
-              structuredOutputUsed: true,
-              reviewAssuranceLevel: 'structured_high',
+              reviewOutputMode: 'validated_json',
+              reviewAssuranceLevel: 'host_message_validated',
               capturedRawFindings: {
                 blockingIssues: [
                   { severity: 'high', category: 'design', message: 'Missing error handling' },
@@ -277,7 +284,13 @@ describe('getReviewLoopProgress', () => {
               parentSessionId: 'parent',
               childSessionId: 'child',
               agentType: 'flowguard-reviewer',
-              invocationMode: 'native_task_structured_followup',
+              invocationMode: 'native_task_message_json',
+              transportVersion: 5,
+              capture: messageCaptureFixture({
+                childSessionId: 'child',
+                obligationId: 'obl-1',
+                attemptId: '00000000-0000-4000-8000-0000000000b1',
+              }),
               hostVisible: true,
               transcriptNavigable: true,
               source: 'host-orchestrated',
@@ -288,9 +301,8 @@ describe('getReviewLoopProgress', () => {
               invokedAt: '2026-01-01T00:00:00.000Z',
               fulfilledAt: null,
               consumedByObligationId: null,
-              reviewOutputMode: 'structured_output',
-              structuredOutputUsed: true,
-              reviewAssuranceLevel: 'structured_high',
+              reviewOutputMode: 'validated_json',
+              reviewAssuranceLevel: 'host_message_validated',
               capturedRawFindings: {
                 blockingIssues: { message: 'bad shape' },
               },
@@ -329,7 +341,13 @@ describe('getReviewLoopProgress', () => {
               parentSessionId: 'parent',
               childSessionId: 'child',
               agentType: 'flowguard-reviewer',
-              invocationMode: 'native_task_structured_followup',
+              invocationMode: 'native_task_message_json',
+              transportVersion: 5,
+              capture: messageCaptureFixture({
+                childSessionId: 'child',
+                obligationId: 'obl-1',
+                attemptId: '00000000-0000-4000-8000-0000000000b1',
+              }),
               hostVisible: true,
               transcriptNavigable: true,
               source: 'host-orchestrated',
@@ -340,9 +358,8 @@ describe('getReviewLoopProgress', () => {
               invokedAt: '2026-01-01T00:00:00.000Z',
               fulfilledAt: null,
               consumedByObligationId: null,
-              reviewOutputMode: 'structured_output',
-              structuredOutputUsed: true,
-              reviewAssuranceLevel: 'structured_high',
+              reviewOutputMode: 'validated_json',
+              reviewAssuranceLevel: 'host_message_validated',
               capturedRawFindings: {
                 blockingIssues: [{ message: { raw: 'bad' } }, { message: 123 }],
               },

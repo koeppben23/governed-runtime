@@ -19,8 +19,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { repoRelative } from './repo-path.js';
-import { isTestSourcePath } from './module-classification.js';
+import { repoRelative } from '../support/repo-path.js';
+import { isTestSourcePath } from '../support/module-classification.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 

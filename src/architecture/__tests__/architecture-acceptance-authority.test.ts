@@ -9,7 +9,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { repoRelative } from './repo-path.js';
+import { repoRelative } from '../support/repo-path.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 const HUMAN_APPROVAL_AUTHORITY = 'rails/review-decision.ts';

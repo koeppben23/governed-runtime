@@ -298,10 +298,14 @@ describe('integration/tools/architecture (wrapper)', () => {
     if (obligation?.reviewSubjectScope?.kind === 'artifact') {
       expect(obligation.reviewSubjectScope.artifact.kind).toBe('adr');
       expect(obligation.reviewSubjectScope.artifact.digest).toBe('digest-adr');
+      // Section identities are material-relative: the ticket context and the
+      // artifact wrapper are the first top-level H2 sections of the frozen
+      // material, so the ADR's own H2s start at sibling index 3. The same
+      // identities are offered as `plan_adr_section` evidence refs.
       expect(obligation.reviewSubjectScope.artifact.sectionPaths).toEqual([
-        [{ headingDepth: 2, siblingIndex: 1, headingText: 'Context' }],
-        [{ headingDepth: 2, siblingIndex: 2, headingText: 'Decision' }],
-        [{ headingDepth: 2, siblingIndex: 3, headingText: 'Consequences' }],
+        [{ headingDepth: 2, siblingIndex: 3, headingText: 'Context' }],
+        [{ headingDepth: 2, siblingIndex: 4, headingText: 'Decision' }],
+        [{ headingDepth: 2, siblingIndex: 5, headingText: 'Consequences' }],
       ]);
     }
   });
@@ -509,6 +513,47 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('INVALID_ARCHITECTURE_TOOL_SEQUENCE');
     expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
+  });
+
+  it('accepts the recovery-named revision form during the active review loop', async () => {
+    // Live regression: after changes_requested, the ONLY working form is
+    // { reviewVerdict: "changes_requested", adrText, claims } — WITHOUT title.
+    // The recovery guidance names exactly this call.
+    mocks.state = makeState('ARCHITECTURE', {
+      architecture: {
+        id: 'ADR-001',
+        title: 'ADR',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        digest: 'digest-adr',
+        status: 'proposed',
+        reviewFindings: [],
+        reviewCompletion: 'pending',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      selfReview: {
+        iteration: 0,
+        reviewCycle: 1,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'digest-adr',
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    const { architecture } = await import('./architecture/architecture.js');
+    const res = await architecture.execute(
+      {
+        reviewVerdict: 'changes_requested',
+        adrText: '## Context\nA2\n\n## Decision\nB\n\n## Consequences\nC',
+        claims: [],
+      },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.code).not.toBe('ADR_REVIEW_IN_PROGRESS');
+    expect(parsed.code).not.toBe('EMPTY_ADR_TEXT');
+    expect(parsed.code).not.toBe('ADR_SUBMISSION_MIXED_INPUTS');
   });
 
   it('blocks ADR resubmission during active review loop', async () => {
@@ -755,7 +800,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.reviewAttemptId).toEqual(expect.any(String));
     expect(parsed.reviewMode).toBe('subagent');
     expect(parsed.reviewInvocation).toBeDefined();
-    expect(parsed.reviewInvocation.reviewerSubagentType).toBe('flowguard-reviewer');
+    expect(parsed.reviewInvocation.reviewerAgent).toBe('flowguard-reviewer');
     expect(parsed.reviewInvocation.authority).toBe('review_obligation_evidence_binding');
     expect(parsed.reviewInvocation.requiredReviewAttestation.toolObligationId).toBeDefined();
   });
@@ -1098,6 +1143,57 @@ describe('integration/tools/architecture (wrapper)', () => {
       }
       // Verdict-only submission remains representable.
       expect(schema.safeParse({ reviewVerdict: 'accept' }).success).toBe(true);
+    });
+  });
+
+  describe('parseArchitectureClaimsInput', () => {
+    const validClaim = {
+      statement: 'the decision keeps service data durable',
+      critical: true,
+      authoritySectionId: 'decision',
+      requiredReviewEvidence: ['architecture-review'],
+    };
+
+    it('accepts schema-valid claims and passes them through', async () => {
+      const { parseArchitectureClaimsInput } =
+        await import('./architecture/architecture-shared.js');
+      expect(parseArchitectureClaimsInput([validClaim])).toEqual({
+        kind: 'ok',
+        claims: [validClaim],
+      });
+      expect(parseArchitectureClaimsInput(undefined)).toEqual({ kind: 'ok', claims: undefined });
+    });
+
+    it('rejects a non-array claims payload with a typed block', async () => {
+      const { parseArchitectureClaimsInput } =
+        await import('./architecture/architecture-shared.js');
+      const result = parseArchitectureClaimsInput({} as unknown as readonly unknown[] | undefined);
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.message).toContain('ARCHITECTURE_CLAIM_INVALID');
+        expect(result.message).toContain('claims');
+      }
+    });
+
+    it('rejects plan-shaped claims and reports the failing position and field', async () => {
+      const { parseArchitectureClaimsInput } =
+        await import('./architecture/architecture-shared.js');
+      const result = parseArchitectureClaimsInput([
+        validClaim,
+        {
+          statement: 'missing ids return 404',
+          critical: true,
+          authoritySectionId: 'decision',
+          claimScope: 'specific_behavior',
+          expectedCheckId: 'test',
+        },
+      ]);
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.message).toContain('ARCHITECTURE_CLAIM_INVALID');
+        expect(result.message).toContain('"index":"2"');
+        expect(result.message).toContain('requiredReviewEvidence');
+      }
     });
   });
 });

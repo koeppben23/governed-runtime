@@ -57,6 +57,24 @@ contain session state.
 | `~/.config/opencode/workspaces/*/sessions/*/review-report.json` | 600 (owner read/write)  | Raw review-report (excluded from exports by default)                |
 | Repo-local `.opencode/` (when `--install-scope repo`)           | 700 (owner only)        | Installed assets only — does NOT contain session state              |
 
+**Write locks.** `session-state.json.lock` and `audit.jsonl.lock` serialize
+writes within one session directory. Each lock record names its owner (PID,
+host, boot reference and, where the platform exposes it, process start
+identity). Stale reclamation is bounded as follows:
+
+- An owner is only considered gone when that is positively proven: the PID is
+  not running, or the live PID has a different start identity (PID reuse). The
+  boot reference is never a staleness proof on its own, because a wall-clock
+  adjustment moves it for a running process too. Anything unknown — unreadable
+  lock, foreign host, underivable start identity — is treated as alive and the
+  acquisition fails closed with `LOCK_TIMEOUT`.
+- Reclamation is serialized through `<lock>.reclaim/`, a directory whose
+  deletion is conditional on emptiness. A reclaimer therefore cannot delete a
+  lock that another process created after its stale verdict, and a release only
+  ever unlinks its own `owner.<token>` entry.
+- `npm run perf:lock-exclusivity` is the independent-process acceptance for
+  exclusivity, SIGKILL recovery and previous-boot reclaim.
+
 **Customer Responsibility:**
 
 - Set appropriate filesystem permissions
@@ -400,7 +418,13 @@ Representative typed fail-closed IdP errors:
 - **Hash-safe.** When absent, `actorInfo` is omitted from the event object — `JSON.stringify`
   excludes `undefined` keys. Chain hashes for pre-existing events remain identical.
 - **Selective attribution.** `actorInfo` appears on human-influenced events (lifecycle,
-  tool_call, decision). Machine-only events (transition, error) never carry `actorInfo`.
+  tool_call, decision) and on transition events when a session principal is resolved.
+  Error events never carry `actorInfo`. Classification and identity context are
+  orthogonal: a transition remains a machine-applied transition (`actor: 'machine'`)
+  even when it names the resolved principal. A successful `flowguard_decision` tool
+  call names the deciding actor from the persisted `decisionIdentity`; a blocked
+  decision call carries no `actorInfo` instead of attributing the session initiator.
+  The decision event and its receipt remain the decision attribution authority.
 
 ---
 
@@ -415,5 +439,5 @@ Representative typed fail-closed IdP errors:
 
 ---
 
-FlowGuard Version: 2.0.0-tp.2
+FlowGuard Version: 2.0.0-tp.3
 _Last Updated: 2026-04-23_

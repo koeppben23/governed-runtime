@@ -22,12 +22,13 @@ import { git, GitError } from './git-command.js';
  * infrastructure problem as a missing repository.
  *
  * @param dir - Any directory inside a git repository.
+ * @param timeoutMs - Optional per-probe timeout override (deadline budgeting).
  * @returns Absolute, OS-normalized path to the worktree root.
  * @throws GitError NOT_GIT_REPO when outside a repository; typed code otherwise.
  */
-export async function resolveRoot(dir: string): Promise<string> {
+export async function resolveRoot(dir: string, timeoutMs?: number): Promise<string> {
   try {
-    const root = await git(dir, ['rev-parse', '--show-toplevel']);
+    const root = await git(dir, ['rev-parse', '--show-toplevel'], timeoutMs);
     // git always outputs forward slashes; normalize for the OS
     return path.normalize(root);
   } catch (err) {

@@ -15,7 +15,7 @@ on:
       - '.github/workflows/mutation-event-core.yml'
       - 'scripts/verify-mutation-admission.mjs'
       - 'scripts/mutation-profile-registry.json'
-      - 'scripts/stryker-patch.js'
+      - 'package-lock.json'
 
 permissions:
   contents: read
@@ -29,7 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # actions/setup-node v7.1.0
         with:
           node-version-file: .node-version
           cache: npm
@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Run event-core mutation tests
-        run: node scripts/stryker-patch.js && npx stryker run stryker.event-core.conf.json
+        run: npx stryker run stryker.event-core.conf.json
       - name: Write and verify mutation admission manifest
         run: |
           node scripts/verify-mutation-admission.mjs --profile event-core --write-profile-manifest

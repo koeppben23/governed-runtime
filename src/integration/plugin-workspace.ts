@@ -14,17 +14,20 @@
 import { readState } from '../adapters/persistence.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
+import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import {
   computeFingerprint,
-  sessionDir as resolveSessionDir,
   workspaceDir as resolveWorkspaceDir,
 } from '../adapters/workspace/index.js';
+import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
 import { GENESIS_HASH, type ChainedAuditEvent } from '../audit/types.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import { resolveDecisionSequence } from './services/decision-audit-intent.js';
 import { blockObligation } from './review/obligations/obligation-state.js';
+import { updateAttemptStatus } from './review/obligations/attempt-lifecycle.js';
+import { abandonReviewDispatch, ensureReviewAssurance } from '../state/review-dispatch.js';
 import type { SessionState } from '../state/schema.js';
-import { strictBlockedOutput } from './blocked-result.js';
+import { buildEnforcementError, strictBlockedOutput } from './blocked-result.js';
 
 import { createSessionState as createEnforcementState } from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/types.js';
@@ -44,21 +47,19 @@ export type MutableChainState = {
 /** Dependencies for the workspace factory. */
 export interface WorkspaceDeps {
   auditWorktree: string | undefined;
+  /** Already verified in the same loadRuntime invocation; never session authority. */
+  diagnosticBootstrapFingerprint?: string;
 }
 
 /** All helpers returned by the workspace factory. */
 export interface PluginWorkspace {
   resolveFingerprint(): Promise<string | null>;
-  getSessionDir(sessionId: string): string | null;
   /**
-   * Canonical worktree + sessionId → sessionDir resolution, independent of the
-   * cached fingerprint state. Returns a discriminated outcome so callers can
-   * distinguish a positively resolved directory from an unavailable
-   * resolution authority — unavailable must never be treated as absent.
+   * The canonical session authority for this plugin runtime. Session
+   * directories are never derived from the cached fingerprint by consumers;
+   * this delegate is the only session-location entrypoint.
    */
-  resolveCanonicalSessionDir(
-    sessionId: string,
-  ): Promise<{ status: 'resolved'; sessDir: string } | { status: 'unavailable' }>;
+  resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   getChainState(sessionId: string): MutableChainState;
   invalidateChainState(sessionId: string): void;
   initChain(sessDir: string | null, sessionId: string): Promise<string>;
@@ -83,6 +84,8 @@ export interface PluginWorkspace {
   nextDecisionSequence(sessDir: string, sessionId: string): Promise<number>;
   runSerializedForSession(sessionId: string, task: () => Promise<void>): Promise<void>;
   getEnforcementState(sessionId: string): SessionEnforcementState;
+  /** Discard transient reviewer enforcement state when a host session terminates. */
+  releaseEnforcementState(sessionId: string): void;
   readonly cachedFingerprint: string | null;
   readonly cachedWsDir: string | null;
 }
@@ -100,7 +103,12 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   private readonly _sessionQueues = new Map<string, Promise<void>>();
   private readonly _enforcementStates = new Map<string, SessionEnforcementState>();
 
-  constructor(private readonly _deps: WorkspaceDeps) {}
+  constructor(private readonly _deps: WorkspaceDeps) {
+    if (_deps.auditWorktree && _deps.diagnosticBootstrapFingerprint) {
+      this._cachedFingerprint = _deps.diagnosticBootstrapFingerprint;
+      this._cachedWsDir = resolveWorkspaceDir(_deps.diagnosticBootstrapFingerprint);
+    }
+  }
 
   get cachedFingerprint(): string | null {
     return this._cachedFingerprint;
@@ -125,25 +133,11 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
     }
   }
 
-  getSessionDir(sessionId: string): string | null {
-    if (!this._cachedFingerprint) return null;
-    try {
-      return resolveSessionDir(this._cachedFingerprint, sessionId);
-    } catch {
-      return null;
-    }
-  }
-
-  async resolveCanonicalSessionDir(
-    sessionId: string,
-  ): Promise<{ status: 'resolved'; sessDir: string } | { status: 'unavailable' }> {
-    if (!this._deps.auditWorktree) return { status: 'unavailable' };
-    try {
-      const result = await computeFingerprint(this._deps.auditWorktree);
-      return { status: 'resolved', sessDir: resolveSessionDir(result.fingerprint, sessionId) };
-    } catch {
-      return { status: 'unavailable' };
-    }
+  async resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution> {
+    return resolveSessionAuthority({
+      root: this._deps.auditWorktree ?? '',
+      sessionId,
+    });
   }
 
   // ── Chain state ─────────────────────────────────────────────────────────
@@ -196,7 +190,11 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   ): Promise<void> {
     await withSessionWriteLock(sessDir, async () => {
       const current = await readState(sessDir);
-      if (!current) return;
+      if (!current)
+        throw buildEnforcementError(
+          'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
+          'Review assurance state disappeared before its durable write.',
+        );
       const now = new Date().toISOString();
       const next = update(current, now);
       await writeStateWithAuditOperationsAlreadyLocked(sessDir, next, semanticIntents?.(next, now));
@@ -217,7 +215,34 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
       },
       {
         sessDir: ctx.sessDir,
-        stateMutation: (s) => blockObligation(s, obligationId, code),
+        stateMutation: (s) => {
+          const now = new Date().toISOString();
+          let next = blockObligation(s, obligationId, code);
+          const assurance = ensureReviewAssurance(next.reviewAssurance);
+          for (const dispatch of assurance.dispatches.filter(
+            (item) => item.obligationId === obligationId && item.dispatchStatus === 'authorized',
+          )) {
+            next = {
+              ...next,
+              reviewAssurance: abandonReviewDispatch(next.reviewAssurance, dispatch.hostCallId),
+            };
+            const attempt = next.reviewAssurance?.attempts.find(
+              (item) => item.attemptId === dispatch.attemptId,
+            );
+            if (attempt && (attempt.status === 'created' || attempt.status === 'bound')) {
+              next = {
+                ...next,
+                reviewAssurance: updateAttemptStatus(
+                  ensureReviewAssurance(next.reviewAssurance),
+                  attempt.attemptId,
+                  'stale',
+                  now,
+                ),
+              };
+            }
+          }
+          return next;
+        },
         auditEventName: 'review:obligation_blocked',
         auditDetail: { obligationId, code },
       },
@@ -268,14 +293,17 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
     }
     return state;
   }
+
+  releaseEnforcementState(sessionId: string): void {
+    this._enforcementStates.delete(sessionId);
+  }
 }
 
 export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
   const impl = new PluginWorkspaceImpl(deps);
   return {
     resolveFingerprint: () => impl.resolveFingerprint(),
-    getSessionDir: (sid) => impl.getSessionDir(sid),
-    resolveCanonicalSessionDir: (sid) => impl.resolveCanonicalSessionDir(sid),
+    resolveSessionAuthority: (sid) => impl.resolveSessionAuthority(sid),
     getChainState: (sid) => impl.getChainState(sid),
     invalidateChainState: (sid) => impl.invalidateChainState(sid),
     initChain: (sd, sid) => impl.initChain(sd, sid),
@@ -287,6 +315,7 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
     nextDecisionSequence: (sd, sid) => impl.nextDecisionSequence(sd, sid),
     runSerializedForSession: (sid, t) => impl.runSerializedForSession(sid, t),
     getEnforcementState: (sid) => impl.getEnforcementState(sid),
+    releaseEnforcementState: (sid) => impl.releaseEnforcementState(sid),
     get cachedFingerprint() {
       return impl.cachedFingerprint;
     },

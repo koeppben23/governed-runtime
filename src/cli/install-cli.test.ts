@@ -4,7 +4,7 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
 
-import { describe, it, expect, vi, afterAll } from 'vitest';
+import { describe, it, expect, vi, afterAll, beforeEach } from 'vitest';
 import * as path from 'node:path';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,6 +18,13 @@ import {
 } from './install.js';
 import type { CliResult, DoctorCheck } from './install-types.js';
 import { createMockTarball, setupCliTestEnvironment } from './install-test-helpers.test.js';
+
+const { hostLifecycleMock } = vi.hoisted(() => ({ hostLifecycleMock: vi.fn() }));
+
+vi.mock('./opencode-host-lifecycle.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./opencode-host-lifecycle.js')>();
+  return { ...actual, runOpenCodeHostLifecycle: hostLifecycleMock };
+});
 
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>();
@@ -133,7 +140,6 @@ describe('cli/formatResult', () => {
         { file: 'c', status: 'modified', detail: 'digest mismatch' },
         { file: 'd', status: 'unmanaged' },
         { file: 'e', status: 'version_mismatch', detail: 'v1 != v2' },
-        { file: 'f', status: 'instruction_missing' },
         { file: 'g', status: 'error', detail: 'malformed' },
       ];
       const output = formatDoctor(checks, 'opencode');
@@ -142,7 +148,6 @@ describe('cli/formatResult', () => {
       expect(output).toContain('[MODIFIED]');
       expect(output).toContain('[UNMANAGED]');
       expect(output).toContain('[VERSION]');
-      expect(output).toContain('[INSTR_MISSING]');
       expect(output).toContain('[ERROR]');
     });
 
@@ -179,11 +184,40 @@ describe('cli/formatResult', () => {
 });
 
 describe('cli/main', () => {
+  beforeEach(() => {
+    hostLifecycleMock.mockResolvedValue({
+      status: 'no-service',
+      notices: [],
+      warnings: [],
+      errors: [],
+      errorDetails: [],
+    });
+  });
+
   describe('HAPPY', () => {
     it('returns 0 for successful install (repo scope)', async () => {
       const tarball = await createMockTarball();
       const code = await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
       expect(code).toBe(0);
+      expect(hostLifecycleMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ allowRestart: true, forceRestart: true }),
+      );
+    });
+
+    it('keeps host restart explicitly disabled with --no-restart-host', async () => {
+      const tarball = await createMockTarball();
+      const code = await main([
+        'install',
+        '--install-scope',
+        'repo',
+        '--core-tarball',
+        tarball,
+        '--no-restart-host',
+      ]);
+      expect(code).toBe(0);
+      expect(hostLifecycleMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ allowRestart: false, forceRestart: true }),
+      );
     });
   });
 
@@ -198,6 +232,19 @@ describe('cli/main', () => {
 
     it('returns 1 when install is called without --core-tarball', async () => {
       await expect(main(['install', '--install-scope', 'repo'])).resolves.toBe(1);
+    });
+
+    it('returns 1 when the running host requires a restart', async () => {
+      const tarball = await createMockTarball();
+      hostLifecycleMock.mockResolvedValueOnce({
+        status: 'restart-required',
+        notices: [],
+        warnings: [],
+        errors: ['restart required'],
+        errorDetails: [{ code: 'HOST_RESTART_REQUIRED', message: 'restart required' }],
+      });
+      const code = await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
+      expect(code).toBe(1);
     });
 
     it.each([['--mode', 'team'], ['--global'], ['--project']])(

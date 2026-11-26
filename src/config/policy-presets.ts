@@ -25,6 +25,7 @@ const DEFAULT_TIMESTAMP_ASSURANCE: TimestampAssurancePolicy = {
 
 /** SOLO mode -- single developer, minimal ceremony. */
 export const SOLO_POLICY: FlowGuardPolicy = {
+  riskTriggerPaths: [],
   mode: 'solo',
   requireHumanGates: false,
   reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
@@ -51,6 +52,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
 
 /** TEAM mode -- collaborative workflow. */
 export const TEAM_POLICY: FlowGuardPolicy = {
+  riskTriggerPaths: [],
   mode: 'team',
   requireHumanGates: true,
   reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
@@ -77,6 +79,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
 
 /** TEAM-CI mode -- CI pipeline workflow. */
 export const TEAM_CI_POLICY: FlowGuardPolicy = {
+  riskTriggerPaths: [],
   mode: 'team-ci',
   requireHumanGates: false,
   reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
@@ -103,6 +106,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
 
 /** REGULATED mode -- full FlowGuard with four-eyes and complete audit trail. */
 export const REGULATED_POLICY: FlowGuardPolicy = {
+  riskTriggerPaths: [],
   mode: 'regulated',
   requireHumanGates: true,
   reviewBudget: { plan: 3, architecture: 3, implementation: 3 },

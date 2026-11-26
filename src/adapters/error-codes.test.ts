@@ -314,10 +314,12 @@ describe('error code type safety — SMOKE', () => {
         case 'READ_FAILED':
         case 'WRITE_FAILED':
         case 'PARSE_FAILED':
+        case 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH':
         case 'SCHEMA_VALIDATION_FAILED':
         case 'SESSION_STATE_INCOMPATIBLE':
         case 'DIRECT_WRITE_REQUIRES_PREPARE':
         case 'OUTBOX_ORDER_CONFLICT':
+        case 'EXPORT_READY_APPROVAL_UNVERIFIED':
         case 'LOCK_TIMEOUT':
         case 'LOCK_TIMEOUT_EXHAUSTED':
           matched = true;

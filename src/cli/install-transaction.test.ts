@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,6 +10,11 @@ import {
   type DependencyTransaction,
 } from './install-transaction-journal.js';
 import { recoverOrAbort } from './install-transaction-rollback.js';
+import {
+  createDependencyTransaction,
+  executeDependencyTransaction,
+  vendorDependencySpec,
+} from './install-transaction.js';
 
 let testDir: string | undefined;
 
@@ -348,4 +354,42 @@ describe('recoverOrAbort', () => {
 
     expect(phases.map((phase) => recoveryActionForPhase(phase))).toHaveLength(phases.length);
   });
+});
+
+describe('vendored core dependency spec', () => {
+  it.each([
+    ['a Windows 8.3 short name', 'RUNNER~1'],
+    ['a space', 'John Doe'],
+    ['a hash', 'a#b'],
+    ['a percent sign', '100%'],
+  ])('keeps a target path with %s unencoded and relative', (_name, segment) => {
+    const target = join(tmpdir(), segment, '.opencode');
+    const spec = vendorDependencySpec(
+      join(target, 'node_modules.install.tx'),
+      join(target, 'vendor', 'flowguard-core-1.0.0.tgz'),
+    );
+    expect(spec).toBe('file:../vendor/flowguard-core-1.0.0.tgz');
+    expect(spec).not.toMatch(/%[0-9A-F]{2}|file:\/\//);
+  });
+  it('installs through real npm from a target path containing ~, a space and #', async () => {
+    testDir = await mkdtemp(join(tmpdir(), 'flowguard-install-spec-'));
+    const target = join(testDir, 'user~1 with space#x', '.opencode');
+    const source = join(testDir, 'core-source');
+    await mkdir(join(target, 'vendor'), { recursive: true });
+    await mkdir(source, { recursive: true });
+    await writeFile(
+      join(source, 'package.json'),
+      JSON.stringify({ name: '@flowguard/core', version: '1.0.0', main: 'index.js' }),
+    );
+    await writeFile(join(source, 'index.js'), 'module.exports = 1;\n');
+    const packed = execSync('npm pack --silent', { cwd: source, encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .at(-1)!;
+    const vendor = join(target, 'vendor', 'flowguard-core-1.0.0.tgz');
+    await writeFile(vendor, await readFile(join(source, packed)));
+    const tx = await createDependencyTransaction({ configTargetDir: target }, vendor);
+    await executeDependencyTransaction(tx);
+    expect(existsSync(join(target, 'node_modules', '@flowguard', 'core', 'index.js'))).toBe(true);
+  }, 120_000);
 });

@@ -37,7 +37,7 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 **Head SHA:** bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 **Changed paths:** 1
 **Objectives covered:** 2/3
-**Review assurance:** structured_high
+**Review assurance:** host_message_validated
 **Missing verification:** Run the missing regression test
 
 ## Evidence

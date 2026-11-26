@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { collectImportSpecifiers } from './import-specifiers.js';
+import { collectImportSpecifiers } from '../support/import-specifiers.js';
 
 function modules(source: string): string[] {
   return collectImportSpecifiers(source).map((specifier) => specifier.module);

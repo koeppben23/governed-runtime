@@ -12,8 +12,9 @@
  * Archive is not discovery — they are independently evolving concerns.
  *
  * Dependency: imports only from shared zero-dependency identifiers. This module
- * is a leaf — it MUST NOT import from state/adapters/config (architecture
- * contract). PolicyMode SSOT validation lives in the verifier (adapter layer).
+ * is a restricted boundary module — it may import only shared/ and MUST NOT
+ * import from state/adapters/config (architecture contract). PolicyMode SSOT
+ * validation lives in the verifier (adapter layer).
  *
  * @version v2
  */
@@ -50,8 +51,8 @@ export const ARCHIVE_LAYOUT_VERSION = 2 as const;
  * Manifest policy mode value — a closed, fail-closed vocabulary.
  *
  * This is a deliberate LOCAL enum, not an import of the PolicyMode SSOT
- * (`state/policy-mode`): `archive/types` is a leaf module and MUST NOT import
- * from `state` (architecture contract). The governed-mode members
+ * (`state/policy-mode`): `archive/types` is a restricted boundary module and
+ * MUST NOT import from `state` (architecture contract). The governed-mode members
  * (`solo`/`team`/`team-ci`/`regulated`) MUST stay in sync with `POLICY_MODES`;
  * the extra `unknown` sentinel is written only when no policy snapshot was
  * resolved at archive time. Any value outside this set fails schema validation
@@ -106,6 +107,9 @@ export type ManifestPolicyMode = z.infer<typeof ManifestPolicyModeSchema>;
  *   recorded status was downgraded (AC2)
  * - tsa_token_required_by_policy: tsa_critical policy requires an external TSA
  *   token for a critical event; internal-imprint evidence does not satisfy it
+ * - review_evidence_historical_transport: (info) the archived session holds
+ *   generation-5 review evidence (V1 native Task). It is verified with its original
+ *   semantics and is historical: never bindable and never reinterpreted as current
  */
 export const ArchiveFindingCodeSchema = z.enum([
   'missing_manifest',
@@ -139,6 +143,7 @@ export const ArchiveFindingCodeSchema = z.enum([
   'regulated_terminal_decision_invalid',
   'regulated_completion_lifecycle_invalid',
   'regulated_completion_order_invalid',
+  'review_evidence_historical_transport',
 ]);
 export type ArchiveFindingCode = z.infer<typeof ArchiveFindingCodeSchema>;
 

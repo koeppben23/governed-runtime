@@ -1,3 +1,8 @@
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../review-invocation-test-helpers.js';
+
 /**
  * @module integration/implementation-review-no-observation-e2e.test
  * @description Decisive end-to-end scenario for the implementation subject
@@ -21,7 +26,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -73,6 +78,7 @@ import { hashWorktreeFiles } from '../adapters/git.js';
 import { hashText } from '../shared/hashing.js';
 import { sessionDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
+import { canonicalBinding } from './test-helpers.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import { hydrate } from './tools/hydrate/hydrate.js';
 import { ticket } from './tools/simple/ticket-tool.js';
@@ -149,11 +155,14 @@ afterEach(() => {
 
 async function boot(): Promise<SE> {
   const r = mkdtempSync(join(tmpdir(), 'fg-impl-no-obs-'));
-  const w = join(r, 'worktree'),
-    c = join(r, 'config'),
+  const c = join(r, 'config'),
     id = randomUUID();
-  mkdirSync(w, { recursive: true });
+  mkdirSync(join(r, 'worktree'), { recursive: true });
   mkdirSync(c, { recursive: true });
+  // Canonicalize only the worktree: the single session authority resolves the
+  // worktree through git (physical path on macOS /var vs /private/var), while
+  // the config dir keeps the OS-tmpdir spelling for the test-directory guard.
+  const w = realpathSync(join(r, 'worktree'));
   execSync('git init && git config user.email t@t && git config user.name T', {
     cwd: w,
     stdio: 'pipe',
@@ -298,6 +307,12 @@ async function inject(
     fulfilledAt: FIXED_TIME,
     pluginHandshakeAt: FIXED_TIME,
   };
+  const capture = messageCaptureFixture({
+    childSessionId,
+    obligationId: obl.obligationId,
+    attemptId: boundAttempt.attemptId,
+    findings: ff,
+  });
   const inv = {
     invocationId,
     obligationId: obl.obligationId,
@@ -305,7 +320,11 @@ async function inject(
     parentSessionId: se.sId,
     childSessionId,
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'native_task_structured_followup' as const,
+    invocationMode: 'native_subagent_message_json' as const,
+    transportVersion: 6 as const,
+    capture,
+    // completedDispatchForInvocation uses the child session id as hostCallId.
+    nativeProvenance: nativeProvenanceFixture(capture, childSessionId),
     hostVisible: true as const,
     transcriptNavigable: true as const,
     source: 'host-orchestrated' as const,
@@ -319,9 +338,8 @@ async function inject(
     capturedVerdict: verdict,
     capturedRawFindings: ff,
     attemptId: boundAttempt.attemptId,
-    reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true as const,
-    reviewAssuranceLevel: 'structured_high' as const,
+    reviewOutputMode: 'validated_json' as const,
+    reviewAssuranceLevel: 'host_message_validated' as const,
   };
   const aug: SessionState = {
     ...state!,
@@ -371,7 +389,7 @@ function expectNoRepositoryAuthority(obligation: {
 
 async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
   const base = makeState('IMPL_REVIEW', {
-    binding: { ...makeState('IMPL_REVIEW').binding, worktree: se.worktree },
+    binding: await canonicalBinding(se.worktree, se.sId),
     ticket: TICKET,
     plan: {
       current: makePlanRevision({
@@ -512,7 +530,7 @@ describe('implementation review without repository observation authority', () =>
     await writeStateWithArtifacts(
       se2.sDir,
       makeState('IMPL_VALIDATION', {
-        binding: { ...makeState('IMPL_VALIDATION').binding, worktree: se2.worktree },
+        binding: await canonicalBinding(se2.worktree, se2.sId),
         implementationBaseAuthority: undefined,
         ticket: TICKET,
         plan: st!.plan,
@@ -637,7 +655,7 @@ describe('implementation review without repository observation authority', () =>
     await writeStateWithArtifacts(
       se2.sDir,
       makeState('IMPL_VALIDATION', {
-        binding: { ...makeState('IMPL_VALIDATION').binding, worktree: se2.worktree },
+        binding: await canonicalBinding(se2.worktree, se2.sId),
         implementationBaseAuthority: undefined,
         ticket: TICKET,
         plan: st!.plan,
@@ -777,7 +795,7 @@ describe('implementation review without repository observation authority', () =>
     await writeStateWithArtifacts(
       se2.sDir,
       makeState('IMPL_VALIDATION', {
-        binding: { ...makeState('IMPL_VALIDATION').binding, worktree: se2.worktree },
+        binding: await canonicalBinding(se2.worktree, se2.sId),
         implementationBaseAuthority: undefined,
         ticket: TICKET,
         plan: st!.plan,

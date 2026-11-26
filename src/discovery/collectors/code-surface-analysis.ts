@@ -226,13 +226,16 @@ const INTEGRATION_RULES: readonly Rule[] = [
 export async function collectCodeSurfaces(
   input: CollectorInput,
 ): Promise<CollectorOutput<CodeSurfacesInfo>> {
+  input.signal?.throwIfAborted();
   try {
     const result = await withTimeout(runCollector(input), TIMEOUT_MS);
+    input.signal?.throwIfAborted();
     return {
       status: result.status === 'ok' ? 'complete' : result.status,
       data: result,
     };
   } catch {
+    input.signal?.throwIfAborted();
     return {
       status: 'failed',
       data: {
@@ -281,11 +284,13 @@ function readErrorCode(err: unknown): string {
   return '';
 }
 
-async function readSourceCandidate(fullPath: string): Promise<CandidateRead> {
+async function readSourceCandidate(fullPath: string, signal?: AbortSignal): Promise<CandidateRead> {
+  signal?.throwIfAborted();
   let content: string;
   try {
-    content = await fs.readFile(fullPath, 'utf-8');
+    content = await fs.readFile(fullPath, { encoding: 'utf-8', signal });
   } catch (err: unknown) {
+    signal?.throwIfAborted();
     const code = readErrorCode(err);
     const outcome = code === 'EACCES' || code === 'EPERM' ? 'denied' : 'not_found';
     return { kind: 'unreadable', outcome };
@@ -427,12 +432,14 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
   const state = createCodeSurfaceRunState(budgetExhausted);
 
   for (const relPath of candidates) {
+    input.signal?.throwIfAborted();
     if (state.scannedBytes >= MAX_TOTAL_BYTES) {
       state.degraded = true;
       break;
     }
 
-    const read = await readSourceCandidate(path.join(input.worktreePath, relPath));
+    const read = await readSourceCandidate(path.join(input.worktreePath, relPath), input.signal);
+    input.signal?.throwIfAborted();
     if (read.kind === 'unreadable') {
       state.readStatuses[relPath] = read.outcome;
       state.degraded = true;
@@ -457,6 +464,7 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
     collectSignalsFromFile(read.content, relPath, state);
   }
 
+  input.signal?.throwIfAborted();
   return buildCodeSurfacesInfo(state, budgetExhausted, totalSourceCandidates);
 }
 

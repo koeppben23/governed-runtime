@@ -32,9 +32,9 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
   appendInvocationEvidence,
-  buildInvocationEvidence,
   fulfillObligation,
 } from './review/obligations/assurance.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../review-invocation-test-helpers.js';
 import { ensureReviewAssurance } from '../state/review-dispatch.js';
 import { hashFindings } from './review/findings-hash.js';
 import { updateAttemptStatus } from './review/obligations/attempt-lifecycle.js';

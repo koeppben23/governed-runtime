@@ -1,0 +1,20 @@
+id: product-implementation-test-fitting-review
+description: Product reviewer names a specific violated obligation and a minimal repair instead of a generic critique
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  Review this implementation summary against its approved plan. Approved obligation: "parse the value from the provided input at runtime." The change instead hardcodes the value observed in the existing test so the assertion passes. No other behavior changed.
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Reviewer identifies the test-fitting as a blocking defect
+    value: hardcod
+  - type: output_contains
+    severity: advisory
+    description: Reviewer names the violated approved obligation
+    value: obligation
+  - type: output_contains
+    severity: advisory
+    description: Reviewer gives an actionable repair
+    value: parse

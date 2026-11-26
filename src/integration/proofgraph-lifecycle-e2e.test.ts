@@ -20,7 +20,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -31,14 +31,16 @@ import { sessionDir, workspaceDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeDiscovery } from '../adapters/persistence-discovery.js';
 import { writeStateWithArtifacts, type ToolContext } from './tools/helpers.js';
+import { canonicalBinding, fulfillStrictReviewObligation } from './test-helpers.js';
 import { runRequiredDiscovery } from './tools/hydrate/hydrate-discovery.js';
 import { plan } from './tools/plan/plan.js';
 import { review } from './tools/review-tool/index.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
 import {
-  REVIEW_CRITERIA_VERSION,
-  REVIEW_MANDATE_DIGEST,
-  buildInvocationEvidence,
-} from './review/obligations/assurance.js';
+  buildInvocationFixture as buildInvocationEvidence,
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../review-invocation-test-helpers.js';
 import { hashFindings } from './review/findings-hash.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
@@ -60,6 +62,7 @@ import {
   assuranceWith,
 } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
+import type { SpecificRiskTrigger } from '../state/risk-trigger.js';
 import {
   completedDispatchForInvocation,
   makePlanRevision,
@@ -241,7 +244,26 @@ const PLAN_TEXT = [
   '',
   '## Verification',
   '1. `./mvnw verify` — Source: repo:mvnw',
+  '',
+  '```flowguard-evidence-design',
+  JSON.stringify({
+    version: 1,
+    claims: [
+      {
+        authoritySectionId: 'implementation-step-1',
+        statement: 'updateTask returns 404 for an unknown id instead of 500.',
+        positiveObservable: 'the build observes the unknown-id path returning 404',
+        faultyVariant: 'make updateTask throw for an unknown id',
+        expectedFailure: 'the bound counterexample assertion fails',
+        executionRoute: 'vc_security_mvn',
+      },
+    ],
+  }),
+  '```',
 ].join('\n');
+
+/** Same plan without the evidence-design block, for explicit claim withdrawals. */
+const PLAN_TEXT_NO_DESIGN = PLAN_TEXT.split('\n```flowguard-evidence-design')[0]!;
 
 /** Canonical coherent plan revision for the PLAN_TEXT fixture. */
 const PLAN_CURRENT = makePlanRevision({ body: PLAN_TEXT, createdAt: FIXED_TIME });
@@ -264,11 +286,14 @@ interface Env {
 
 async function boot(label: string): Promise<Env> {
   const rootDir = mkdtempSync(path.join(tmpdir(), `fg-pg-${label}-`));
-  const worktree = path.join(rootDir, 'worktree');
   const configDir = path.join(rootDir, 'config');
   const id = randomUUID();
-  mkdirSync(worktree, { recursive: true });
+  mkdirSync(path.join(rootDir, 'worktree'), { recursive: true });
   mkdirSync(configDir, { recursive: true });
+  // Canonicalize only the worktree: the session authority resolves it through
+  // git (physical path on macOS), while the config dir keeps the OS-tmpdir
+  // spelling for the test-directory guard.
+  const worktree = realpathSync(path.join(rootDir, 'worktree'));
   execSync('git init && git config user.email t@t && git config user.name T', {
     cwd: worktree,
     stdio: 'pipe',
@@ -306,6 +331,21 @@ async function boot(label: string): Promise<Env> {
 function restoreEnv(name: string, value: string | undefined) {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;
+}
+
+/**
+ * Fixture state rebound to the booted canonical worktree so the single session
+ * authority resolves the seeded session.
+ */
+async function canonicalState(
+  env: Env,
+  phase: Parameters<typeof makeState>[0],
+  overrides: Parameters<typeof makeState>[1] = {},
+) {
+  return makeState(phase, {
+    ...overrides,
+    binding: await canonicalBinding(env.worktree, env.tc.sessionID),
+  });
 }
 
 /** Implementation-scoped attempt bound to the current revision. */
@@ -453,7 +493,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-claims');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -475,7 +515,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-prompt');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -491,16 +531,45 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
 
     expect(context).toContain('Declared Claims (pre-evidence, advisory)');
     expect(context).toContain(CRITICAL_CLAIM_ID);
-    expect(context).toContain('Expected check: build');
+    expect(context).toContain('Positive evidence check: build');
     // Not yet approved: the reviewer must see that nothing is certificate-bound.
     expect(context).toContain('Plan approval certificate: none recorded');
   });
 
-  it('persists a critical claim without a counterexample check as rejected_blocking', async () => {
+  it('blocks a critical claim without an evidence design before creating a plan', async () => {
+    env = await boot('evidence-design-missing');
+    await writeStateWithArtifacts(
+      env.sDir,
+      await canonicalState(env, 'TICKET', {
+        ticket: TICKET,
+        activeChecks: ACTIVE_CHECKS,
+        verificationCandidates: STRUCTURED_CANDIDATES,
+      }),
+    );
+    const raw = await plan.execute(
+      { planText: PLAN_TEXT_NO_DESIGN, claims: [CRITICAL_CLAIM_INPUT] },
+      env.tc,
+    );
+    const parsed = JSON.parse(String(raw));
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('PLAN_EVIDENCE_DESIGN_REQUIRED');
+    expect(parsed.planPreflightDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          detail: expect.stringContaining('missing evidence-design entry'),
+        }),
+      ]),
+    );
+    const state = await readState(env.sDir);
+    expect(state?.plan).toBeNull();
+    expect(state?.reviewAssurance?.obligations ?? []).toHaveLength(0);
+  });
+
+  it('blocks a critical claim without a counterexample before creating a plan', async () => {
     env = await boot('plan-reject');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -516,22 +585,21 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     );
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.error).toBeUndefined();
+    expect(parsed.error).toBe(true);
     expect(parsed.claimSubmissionDiagnostics).toMatchObject({
       rejectedClaims: [{ disposition: 'rejected_blocking' }],
     });
-    // The plan persists, but nothing unprovable reaches the declaration authority.
+    // Admission failure cannot create a plan or consume review capacity.
     const state = await readState(env.sDir);
-    expect(state!.plan).toBeTruthy();
-    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
-    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
+    expect(state!.plan).toBeNull();
+    expect(state!.phase).toBe('TICKET');
   });
 
-  it('persists a critical claim that reuses its positive check as rejected_blocking', async () => {
+  it('blocks a critical claim that reuses its positive check before creating a plan', async () => {
     env = await boot('plan-same-check');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -556,45 +624,157 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     );
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.error).toBeUndefined();
+    expect(parsed.error).toBe(true);
     expect(parsed.claimSubmissionDiagnostics).toMatchObject({
       rejectedClaims: [{ disposition: 'rejected_blocking' }],
     });
     const state = await readState(env.sDir);
-    expect(state!.plan).toBeTruthy();
-    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
-    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
+    expect(state!.plan).toBeNull();
   });
 
-  it('persists a claim referencing a check that is not active as rejected_blocking', async () => {
+  it('blocks a noncritical incomplete claim referencing an inactive check', async () => {
     env = await boot('plan-inactive-check');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ['build'],
         verificationCandidates: STRUCTURED_CANDIDATES,
       }),
     );
 
-    const raw = await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
+    const raw = await plan.execute(
+      { planText: PLAN_TEXT, claims: [{ ...CRITICAL_CLAIM_INPUT, critical: false }] },
+      env.tc,
+    );
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.error).toBeUndefined();
+    expect(parsed.error).toBe(true);
     expect(parsed.claimSubmissionDiagnostics).toMatchObject({
-      rejectedClaims: [{ disposition: 'rejected_blocking' }],
+      rejectedClaims: [{ critical: false, disposition: 'rejected_blocking' }],
     });
     const state = await readState(env.sDir);
-    expect(state!.plan).toBeTruthy();
-    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
-    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
+    expect(state!.plan).toBeNull();
+  });
+
+  it('preserves legacy continuation and changed-subject precedence despite blocking claims', async () => {
+    env = await boot('admission-routing');
+    await writeStateWithArtifacts(
+      env.sDir,
+      await canonicalState(env, 'TICKET', { ticket: TICKET }),
+    );
+    await plan.execute({ planText: PLAN_TEXT_NO_DESIGN, claims: [] }, env.tc);
+    const pending = await readState(env.sDir);
+    expect(pending?.plan).toBeTruthy();
+    const diagnostics = {
+      submittedClaimDeclarationsDigest: 'a'.repeat(64),
+      acceptedClaimDeclarationsDigest: 'b'.repeat(64),
+      rejectedClaims: [
+        {
+          claimRef: CRITICAL_CLAIM_ID,
+          statement: 'old rejected claim',
+          critical: true,
+          disposition: 'rejected_blocking' as const,
+          code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+          reason: 'historical diagnostic',
+          recovery: ['historical recovery'],
+        },
+      ],
+    };
+    await writeStateWithArtifacts(env.sDir, {
+      ...pending!,
+      plan: { ...pending!.plan!, claimSubmissionDiagnostics: diagnostics },
+    });
+    const invalid = [{ ...CRITICAL_CLAIM_INPUT, counterexampleRequirement: undefined }];
+    const same = JSON.parse(
+      String(await plan.execute({ planText: PLAN_TEXT_NO_DESIGN, claims: invalid }, env.tc)),
+    );
+    expect(same.error).not.toBe(true);
+    const changed = JSON.parse(
+      String(await plan.execute({ planText: `${PLAN_TEXT}\nChanged`, claims: invalid }, env.tc)),
+    );
+    expect(changed.code).toBe('REVIEW_SUBJECT_CHANGED_WHILE_PENDING');
+    const recovery = JSON.parse(
+      String(await plan.execute({ reviewRecovery: 'retry_transport' }, env.tc)),
+    );
+    expect(recovery.code).not.toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
+    const { fulfillStrictReviewObligation } = await import('./test-helpers.js');
+    await fulfillStrictReviewObligation(env.sDir, {
+      obligationType: 'plan',
+      iteration: 0,
+      planVersion: 1,
+      overallVerdict: 'accept',
+    });
+    const verdict = JSON.parse(String(await plan.execute({ reviewVerdict: 'accept' }, env.tc)));
+    expect(verdict.error).not.toBe(true);
+    const reviewed = await readState(env.sDir);
+    // A genuine new revision in PLAN must not carry the old blocker forward.
+    await writeStateWithArtifacts(env.sDir, { ...reviewed!, phase: 'PLAN', selfReview: null });
+    const before = await readState(env.sDir);
+    const blocked = JSON.parse(
+      String(await plan.execute({ planText: `${PLAN_TEXT}\nRevision` }, env.tc)),
+    );
+    expect(blocked.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
+    expect(await readState(env.sDir)).toEqual(before);
+    const withdrawal = JSON.parse(
+      String(
+        await plan.execute({ planText: `${PLAN_TEXT_NO_DESIGN}\nRevision`, claims: [] }, env.tc),
+      ),
+    );
+    expect(withdrawal.error).not.toBe(true);
+    expect((await readState(env.sDir))?.plan?.claimSubmissionDiagnostics).toBeUndefined();
+  });
+
+  it('rejects invalid revision claims before consuming the captured reviewer verdict', async () => {
+    env = await boot('admission-revision');
+    await writeStateWithArtifacts(
+      env.sDir,
+      await canonicalState(env, 'TICKET', { ticket: TICKET }),
+    );
+    await plan.execute({ planText: PLAN_TEXT_NO_DESIGN, claims: [] }, env.tc);
+    const { fulfillStrictReviewObligation } = await import('./test-helpers.js');
+    await fulfillStrictReviewObligation(env.sDir, {
+      obligationType: 'plan',
+      iteration: 0,
+      planVersion: 1,
+      overallVerdict: 'changes_requested',
+    });
+    const before = await readState(env.sDir);
+    const blocked = JSON.parse(
+      String(
+        await plan.execute(
+          {
+            reviewVerdict: 'changes_requested',
+            planText: `${PLAN_TEXT}\nRevision`,
+            claims: [{ ...CRITICAL_CLAIM_INPUT, counterexampleRequirement: undefined }],
+          },
+          env.tc,
+        ),
+      ),
+    );
+    expect(blocked.code).toBe('PLAN_CLAIM_SUBMISSION_REJECTED');
+    expect(await readState(env.sDir)).toEqual(before);
+    const corrected = JSON.parse(
+      String(
+        await plan.execute(
+          {
+            reviewVerdict: 'changes_requested',
+            planText: `${PLAN_TEXT_NO_DESIGN}\nRevision`,
+            claims: [],
+          },
+          env.tc,
+        ),
+      ),
+    );
+    expect(corrected.error).not.toBe(true);
+    expect((await readState(env.sDir))?.plan?.current.planVersion).toBe(2);
   });
 
   it('warns early when target paths look HIGH-RISK without a critical claim', async () => {
     env = await boot('plan-warn');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -602,7 +782,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     );
 
     const raw = await plan.execute(
-      { planText: PLAN_TEXT, targetPaths: ['src/state/schema.ts'] },
+      { planText: PLAN_TEXT_NO_DESIGN, targetPaths: ['src/state/schema.ts'] },
       env.tc,
     );
     const parsed = JSON.parse(String(raw));
@@ -621,7 +801,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-cert');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -776,7 +956,7 @@ describe('peer review hypotheses (runtime)', () => {
 
   it('produces exactly the profile objective count, never a duplicated set', async () => {
     env = await boot('standalone');
-    await writeStateWithArtifacts(env.sDir, makeState('READY'));
+    await writeStateWithArtifacts(env.sDir, await canonicalState(env, 'READY'));
 
     const first = await review.execute(
       { inputOrigin: 'manual_text', text: 'PR under review', targetPaths: ['README.md'] },
@@ -842,7 +1022,7 @@ describe('peer review hypotheses (runtime)', () => {
 
   it('reports hypotheses separately from an undeclared contract', async () => {
     env = await boot('standalone-coverage');
-    await writeStateWithArtifacts(env.sDir, makeState('READY'));
+    await writeStateWithArtifacts(env.sDir, await canonicalState(env, 'READY'));
     await review.execute(
       { inputOrigin: 'manual_text', text: 'PR under review', targetPaths: ['README.md'] },
       env.tc,
@@ -969,6 +1149,20 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     };
   }
 
+  /** A current, digest-bound assessment: final approval requires one to exist. */
+  const currentRiskAssessment: NonNullable<SessionState['implementationRiskAssessment']> = {
+    computedMinimumTaskClass: 'STANDARD',
+    effectiveTaskClass: 'STANDARD',
+    declaredTaskClass: null,
+    declarationKind: 'absent',
+    ticketDigest: null,
+    touchedSurfaces: ['src/service.ts'],
+    assessedFrom: 'implementation_changed_files',
+    assessedFileCount: 1,
+    implementationDigest: IMPL_EVIDENCE.digest,
+    riskTriggers: ['ceremony_only'],
+  };
+
   it('materializes an approved declaration into a certificate-bound fact claim', async () => {
     const state = implReviewState(fullEvidence());
     const { contract, coverage } = await materializeApprovedPlanContractResult(state, '/tmp');
@@ -1005,7 +1199,13 @@ describe('ProofGraph materialization and gate (runtime)', () => {
 
     expect(summary.projection.claims[0]?.verificationState).toBe('PROVEN');
 
-    const decision = evaluateProofGraphGate(summary);
+    const decision = evaluateProofGraphGate({
+      ...summary,
+      contract,
+      validationAttempts: state.validationAttempts,
+      implementationDigest: state.implementation?.digest,
+      riskAssessment: currentRiskAssessment,
+    });
     expect(decision.gated).toBe(false);
   });
 
@@ -1067,6 +1267,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         phase: 'EVIDENCE_REVIEW',
         proofContract: contract,
         proofGraph: summary.projection,
+        implementationRiskAssessment: currentRiskAssessment,
         // A realistic EVIDENCE_REVIEW state carries a converged review bound to
         // the current implementation digest; this test isolates the ProofGraph gate.
         implReview: {
@@ -1100,6 +1301,278 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     expect(blocked.reason).toContain(CRITICAL_CLAIM_ID);
   });
 
+  it('NEGATIVE gate: one execution cannot serve as positive and adversarial evidence', async () => {
+    const collidingClaim: V2PlanClaimDeclaration = {
+      ...CRITICAL_CLAIM,
+      expectedCheckId: 'security',
+    };
+    const state = implReviewState(fullEvidence(), collidingClaim);
+    const { contract, coverage } = await materializeApprovedPlanContractResult(state, '/tmp');
+
+    expect(coverage).toContainEqual({
+      claimId: CRITICAL_CLAIM_ID,
+      cause: 'evidence_role_collision',
+    });
+    expect(contract.claims[0]?.counterexampleRefs).toEqual([]);
+
+    const summary = summarizeProofGraph(
+      { ...state, proofContract: contract, proofContractCoverage: [...coverage] },
+      FIXED_TIME,
+    );
+    expect(summary.projection.claims[0]?.verificationState).toBe('NOT_VERIFIED');
+    // The removed shared ref still surfaces through its persisted coverage cause.
+    expect(summary.projection.claimDiagnostics?.[CRITICAL_CLAIM_ID]).toBe(
+      'evidence_role_collision',
+    );
+
+    const blocked = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: summary.projection,
+        implementationRiskAssessment: currentRiskAssessment,
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    expect(blocked.code).toBe('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
+    expect(blocked.reason).toContain(CRITICAL_CLAIM_ID);
+  });
+
+  it('NEGATIVE gate: an uncovered specific risk trigger blocks approval', async () => {
+    const state = implReviewState(fullEvidence());
+    const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    expect(summary.projection.claims[0]?.verificationState).toBe('PROVEN');
+
+    const blocked = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: summary.projection,
+        implementationRiskAssessment: {
+          ...currentRiskAssessment,
+          riskTriggers: ['state_integrity'],
+        },
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    expect(blocked.code).toBe('PROOFGRAPH_RISK_TRIGGER_UNCOVERED');
+    expect(blocked.reason).toContain('state_integrity');
+  });
+
+  it('POSITIVE gate: a declared trigger coverage clears the risk requirement', async () => {
+    const coveringClaim: V2PlanClaimDeclaration = {
+      ...CRITICAL_CLAIM,
+      coversRiskTriggers: ['state_integrity'],
+    };
+    const state = implReviewState(fullEvidence(), coveringClaim);
+    const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
+    expect(contract.claims[0]?.coversRiskTriggers).toEqual(['state_integrity']);
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    expect(summary.projection.claims[0]?.verificationState).toBe('PROVEN');
+
+    const approved = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: summary.projection,
+        implementationRiskAssessment: {
+          ...currentRiskAssessment,
+          riskTriggers: ['state_integrity'],
+        },
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(approved.kind).toBe('ok');
+  });
+
+  it('NEGATIVE gate: a tampered projection cannot widen the approved coverage', async () => {
+    const coveringClaim: V2PlanClaimDeclaration = {
+      ...CRITICAL_CLAIM,
+      coversRiskTriggers: ['state_integrity'],
+    };
+    const state = implReviewState(fullEvidence(), coveringClaim);
+    const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    const tampered = {
+      ...summary.projection,
+      claims: summary.projection.claims.map((claim) => ({
+        ...claim,
+        coversRiskTriggers: ['state_integrity', 'audit_authority'] as SpecificRiskTrigger[],
+      })),
+    };
+
+    const blocked = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: tampered,
+        implementationRiskAssessment: {
+          ...currentRiskAssessment,
+          riskTriggers: ['state_integrity', 'audit_authority'],
+        },
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    // The widened coverage is detected as a certified-claim mismatch: the
+    // projection is no longer an evaluation of the certified declaration.
+    expect(blocked.code).toBe('PROOFGRAPH_CERTIFIED_CLAIM_MISMATCH');
+  });
+
+  it('NEGATIVE gate: a claim evaluated under a different certificate cannot authorize approval', async () => {
+    const state = implReviewState(fullEvidence());
+    const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    const tampered = {
+      ...summary.projection,
+      claims: summary.projection.claims.map((claim) => {
+        const provenance = claim.provenance;
+        if (provenance?.kind !== 'canonical_authority' || provenance.approval === undefined) {
+          return claim;
+        }
+        return {
+          ...claim,
+          provenance: {
+            ...provenance,
+            approval: {
+              ...provenance.approval,
+              certificateId: '00000000-0000-4000-8000-0000000000ff',
+            },
+          },
+        };
+      }),
+    };
+
+    const blocked = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: tampered,
+        implementationRiskAssessment: currentRiskAssessment,
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    expect(blocked.code).toBe('PROOFGRAPH_EVALUATION_UNAVAILABLE');
+  });
+
   it('projects the full declaration-to-evidence chain for audit', async () => {
     const state = implReviewState(fullEvidence());
     const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
@@ -1126,6 +1599,11 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     const findingsHash = 'a'.repeat(64);
     const obligationId = '33333333-1111-4111-8111-111111111111';
     const invocationId = '44444444-2222-4222-8222-222222222222';
+    const capture = messageCaptureFixture({
+      childSessionId: 'ses_child',
+      obligationId,
+      attemptId: '55555555-3333-4333-8333-333333333333',
+    });
     const state = makeState('PLAN_REVIEW', {
       ticket: TICKET,
       activeChecks: ACTIVE_CHECKS,
@@ -1178,7 +1656,11 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             parentSessionId: 'ses_parent',
             childSessionId: 'ses_child',
             agentType: 'flowguard-reviewer' as const,
-            invocationMode: 'native_task_structured_followup' as const,
+            invocationMode: 'native_subagent_message_json' as const,
+            transportVersion: 6 as const,
+            capture,
+            // Dispatch hostCallId below is 'ses_child'.
+            nativeProvenance: nativeProvenanceFixture(capture, 'ses_child'),
             hostVisible: true,
             transcriptNavigable: true,
             source: 'host-orchestrated' as const,
@@ -1191,9 +1673,8 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             consumedByObligationId: null,
             capturedVerdict: 'accept',
             capturedRawFindings: { overallVerdict: 'accept' },
-            reviewOutputMode: 'structured_output' as const,
-            structuredOutputUsed: true,
-            reviewAssuranceLevel: 'structured_high' as const,
+            reviewOutputMode: 'validated_json' as const,
+            reviewAssuranceLevel: 'host_message_validated' as const,
             attemptId: '55555555-3333-4333-8333-333333333333',
           },
         ],

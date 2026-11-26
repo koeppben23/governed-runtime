@@ -1,0 +1,146 @@
+{
+  "schemaVersion": "review-counter-cases.v1",
+  "description": "Recorded plan-review false positives from live validation runs. Each case pins the reviewer assertion, its classification, and the evidence that refutes it. Repository-checkable references are verified by src/documentation/__tests__/review-counter-cases.test.ts; run observations come from the forensic review of the run and are not re-derivable from this repository. A case documents a counter-example, it does not prove reviewer behavior: behaviorStatus stays NOT_VERIFIED until a later live run is checked against it.",
+  "cases": [
+    {
+      "caseId": "dev-r3-build-check-capability",
+      "source": {
+        "commit": "1ed7c479",
+        "scenario": "dev-r3",
+        "fixture": "demos/java-task-manager",
+        "runDirectory": null,
+        "childSessionId": null,
+        "unresolved": "Run directory and reviewer child session were not part of the forensic review input; they are recorded as null instead of being reconstructed."
+      },
+      "obligationType": "plan",
+      "classification": "check_capability_misread",
+      "reviewerAssertion": {
+        "kind": "verbatim",
+        "text": "A build (`./mvnw verify`) is a compile/package check and does not directly observe HTTP 404/200 status or response-body properties."
+      },
+      "refutingEvidence": [
+        {
+          "kind": "run_observation",
+          "description": "The frozen plan under review describes the build check explicitly as \"compile + tests + packaging\"."
+        },
+        {
+          "kind": "repository_script",
+          "file": "demos/java-task-manager/seed/package.json",
+          "script": "build",
+          "body": "./mvnw verify",
+          "description": "The build candidate runs Maven verify, whose lifecycle includes the test phase; the seed POM does not skip tests."
+        },
+        {
+          "kind": "repository_test_method",
+          "file": "demos/java-task-manager/seed/src/test/java/com/example/taskmanager/controller/TaskControllerTest.java",
+          "method": "update_taskNotFound_returns404",
+          "description": "Observes the HTTP 404 behavior the reviewer claimed build cannot observe."
+        },
+        {
+          "kind": "repository_test_method",
+          "file": "demos/java-task-manager/seed/src/test/java/com/example/taskmanager/controller/TaskControllerTest.java",
+          "method": "update_existing_task_returns_ok",
+          "description": "Observes the HTTP 200 behavior for an existing task."
+        },
+        {
+          "kind": "run_observation",
+          "description": "The executed build validation contains the passed assertions TaskControllerTest#update_taskNotFound_returns404 and TaskControllerTest#update_existing_task_returns_ok."
+        },
+        {
+          "kind": "run_observation",
+          "description": "The accepted follow-up plan revision still uses build as the counterexample check, which the first reviewer had rejected."
+        }
+      ],
+      "expectedReviewerBehavior": "Do not block a claim because its check is a build: when the selected candidate command runs the test phase, the build check can observe the bound assertions. A different evidence-role assignment between two claims is not a defect by itself; admissible check bindings and separate attempts decide.",
+      "reportCorrection": {
+        "report": "validation-report.md:35-36",
+        "supersedes": "Claim-Rollen vertauscht … Genuiner Plan-Defekt",
+        "correctedClassification": "false_positive"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "risk-r3-plan-observation-scope",
+      "source": {
+        "commit": "1ed7c479",
+        "scenario": "risk-r3",
+        "fixture": "demos/risk-trigger-fixture",
+        "runDirectory": null,
+        "childSessionId": null,
+        "unresolved": "Run directory, coverage variant and reviewer child session were not part of the forensic review input; they are recorded as null instead of being reconstructed."
+      },
+      "obligationType": "plan",
+      "classification": "phase_observation_scope",
+      "reviewerAssertion": {
+        "kind": "paraphrase",
+        "text": "Because the plan obligation offers no base observation, a later baseline/implementation diff cannot be produced anywhere in the run."
+      },
+      "refutingEvidence": [
+        {
+          "kind": "observation_authority",
+          "obligationType": "plan",
+          "authorityKind": "context",
+          "revisions": ["head"],
+          "description": "The plan review obligation observes only its own frozen context authority."
+        },
+        {
+          "kind": "observation_authority",
+          "obligationType": "implement",
+          "authorityKind": "candidate_pair",
+          "revisions": ["base", "head"],
+          "description": "The later implementation review carries its own frozen base/head candidate pair."
+        },
+        {
+          "kind": "run_observation",
+          "description": "The implementation review of the run had a candidate_pair authority, and the diff between its frozen objects exists and shows the review-comment change."
+        },
+        {
+          "kind": "fixture_text",
+          "file": "demos/risk-trigger-fixture/TICKET.md",
+          "text": "Repository observation is scoped to each review obligation.",
+          "description": "The previous unscoped fixture sentence (\"Base-revision observation is not available to this obligation\") contributed to the confusion and is now scoped to the plan review obligation."
+        }
+      ],
+      "legitimateObjections": [
+        "The first review correctly asked the plan to name a concrete inspection method for the documentation criteria."
+      ],
+      "expectedReviewerBehavior": "A plan review may require that later implementation diff evidence is planned, but must not conclude from its own head-only observation offer that base/head evidence is unavailable to later phases.",
+      "reportCorrection": {
+        "report": "validation-report.md",
+        "supersedes": "alle verbleibenden Einwände sind substanziell",
+        "correctedClassification": "false_positive"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "risk-r3-self-declared-minor-blocker",
+      "source": {
+        "commit": "1ed7c479",
+        "scenario": "risk-r3",
+        "fixture": "demos/risk-trigger-fixture",
+        "runDirectory": null,
+        "childSessionId": null,
+        "unresolved": "Run directory, coverage variant, reviewer child session and the verbatim finding text were not part of the forensic review input; they are not reconstructed."
+      },
+      "obligationType": "plan",
+      "classification": "self_declared_minor_blocking",
+      "reviewerAssertion": {
+        "kind": "paraphrase",
+        "text": "A wrapper-metadata imprecision the reviewer itself described as minor and self-resolving was recorded as a blocking issue."
+      },
+      "refutingEvidence": [
+        {
+          "kind": "run_observation",
+          "description": "The reviewer's own finding text calls the imprecision minor and self-resolving, yet the finding is bound as blocking."
+        }
+      ],
+      "expectedReviewerBehavior": "An issue the reviewer itself rates as minor or self-resolving is not a blocking issue; it belongs to majorRisks or unknowns, not blockingIssues.",
+      "reportCorrection": {
+        "report": "validation-report.md",
+        "supersedes": "alle verbleibenden Einwände sind substanziell",
+        "correctedClassification": "false_positive"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    }
+  ]
+}

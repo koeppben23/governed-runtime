@@ -13,9 +13,11 @@ import { describe, expect, it } from 'vitest';
 import {
   IMPL_EVIDENCE,
   makeState,
+  PLAN_REVIEW_ASSURANCE,
   POLICY_SNAPSHOT,
   VALIDATION_PASSED,
   VERIFICATION_CANDIDATES,
+  makePolicySnapshot,
 } from '../fixtures.js';
 import type {
   ImplementationRiskAssessment,
@@ -64,12 +66,12 @@ const RISK_ASSESSMENT: ImplementationRiskAssessment = {
   implementationDigest: DOC_IMPL.digest,
 };
 
-const POLICY = {
+const POLICY = makePolicySnapshot({
   ...POLICY_SNAPSHOT,
   allowReducedCeremony: true,
   requireHumanGates: true,
-  effectiveGateBehavior: 'human_gated' as const,
-};
+  effectiveGateBehavior: 'human_gated',
+});
 
 const DECISION: ReducedCeremonyDecision = {
   profile: 'reduced',
@@ -153,6 +155,109 @@ describe('reducedCeremonyReady binding invariants', () => {
     expect(reducedCeremonyReady(boundState())).toBe(true);
   });
 
+  it('EDGE: a terminal blocked obligation does not invalidate the binding', () => {
+    const blocked = {
+      ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+      status: 'blocked' as const,
+      blockedCode: 'REVIEW_ATTEMPT_UNAVAILABLE',
+      invocationId: null,
+      fulfilledAt: null,
+      consumedAt: null,
+    };
+    const state = boundState({
+      reviewAssurance: { ...PLAN_REVIEW_ASSURANCE, obligations: [blocked] },
+    });
+    expect(reducedCeremonyReady(state)).toBe(true);
+  });
+
+  it('BAD: an open obligation invalidates the binding', () => {
+    const pending = {
+      ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+      status: 'pending' as const,
+      invocationId: null,
+      fulfilledAt: null,
+      consumedAt: null,
+    };
+    const state = boundState({
+      reviewAssurance: { ...PLAN_REVIEW_ASSURANCE, obligations: [pending] },
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
+  });
+
+  // D7 (#1028): a reused-evidence incident is an integrity violation, not a
+  // deterministic transport failure. It must keep the reduced-ceremony
+  // shortcut closed instead of being treated as an OB1-recoverable block.
+  it('BAD: a terminal reuse integrity incident invalidates the binding', () => {
+    const incident = {
+      ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+      status: 'blocked' as const,
+      blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+      invocationId: null,
+      fulfilledAt: null,
+      consumedAt: null,
+    };
+    const state = boundState({
+      reviewAssurance: { ...PLAN_REVIEW_ASSURANCE, obligations: [incident] },
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
+  });
+
+  it('BAD: a consumed successful successor review does not auto-resolve the integrity incident', () => {
+    const incident = {
+      ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+      status: 'blocked' as const,
+      blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+      invocationId: null,
+      fulfilledAt: null,
+      consumedAt: null,
+    };
+    // Persisted state has no incident timestamp and the rejected reuse is not
+    // persisted, so a successor review cannot be proven to have happened after
+    // the incident. The recovery contract is fail-closed: later evidence never
+    // auto-resolves the incident.
+    const successor = {
+      ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+      obligationId: '00000000-0000-4000-8000-0000000000c2',
+      status: 'consumed' as const,
+      invocationId: '00000000-0000-4000-8000-0000000000c3',
+      fulfilledAt: '2026-01-03T00:00:00.000Z',
+      consumedAt: '2026-01-03T00:00:00.000Z',
+    };
+    const state = boundState({
+      reviewAssurance: {
+        ...PLAN_REVIEW_ASSURANCE,
+        obligations: [incident, successor],
+      },
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
+  });
+
+  it('BAD: a consumed unable-to-review successor does not resolve the integrity incident', () => {
+    const incident = {
+      ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+      status: 'blocked' as const,
+      blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+      invocationId: null,
+      fulfilledAt: null,
+      consumedAt: null,
+    };
+    const unableToReview = {
+      ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+      obligationId: '00000000-0000-4000-8000-0000000000c4',
+      status: 'consumed' as const,
+      invocationId: '00000000-0000-4000-8000-0000000000c5',
+      fulfilledAt: null,
+      consumedAt: '2026-01-03T00:00:00.000Z',
+    };
+    const state = boundState({
+      reviewAssurance: {
+        ...PLAN_REVIEW_ASSURANCE,
+        obligations: [incident, unableToReview],
+      },
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
+  });
+
   it('BAD: a HIGH-RISK assessment rejects the decision', () => {
     const state = boundState({
       implementationRiskAssessment: { ...RISK_ASSESSMENT, computedMinimumTaskClass: 'HIGH-RISK' },
@@ -199,11 +304,15 @@ describe('reducedCeremonyReady binding invariants', () => {
   it('BAD: disabled policy flags reject the decision', () => {
     expect(
       reducedCeremonyReady(
-        boundState({ policySnapshot: { ...POLICY, allowReducedCeremony: false } }),
+        boundState({
+          policySnapshot: makePolicySnapshot({ ...POLICY, allowReducedCeremony: false }),
+        }),
       ),
     ).toBe(false);
     expect(
-      reducedCeremonyReady(boundState({ policySnapshot: { ...POLICY, requireHumanGates: false } })),
+      reducedCeremonyReady(
+        boundState({ policySnapshot: makePolicySnapshot({ ...POLICY, requireHumanGates: false }) }),
+      ),
     ).toBe(false);
   });
 

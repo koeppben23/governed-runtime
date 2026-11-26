@@ -55,15 +55,37 @@ Archives are stored at:
 ~/.config/opencode/workspaces/{fingerprint}/sessions/archive/{sessionId}.tar.gz
 ```
 
-The mandatory regulated raw-evidence package is stored separately as
-`regulated-{sessionId}.tar.gz`, so a later sharing export cannot replace it.
+Each archive purpose owns a distinct file name, so one operation can never
+overwrite another purpose's artifact:
+
+- `{sessionId}.tar.gz` — the user-requested `/archive` package,
+- `regulated-{sessionId}.tar.gz` — the mandatory system-owned regulated
+  evidence package,
+- `export-{sessionId}.tar.gz` — the mandatory `/export` completion package.
+
+A verified completion export therefore stays byte-identical and independently
+verifiable after any later `/archive` (including the solo auto-archive) and
+after repeated archiving. `/export` remains admissible only at `EXPORT_READY`.
 
 ### Configuration Scope
 
-Archive creation calls `readConfig()` without a worktree argument intentionally.
-The originating worktree may no longer exist at archive time. Archive
-configuration uses global config or default config. Repo config overrides do not
-apply to archives unless a future policy-snapshot change is introduced.
+The configurable `/archive` export (and the solo auto-archive) projects one
+effective redaction policy from two sources:
+
+- the explicit global installation config
+  `~/.config/opencode/flowguard.json` (administrator ceiling), and
+- the repo-scoped `{worktree}/.opencode/flowguard.json`, which may only
+  restrict the effective policy.
+
+`allowRawExport=true` requires an explicit global `true` AND a repository config
+that does not forbid it; an absent global config binds the secure default
+(`false`), so a repository config can never elevate raw export on its own.
+`allowedModes` is the intersection (an empty intersection fails closed with an
+explicit policy-conflict error) and `maxAuditEvents` is the minimum. The archive
+gate and the operator guidance use the same projection; a malformed global
+config fails closed even when a repository config exists. The mandatory
+regulated completion archive and the canonical `/export` completion package are
+workflow-authorized and do not depend on this projection.
 
 ## Manifest
 
@@ -215,6 +237,25 @@ archive lifecycle. Abort is an emergency escape with no archive guarantee.
 **Checksum sidecar** (`.sha256`): In regulated mode, sidecar write failure is
 fatal (`ARCHIVE_FAILED`). In non-regulated mode, sidecar failure is non-fatal
 and the archive remains usable.
+
+**Publication safety.** The archive and its sidecar cannot be replaced by one
+atomic filesystem operation, so publication does not claim an atomic pair swap.
+It guarantees the evidence property instead: a publish journal records the
+digests of the next pair before anything is moved, the currently published pair
+is retained as `<name>.previous`, and the journal is removed as the commit
+point before the retained pair is deleted. A failure restores the previous pair
+verbatim; every crash point leaves at least one complete generation on disk.
+
+Recovery at the next publish uses the journal, never the mere presence of a
+retained file: if the canonical files already match the recorded next digests,
+the publication completed and only the retained garbage is removed — a
+published generation is never rolled back. Without a journal, retained files are
+treated as cleanup leftovers and deleted. A journal left behind by a crash
+during the retain step restores the one file that was already moved instead of
+aborting. An unreadable journal fails closed and preserves the directory for
+manual analysis. A partially published state observed by a reader in the crash
+window fails archive verification closed rather than verifying a mismatched
+pair.
 
 ## Integrity Chain
 

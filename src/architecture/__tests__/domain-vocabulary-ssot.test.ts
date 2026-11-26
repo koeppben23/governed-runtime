@@ -31,7 +31,7 @@ import { describe, expect, it } from 'vitest';
 
 import { LoopVerdict } from '../../state/evidence-primitives.js';
 import { TaskClass } from '../../state/task-class.js';
-import { collectProductionSources } from './production-source.js';
+import { collectProductionSources } from '../support/production-source.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 
@@ -292,7 +292,7 @@ describe('domain vocabulary SSOT (default-deny)', () => {
         );
       expect(violations, violations.join('\n')).toEqual([]);
     }
-  });
+  }, 60_000);
 
   describe('negative fixtures — prove every detector fires', () => {
     const taskClass = VOCABULARIES[0] as Vocabulary;

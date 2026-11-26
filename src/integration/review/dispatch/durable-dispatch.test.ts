@@ -1,3 +1,8 @@
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../../../review-invocation-test-helpers.js';
+
 /**
  * @module integration/review/durable-dispatch.test
  * @description Blocker 3: durable dispatch authorization, abandonment, and
@@ -11,7 +16,9 @@ import { SessionState } from '../../../state/schema.js';
 import { resolveReviewContinuation } from '../../../state/review-continuation.js';
 import { hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import { makeState } from '../../../fixtures.js';
+import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import {
+  abandonAndBlockByHostCall,
   abandonAndRearmByHostCall,
   abandonReviewDispatchByHostCall,
   buildInterruptedDispatchRearm,
@@ -19,6 +26,7 @@ import {
   type DispatchLedgerWriteDeps,
 } from './durable-dispatch.js';
 import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-recorder.js';
+import { nativeReviewAuditIntents } from './native-review-findings.js';
 import { createSessionState } from '../enforcement/enforcement.js';
 import { handleReviewTransportRecovery } from '../../tools/review-transport-recovery.js';
 import {
@@ -28,7 +36,12 @@ import {
   freezeReviewMaterial,
 } from '../obligations/assurance.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { updateAttemptStatus } from '../obligations/attempt-lifecycle.js';
 import { hashFindings } from '../findings-hash.js';
+import {
+  hashCanonicalContentSubject,
+  hashCanonicalReviewContent,
+} from '../../../shared/review-subject.js';
 import type { ReviewerSuccessResult } from '../types.js';
 
 const NOW = '2026-05-10T12:00:00.000Z';
@@ -59,14 +72,67 @@ function baseAssurance(obligationType: 'plan' | 'review' = 'plan') {
   };
 }
 
-function writeDeps(stateRef: { current: SessionState }): DispatchLedgerWriteDeps {
+function writeDeps(
+  stateRef: { current: SessionState },
+  intentsRef?: { current: readonly SemanticAuditIntent[] },
+): DispatchLedgerWriteDeps {
   return {
-    updateReviewAssurance: vi.fn(async (_sessDir, update) => {
-      stateRef.current = update(stateRef.current, NOW);
+    updateReviewAssurance: vi.fn(async (_sessDir, update, semanticIntents) => {
+      const next = update(stateRef.current, NOW);
+      stateRef.current = next;
+      if (intentsRef) {
+        intentsRef.current = semanticIntents ? [...semanticIntents(next, NOW)] : [];
+      }
     }),
   };
 }
 
+/** Schema-valid standalone peer review obligation with its initial attempt. */
+function peerReviewAssurance() {
+  const content = 'frozen review material line 1\nline 2\n';
+  const materialDigest = hashCanonicalReviewContent(content);
+  const subjectDigest = hashCanonicalContentSubject(materialDigest);
+  const obligation = createReviewObligation({
+    obligationType: 'review',
+    reviewCycle: null,
+    iteration: 1,
+    planVersion: 1,
+    now: NOW,
+    subjectDigest,
+    reviewMaterial: { content, materialDigest, subjectDigest },
+    reviewSubject: {
+      kind: 'content',
+      source: { kind: 'inline', mediaType: 'text' },
+      materialDigest,
+      subjectDigest,
+      lineCount: 2,
+    },
+    reviewSubjectScope: { kind: 'content', subjectDigest, lineCount: 2 },
+  });
+  const minted = appendObligationWithAttempt(ensureReviewAssurance(undefined), obligation, NOW);
+  return {
+    obligation,
+    attempt: minted.assurance.attempts.find((attempt) => attempt.attemptId === minted.attemptId)!,
+    assurance: minted.assurance,
+  };
+}
+
+/**
+ * Mirrors the persistence boundary: a schema-invalid state is never written
+ * and the previously persisted state stays authoritative.
+ */
+function validatingWriteDeps(stateRef: { current: SessionState }): DispatchLedgerWriteDeps {
+  return {
+    updateReviewAssurance: vi.fn(async (_sessDir, update) => {
+      const next = update(stateRef.current, NOW);
+      const parsed = SessionState.safeParse(next);
+      if (!parsed.success) {
+        throw new Error(`SCHEMA_VALIDATION_FAILED: ${parsed.error.issues[0]?.message ?? ''}`);
+      }
+      stateRef.current = next;
+    }),
+  };
+}
 function persistAuthorizedSdkDispatch(
   deps: DispatchLedgerWriteDeps,
   sessDir: string,
@@ -93,6 +159,30 @@ function abandonSdkDispatch(
 }
 
 describe('persistAuthorizedSdkDispatch', () => {
+  it('BAD: refuses a second authorized release for the same attempt', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    await expect(
+      persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+        attemptId: attempt.attemptId,
+        obligationId: obligation.obligationId,
+        childSessionId: 'child-session-other',
+        canonicalPromptDigest: PROMPT_DIGEST,
+        authorizedAt: NOW,
+      }),
+    ).rejects.toMatchObject({ code: 'REVIEW_DISPATCH_PERSISTENCE_FAILED' });
+    expect(stateRef.current.reviewAssurance!.dispatches).toHaveLength(1);
+  });
+
   it('HAPPY: appends an authorized durable dispatch for the created attempt', async () => {
     const { obligation, attempt, assurance } = baseAssurance();
     const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
@@ -466,6 +556,158 @@ describe('abandonSdkDispatch and interrupted-dispatch recovery', () => {
   });
 });
 
+describe('abandonAndBlockByHostCall', () => {
+  const CAPACITY_CODE = 'REVIEWER_OUTPUT_TRUNCATED';
+
+  function collectingDeps(stateRef: { current: SessionState }) {
+    const intents: SemanticAuditIntent[] = [];
+    const deps: DispatchLedgerWriteDeps = {
+      updateReviewAssurance: vi.fn(async (_sessDir, update, semanticIntents) => {
+        const next = update(stateRef.current, NOW);
+        stateRef.current = next;
+        if (semanticIntents) intents.push(...semanticIntents(next, NOW));
+      }),
+    };
+    return { deps, intents };
+  }
+
+  async function releasedA1(
+    deps: DispatchLedgerWriteDeps,
+    obligationId: string,
+    attemptId: string,
+  ) {
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId,
+      obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+  }
+
+  it('HAPPY: closes dispatch, stales attempt, blocks obligation, locks the turn, and audits once', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const { deps, intents } = collectingDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+
+    const outcome = await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, CAPACITY_CODE, {
+      childSessionId: 'child-capacity-failure',
+      now: NOW,
+    });
+
+    expect(outcome).toEqual({
+      kind: 'blocked',
+      obligationId: obligation.obligationId,
+      code: CAPACITY_CODE,
+    });
+    const after = stateRef.current.reviewAssurance!;
+    expect(after.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
+    expect(after.attempts.find((a) => a.attemptId === attempt.attemptId)?.status).toBe('stale');
+    expect(after.attempts.find((a) => a.attemptId === attempt.attemptId)?.childSessionId).toBe(
+      'child-capacity-failure',
+    );
+    expect(after.obligations.find((o) => o.obligationId === obligation.obligationId)).toMatchObject(
+      {
+        status: 'blocked',
+        blockedCode: CAPACITY_CODE,
+      },
+    );
+    expect(after.capacityLock).toEqual({
+      code: CAPACITY_CODE,
+      obligationId: obligation.obligationId,
+      createdAt: NOW,
+    });
+    expect(intents).toHaveLength(1);
+    expect(intents[0]).toMatchObject({
+      event: 'review:obligation_blocked',
+      detail: { obligationId: obligation.obligationId, code: CAPACITY_CODE },
+    });
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
+  it('IDEMPOTENT: a repeated host call does not add state or audit', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const { deps, intents } = collectingDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+
+    await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, CAPACITY_CODE, { now: NOW });
+    const afterFirst = stateRef.current;
+    const firstIntents = [...intents];
+
+    const second = await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, CAPACITY_CODE, {
+      now: NOW,
+    });
+    expect(second).toEqual({
+      kind: 'terminal',
+      status: 'blocked',
+      obligationId: afterFirst.reviewAssurance!.obligations[0]!.obligationId,
+    });
+    expect(stateRef.current).toEqual(afterFirst);
+    expect(intents).toEqual(firstIntents);
+  });
+
+  it('closes a spent but still pending execution once and preserves the lock across restart', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const { deps, intents } = collectingDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+    await abandonReviewDispatchByHostCall(deps, SESS_DIR, CHILD, NOW);
+    expect(stateRef.current.reviewAssurance?.obligations[0]?.status).toBe('pending');
+    const code = 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
+    await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, code, { now: NOW });
+    stateRef.current = SessionState.parse(JSON.parse(JSON.stringify(stateRef.current)));
+    expect(stateRef.current.reviewAssurance?.capacityLock).toMatchObject({
+      code,
+      obligationId: obligation.obligationId,
+    });
+    expect(await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, code)).toMatchObject({
+      kind: 'terminal',
+      status: 'blocked',
+    });
+    expect(intents).toHaveLength(1);
+    const successor = baseAssurance();
+    stateRef.current = {
+      ...stateRef.current,
+      reviewAssurance: {
+        ...stateRef.current.reviewAssurance!,
+        obligations: [...stateRef.current.reviewAssurance!.obligations, successor.obligation],
+        attempts: [...stateRef.current.reviewAssurance!.attempts, successor.attempt],
+      },
+    };
+    await expect(
+      persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+        attemptId: successor.attempt.attemptId,
+        obligationId: successor.obligation.obligationId,
+        childSessionId: 'new-child',
+        canonicalPromptDigest: PROMPT_DIGEST,
+        authorizedAt: NOW,
+      }),
+    ).rejects.toMatchObject({ code: 'REVIEW_DISPATCH_PERSISTENCE_FAILED' });
+  });
+
+  it('NO-LINEAGE: no lock and no audit when the exact authorized dispatch is absent', async () => {
+    const { assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const { deps, intents } = collectingDeps(stateRef);
+    const before = stateRef.current;
+
+    const outcome = await abandonAndBlockByHostCall(deps, SESS_DIR, 'missing-call', CAPACITY_CODE, {
+      now: NOW,
+    });
+
+    expect(outcome).toMatchObject({
+      kind: 'unresolved',
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    expect(stateRef.current).toEqual(before);
+    expect(stateRef.current.reviewAssurance?.capacityLock).toBeUndefined();
+    expect(intents).toEqual([]);
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+});
+
 describe('abandonAndRearmByHostCall', () => {
   const CHILD_2 = 'child-session-dispatch-2';
 
@@ -513,6 +755,32 @@ describe('abandonAndRearmByHostCall', () => {
     expect(SessionState.safeParse(stateRef.current).success).toBe(true);
   });
 
+  it('PROVENANCE: writes the failing child onto the staled attempt in the same re-arm mutation', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+
+    const outcome = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD, NOW, {
+      code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
+      diagnostics: [],
+      childSessionId: 'child-failing-task',
+    });
+
+    expect(outcome.kind).toBe('rearmed');
+    if (outcome.kind !== 'rearmed') return;
+    const after = stateRef.current.reviewAssurance!;
+    const stale = after.attempts.find((candidate) => candidate.attemptId === attempt.attemptId);
+    expect(stale?.status).toBe('stale');
+    expect(stale?.childSessionId).toBe('child-failing-task');
+    // The stale child stays attributable but never becomes the re-armed attempt.
+    expect(
+      after.attempts.find((candidate) => candidate.attemptId === outcome.attempt.attemptId)
+        ?.childSessionId,
+    ).toBeUndefined();
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
   it('BUDGET: refuses a second re-arm yet still stales A2 and blocks', async () => {
     const { obligation, attempt, assurance } = baseAssurance();
     const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
@@ -548,6 +816,112 @@ describe('abandonAndRearmByHostCall', () => {
       'blocked',
     );
     expect(resolveReviewContinuation(after, 'plan')).toMatchObject({ kind: 'blocked' });
+  });
+
+  it('BUDGET: binds a bounded closure audit intent to the exact blocked settlement', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const intentsRef: { current: readonly SemanticAuditIntent[] } = { current: [] };
+    const deps = writeDeps(stateRef, intentsRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+    const first = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD, NOW);
+    expect(first.kind).toBe('rearmed');
+    // A successful re-arm is not a closure: no audit intent may be emitted.
+    expect(intentsRef.current).toEqual([]);
+    if (first.kind !== 'rearmed') return;
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: first.attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD_2,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    const second = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD_2, NOW, {
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+      diagnostics: [
+        {
+          code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          reasonKind: 'invalid_value',
+          data: {
+            path: 'majorRisks.0.category',
+            constraint: 'completeness|correctness|feasibility|risk|quality',
+          },
+        },
+      ],
+    });
+
+    expect(second.kind).toBe('blocked');
+    expect(intentsRef.current).toEqual([
+      {
+        phase: 'PLAN',
+        event: 'review:obligation_blocked',
+        occurredAt: NOW,
+        detail: {
+          obligationId: obligation.obligationId,
+          blockedCode: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+          captureCode: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          diagnostics: [
+            {
+              reasonKind: 'invalid_value',
+              path: 'majorRisks.0.category',
+              constraint: 'completeness|correctness|feasibility|risk|quality',
+            },
+          ],
+        },
+      },
+    ]);
+    const serialized = JSON.stringify(intentsRef.current);
+    // Data-lean: the rejected value and raw schema output never travel.
+    expect(serialized).not.toContain('verification');
+    expect(serialized).not.toContain('dangerous');
+  });
+
+  it('BUDGET: a repeated host call and a no-op never emit the closure audit intent', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const intentsRef: { current: readonly SemanticAuditIntent[] } = { current: [] };
+    const deps = writeDeps(stateRef, intentsRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+    const first = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD, NOW);
+    if (first.kind !== 'rearmed') throw new Error('expected a re-armed attempt');
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: first.attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD_2,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    const captureFailure = {
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+      diagnostics: [
+        {
+          code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          reasonKind: 'invalid_value',
+          data: { path: 'majorRisks.0.category' },
+        },
+      ],
+    };
+
+    const blocked = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD_2, NOW, captureFailure);
+    expect(blocked.kind).toBe('blocked');
+    expect(intentsRef.current).toHaveLength(1);
+
+    // Repeated processing of the same host call is a no-op and must not
+    // re-emit the closure — the closure already happened in the first call.
+    const repeated = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD_2, NOW, captureFailure);
+    expect(repeated).toEqual({ kind: 'noop' });
+    expect(intentsRef.current).toEqual([]);
+
+    const unknown = await abandonAndRearmByHostCall(
+      deps,
+      SESS_DIR,
+      'unknown-host-call',
+      NOW,
+      captureFailure,
+    );
+    expect(unknown).toEqual({ kind: 'noop' });
+    expect(intentsRef.current).toEqual([]);
   });
 
   it('EDGE: an unknown host call is a no-op with the original state', async () => {
@@ -645,11 +1019,34 @@ describe('transient retry hint durability', () => {
 });
 
 describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
+  /**
+   * Mirrors `bindNativeReviewChild`: after dispatch authorization the native
+   * child is durably correlated with the still-`created` attempt, which is the
+   * precondition for recording generation-6 evidence.
+   */
+  function bindAttemptToChild(
+    stateRef: { current: SessionState },
+    attemptId: string,
+    childSessionId: string = CHILD,
+  ): void {
+    stateRef.current = {
+      ...stateRef.current,
+      reviewAssurance: updateAttemptStatus(
+        ensureReviewAssurance(stateRef.current.reviewAssurance),
+        attemptId,
+        'created',
+        NOW,
+        { childSessionId },
+      ),
+    };
+  }
+
   function recordingParams(
     attemptId: string,
     obligationId: string,
     obligationType: 'plan' | 'review' = 'plan',
     overallVerdict: 'accept' | 'unable_to_review' = 'accept',
+    hostCallId: string = CHILD,
   ) {
     const findings = {
       iteration: 0,
@@ -664,13 +1061,20 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       challenges: [],
       reviewedBy: { sessionId: CHILD },
       reviewedAt: NOW,
+      attestation: { toolObligationId: obligationId },
     };
+    const capture = messageCaptureFixture({
+      childSessionId: CHILD,
+      obligationId,
+      attemptId,
+      findings,
+    });
     return {
       obligationId,
       obligationType,
       sessionId: PARENT,
       childSessionId: CHILD,
-      hostCallId: CHILD,
+      hostCallId,
       attemptId,
       promptHash: PROMPT_DIGEST,
       findingsHash: hashFindings(findings),
@@ -680,10 +1084,11 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
         sessionId: CHILD,
         rawResponse: JSON.stringify(findings),
         findings,
-        reviewOutputMode: 'structured_output' as const,
-        structuredOutputUsed: true,
-        reviewAssuranceLevel: 'structured_high' as const,
+        reviewOutputMode: 'validated_json' as const,
+        capture,
+        reviewAssuranceLevel: 'host_message_validated' as const,
       } satisfies ReviewerSuccessResult,
+      nativeProvenance: nativeProvenanceFixture(capture, hostCallId),
     };
   }
 
@@ -691,6 +1096,8 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     const { obligation, attempt, assurance } = baseAssurance();
     const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
     const deps = writeDeps(stateRef);
+    // Child correlation alone (no dispatch release) must not authorize evidence.
+    bindAttemptToChild(stateRef, attempt.attemptId);
 
     const result = await recordEvidenceOrBlockReuse(
       deps as never,
@@ -716,6 +1123,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       canonicalPromptDigest: PROMPT_DIGEST,
       authorizedAt: NOW,
     });
+    bindAttemptToChild(stateRef, attempt.attemptId);
 
     const result = await recordEvidenceOrBlockReuse(
       deps as never,
@@ -730,7 +1138,9 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     expect(after.invocations[0]).toMatchObject({
       childSessionId: CHILD,
       attemptId: attempt.attemptId,
-      invocationMode: 'native_task_structured_followup',
+      invocationMode: 'native_subagent_message_json',
+      transportVersion: 6,
+      nativeProvenance: { nativeCallId: CHILD },
     });
     expect(after.obligations[0]).toMatchObject({
       status: 'fulfilled',
@@ -744,10 +1154,11 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     expect(SessionState.safeParse(stateRef.current).success).toBe(true);
   });
 
-  it('HAPPY: consumes unable peer-review evidence instead of marking its obligation fulfilled', async () => {
-    const { obligation, attempt, assurance } = baseAssurance('review');
+  it('HAPPY: consumes unable peer-review evidence with its invocation lineage as schema-valid state', async () => {
+    const { obligation, attempt, assurance } = peerReviewAssurance();
     const stateRef = { current: makeState('PEER_REVIEW', { reviewAssurance: assurance }) };
-    const deps = writeDeps(stateRef);
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+    const deps = validatingWriteDeps(stateRef);
     await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
       attemptId: attempt.attemptId,
       obligationId: obligation.obligationId,
@@ -755,6 +1166,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       canonicalPromptDigest: PROMPT_DIGEST,
       authorizedAt: NOW,
     });
+    bindAttemptToChild(stateRef, attempt.attemptId);
 
     const result = await recordEvidenceOrBlockReuse(
       deps as never,
@@ -764,8 +1176,122 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
 
     expect(result).toBe('fulfilled');
     const after = stateRef.current.reviewAssurance!;
-    expect(after.obligations[0]).toMatchObject({ status: 'consumed', fulfilledAt: null });
+    // Consumption presupposes fulfillment: the assurance refinement rejects a
+    // consumed obligation without invocation lineage and fulfilledAt, so the
+    // validating writer would keep the previous pending state.
+    expect(after.obligations[0]).toMatchObject({
+      status: 'consumed',
+      consumedAt: NOW,
+      fulfilledAt: NOW,
+      invocationId: after.invocations[0]!.invocationId,
+    });
     expect(after.invocations[0]?.consumedByObligationId).toBe(obligation.obligationId);
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
+  it('HAPPY: accept peer-review evidence fulfills its obligation as schema-valid state', async () => {
+    const { obligation, attempt, assurance } = peerReviewAssurance();
+    const stateRef = { current: makeState('PEER_REVIEW', { reviewAssurance: assurance }) };
+    const deps = validatingWriteDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    bindAttemptToChild(stateRef, attempt.attemptId);
+
+    const result = await recordEvidenceOrBlockReuse(
+      deps as never,
+      SESS_DIR,
+      recordingParams(attempt.attemptId, obligation.obligationId, 'review', 'accept'),
+    );
+
+    expect(result).toBe('fulfilled');
+    expect(stateRef.current.reviewAssurance!.obligations[0]).toMatchObject({
+      status: 'fulfilled',
+      fulfilledAt: NOW,
+    });
+  });
+
+  it('HAPPY: closes an unable plan obligation as blocked with its bound invocation retained', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    bindAttemptToChild(stateRef, attempt.attemptId);
+
+    const result = await recordEvidenceOrBlockReuse(
+      deps as never,
+      SESS_DIR,
+      recordingParams(attempt.attemptId, obligation.obligationId, 'plan', 'unable_to_review'),
+    );
+
+    expect(result).toBe('fulfilled');
+    const after = stateRef.current.reviewAssurance!;
+    // The evidence was recorded (invocation + bound attempt + completed
+    // dispatch), but the obligation is deterministically blocked: a verdict can
+    // never repair an unreviewable frozen artifact.
+    expect(after.obligations[0]).toMatchObject({
+      status: 'blocked',
+      blockedCode: 'SUBAGENT_UNABLE_TO_REVIEW',
+      invocationId: after.invocations[0]!.invocationId,
+    });
+    expect(after.invocations).toHaveLength(1);
+    expect(after.invocations[0]!.capturedRawFindings).toMatchObject({
+      overallVerdict: 'unable_to_review',
+    });
+    expect(after.attempts[0]).toMatchObject({ status: 'bound', childSessionId: CHILD });
+    expect(after.dispatches[0]).toMatchObject({ dispatchStatus: 'completed' });
+    // The blocked obligation is the recovery trigger: a fresh submission
+    // mints a new obligation instead of deadlocking on a verdict request.
+    expect(resolveReviewContinuation(after, 'plan')).toMatchObject({ kind: 'blocked' });
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
+  it('CORNER: native audit intents report the actual settlement outcome', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    bindAttemptToChild(stateRef, attempt.attemptId);
+    await recordEvidenceOrBlockReuse(
+      deps as never,
+      SESS_DIR,
+      recordingParams(attempt.attemptId, obligation.obligationId, 'plan', 'unable_to_review'),
+    );
+
+    const intents = nativeReviewAuditIntents({
+      obligation,
+      parentSessionId: PARENT,
+      childSessionId: CHILD,
+      attemptId: attempt.attemptId,
+      promptHash: PROMPT_DIGEST,
+      findingsHash: 'f'.repeat(64),
+      phase: 'PLAN',
+    })('fulfilled', stateRef.current, NOW);
+
+    expect(intents.map((intent) => intent.event)).toEqual([
+      'review:subagent_invoked',
+      'review:obligation_blocked',
+    ]);
+    expect(intents[1].detail).toMatchObject({
+      obligationId: obligation.obligationId,
+      blockedCode: 'SUBAGENT_UNABLE_TO_REVIEW',
+    });
   });
 
   it('BAD: an out-of-scope finding never binds the attempt or fulfills the obligation', async () => {
@@ -801,6 +1327,14 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       },
     ];
 
+    params.reviewerResult.capture = messageCaptureFixture({
+      childSessionId: CHILD,
+      obligationId: obligation.obligationId,
+      attemptId: attempt.attemptId,
+      findings,
+    });
+    params.nativeProvenance = nativeProvenanceFixture(params.reviewerResult.capture, CHILD);
+    bindAttemptToChild(stateRef, attempt.attemptId);
     const result = await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, params);
 
     expect(result).toMatchObject({
@@ -812,5 +1346,108 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     expect(after.obligations[0]).toMatchObject({ status: 'pending' });
     expect(after.invocations).toHaveLength(0);
     expect(after.dispatches[0]).toMatchObject({ dispatchStatus: 'authorized' });
+  });
+
+  it('never rewrites a completed invocation when its native call is abandoned after completion', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const audit: SemanticAuditIntent[] = [];
+    const deps: DispatchLedgerWriteDeps = {
+      updateReviewAssurance: async (_dir, mutate, intents) => {
+        stateRef.current = mutate(stateRef.current, NOW);
+        audit.push(...(intents?.(stateRef.current, NOW) ?? []));
+      },
+    };
+    await persistAuthorizedReviewDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      hostCallId: 'native-call',
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    bindAttemptToChild(stateRef, attempt.attemptId);
+    expect(
+      await recordEvidenceOrBlockReuse(
+        deps as never,
+        SESS_DIR,
+        recordingParams(
+          attempt.attemptId,
+          obligation.obligationId,
+          'plan',
+          'accept',
+          'native-call',
+        ),
+      ),
+    ).toBe('fulfilled');
+    expect(stateRef.current.reviewAssurance!.dispatches[0]).toMatchObject({
+      hostCallId: 'native-call',
+      dispatchStatus: 'completed',
+    });
+    const before = structuredClone(stateRef.current);
+    for (let index = 0; index < 2; index += 1) {
+      expect(
+        await abandonAndBlockByHostCall(
+          deps,
+          SESS_DIR,
+          'native-call',
+          'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+          { childSessionId: CHILD, obligationId: obligation.obligationId },
+        ),
+      ).toMatchObject({ kind: 'terminal', status: 'completed' });
+    }
+    expect(stateRef.current).toEqual(before);
+    expect(audit).toEqual([]);
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
+  it('refuses binding immediately when the watchdog fence is raised before durable closure', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    bindAttemptToChild(stateRef, attempt.attemptId);
+    const result = await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, {
+      ...recordingParams(attempt.attemptId, obligation.obligationId),
+      executionFailed: () => true,
+      deadlineAt: '2099-01-01T00:00:00.000Z',
+    });
+    expect(result).toBe('execution_expired');
+    expect(stateRef.current.reviewAssurance?.invocations).toEqual([]);
+    await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    expect(stateRef.current.reviewAssurance?.capacityLock?.code).toBe(
+      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    );
+  });
+
+  it('BAD: refuses a late bind inside the same evidence mutation', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    bindAttemptToChild(stateRef, attempt.attemptId);
+
+    const result = await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, {
+      ...recordingParams(attempt.attemptId, obligation.obligationId),
+      deadlineAt: new Date(0).toISOString(),
+    });
+
+    expect(result).toBe('execution_expired');
+    const after = stateRef.current.reviewAssurance!;
+    expect(after.invocations).toHaveLength(0);
+    expect(after.attempts[0]!.status).toBe('created');
+    expect(after.obligations[0]!.status).toBe('pending');
+    expect(after.dispatches[0]!.dispatchStatus).toBe('authorized');
   });
 });

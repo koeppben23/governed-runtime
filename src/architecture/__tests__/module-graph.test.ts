@@ -6,8 +6,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MODULE_CLASSIFICATION, type GovernedModuleName } from './module-classification.js';
-import { MODULE_DEPENDENCY_POLICY } from './module-dependency-policy.js';
+import {
+  MODULE_CLASSIFICATION,
+  type GovernedModuleName,
+} from '../support/module-classification.js';
+import { MODULE_DEPENDENCY_POLICY } from '../support/module-dependency-policy.js';
 import {
   cycleParticipatingEdges,
   cyclicStronglyConnectedComponents,
@@ -15,7 +18,7 @@ import {
   moduleEdgeSet,
   stronglyConnectedComponents,
   type ModuleEdge,
-} from './module-graph.js';
+} from '../support/module-graph.js';
 
 const GOVERNED_NAMES = MODULE_CLASSIFICATION.filter((entry) => entry.kind === 'governed').map(
   (entry) => entry.name,

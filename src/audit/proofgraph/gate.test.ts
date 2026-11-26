@@ -9,23 +9,96 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  certifiedClaimDigest,
+  materializedClaimDigest,
+  requiredEvidenceForDeclaration,
+} from '../../state/proofgraph-claim-certification.js';
+import {
   evaluateProofGraphGate,
   evaluateProofGraphGateFromState,
   isRiskAssessmentCurrent,
 } from './gate.js';
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofClaim, ProofGraphProjection } from '../../state/proofgraph.js';
+import type { ProofContract } from '../../state/proofgraph-contract.js';
 import type { ClaimVerificationState, SignalClass } from '../../state/proofgraph-primitives.js';
+import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import type { SessionState } from '../../state/schema.js';
 import type {
+  AuthorizedClaimBinding,
   PlanApprovalCertificate,
   PlanClaimDeclarations,
 } from '../../state/proofgraph-approval.js';
 import type { PlanRecord } from '../../state/evidence-plan.js';
 import { makePlanRevision } from '../../state/evidence-test-constants.js';
-import { makeState } from '../../fixtures.js';
+import { makePlanApprovalCertificate, makeState, VALIDATION_PASSED } from '../../fixtures.js';
 import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+
+type RawGateInput = Parameters<typeof evaluateProofGraphGate>[0];
+type GateInput = Omit<RawGateInput, 'contract' | 'validationAttempts' | 'implementationDigest'> & {
+  readonly contract?: ProofContract;
+  readonly validationAttempts?: SessionState['validationAttempts'];
+  readonly implementationDigest?: string;
+};
+
+/** The canonical source contract a materializer would persist for these claims. */
+function declaredSource(claims: readonly ProofClaim[] | undefined): ProofContract {
+  return {
+    version: 'contract.v2',
+    claims: (claims ?? []).map(
+      ({ verificationState: _state, freshness: _freshness, ...rest }) => rest,
+    ),
+  };
+}
+
+/**
+ * Suite-local gate driver: fills the explicit source/observation inputs so the
+ * eligibility cases stay focused. Dedicated integrity cases pass those inputs
+ * themselves; production callers always supply real session values.
+ */
+function gate(input: GateInput) {
+  const { contract, validationAttempts, implementationDigest, ...rest } = input;
+  return evaluateProofGraphGate({
+    ...rest,
+    contract: contract ?? declaredSource(rest.projection?.claims),
+    validationAttempts: validationAttempts ?? [positiveAttempt(implementationDigest)],
+    implementationDigest,
+    ...(input.authorizedClaimBindings
+      ? {
+          authorizedClaimBindings: new Map(
+            [...input.authorizedClaimBindings].map(([id, binding]) => [
+              id,
+              {
+                ...binding,
+                certifiedClaimDigest: materializedClaimDigest(
+                  claim(id, {
+                    coversRiskTriggers: input.projection?.claims.find((c) => c.claimId === id)
+                      ?.coversRiskTriggers,
+                  }),
+                )!,
+              },
+            ]),
+          ),
+        }
+      : {}),
+  });
+}
+
+const POSITIVE_ATTEMPT = '00000000-0000-4000-8000-000000000077';
+function positiveAttempt(digest?: string): SessionState['validationAttempts'][number] {
+  return {
+    attemptId: POSITIVE_ATTEMPT,
+    scope: 'implementation',
+    implementationId: POSITIVE_ATTEMPT,
+    implementationDigest: digest as string,
+    executionObservation: {
+      executionObservedStateDigest: 'a'.repeat(64),
+      preCommitStateDigest: 'a'.repeat(64),
+    },
+    result: { ...VALIDATION_PASSED[0]!, checkId: 'test' },
+  };
+}
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -36,6 +109,29 @@ const APPROVAL = {
   declarationId: '00000000-0000-4000-8000-0000000000de',
 } as const;
 
+/** Binding the `claim()` fixture carries; matches APPROVAL above. */
+const AUTHORIZED_BINDING: AuthorizedClaimBinding = {
+  authorityId: 'plan',
+  authorityDigest: 'd',
+  certificateId: APPROVAL.certificateId,
+  claimDeclarationsDigest: APPROVAL.claimDeclarationsDigest,
+  decisionAttestationDigest: APPROVAL.decisionAttestationDigest,
+  declarationId: APPROVAL.declarationId,
+  certifiedClaimDigest: 'c'.repeat(64),
+};
+
+function authorizedBindings(...claimIds: string[]): ReadonlyMap<string, AuthorizedClaimBinding> {
+  return new Map(
+    claimIds.map(
+      (claimId) =>
+        [
+          claimId,
+          { ...AUTHORIZED_BINDING, certifiedClaimDigest: materializedClaimDigest(claim(claimId))! },
+        ] as const,
+    ),
+  );
+}
+
 function claim(
   claimId: string,
   opts: {
@@ -44,9 +140,10 @@ function claim(
     state?: ClaimVerificationState;
     /** Omit to model a self-declared claim that never passed a human approval. */
     certified?: boolean;
+    coversRiskTriggers?: readonly SpecificRiskTrigger[] | undefined;
   } = {},
 ): ProofClaim {
-  return {
+  const value: ProofClaim = {
     claimId,
     statement: 'x',
     signalClass: opts.signalClass ?? 'fact',
@@ -57,9 +154,17 @@ function claim(
       digest: 'd',
       ...(opts.certified === false ? {} : { approval: APPROVAL }),
     },
-    evidenceRefs: [],
+    evidenceRefs: [{ kind: 'validation_attempt', attemptId: POSITIVE_ATTEMPT }],
     counterexampleRefs: [],
+    certifiedPlan: { authoritySectionId: 's1', expectedCheckId: 'test', digest: 'c'.repeat(64) },
+    ...(opts.coversRiskTriggers !== undefined
+      ? { coversRiskTriggers: [...opts.coversRiskTriggers] }
+      : {}),
     verificationState: opts.state ?? 'PROVEN',
+  };
+  return {
+    ...value,
+    certifiedPlan: { ...value.certifiedPlan!, digest: materializedClaimDigest(value)! },
   };
 }
 
@@ -80,13 +185,14 @@ const UUID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0
 
 describe('evaluateProofGraphGate', () => {
   it('does not gate a session without any claims', () => {
-    const decision = evaluateProofGraphGate(summary([]));
+    const decision = gate(summary([]));
     expect(decision).toMatchObject({ gated: false, blockingClaimIds: [] });
   });
 
   it('blocks when a certificate-authorized critical claim is absent from the projection', () => {
-    const decision = evaluateProofGraphGate({
+    const decision = gate({
       authorizedCriticalClaimIds: [UUID(1)],
+      authorizedClaimBindings: authorizedBindings(UUID(1)),
     });
     expect(decision).toMatchObject({
       gated: true,
@@ -96,26 +202,26 @@ describe('evaluateProofGraphGate', () => {
   });
 
   it('blocks a present but invalid plan certificate before evaluating claims', () => {
-    const decision = evaluateProofGraphGate({ certificateValid: false });
+    const decision = gate({ certificateValid: false });
     expect(decision).toMatchObject({ gated: true, kind: 'certificate_invalid' });
   });
 
   it('does not gate when all critical fact claims are PROVEN', () => {
-    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'PROVEN' })]));
+    const decision = gate(summary([claim(UUID(1), { state: 'PROVEN' })]));
     expect(decision).toMatchObject({ gated: false, blockingClaimIds: [] });
     // The reason a reviewer reads must match the verdict, not merely exist.
     expect(decision.reason).toBe('All critical fact claims are PROVEN.');
   });
 
   it('gates on a critical fact claim that is not PROVEN', () => {
-    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'UNPROVEN' })]));
+    const decision = gate(summary([claim(UUID(1), { state: 'UNPROVEN' })]));
     expect(decision.gated).toBe(true);
     expect(decision.blockingClaimIds).toEqual([UUID(1)]);
     expect(decision.reason).toBe('1 critical fact claim(s) are not PROVEN.');
   });
 
   it('counts every blocking claim in the reason', () => {
-    const decision = evaluateProofGraphGate(
+    const decision = gate(
       summary([
         claim(UUID(1), { state: 'UNPROVEN' }),
         claim(UUID(2), { state: 'STALE' }),
@@ -127,23 +233,19 @@ describe('evaluateProofGraphGate', () => {
   });
 
   it('gates on a critical fact claim that is CONTRADICTED', () => {
-    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'CONTRADICTED' })]));
+    const decision = gate(summary([claim(UUID(1), { state: 'CONTRADICTED' })]));
     expect(decision.gated).toBe(true);
   });
 
   it('does not gate a non-critical fact claim', () => {
-    const decision = evaluateProofGraphGate(
-      summary([claim(UUID(1), { critical: false, state: 'UNPROVEN' })]),
-    );
+    const decision = gate(summary([claim(UUID(1), { critical: false, state: 'UNPROVEN' })]));
     expect(decision.gated).toBe(false);
   });
 
   it('does not gate a critical fact claim that carries no approval certificate', () => {
     // Self-declared after implementation: no human ever approved this obligation,
     // so it must stay advisory rather than block the approver.
-    const decision = evaluateProofGraphGate(
-      summary([claim(UUID(1), { state: 'UNPROVEN', certified: false })]),
-    );
+    const decision = gate(summary([claim(UUID(1), { state: 'UNPROVEN', certified: false })]));
     expect(decision.gated).toBe(false);
     expect(decision.blockingClaimIds).toEqual([]);
   });
@@ -153,13 +255,13 @@ describe('evaluateProofGraphGate', () => {
       claim(UUID(1), { signalClass: 'derived_signal', state: 'UNPROVEN' }),
       claim(UUID(2), { signalClass: 'hypothesis', state: 'CONTRADICTED' }),
     ];
-    const decision = evaluateProofGraphGate(summary(claims));
+    const decision = gate(summary(claims));
     expect(decision.gated).toBe(false);
     expect(decision.blockingClaimIds).toEqual([]);
   });
 
   it('requires a certified critical fact for a specific risk trigger', () => {
-    const decision = evaluateProofGraphGate({
+    const decision = gate({
       ...summary([]),
       implementationDigest: 'implementation-digest',
       riskAssessment: {
@@ -175,7 +277,7 @@ describe('evaluateProofGraphGate', () => {
   });
 
   it('does not impose a critical fact requirement for ceremony_only', () => {
-    const decision = evaluateProofGraphGate({
+    const decision = gate({
       ...summary([]),
       implementationDigest: 'implementation-digest',
       riskAssessment: {
@@ -184,6 +286,60 @@ describe('evaluateProofGraphGate', () => {
       },
     });
     expect(decision).toMatchObject({ gated: false, kind: 'clear', relevantTriggers: [] });
+  });
+
+  it('blocks a specific trigger that no eligible claim covers', () => {
+    const decision = gate({
+      ...summary([claim(UUID(1))]),
+      implementationDigest: 'implementation-digest',
+      riskAssessment: {
+        implementationDigest: 'implementation-digest',
+        riskTriggers: ['state_integrity'],
+      },
+    });
+    expect(decision).toMatchObject({
+      gated: true,
+      kind: 'risk_trigger_uncovered',
+      uncoveredTriggers: ['state_integrity'],
+    });
+  });
+
+  it('clears when the eligible claim declares the covering relation', () => {
+    const decision = gate({
+      ...summary([claim(UUID(1), { coversRiskTriggers: ['state_integrity'] })]),
+      authorizedCriticalClaimIds: [UUID(1)],
+      authorizedClaimBindings: authorizedBindings(UUID(1)),
+      authorizedRiskTriggerCoverage: new Map([[UUID(1), ['state_integrity']]]),
+      implementationDigest: 'implementation-digest',
+      riskAssessment: {
+        implementationDigest: 'implementation-digest',
+        riskTriggers: ['state_integrity'],
+      },
+    });
+    expect(decision).toMatchObject({
+      gated: false,
+      kind: 'clear',
+      uncoveredTriggers: [],
+    });
+  });
+
+  it('does not trust projection coverage without the certificate-bound relation', () => {
+    const decision = gate({
+      ...summary([claim(UUID(1), { coversRiskTriggers: ['state_integrity'] })]),
+      authorizedCriticalClaimIds: [UUID(1)],
+      authorizedClaimBindings: authorizedBindings(UUID(1)),
+      authorizedRiskTriggerCoverage: new Map([[UUID(1), []]]),
+      implementationDigest: 'implementation-digest',
+      riskAssessment: {
+        implementationDigest: 'implementation-digest',
+        riskTriggers: ['state_integrity'],
+      },
+    });
+    expect(decision).toMatchObject({
+      gated: true,
+      kind: 'risk_trigger_uncovered',
+      uncoveredTriggers: ['state_integrity'],
+    });
   });
 
   // The following pin the discriminating conditions of the risk-assessment path.
@@ -207,7 +363,7 @@ describe('evaluateProofGraphGate', () => {
     // riskAssessment present but no implementation digest: the assessment cannot
     // be judged stale against a revision that does not exist, so the gate falls
     // through to the claim-only decision instead of blocking.
-    const decision = evaluateProofGraphGate({
+    const decision = gate({
       ...summary([]),
       riskAssessment: { implementationDigest: 'other', riskTriggers: [] },
     });
@@ -215,12 +371,23 @@ describe('evaluateProofGraphGate', () => {
     expect(decision).toMatchObject({ gated: false, kind: 'clear' });
   });
 
-  it('does not demand another critical fact when an eligible claim already exists', () => {
-    // triggers present AND an eligible claim present: the critical-fact
+  it('treats a missing assessment as stale when an implementation revision exists', () => {
+    const decision = gate({
+      ...summary([]),
+      implementationDigest: 'implementation-digest',
+    });
+    expect(decision).toMatchObject({ gated: true, kind: 'risk_assessment_stale' });
+  });
+
+  it('does not demand another critical fact when an eligible covering claim already exists', () => {
+    // triggers present AND an eligible claim covering them: the critical-fact
     // requirement is already satisfied, so the gate must judge that claim
     // instead of demanding one.
-    const decision = evaluateProofGraphGate({
-      ...summary([claim(UUID(1), { state: 'PROVEN' })]),
+    const decision = gate({
+      ...summary([claim(UUID(1), { state: 'PROVEN', coversRiskTriggers: ['state_integrity'] })]),
+      authorizedCriticalClaimIds: [UUID(1)],
+      authorizedClaimBindings: authorizedBindings(UUID(1)),
+      authorizedRiskTriggerCoverage: new Map([[UUID(1), ['state_integrity']]]),
       implementationDigest: 'implementation-digest',
       riskAssessment: {
         implementationDigest: 'implementation-digest',
@@ -234,22 +401,27 @@ describe('evaluateProofGraphGate', () => {
   it('does not report missing evaluation when every authorized claim is present', () => {
     // The authorized id resolves to an eligible claim, so the
     // evaluation_unavailable path must not trigger.
-    const decision = evaluateProofGraphGate({
+    const decision = gate({
       ...summary([claim(UUID(1), { state: 'PROVEN' })]),
       authorizedCriticalClaimIds: [UUID(1)],
+      authorizedClaimBindings: authorizedBindings(UUID(1)),
     });
     expect(decision.kind).not.toBe('evaluation_unavailable');
     expect(decision).toMatchObject({ gated: false, kind: 'clear', blockingClaimIds: [] });
   });
 
   it('classifies an unproven eligible claim as facts_unproven, not clear', () => {
-    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'UNPROVEN' })]));
+    const decision = gate(summary([claim(UUID(1), { state: 'UNPROVEN' })]));
     expect(decision).toMatchObject({ gated: true, kind: 'facts_unproven' });
   });
 });
 
 describe('evaluateProofGraphGateFromState', () => {
-  function declarations(critical: boolean, claimId: string = UUID(1)): PlanClaimDeclarations {
+  function declarations(
+    critical: boolean,
+    claimId: string = UUID(1),
+    coversRiskTriggers?: readonly SpecificRiskTrigger[],
+  ): PlanClaimDeclarations {
     return {
       flow: 'plan',
       version: 'v2',
@@ -261,6 +433,9 @@ describe('evaluateProofGraphGateFromState', () => {
           authoritySectionId: 's1',
           claimScope: 'specific_behavior',
           expectedCheckId: 'test',
+          ...(coversRiskTriggers !== undefined
+            ? { coversRiskTriggers: [...coversRiskTriggers] }
+            : {}),
         },
       ],
     };
@@ -269,14 +444,12 @@ describe('evaluateProofGraphGateFromState', () => {
   const PLAN_CURRENT = makePlanRevision({ body: 'x', createdAt: NOW });
 
   function certificate(decls: PlanClaimDeclarations): PlanApprovalCertificate {
-    return {
-      flow: 'plan',
+    const state = makeState('EVIDENCE_REVIEW', {
+      plan: planRecord(decls),
+    });
+    return makePlanApprovalCertificate(state, {
       authorityDigest: PLAN_CURRENT.digest,
       claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
-      decisionAttestationDigest: 'd',
-      approvedAt: NOW,
-      approvedBy: 'reviewer',
-      certificateId: '00000000-0000-4000-8000-0000000000ce',
       planVersion: PLAN_CURRENT.planVersion,
       planRecordDigest: PLAN_CURRENT.recordDigest,
       reviewBinding: {
@@ -285,7 +458,7 @@ describe('evaluateProofGraphGateFromState', () => {
         reviewEvidenceDigest: 'review-evidence-digest',
         reviewedSubjectDigest: PLAN_CURRENT.digest,
       },
-    };
+    });
   }
 
   function planRecord(decls: PlanClaimDeclarations, cert?: PlanApprovalCertificate): PlanRecord {
@@ -299,12 +472,58 @@ describe('evaluateProofGraphGateFromState', () => {
     };
   }
 
+  /**
+   * Projection claim bound to the certificate produced by `certificate(decls)`.
+   * `certificateId` is overridable to model a claim evaluated under a
+   * different (stale) certificate.
+   */
+  function certifiedClaim(
+    decls: PlanClaimDeclarations,
+    claimId: string = UUID(1),
+    overrides: Partial<ProofClaim> = {},
+    certificateId = certificate(decls).certificateId,
+  ): ProofClaim {
+    const declaration = decls.claims.find((d) => d.claimId === claimId)!;
+    return {
+      claimId,
+      statement: 'x',
+      signalClass: 'fact',
+      critical: true,
+      claimScope: declaration.claimScope,
+      requiredEvidence: requiredEvidenceForDeclaration(declaration),
+      coversRiskTriggers: declaration.coversRiskTriggers,
+      certifiedPlan: {
+        authoritySectionId: declaration.authoritySectionId,
+        expectedCheckId: declaration.expectedCheckId,
+        digest: certifiedClaimDigest(declaration),
+      },
+      provenance: {
+        kind: 'canonical_authority',
+        authorityId: 'plan',
+        digest: PLAN_CURRENT.digest,
+        approval: {
+          certificateId,
+          claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
+          decisionAttestationDigest: certificate(decls).decisionAttestationDigest,
+          declarationId: claimId,
+        },
+      },
+      evidenceRefs: [{ kind: 'validation_attempt', attemptId: POSITIVE_ATTEMPT }],
+      counterexampleRefs: [],
+      verificationState: 'PROVEN',
+      ...overrides,
+    };
+  }
+
   function projection(claims: ProofClaim[]): ProofGraphProjection {
     return { version: 'proofgraph.v2', claims, evaluatedAt: NOW };
   }
 
   function stateWith(overrides: Partial<SessionState>): SessionState {
-    return makeState('EVIDENCE_REVIEW', overrides);
+    return makeState('EVIDENCE_REVIEW', {
+      validationAttempts: [positiveAttempt(overrides.implementation?.digest)],
+      ...overrides,
+    });
   }
 
   it('is clear for a session without plan, claims, or risk assessment', () => {
@@ -341,10 +560,12 @@ describe('evaluateProofGraphGateFromState', () => {
 
   it('reports facts_unproven when an authorized critical claim is not PROVEN', () => {
     const decls = declarations(true);
+    const claims = [certifiedClaim(decls, UUID(1), { verificationState: 'UNPROVEN' })];
     const decision = evaluateProofGraphGateFromState(
       stateWith({
         plan: planRecord(decls, certificate(decls)),
-        proofGraph: projection([claim(UUID(1), { state: 'UNPROVEN' })]),
+        proofGraph: projection(claims),
+        proofContract: declaredSource(claims),
       }),
     );
     expect(decision).toMatchObject({
@@ -356,10 +577,12 @@ describe('evaluateProofGraphGateFromState', () => {
 
   it('is clear when the authorized critical claim is PROVEN', () => {
     const decls = declarations(true);
+    const claims = [certifiedClaim(decls, UUID(1))];
     const decision = evaluateProofGraphGateFromState(
       stateWith({
         plan: planRecord(decls, certificate(decls)),
-        proofGraph: projection([claim(UUID(1), { state: 'PROVEN' })]),
+        proofGraph: projection(claims),
+        proofContract: declaredSource(claims),
       }),
     );
     expect(decision).toMatchObject({ gated: false, kind: 'clear', blockingClaimIds: [] });
@@ -367,10 +590,12 @@ describe('evaluateProofGraphGateFromState', () => {
 
   it('reports a stale risk assessment against the current implementation digest', () => {
     const decls = declarations(true);
+    const claims = [certifiedClaim(decls, UUID(1))];
     const decision = evaluateProofGraphGateFromState(
       stateWith({
         plan: planRecord(decls, certificate(decls)),
-        proofGraph: projection([claim(UUID(1), { state: 'PROVEN' })]),
+        proofGraph: projection(claims),
+        proofContract: declaredSource(claims),
         implementation: { digest: 'impl-digest' } as SessionState['implementation'],
         implementationRiskAssessment: {
           computedMinimumTaskClass: 'STANDARD',
@@ -387,5 +612,235 @@ describe('evaluateProofGraphGateFromState', () => {
       }),
     );
     expect(decision).toMatchObject({ gated: true, kind: 'risk_assessment_stale' });
+  });
+
+  it('reports a missing risk assessment as stale when an implementation revision exists', () => {
+    const decls = declarations(true);
+    const claims = [certifiedClaim(decls, UUID(1))];
+    const decision = evaluateProofGraphGateFromState(
+      stateWith({
+        plan: planRecord(decls, certificate(decls)),
+        proofGraph: projection(claims),
+        proofContract: declaredSource(claims),
+        implementation: { digest: 'impl-digest' } as SessionState['implementation'],
+      }),
+    );
+    expect(decision).toMatchObject({ gated: true, kind: 'risk_assessment_stale' });
+  });
+
+  it('clears when the projection coverage matches the approved declaration', () => {
+    const decls = declarations(true, UUID(1), ['state_integrity']);
+    const claims = [certifiedClaim(decls, UUID(1), { coversRiskTriggers: ['state_integrity'] })];
+    const decision = evaluateProofGraphGateFromState(
+      stateWith({
+        plan: planRecord(decls, certificate(decls)),
+        proofGraph: projection(claims),
+        proofContract: declaredSource(claims),
+        implementation: { digest: 'impl-digest' } as SessionState['implementation'],
+        implementationRiskAssessment: {
+          computedMinimumTaskClass: 'STANDARD',
+          effectiveTaskClass: 'STANDARD',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
+          touchedSurfaces: ['src/'],
+          assessedFrom: 'implementation_changed_files',
+          assessedFileCount: 1,
+          implementationDigest: 'impl-digest',
+          riskTriggers: ['state_integrity'],
+        },
+      }),
+    );
+    expect(decision).toMatchObject({ gated: false, kind: 'clear', uncoveredTriggers: [] });
+  });
+
+  it('blocks a projection that widens the approved trigger coverage', () => {
+    // The projection is re-bound to certificate provenance but its coverage no
+    // longer matches the certified declaration; the certified digest detects it.
+    const decls = declarations(true, UUID(1), ['state_integrity']);
+    const claims = [
+      certifiedClaim(decls, UUID(1), {
+        coversRiskTriggers: ['state_integrity', 'audit_authority'],
+      }),
+    ];
+    const decision = evaluateProofGraphGateFromState(
+      stateWith({
+        plan: planRecord(decls, certificate(decls)),
+        proofGraph: projection(claims),
+        proofContract: declaredSource(claims),
+        implementation: { digest: 'impl-digest' } as SessionState['implementation'],
+        implementationRiskAssessment: {
+          computedMinimumTaskClass: 'STANDARD',
+          effectiveTaskClass: 'STANDARD',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
+          touchedSurfaces: ['src/'],
+          assessedFrom: 'implementation_changed_files',
+          assessedFileCount: 1,
+          implementationDigest: 'impl-digest',
+          riskTriggers: ['state_integrity', 'audit_authority'],
+        },
+      }),
+    );
+    expect(decision).toMatchObject({
+      gated: true,
+      kind: 'certified_claim_mismatch',
+      uncoveredTriggers: [],
+    });
+  });
+
+  it.each([
+    [
+      'drops the certified adversarial requirement',
+      { requiredEvidence: { positive: ['executed_test' as const], adversarial: [] } },
+      'certified_claim_mismatch',
+    ],
+    [
+      'narrows the certified claim scope',
+      { claimScope: 'suite' as const },
+      'certified_claim_mismatch',
+    ],
+    [
+      'rewrites the certified statement',
+      { statement: 'a different, weaker statement' },
+      'certified_claim_mismatch',
+    ],
+    // A non-critical claim is no longer gate-eligible, so the authorized critical
+    // claim counts as missing: still blocking, never a silent pass.
+    ['downgrades the certified criticality', { critical: false }, 'evaluation_unavailable'],
+    [
+      'swaps the certified counterexample requirement',
+      { counterexampleRequirement: { kind: 'aggregate_check' as const, checkId: 'lint' } },
+      'certified_claim_mismatch',
+    ],
+  ])(
+    'BAD: blocks a PROVEN contract claim that %s after certification',
+    (_label, edit: Partial<ProofClaim>, expectedKind) => {
+      const decls = declarations(true);
+      const claims = [certifiedClaim(decls, UUID(1), edit)];
+      const decision = evaluateProofGraphGateFromState(
+        stateWith({
+          plan: planRecord(decls, certificate(decls)),
+          proofGraph: projection(claims),
+          proofContract: declaredSource(claims),
+        }),
+      );
+      expect(decision).toMatchObject({ gated: true, kind: expectedKind });
+    },
+  );
+
+  it('reports evaluation_unavailable when the evaluated claim binds a different certificate', () => {
+    const decls = declarations(true);
+    const claims = [certifiedClaim(decls, UUID(1), {}, '00000000-0000-4000-8000-0000000000ff')];
+    const decision = evaluateProofGraphGateFromState(
+      stateWith({
+        plan: planRecord(decls, certificate(decls)),
+        proofGraph: projection(claims),
+        proofContract: declaredSource(claims),
+      }),
+    );
+    expect(decision).toMatchObject({
+      gated: true,
+      kind: 'evaluation_unavailable',
+      blockingClaimIds: [UUID(1)],
+    });
+  });
+
+  it('blocks a cached PROVEN projection whose referenced attempt has ambiguous assertion evidence', () => {
+    const decls = declarations(true);
+    const claims = [certifiedClaim(decls, UUID(1))];
+    const attemptId = '00000000-0000-4000-8000-0000000000a1';
+    const ambiguous = {
+      status: 'extracted' as const,
+      attemptId,
+      providerId: 'junit' as const,
+      format: 'junit_xml' as const,
+      bindingCapability: 'assertion' as const,
+      reportDigests: ['a'.repeat(64)],
+      assertions: [
+        {
+          assertion: {
+            providerId: 'junit' as const,
+            localId: 'com.example.CounterTest#counterexample',
+          },
+          providerId: 'junit' as const,
+          status: 'passed' as const,
+          testName: 'counterexample',
+        },
+        {
+          assertion: {
+            providerId: 'junit' as const,
+            localId: 'com.example.CounterTest#counterexample',
+          },
+          providerId: 'junit' as const,
+          status: 'failed' as const,
+          testName: 'counterexample',
+          failure: { message: 'injected contradiction' },
+        },
+      ],
+      summary: {
+        assertionCount: 2,
+        passedCount: 1,
+        failedCount: 1,
+        erroredCount: 0,
+        skippedCount: 0,
+        suiteInfrastructureError: false,
+      },
+    };
+    const source = {
+      ...claims[0]!,
+      evidenceRefs: [{ kind: 'validation_attempt' as const, attemptId }],
+    };
+    const decision = evaluateProofGraphGateFromState(
+      stateWith({
+        plan: planRecord(decls, certificate(decls)),
+        proofGraph: projection([{ ...claims[0]!, evidenceRefs: source.evidenceRefs }]),
+        proofContract: declaredSource([source]),
+        implementation: { digest: 'impl-digest' } as SessionState['implementation'],
+        validationAttempts: [
+          {
+            attemptId,
+            scope: 'implementation',
+            implementationId: '00000000-0000-4000-8000-0000000000b1',
+            implementationDigest: 'impl-digest',
+            executionObservation: {
+              preCommitStateDigest: 'pre',
+              executionObservedStateDigest: 'pre',
+            },
+            result: {
+              checkId: 'test',
+              kind: 'test',
+              command: 'npm test',
+              passed: true,
+              exitCode: 0,
+              detail: 'process exited 0',
+              executedAt: NOW,
+              executionMs: 1,
+              outputDigest: 'b'.repeat(64),
+              timedOut: false,
+              outcome: 'supported',
+              assertionExtraction: ambiguous,
+            },
+          },
+        ] as SessionState['validationAttempts'],
+        implementationRiskAssessment: {
+          computedMinimumTaskClass: 'STANDARD',
+          effectiveTaskClass: 'STANDARD',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
+          touchedSurfaces: ['src/'],
+          assessedFrom: 'implementation_changed_files',
+          assessedFileCount: 1,
+          implementationDigest: 'impl-digest',
+          riskTriggers: [],
+        },
+      }),
+    );
+    expect(decision).toMatchObject({ gated: true, kind: 'facts_unproven' });
+    expect(decision.blockingClaims[0]?.registryCode).toBe(
+      'PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS',
+    );
   });
 });

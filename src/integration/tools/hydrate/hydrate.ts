@@ -3,20 +3,32 @@
 import { z } from 'zod';
 
 import { resolveActor, ActorClaimError } from '../../../adapters/actor.js';
-import { readState, PersistenceError } from '../../../adapters/persistence.js';
+import { PersistenceError } from '../../../adapters/persistence.js';
 import { changedFiles, hashWorktreeFiles } from '../../../adapters/git.js';
 import { computeGitControlPlaneMarker } from '../../git-control-plane.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
+import { resolveSessionAuthority } from '../../../adapters/session-authority.js';
 import { initWorkspace, writeSessionPointer } from '../../../adapters/workspace/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
-import { executeHydrate } from '../../../rails/hydrate.js';
+import { executeHydrate, resolveTerminalHydrate } from '../../../rails/hydrate.js';
+import { TERMINAL } from '../../../machine/topology.js';
 import { REASON_SESSION_LOCK_CONTENDED } from '../../../shared/flowguard-identifiers.js';
 import { PolicyModeSchema } from '../../../state/policy-mode.js';
-import { TaskClass } from '../../../state/task-class.js';
+import { isTaskClass, TaskClass } from '../../../state/task-class.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { getWorktree, withSessionWriteTransaction } from '../helpers.js';
+import { IntegrationInvariantError } from '../../errors.js';
+import { formatRailResult } from '../helpers-rail-presentation.js';
+import {
+  getWorktree,
+  requireWorkspacePaths,
+  resolvePolicyFromState,
+  withSessionWriteTransaction,
+} from '../helpers.js';
+import type { LocatedWorkspacePaths } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import type { ToolContext, ToolDefinition, ToolResult } from '../helpers.js';
+import type { RailResult } from '../../../rails/types.js';
+import type { SessionState } from '../../../state/schema.js';
 import { resolveDiscoveryHydration } from './hydrate-discovery.js';
 import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';
 import { buildHydrateInput, formatHydrateResult, withLockContended } from './hydrate-format.js';
@@ -74,17 +86,111 @@ async function captureBaselineControlPlaneMarker(worktree: string): Promise<stri
 }
 
 /**
+ * Read-only terminal reload response: no persistence, explicitly marked so the
+ * operator can distinguish a reload from a state-mutating hydrate.
+ */
+function formatTerminalReload(result: Extract<RailResult, { kind: 'ok' }>): ToolResult {
+  const rendered = formatRailResult(result);
+  const text = typeof rendered === 'string' ? rendered : rendered.output;
+  const base = JSON.parse(text) as Record<string, unknown>;
+  return JSON.stringify({ ...base, terminalReload: true });
+}
+
+/**
+ * D6 (#1034): terminal hydrate is read-only. A claim that would durably change
+ * claimedTaskClass is denied; an equal or lower claim is a no-op.
+ */
+function handleTerminalHydrate(existing: SessionState, args: HydrateArgs): ToolResult {
+  const claim = isTaskClass(args.claimedTaskClass) ? args.claimedTaskClass : undefined;
+  const terminalResult = resolveTerminalHydrate(existing, claim, resolvePolicyFromState(existing));
+  if (terminalResult === null) {
+    return formatBlocked('TERMINAL_STATE_MUTATION_DENIED', {
+      message: 'Terminal hydrate reload could not be resolved.',
+    });
+  }
+  return terminalResult.kind === 'ok'
+    ? formatTerminalReload(terminalResult)
+    : formatRailResult(terminalResult);
+}
+
+/**
+ * TOCTOU re-validation under the session write lock: re-resolve the canonical
+ * authority and require the locked location to still be the canonical one. An
+ * absent session is a legitimate create path here; a state that appeared while
+ * the lock was being acquired is returned fresh by the authority.
+ *
+ * Deliberately does NOT initialize the workspace: the terminal read-only
+ * shortcut must run before any potentially mutating workspace initialization.
+ */
+async function revalidateAuthorityUnderLock(
+  context: ToolContext,
+  paths: LocatedWorkspacePaths,
+): Promise<{ existing: SessionState | null }> {
+  const fresh = await resolveSessionAuthority({
+    root: getWorktree(context),
+    sessionId: context.sessionID,
+    claimedFingerprint: context.workspaceFingerprint,
+  });
+  if (fresh.status === 'unavailable') {
+    throw new IntegrationInvariantError(fresh.code, fresh.reason);
+  }
+  if (
+    fresh.sessDir !== paths.sessDir ||
+    fresh.fingerprint !== paths.fingerprint ||
+    fresh.worktreeRoot !== paths.worktree
+  ) {
+    throw new IntegrationInvariantError(
+      'SESSION_BINDING_MISMATCH',
+      `Session authority changed while acquiring the write lock (locked "${paths.sessDir}" in "${paths.worktree}", now "${fresh.sessDir}" in "${fresh.worktreeRoot}").`,
+    );
+  }
+  return { existing: fresh.status === 'resolved' ? fresh.state : null };
+}
+
+/**
+ * Initialize the workspace under the lock and require it to agree with the
+ * canonical authority (same fingerprint and session directory).
+ */
+async function initializeWorkspaceUnderLock(
+  context: ToolContext,
+  paths: LocatedWorkspacePaths,
+): Promise<Awaited<ReturnType<typeof initWorkspace>>> {
+  const workspace = await initWorkspace(paths.worktree, context.sessionID);
+  if (workspace.fingerprint !== paths.fingerprint || workspace.sessionDir !== paths.sessDir) {
+    throw new IntegrationInvariantError(
+      'SESSION_BINDING_MISMATCH',
+      `Workspace initialization diverged from the canonical authority (expected "${paths.sessDir}", got "${workspace.sessionDir}").`,
+    );
+  }
+  return workspace;
+}
+
+/**
  * The lock is intentionally held across discovery/git for the duration of the
  * transaction; the 10s acquisition timeout in the lock adapter is the
  * fail-closed compensation (mapped to SESSION_LOCK_CONTENDED by the caller).
  */
 async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<ToolResult> {
-  const worktree = getWorktree(context);
-  const workspace = await initWorkspace(worktree, context.sessionID);
-  const config = await readConfig(worktree);
+  // The pre-lock authority resolution is only the candidate location; the write
+  // lock is taken on its canonical session directory (create-or-update path).
+  // An unavailable authority (non-git root, unreadable/foreign binding, claimed
+  // fingerprint drift) fails closed before any workspace mutation.
+  const paths = await requireWorkspacePaths(context);
+  const { worktree } = paths;
 
-  return withSessionWriteTransaction(workspace.sessionDir, async ({ waited }) => {
-    const existing = await readState(workspace.sessionDir);
+  return withSessionWriteTransaction(paths.sessDir, async ({ waited }) => {
+    const { existing } = await revalidateAuthorityUnderLock(context, paths);
+
+    // D6 (#1034): a terminal session is reloaded strictly read-only BEFORE any
+    // workspace initialization or config read. No state write, no
+    // discovery/artifact/outbox mutation, no audit event — and a claim that
+    // would durably change claimedTaskClass is denied.
+    if (existing !== null && TERMINAL.has(existing.phase)) {
+      return withLockContended(handleTerminalHydrate(existing, args), waited);
+    }
+
+    const workspace = await initializeWorkspaceUnderLock(context, paths);
+    const config = await readConfig(worktree);
     // Pre-implementation baseline (#baseline): for a NEW session, snapshot the
     // files already dirty in the worktree BEFORE any editing, so flowguard_implement
     // can scope evidence to the task's own changes. Fail-soft: if git is
@@ -179,10 +285,11 @@ async function executeHydrateTool(args: HydrateArgs, context: ToolContext): Prom
 
 export const hydrate: ToolDefinition = {
   description:
-    'Bootstrap or reload the FlowGuard session. Creates a new session if none exists, ' +
-    'or returns the existing session unchanged except explicit claimedTaskClass escalation. ' +
-    'Optionally configure policy mode (solo/team/regulated) and profile. ' +
-    'This MUST be the first FlowGuard tool call in any workflow.',
+    'Prepare canonical FlowGuard workflow state when no session exists, or reload the existing bound session. ' +
+    'Existing sessions are retained except explicit claimedTaskClass escalation; terminal reload is read-only. ' +
+    'Preparation supports policy mode (solo/team/team-ci/regulated) and profile configuration. ' +
+    'The host integration owns any separate activation and admission requirements. ' +
+    'Missing or damaged existing authority must not be recreated.',
   args: {
     policyMode: PolicyModeSchema.optional().describe(
       'FlowGuard policy mode. When omitted, reads from repo config ' +

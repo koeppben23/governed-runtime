@@ -4,16 +4,16 @@
  *
  * Host-Observed Independent Review for /implement
  *
- * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
- * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. The HOST captures the reviewer's structured findings into
+ * Architecture: FlowGuard does NOT call subagents. The host primary agent
+ * orchestrates independent review by calling the native flowguard-reviewer
+ * subagent. The HOST captures the reviewer's structured findings into
  * the review assurance evidence; the agent never resubmits findings.
  *
  * Flow:
  * 1. Primary agent performs implementation work
  * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
  * 3. FlowGuard returns next-action instructing subagent invocation
- * 4. Primary agent calls flowguard-reviewer subagent via Task tool
+ * 4. Primary agent calls the native flowguard-reviewer subagent
  * 5. Host captures the reviewer's structured findings into invocation evidence
  * 6. Primary agent submits the review verdict ONLY (Mode B)
  * 7. FlowGuard resolves the host-captured findings, validates, and persists them
@@ -31,13 +31,13 @@
  *
  * Multi-call pattern driven by the LLM:
  *
- * Step 1: LLM makes code changes using OpenCode built-in tools (read, write, bash)
+ * Step 1: LLM makes code changes using host built-in tools (read, write, shell)
  * Step 2: LLM calls flowguard_implement({})
  *   -> Tool auto-detects changed files via git, records ImplEvidence
  *   -> Auto-advances to IMPL_REVIEW
  *   -> Returns "review needed" with policy-conditional next-action
  *
- * Step 3: LLM calls flowguard-reviewer subagent via Task tool
+ * Step 3: LLM calls flowguard-reviewer subagent via reviewer subagent
  * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept" })
  *   -> Tool resolves the host-captured findings and records the review iteration
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
@@ -55,16 +55,12 @@ import {
   logStructuredResolutionDiagnostics,
   type ReviewValidationFailure,
 } from '../../review/validation/review-validation-failure.js';
-import {
-  formatAutoAdvanceOverflow,
-  enrichWithWorkflowDirective,
-  writeStateWithArtifacts,
-} from '../helpers.js';
-import { toPresentationFindingRelation } from '../helpers-rail-presentation.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
+import { formatAutoAdvanceBlocked } from '../../../rails/auto-advance-overflow.js';
 import {
   addLatestImplementationReview,
   appendImplReviewState,
-  findPendingImplObligation,
+  findOpenImplObligation,
   requireImplementationDigest,
   resolveImplementationFindings,
   validateEffectiveFindings,
@@ -73,25 +69,33 @@ import {
 
 // State & Machine
 import type { SessionState } from '../../../state/schema.js';
-import { evaluate, evaluateWithEvent } from '../../../machine/evaluate.js';
+import { evaluateWithEvent } from '../../../machine/evaluate.js';
 import { implValidationPassed } from '../../../machine/guards.js';
-import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
+import {
+  requiresGovernanceOverride,
+  resolveWorkflowDirective,
+} from '../../../machine/workflow-directive.js';
 
 // Rail helpers
-import { applyTransition, autoAdvance } from '../../../rails/types.js';
+import { applyEvidenceApprovalTransition, applyTransition } from '../../../rails/types.js';
+import { unboundMutationEpisodeCount } from '../../../rails/review-decision-gates.js';
+import type { TransitionRecord } from '../../../rails/types.js';
 
 // Adapters
 import { readConfig } from '../../../adapters/persistence-config.js';
 
 // Presentation
-import { buildEvidenceReviewCard, PHASE_LABELS } from '../../../presentation/index.js';
-import type { EvidenceReviewCardInput } from '../../../presentation/evidence-review-card.js';
+import { formatApprovedReviewOutcome, withPersistedPhase } from './implement-review-response.js';
 
 // Evidence types
 import type { LoopVerdict, ReviewFindings } from '../../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import {
+  flowguardReportArtifacts,
+  reattestImplementationSubject,
+} from '../../../verification/implementation-subject.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import {
   activateImplementationReviewObligation,
@@ -210,6 +214,33 @@ async function handleChangesRequestedReview(input: {
   return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
+/**
+ * Bind an automatic full-review approval to the live governed subject. An
+ * unchanged session state does not prove the worktree bytes still match the
+ * reviewed implementation, so the acceptance is refused before the protected
+ * approval edge when the re-attestation fails.
+ */
+async function attestApprovedReviewSubject(
+  runtime: ImplementRuntime,
+  reviewedState: SessionState,
+): Promise<string | null> {
+  const implementation = reviewedState.implementation;
+  if (!implementation) return null;
+  const result = await reattestImplementationSubject({
+    worktree: runtime.worktree,
+    frozenFiles: implementation.changedFiles,
+    expectedDigest: implementation.digest,
+    baseline: reviewedState.implementationBaseline,
+    digest: runtime.ctx.digest,
+    ignoredArtifacts: flowguardReportArtifacts(reviewedState),
+  });
+  if (result.kind === 'ok') return null;
+  return formatBlocked('IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH', {
+    reviewedDigest: result.expected,
+    currentDigest: result.actual,
+  });
+}
+
 async function handleApprovedReview(input: {
   runtime: ImplementRuntime;
   reviewedState: SessionState;
@@ -219,72 +250,80 @@ async function handleApprovedReview(input: {
 }): Promise<string> {
   // Resolve presentation dependencies before any state mutation.
   // If config I/O fails, no EVIDENCE_REVIEW state has been persisted.
-  const glyphProfile = (await readConfig(input.runtime.worktree)).presentation.opencode
-    .glyphProfile;
+  const glyphProfile = (await readConfig(input.runtime.worktree)).presentation.glyphProfile;
 
-  const advanced = autoAdvance(
-    input.reviewedState,
-    (s) => evaluate(s, input.runtime.policy),
-    input.runtime.ctx,
-  );
-  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
-  if (advanced.kind === 'overflow') {
-    return formatAutoAdvanceOverflow(advanced);
+  // 1. Persist the legitimate review progress at the evidence gate FIRST: the
+  // reviewer acceptance is durable and the persisted phase is truthful, even
+  // when the protected approval is subsequently denied.
+  const at = input.runtime.ctx.now();
+  const gateState: SessionState =
+    input.reviewedState.phase === 'EVIDENCE_REVIEW'
+      ? input.reviewedState
+      : applyTransition(
+          input.reviewedState,
+          input.reviewedState.phase,
+          'EVIDENCE_REVIEW',
+          'REVIEW_MET',
+          at,
+        );
+  const gateTransitions: TransitionRecord[] =
+    input.reviewedState.phase === 'EVIDENCE_REVIEW'
+      ? []
+      : [{ from: input.reviewedState.phase, to: 'EVIDENCE_REVIEW', event: 'REVIEW_MET', at }];
+  await writeStateWithArtifacts(input.runtime.sessDir, gateState);
+
+  // 2. The automatic path respects the same mutation-episode fence as the
+  // explicit approval: an outstanding or unbound host mutation blocks the
+  // approval even when the current worktree bytes happen to match.
+  const unboundMutations = unboundMutationEpisodeCount(gateState);
+  if (unboundMutations > 0) {
+    const unknown = gateState.mutationEpisodes.filter(
+      (episode) =>
+        episode.status === 'completed' &&
+        episode.outcome === 'unknown' &&
+        episode.implementationDigest === null &&
+        !gateState.mutationEpisodeResolutions.some(
+          (resolution) => resolution.hostCallId === episode.hostCallId,
+        ),
+    );
+    const recoveryAction =
+      unknown.length === 0
+        ? 'Known outcomes can be bound by /request-changes followed by /implement.'
+        : `Unknown mutation outcomes: ${unknown.map((episode) => episode.hostCallId).join(', ')}. Restart the exact host, then call flowguard_reconcile_mutation_episode({ hostCallId }) for each before /request-changes and /implement.`;
+    return formatBlocked(
+      'MUTATION_EPISODE_BINDING_REQUIRED',
+      { count: String(unboundMutations) },
+      { phase: gateState.phase, recoveryAction },
+    );
   }
-  const { state: finalState, transitions } = advanced;
-  await writeStateWithArtifacts(input.runtime.sessDir, finalState);
 
-  const response: Record<string, unknown> = {
-    phase: finalState.phase,
-    implReviewIteration: input.iteration,
-    _audit: { transitions },
-  };
-  addLatestImplementationReview(response, input.reviewFindings);
+  // 3. Bind the approval to the live governed subject.
+  const worktreeBlock = await attestApprovedReviewSubject(input.runtime, gateState);
+  if (worktreeBlock) return withPersistedPhase(worktreeBlock, gateState.phase);
 
-  response.proofSummary = input.proofSummary;
-  const statusLine =
-    input.runtime.args.reviewVerdict === 'accept'
-      ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
-      : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplementationReviewIterations}). Force-converged.`;
-  const directive = resolveWorkflowDirective(finalState);
-  const latestFindings = input.reviewFindings.at(-1);
-  const cardInput: EvidenceReviewCardInput = {
-    phaseLabel: PHASE_LABELS[finalState.phase],
-    directive,
-    proofSummary: input.proofSummary,
-    statusLine,
-    forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
-    ...(latestFindings
-      ? {
-          blockingIssues: latestFindings.blockingIssues.map((finding) => ({
-            severity: finding.severity,
-            category: finding.category,
-            message: finding.message,
-            relation: toPresentationFindingRelation(finding.relation),
-            ...(finding.findingId !== undefined ? { findingId: finding.findingId } : {}),
-          })),
-          majorRisks: latestFindings.majorRisks.map((finding) => ({
-            severity: finding.severity,
-            category: finding.category,
-            message: finding.message,
-            relation: toPresentationFindingRelation(finding.relation),
-          })),
-          missingVerification: [...latestFindings.missingVerification],
-          scopeCreep: [...latestFindings.scopeCreep],
-          unknowns: [...latestFindings.unknowns],
-        }
-      : {}),
-  };
-  response.presentation = {
-    markdown: buildEvidenceReviewCard(cardInput, { glyphProfile }),
-  };
-
-  if (input.runtime.args.reviewVerdict === 'accept') {
-    response.status = `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`;
-  } else {
-    response.status = `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplementationReviewIterations}). Force-converged.`;
+  // 4. Automatic approval only under a policy that permits it; otherwise the
+  // machine stops at the human gate.
+  let finalState = gateState;
+  let transitions: readonly TransitionRecord[] = gateTransitions;
+  if (input.runtime.policy.requireHumanGates === false && !requiresGovernanceOverride(gateState)) {
+    const approvalAt = input.runtime.ctx.now();
+    const application = applyEvidenceApprovalTransition(gateState, approvalAt);
+    if (application.kind === 'blocked') {
+      return formatAutoAdvanceBlocked({
+        kind: 'blocked',
+        phase: gateState.phase,
+        block: application.block,
+      });
+    }
+    finalState = application.state;
+    transitions = [
+      ...gateTransitions,
+      { from: 'EVIDENCE_REVIEW', to: 'EXPORT_READY', event: 'APPROVE', at: approvalAt },
+    ];
+    await writeStateWithArtifacts(input.runtime.sessDir, finalState, application.admission);
   }
-  return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
+
+  return formatApprovedReviewOutcome(input, finalState, transitions, glyphProfile);
 }
 
 function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null {
@@ -302,7 +341,7 @@ async function handleUnableToReviewSubmission(input: {
   iteration: number;
   planVersion: number;
   submittedVerdict: LoopVerdict;
-  pendingObligation: ReturnType<typeof findPendingImplObligation>;
+  pendingObligation: ReturnType<typeof findOpenImplObligation>;
   resolved: ResolvedStructuredFindings;
 }): Promise<string> {
   const { runtime, iteration, planVersion, submittedVerdict, pendingObligation, resolved } = input;
@@ -387,7 +426,7 @@ function buildRearmedImplementationReviewResponse(
 async function handleIncoherentCaptureRetry(input: {
   runtime: ImplementRuntime;
   failure: ReviewValidationFailure;
-  pendingObligation: ReturnType<typeof findPendingImplObligation>;
+  pendingObligation: ReturnType<typeof findOpenImplObligation>;
 }): Promise<string | null> {
   const retry = await attemptIncoherentCaptureRetry({
     failure: input.failure,

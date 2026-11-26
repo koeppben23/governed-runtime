@@ -12,6 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { sep } from 'node:path';
 import { hashText } from '../shared/hashing.js';
+import { reportMatchesExecutionWindow } from './report-isolation.js';
 
 import type { ExecutionEvidence } from './executor.js';
 import type {
@@ -88,7 +89,7 @@ export async function collectAssertionReports(
         spec.format,
         spec.providerId,
         prepared.attemptId,
-        cwd,
+        { cwd, execution },
       );
     case 'snapshot_diff':
       return collectSnapshotDiff({
@@ -111,8 +112,9 @@ async function collectRunSpecific(
   format: ReportFormatId,
   providerId: ProviderId,
   attemptId: string,
-  cwd: string,
+  context: { readonly cwd: string; readonly execution: ExecutionEvidence },
 ): Promise<ReportCollectionResult> {
+  const { cwd, execution } = context;
   const paths = await globFiles(cwd, pattern);
   paths.sort();
 
@@ -136,6 +138,22 @@ async function collectRunSpecific(
   const reports: Array<{ path: string; content: string; digest: string }> = [];
   for (const relPath of paths) {
     const fullPath = resolve(cwd, relPath);
+    if (
+      !(await reportMatchesExecutionWindow(
+        cwd,
+        relPath,
+        attemptId,
+        execution.startedAt,
+        execution.executionMs,
+      ))
+    ) {
+      return {
+        status: 'blocked',
+        attemptId,
+        reasonCode: 'path_rejected',
+        reason: 'Report is not isolated to this attempt/execution window.',
+      };
+    }
     if (!isWithinCwd(fullPath, cwd)) {
       return {
         status: 'blocked',

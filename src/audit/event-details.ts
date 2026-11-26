@@ -101,6 +101,8 @@ export interface DecisionDetail {
   fromPhase: Phase;
   toPhase: Phase;
   transitionEvent: Event;
+  /** Exact time of the approval transition this receipt attests. */
+  transitionAt: string;
   policyMode: string;
 }
 

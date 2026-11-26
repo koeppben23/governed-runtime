@@ -20,6 +20,10 @@
  * owner-authorized read; set `CONTROL_PLANE_TOKEN` to a read-only token with
  * `Administration: read`.
  *
+ * Exit codes: 0 = verified, 1 = drift/configuration failure, 2 = authentication
+ * failure. Exit 2 is intentionally distinct so automation does not report an
+ * expired or under-scoped token as control-plane drift.
+ *
  * Usage:
  *   node scripts/control-plane-drift.js [--mode strict|partial] [--verbose] [--repo owner/name]
  */
@@ -288,6 +292,20 @@ export function evaluateControlPlane(live, contract = CONTROL_PLANE_CONTRACT, op
   return { failures, warnings, unverified };
 }
 
+export class ControlPlaneApiError extends Error {
+  constructor(path, status, statusText) {
+    super(`GitHub API ${path} failed with ${status} ${statusText}`);
+    this.name = 'ControlPlaneApiError';
+    this.code = 'CONTROL_PLANE_API_FAILED';
+    this.path = path;
+    this.status = status;
+  }
+
+  get authFailure() {
+    return this.status === 401 || this.status === 403;
+  }
+}
+
 async function githubJson(fetchImpl, path, token) {
   const headers = {
     accept: 'application/vnd.github+json',
@@ -297,7 +315,7 @@ async function githubJson(fetchImpl, path, token) {
   if (token) headers.authorization = `Bearer ${token}`;
   const response = await fetchImpl(`https://api.github.com${path}`, { headers });
   if (!response.ok) {
-    throw new Error(`GitHub API ${path} failed with ${response.status} ${response.statusText}`);
+    throw new ControlPlaneApiError(path, response.status, response.statusText);
   }
   return response.json();
 }
@@ -354,9 +372,15 @@ async function main() {
   try {
     live = await fetchLiveControlPlane({ repo, token });
   } catch (error) {
-    console.error(
-      `control-plane-drift failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof ControlPlaneApiError && error.authFailure) {
+      console.error(`control-plane-drift AUTH_FAILED: ${message}`);
+      console.error(
+        'control-plane-drift: rotate CONTROL_PLANE_READ_TOKEN with Administration: read; this is not control-plane drift.',
+      );
+      process.exit(2);
+    }
+    console.error(`control-plane-drift failed: ${message}`);
     process.exit(1);
   }
 

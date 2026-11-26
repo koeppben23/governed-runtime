@@ -5,25 +5,23 @@
  * Returns phase, evidence summary, policy info, completeness matrix,
  * and next action. Does NOT mutate state.
  *
- * Supports focused projections via optional boolean flags:
- * whyBlocked, evidence, context, readiness, reviewFeedback.
+ * Supports focused projections via optional boolean flags (first match wins,
+ * see {@link statusProjectionKind}): finish, whyBlocked, evidence, context,
+ * readiness, reviewFeedback, proofGraph. Focused projections never run the
+ * runtime toolchain probes; only the full status does.
  *
- * @version v2 (extracted projection dispatch and full status builder)
+ * @version v3 (single projection-kind authority; probes only for full status)
  */
 
 import { z } from 'zod';
 
 import type { ToolDefinition } from '../helpers.js';
-import { formatError } from '../error-format.js';
+import { formatError, formatSessionUnavailable } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
-import {
-  resolveWorkspacePaths,
-  withReadOnlySession,
-  enrichWithWorkflowDirective,
-} from '../helpers.js';
+import { withReadOnlySession, enrichWithWorkflowDirective } from '../helpers.js';
 
 import type { SessionState } from '../../../state/schema.js';
-import { authorizedCriticalPlanClaimIds } from '../../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../../state/proofgraph-approval-context.js';
 import { resolveRuntimeWithProfileIds } from './status-provider-projection.js';
 import type { FlowGuardPolicy } from '../../../config/policy.js';
 import { readReport } from '../../../adapters/persistence.js';
@@ -55,7 +53,7 @@ import {
 import { bindMutationEvidence } from '../../../audit/proofgraph/mutation-binder.js';
 import { checkRegistrationConsistency } from '../../proofgraph/registration-consistency.js';
 import { checkConfigDefaultConsistency } from '../../proofgraph/config-default-consistency.js';
-import { evaluateProofGraphGate, planClaimAuthorityOf } from '../../../audit/proofgraph/gate.js';
+import { evaluateProofGraphGate } from '../../../audit/proofgraph/gate.js';
 import { buildProofApprovalProjection } from '../../proofgraph/approval-projection.js';
 import { buildStatusProjection } from '../../status/status.js';
 import {
@@ -64,13 +62,18 @@ import {
   buildContextProjection,
   buildReadinessProjection,
   buildReviewFeedbackProjection,
+  buildPlanClaimAuthorityProjection,
+  statusProjectionKind,
 } from '../../status/status-detail-projections.js';
 import { buildFinishCard } from '../../status/status-finish.js';
 import {
   buildWhyPresentationProjection,
   buildFinishPresentationProjection,
 } from '../../status/status-why-finish.js';
-import { buildDiscoveryDriftStatus } from '../../discovery/discovery-drift-status.js';
+import {
+  buildDiscoveryDriftStatus,
+  notCheckedDiscoveryDriftStatus,
+} from '../../discovery/discovery-drift-status.js';
 import { buildNoSessionDocument } from '../../status/status-presentation.js';
 import { buildWhyDocument } from '../../status/why-presentation.js';
 import { buildFinishDocument } from '../../status/finish-presentation.js';
@@ -92,6 +95,7 @@ interface StatusArgs {
   finish?: boolean;
   proofGraph?: boolean;
   reviewFeedback?: boolean;
+  compact?: boolean;
 }
 
 /**
@@ -147,13 +151,21 @@ async function buildProofGraphProjectionResponse(
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
     mutationSummaries,
   });
-  const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
+  const authorization = authorizedCriticalPlanClaimIds(state);
   const riskAssessment = state.implementationRiskAssessment;
   const proofGraphGate = evaluateProofGraphGate({
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
     projection: proofGraph.projection,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    ...(authorization.kind === 'authorized'
+      ? { authorizedRiskTriggerCoverage: authorization.coverage }
+      : {}),
+    ...(authorization.kind === 'authorized'
+      ? { authorizedClaimBindings: authorization.bindings }
+      : {}),
     certificateValid: authorization.kind === 'authorized',
-    ...(state.implementation ? { implementationDigest: state.implementation.digest } : {}),
+    implementationDigest: state.implementation?.digest,
     ...(riskAssessment !== null ? { riskAssessment } : {}),
     claimDiagnostics: proofGraph.claimDiagnostics,
   });
@@ -221,6 +233,7 @@ function buildReviewFeedbackProjectionResponse(
         phase: state.phase,
         sessionId: state.id,
         reviewFeedback: buildReviewFeedbackProjection(state),
+        planClaimAuthority: buildPlanClaimAuthorityProjection(state),
         ...checkFields,
       },
       state,
@@ -228,82 +241,71 @@ function buildReviewFeedbackProjectionResponse(
   );
 }
 
+function focusedResponse(
+  state: SessionState,
+  projection: Record<string, unknown>,
+  checkFields: Record<string, unknown>,
+): string {
+  return JSON.stringify(
+    enrichWithWorkflowDirective(
+      { phase: state.phase, sessionId: state.id, ...projection, ...checkFields },
+      state,
+    ),
+  );
+}
+
+function buildWhyBlockedProjectionResponse(
+  input: ResolveProjectionInput,
+  checkFields: Record<string, unknown>,
+): string {
+  const { state, policy, presentation } = input;
+  const blocked = buildBlockedProjection(state, policy);
+  const whyPres = buildWhyPresentationProjection(state, policy, blocked);
+  const whyDoc = buildWhyDocument(whyPres);
+  emitDetailRequested(state);
+  return JSON.stringify(
+    enrichWithWorkflowDirective(
+      {
+        phase: state.phase,
+        sessionId: state.id,
+        whyBlocked: blocked,
+        ...checkFields,
+        presentation: { markdown: renderMarkdown(whyDoc, presentation) },
+      },
+      state,
+    ),
+  );
+}
+
 async function resolveProjection(input: ResolveProjectionInput): Promise<string | null> {
-  const { args, state, policy, presentation } = input;
+  const kind = statusProjectionKind(input.args);
+  if (kind === 'full') return null;
+  const { state, policy } = input;
   const checkFields = buildCheckProjectionFields(state, policy);
-  // /finish is the most comprehensive focused projection and is placed first so
-  // its own template call is never shadowed by a stray additional flag. This
-  // preserves the existing first-match dispatch semantics for all other flags.
-  if (args.finish) {
-    return await buildFinishProjectionResponse(input, checkFields);
-  }
-  if (args.whyBlocked) {
-    const blocked = buildBlockedProjection(state, policy);
-    const whyPres = buildWhyPresentationProjection(state, policy, blocked);
-    const whyDoc = buildWhyDocument(whyPres);
-    emitDetailRequested(state);
-    return JSON.stringify(
-      enrichWithWorkflowDirective(
-        {
-          phase: state.phase,
-          sessionId: state.id,
-          whyBlocked: blocked,
-          ...checkFields,
-          presentation: { markdown: renderMarkdown(whyDoc, presentation) },
-        },
+  switch (kind) {
+    case 'finish':
+      return await buildFinishProjectionResponse(input, checkFields);
+    case 'whyBlocked':
+      return buildWhyBlockedProjectionResponse(input, checkFields);
+    case 'evidence':
+      return focusedResponse(
         state,
-      ),
-    );
-  }
-  if (args.evidence) {
-    const evidenceDetail = buildEvidenceDetailProjection(state);
-    return JSON.stringify(
-      enrichWithWorkflowDirective(
-        {
-          phase: state.phase,
-          sessionId: state.id,
-          evidence: evidenceDetail,
-          ...checkFields,
-        },
+        { evidence: buildEvidenceDetailProjection(state) },
+        checkFields,
+      );
+    case 'context':
+      return focusedResponse(state, { context: buildContextProjection(state) }, checkFields);
+    case 'readiness':
+      return focusedResponse(
         state,
-      ),
-    );
+        { readiness: buildReadinessProjection(state, policy) },
+        checkFields,
+      );
+    case 'reviewFeedback':
+      return buildReviewFeedbackProjectionResponse(state, checkFields);
+    case 'proofGraph':
+      return await buildProofGraphProjectionResponse(state, policy, checkFields);
   }
-  if (args.context) {
-    const contextDetail = buildContextProjection(state);
-    return JSON.stringify(
-      enrichWithWorkflowDirective(
-        {
-          phase: state.phase,
-          sessionId: state.id,
-          context: contextDetail,
-          ...checkFields,
-        },
-        state,
-      ),
-    );
-  }
-  if (args.readiness) {
-    const readinessDetail = buildReadinessProjection(state, policy);
-    return JSON.stringify(
-      enrichWithWorkflowDirective(
-        {
-          phase: state.phase,
-          sessionId: state.id,
-          readiness: readinessDetail,
-          ...checkFields,
-        },
-        state,
-      ),
-    );
-  }
-  if (args.reviewFeedback) {
-    return buildReviewFeedbackProjectionResponse(state, checkFields);
-  }
-  if (args.proofGraph) {
-    return await buildProofGraphProjectionResponse(state, policy, checkFields);
-  }
-  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -314,6 +316,8 @@ export const status: ToolDefinition = {
   description:
     'Read the current FlowGuard session state. Returns phase, evidence summary, ' +
     'policy info, completeness matrix, and next action. ' +
+    'allowedCommands reports phase admissibility only; command prerequisites still apply. ' +
+    'Use the directive and blocker for current action or recovery guidance. ' +
     'Does NOT mutate state. Use /status to inspect session state or debug blockers. ' +
     'Use /continue for deterministic next-action routing (tells you which command to run next).',
   args: {
@@ -348,16 +352,27 @@ export const status: ToolDefinition = {
         'Return the advisory ProofGraph summary: per-claim verification states, ' +
           'freshness, and critical gaps. Read-only; never approves or gates.',
       ),
+    compact: z
+      .boolean()
+      .optional()
+      .describe(
+        'Return a low-latency compact projection of canonical state and persisted ' +
+          'evidence, with digest-addressed rules. Fresh repository drift and ' +
+          'toolchain probes are NOT_VERIFIED; call full status for live checks.',
+      ),
   },
   async execute(_args, context) {
     try {
-      const { wsDir } = await resolveWorkspacePaths(context);
+      const session = await withReadOnlySession(context);
+      if (session.authority.status === 'unavailable') {
+        return formatSessionUnavailable(session.authority);
+      }
       const presentation: PresentationRenderOptions = {
-        glyphProfile: (await readConfig(wsDir)).presentation.opencode.glyphProfile,
+        glyphProfile: (await readConfig(session.wsDir ?? (context.worktree || context.directory)))
+          .presentation.glyphProfile,
       };
-      const { state, policy, sessDir } = await withReadOnlySession(context);
 
-      if (!state) {
+      if (!session.state) {
         const noSessionDoc = buildNoSessionDocument();
         return JSON.stringify({
           phase: null,
@@ -377,13 +392,13 @@ export const status: ToolDefinition = {
         });
       }
 
+      const { state, policy, sessDir, wsDir } = session;
       const ev = evaluate(state, policy);
       const completeness = evaluateCompleteness(state);
       const args = _args as StatusArgs;
 
-      // Resolve runtime readiness via toolchain probes — planner for profile IDs
-      const runtimeCandidates = await resolveRuntimeWithProfileIds(state);
-
+      // Focused projections never need runtime readiness: they return before
+      // any toolchain probe runs.
       const projection = await resolveProjection({
         args,
         state,
@@ -393,12 +408,28 @@ export const status: ToolDefinition = {
       });
       if (projection !== null) return projection;
 
-      const { discovery, discoveryHealth } = await loadDiscoveryStatusContext(wsDir);
-      const discoveryDrift = await buildDiscoveryDriftStatus({
-        workspaceDir: wsDir,
-        worktree: state.binding.worktree,
-        fingerprint: state.binding.fingerprint,
-      });
+      // Authority and state are freshly verified above. Compact avoids
+      // external probes; explicitly report NOT_VERIFIED rather than "clean".
+      // Full status runs independent probes and drift discovery concurrently
+      // to keep the live projection off the serial latency path.
+      const compact = args.compact === true;
+      const [runtimeCandidates, discoveryContext, discoveryDrift] = await Promise.all([
+        compact ? Promise.resolve(undefined) : resolveRuntimeWithProfileIds(state),
+        loadDiscoveryStatusContext(wsDir),
+        compact
+          ? Promise.resolve(
+              notCheckedDiscoveryDriftStatus(
+                'Compact status does not assess fresh repository drift. ' +
+                  'Call full flowguard_status or /hydrate to verify current drift.',
+              ),
+            )
+          : buildDiscoveryDriftStatus({
+              workspaceDir: wsDir,
+              worktree: state.binding.worktree,
+              fingerprint: state.binding.fingerprint,
+            }),
+      ]);
+      const { discovery, discoveryHealth } = discoveryContext;
       return buildFullStatusResponse({
         state,
         policy,
@@ -408,7 +439,8 @@ export const status: ToolDefinition = {
         discoveryHealth,
         discoveryDrift,
         presentation,
-        runtimeCandidates,
+        ...(runtimeCandidates === undefined ? {} : { runtimeCandidates }),
+        compact,
       });
     } catch (err) {
       if (err instanceof ActorClaimError) {

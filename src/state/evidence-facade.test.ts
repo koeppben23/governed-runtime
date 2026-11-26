@@ -4,16 +4,56 @@
  * Proves that evidence.ts (the facade) exports exactly the original public API
  * and does NOT leak internal/private implementation details.
  *
- * OpenCodeSessionId and coerceAssurance were private helpers in the original
+ * HostSessionId and coerceAssurance were private helpers in the original
  * evidence.ts (no `export` keyword) and MUST NOT appear in the facade
  * re-exports. The actor-assurance schema lives in its own shared authority
  * (`shared/actor-assurance.ts`) and is likewise not part of this facade.
  *
  * Extracted from evidence-split.test.ts.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, expectTypeOf } from 'vitest';
+import type {
+  CheckId,
+  ReviewVerdict,
+  RevisionDelta,
+  LoopVerdict,
+  ReviewObligationType,
+  ReviewObligationStatus,
+  ReviewInvocationMode,
+  AdrStatus,
+  InputOrigin,
+  ExternalReference,
+  ErrorInfo,
+  TicketEvidence,
+  BindingInfo,
+  ValidationResult,
+  ImplEvidence,
+  ImplReviewResult,
+  PlanEvidence,
+  PlanRecord,
+  SelfReviewLoop,
+  ArchitectureDecision,
+  Finding,
+  ReviewActorInfo,
+  ReviewAttestation,
+  ReviewFindings,
+  ReviewObligation,
+  ReviewInvocationEvidence,
+  ReviewAssuranceState,
+  ReviewDecision,
+  ReviewReport,
+  DecisionIdentity,
+  ActorInfo,
+  ActorVerificationMeta,
+  PolicySnapshot,
+  AuditEvent,
+} from './evidence.js';
+// @ts-expect-error Internal helper must not be importable through the facade.
+import type { HostSessionId } from './evidence.js';
+// @ts-expect-error Internal helper must not be importable through the facade.
+import type { coerceAssurance } from './evidence.js';
 
-const INTERNAL_HELPERS = ['OpenCodeSessionId', 'coerceAssurance'] as const;
+const INTERNAL_HELPERS = ['HostSessionId', 'coerceAssurance'] as const;
 
 const PUBLIC_VALUE_EXPORTS = [
   'CheckId',
@@ -58,42 +98,42 @@ const PUBLIC_VALUE_EXPORTS = [
   'AuditEvent',
 ] as const;
 
-const PUBLIC_TYPE_EXPORTS = [
-  'CheckId',
-  'ReviewVerdict',
-  'RevisionDelta',
-  'LoopVerdict',
-  'ReviewObligationType',
-  'ReviewObligationStatus',
-  'ReviewInvocationMode',
-  'AdrStatus',
-  'InputOrigin',
-  'ExternalReference',
-  'ErrorInfo',
-  'TicketEvidence',
-  'BindingInfo',
-  'ValidationResult',
-  'ImplEvidence',
-  'ImplReviewResult',
-  'PlanEvidence',
-  'PlanRecord',
-  'SelfReviewLoop',
-  'ArchitectureDecision',
-  'Finding',
-  'ReviewActorInfo',
-  'ReviewAttestation',
-  'ReviewFindings',
-  'ReviewObligation',
-  'ReviewInvocationEvidence',
-  'ReviewAssuranceState',
-  'ReviewDecision',
-  'ReviewReport',
-  'DecisionIdentity',
-  'ActorInfo',
-  'ActorVerificationMeta',
-  'PolicySnapshot',
-  'AuditEvent',
-] as const;
+type PublicTypeContract = [
+  CheckId,
+  ReviewVerdict,
+  RevisionDelta,
+  LoopVerdict,
+  ReviewObligationType,
+  ReviewObligationStatus,
+  ReviewInvocationMode,
+  AdrStatus,
+  InputOrigin,
+  ExternalReference,
+  ErrorInfo,
+  TicketEvidence,
+  BindingInfo,
+  ValidationResult,
+  ImplEvidence,
+  ImplReviewResult,
+  PlanEvidence,
+  PlanRecord,
+  SelfReviewLoop,
+  ArchitectureDecision,
+  Finding,
+  ReviewActorInfo,
+  ReviewAttestation,
+  ReviewFindings,
+  ReviewObligation,
+  ReviewInvocationEvidence,
+  ReviewAssuranceState,
+  ReviewDecision,
+  ReviewReport,
+  DecisionIdentity,
+  ActorInfo,
+  ActorVerificationMeta,
+  PolicySnapshot,
+  AuditEvent,
+];
 
 describe('evidence.ts facade export-set regression', () => {
   describe('HAPPY — public API present', () => {
@@ -105,16 +145,14 @@ describe('evidence.ts facade export-set regression', () => {
     });
 
     it('facade type exports match original evidence.ts surface', () => {
-      for (const name of PUBLIC_TYPE_EXPORTS) {
-        expect(typeof name).toBe('string');
-      }
+      expectTypeOf<PublicTypeContract>().toMatchTypeOf<readonly unknown[]>();
     });
   });
 
   describe('BAD — no public API expansion', () => {
-    it('facade does NOT export OpenCodeSessionId', async () => {
+    it('facade does NOT export HostSessionId', async () => {
       const mod = await import('./evidence.js');
-      expect('OpenCodeSessionId' in mod).toBe(false);
+      expect('HostSessionId' in mod).toBe(false);
     });
 
     it('facade does NOT export coerceAssurance', async () => {
@@ -123,15 +161,14 @@ describe('evidence.ts facade export-set regression', () => {
     });
   });
 
-  describe('CORNER — internal module isolation', () => {
-    it('evidence-assurance-internal exports private helpers (internal use only)', () => {
-      for (const name of INTERNAL_HELPERS) {
-        expect(typeof name).toBe('string');
-      }
+  describe('CORNER — compile-time internal module isolation', () => {
+    it('rejects type imports of private helpers through the facade', () => {
+      expectTypeOf<HostSessionId>().toBeAny();
+      expectTypeOf<typeof coerceAssurance>().toBeAny();
     });
   });
 
-  describe('EDGE — evidence-assurance-internal not re-exported by facade', () => {
+  describe('EDGE — host-identity not re-exported by facade', () => {
     it('internal module name does not appear in facade module keys', async () => {
       const mod = await import('./evidence.js');
       for (const name of INTERNAL_HELPERS) {

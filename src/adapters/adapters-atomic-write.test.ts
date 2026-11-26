@@ -67,9 +67,11 @@ import { withTestEnv } from '../integration/test-helpers.js';
 import {
   makeState,
   makeProgressedState,
+  BINDING,
   FIXED_TIME,
   FIXED_UUID,
   FIXED_SESSION_UUID,
+  makePolicySnapshot,
 } from '../fixtures.js';
 import { materializeReviewCardArtifact } from './workspace/evidence-artifacts.js';
 import { hashText } from '../shared/hashing.js';
@@ -335,7 +337,7 @@ describe('persistence', () => {
       expect(tmpFiles).toHaveLength(0);
     });
 
-    it('ARCHIVE: final artifacts are removed when atomic checksum publication fails', async () => {
+    it('ARCHIVE: a failed publication keeps the previously published checksum', async () => {
       const worktree = tmpDir;
       const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-archive-config-'));
       const cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
@@ -351,10 +353,12 @@ describe('persistence', () => {
           'utf8',
         );
         const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-        const state = makeState('COMPLETE');
+        // The configurable archive export binds the repository policy to the
+        // persisted worktree, so the fixture must bind the archived worktree.
+        const state = makeState('COMPLETE', { binding: { ...BINDING, worktree } });
         await writeState(sessDir, {
           ...state,
-          policySnapshot: { ...state.policySnapshot, mode: 'regulated' },
+          policySnapshot: makePolicySnapshot({ ...state.policySnapshot, mode: 'regulated' }),
         });
 
         const archiveDir = path.join(configDir, 'workspaces', fingerprint, 'sessions', 'archive');
@@ -364,13 +368,20 @@ describe('persistence', () => {
 
         vi.mocked(fs.rename).mockRejectedValue(new Error('EXDEV — simulated failure'));
         await expect(
-          archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true }),
+          archiveSession(fingerprint, sessionId, {
+            worktree,
+            redactionMode: 'none',
+            includeRaw: true,
+          }),
         ).rejects.toMatchObject({
           code: 'ARCHIVE_FAILED',
         });
         restoreRename();
 
-        expect(existsSync(checksumPath)).toBe(false);
+        // The previous generation is restored, never destroyed by the failure.
+        expect(existsSync(checksumPath)).toBe(true);
+        await expect(fs.readFile(checksumPath, 'utf-8')).resolves.toContain(sessionId);
+        expect(existsSync(`${checksumPath}.previous`)).toBe(false);
 
         // No orphan .tmp files remain beside the checksum sidecar.
         const entries = await fs.readdir(archiveDir);

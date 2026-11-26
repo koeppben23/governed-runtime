@@ -13,7 +13,10 @@ import {
 } from './enforcement.js';
 import { reviewDispatchRequired } from './dispatch-signal.js';
 import { NOW } from './test-helpers.js';
-import { buildInvocationEvidence } from '../obligations/assurance.js';
+import {
+  buildInvocationFixture as buildInvocationEvidence,
+  messageCaptureFixture,
+} from '../../../review-invocation-test-helpers.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { hashText } from '../../../shared/hashing.js';
 import { makeState } from '../../../fixtures.js';
@@ -41,7 +44,10 @@ function invocation(input: {
     invokedAt: NOW,
     fulfilledAt: NOW,
     attemptId: input.attemptId,
-    capturedRawFindings: { overallVerdict: 'accept' },
+    capturedRawFindings: JSON.parse(
+      messageCaptureFixture({ ...input, childSessionId: input.childSessionId ?? 'child-session-1' })
+        .payloadText,
+    ) as Record<string, unknown>,
   });
 }
 

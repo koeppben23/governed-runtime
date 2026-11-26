@@ -9,6 +9,12 @@
  * unprovable: once the gate is unconditional it would block the final approval
  * forever, with no recovery available to the author.
  *
+ * A `specific_behavior` claim additionally requires at least one claim-carrying
+ * specific evidence binding (assertion counterexample requirement, structural
+ * surface, or mutation profile): execution evidence alone — a passing check —
+ * never proves a specific behavior (Run-9 F4). Already-persisted contracts
+ * without such a binding evaluate as NOT_VERIFIED rather than PROVEN.
+ *
  * The same holds for a check id that is not active, an unknown structural
  * surface, or an unregistered mutation profile: each yields evidence that can
  * never resolve.
@@ -85,9 +91,9 @@ export function classifyProofClaimContract(input: ClaimContractInput): ClaimCont
       violations.find((violation) => violation.failureKind !== 'unsatisfiable') ?? firstViolation;
     const rejected = { claim, index, result };
     if (result.failureKind === 'unsatisfiable' && !claim.critical) {
-      rejectedNonBlocking.push(rejected);
+      rejectedNonBlocking.push({ ...rejected, disposition: 'rejected_non_blocking' });
     } else {
-      rejectedBlocking.push(rejected);
+      rejectedBlocking.push({ ...rejected, disposition: 'rejected_blocking' });
     }
   }
   return { accepted, rejectedNonBlocking, rejectedBlocking, setViolations: [] };

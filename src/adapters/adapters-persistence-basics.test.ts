@@ -328,7 +328,7 @@ describe('persistence', () => {
           changedPathCount: 1,
           objectivesCovered: 3,
           objectivesTotal: 3,
-          reviewAssurance: 'structured_high',
+          reviewAssurance: 'host_message_validated',
           missingVerification: [],
         },
         proofSummary,

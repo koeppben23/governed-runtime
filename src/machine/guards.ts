@@ -18,7 +18,10 @@
 import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
 import { isTechnicalValidationBlock, type ValidationResult } from '../state/evidence-validation.js';
-import { hasOutstandingReviewObligation } from '../state/review-dispatch.js';
+import {
+  hasOutstandingReviewObligation,
+  hasUnresolvedIntegrityIncident,
+} from '../state/review-dispatch.js';
 import {
   resolveEffectiveTaskClass,
   ticketRiskDeclarationFloor,
@@ -26,7 +29,7 @@ import {
   type TicketRiskDeclaration,
 } from '../state/risk-declaration.js';
 import { assessMinimumTaskClass, reducedCeremonyEligible } from '../state/risk-path-classifier.js';
-import { evaluateValidationEvidence } from './validation-evidence.js';
+import { evaluateValidationEvidence, missingValidationChecks } from './validation-evidence.js';
 import { evaluateImplValidationEvidence } from './impl-validation-evidence.js';
 
 function isTechnicalValidationResult(result: ValidationResult): boolean {
@@ -132,7 +135,7 @@ export const selfReviewPending: GuardFn = (s) => s.selfReview !== null && !selfR
  * blocked session lands in EvalPending and the explicit reason is surfaced by the
  * consuming rails/tools — guards stay pure booleans and do not fabricate evidence.
  *
- * Uses Set-based lookup for O(n + m) instead of O(n * m) nested iteration.
+ * Non-empty active checks pass exactly when missingValidationChecks is empty.
  */
 export const allValidationsPassed: GuardFn = (s) => {
   if (s.activeChecks.length === 0) {
@@ -140,11 +143,7 @@ export const allValidationsPassed: GuardFn = (s) => {
     // validation-evidence authority blocks progression without evidence.
     return !evaluateValidationEvidence(s).blocked;
   }
-  const passedIds = new Set<string>();
-  for (const v of s.validation) {
-    if (v.passed) passedIds.add(v.checkId);
-  }
-  return s.activeChecks.every((checkId) => passedIds.has(checkId));
+  return missingValidationChecks(s).length === 0;
 };
 
 /** At least one validation check has an explicit failure (passed: false). */
@@ -288,7 +287,10 @@ function decisionMatchesRiskFacts(
   if (!assessmentMatchesImplementation(s, assessment, decision, implementation)) return false;
   if (!assessmentBindsTicketDeclaration(s, assessment, declaration)) return false;
 
-  const recomputed = assessMinimumTaskClass(implementation.changedFiles);
+  const recomputed = assessMinimumTaskClass(
+    implementation.changedFiles,
+    s.policySnapshot.riskTriggerPaths,
+  );
   if (recomputed.minimumTaskClass !== assessment.computedMinimumTaskClass) return false;
   if (!samePathSet(assessment.touchedSurfaces, recomputed.touchedSurfaces)) return false;
   if (!samePathSet(decision.touchedSurfaces, recomputed.touchedSurfaces)) return false;
@@ -334,7 +336,10 @@ function ceremonyBindingMatches(
   if (decision.implementationDigest !== implementation.digest) return false;
   if (!decisionBindsFrozenPolicy(s, decision)) return false;
   if (!decisionBindsRiskAuthority(s, decision, implementation)) return false;
-  return !hasOutstandingReviewObligation(s.reviewAssurance);
+  return (
+    !hasOutstandingReviewObligation(s.reviewAssurance) &&
+    !hasUnresolvedIntegrityIncident(s.reviewAssurance)
+  );
 }
 
 function ceremonyBasisMatches(

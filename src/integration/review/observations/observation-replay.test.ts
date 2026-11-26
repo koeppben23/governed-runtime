@@ -185,8 +185,10 @@ describe('replayObservationCaptures', () => {
       now: '2026-08-13T10:10:00.000Z',
     });
     expect(result.dropped).toBe(0);
+    expect(result.dropReasons).toEqual({});
     expect(result.observations).toHaveLength(1);
     const obs = result.observations[0]!;
+    expect(obs).toMatchObject({ representation: 'utf8_text', lineCount: 1 });
     expect(obs.observedBySessionId).toBe(CHILD_SESSION);
     expect(obs.attemptId).toBe(attemptId);
     expect(obs.resolvedObjectSha).toBe(headTreeSha);
@@ -207,6 +209,7 @@ describe('replayObservationCaptures', () => {
     });
     expect(result.observations).toEqual([]);
     expect(result.dropped).toBe(1);
+    expect(result.dropReasons).toEqual({ content_digest_mismatch: 1 });
   });
 
   it('BAD: capture citing an unavailable revision drops', async () => {
@@ -238,6 +241,33 @@ describe('replayObservationCaptures', () => {
     });
     expect(result.observations).toEqual([]);
     expect(result.dropped).toBe(1);
+    expect(result.dropReasons).toEqual({ response_digest_mismatch: 1 });
+    expect(result.responseMismatches).toEqual([{ path: 'src/foo.ts', revision: 'head' }]);
+  });
+
+  it('BAD: a capture delivered in the superseded response shape (no lineCount) is never reinterpreted', async () => {
+    const { replayObservationCaptures } = await import('./observation-replay.js');
+    const attemptId = state.reviewAssurance!.attempts[0]!.attemptId;
+    // Obsolete input on purpose: the response bytes an earlier FlowGuard
+    // delivered, without lineCount. Target, bytes and representation still
+    // bind; only the delivered payload differs from the canonical response.
+    const superseded = JSON.stringify({
+      path: 'src/foo.ts',
+      revision: 'head',
+      representation: 'utf8_text',
+      content: 'head-content\n',
+    });
+    await writeCapture({ responseDigest: responseDigestOf(superseded) });
+    const result = await replayObservationCaptures({
+      state,
+      worktree: repo,
+      attemptId,
+      childSessionId: CHILD_SESSION,
+      now: '2026-08-13T10:13:30.000Z',
+    });
+    expect(result.observations).toEqual([]);
+    expect(result.dropReasons).toEqual({ response_digest_mismatch: 1 });
+    expect(result.responseMismatches).toEqual([{ path: 'src/foo.ts', revision: 'head' }]);
   });
 
   it('CORNER: attempt without capability mints nothing', async () => {
@@ -275,5 +305,166 @@ describe('replayObservationCaptures', () => {
     const { replayObservationCaptures } = await import('./observation-replay.js');
     const bytes = Buffer.from([0x00, 0xff, 0x80, 0x01]);
     expect(classifyRepresentation(bytes)).toBe('binary');
+  });
+});
+
+describe('replayAndPersistObservations - superseded captures', () => {
+  it.each(['stale', 'foreign_child', 'closed_obligation'])(
+    'refuses to persist observations when the serialized lineage becomes %s',
+    async (mode) => {
+      const { replayAndPersistObservations } = await import('./observation-replay-persist.js');
+      await writeCapture();
+      const initial = {
+        ...state,
+        binding: { ...state.binding, worktree: repo },
+        reviewAssurance: {
+          ...state.reviewAssurance!,
+          attempts: state.reviewAssurance!.attempts.map((attempt) => ({
+            ...attempt,
+            childSessionId: CHILD_SESSION,
+          })),
+        },
+      } as SessionState;
+      let current = structuredClone(initial);
+      const logError = vi.fn();
+      const updateReviewAssurance = vi.fn(
+        async (_dir, update: (s: SessionState) => SessionState) => {
+          const assurance = current.reviewAssurance!;
+          current = {
+            ...current,
+            reviewAssurance: {
+              ...assurance,
+              attempts: assurance.attempts.map((attempt) => ({
+                ...attempt,
+                ...(mode === 'stale' ? { status: 'stale' as const } : {}),
+                ...(mode === 'foreign_child' ? { childSessionId: 'foreign-child' } : {}),
+              })),
+              obligations: assurance.obligations.map((obligation) => ({
+                ...obligation,
+                ...(mode === 'closed_obligation' ? { status: 'blocked' as const } : {}),
+              })),
+            },
+          };
+          current = update(current);
+        },
+      );
+      await replayAndPersistObservations(
+        {
+          resolveSessionAuthority: async () =>
+            ({ status: 'resolved', sessDir: '/unused', state: initial }) as never,
+          updateReviewAssurance,
+          log: { info: vi.fn(), warn: vi.fn() },
+          logError,
+        },
+        {
+          sessionId: 'parent',
+          attemptId: initial.reviewAssurance!.attempts[0]!.attemptId,
+          childSessionId: CHILD_SESSION,
+          now: '2026-08-13T10:20:00.000Z',
+        },
+      );
+      expect(updateReviewAssurance).toHaveBeenCalledOnce();
+      expect(current.reviewAssurance!.attempts[0]!.observations).toEqual([]);
+      expect(logError).toHaveBeenCalledWith(
+        'observation persistence failed',
+        expect.objectContaining({ code: 'REVIEW_ATTEMPT_UNAVAILABLE' }),
+      );
+    },
+  );
+
+  it('deduplicates observations inside the serialized mutation when two replays read the same snapshot', async () => {
+    const { replayAndPersistObservations } = await import('./observation-replay-persist.js');
+    await writeCapture();
+    const initial = {
+      ...state,
+      binding: { ...state.binding, worktree: repo },
+      reviewAssurance: {
+        ...state.reviewAssurance!,
+        attempts: state.reviewAssurance!.attempts.map((attempt) => ({
+          ...attempt,
+          childSessionId: CHILD_SESSION,
+        })),
+      },
+    } as SessionState;
+    let current = structuredClone(initial);
+    const logError = vi.fn();
+    const deps = {
+      resolveSessionAuthority: async () =>
+        ({ status: 'resolved', sessDir: '/unused', state: initial }) as never,
+      updateReviewAssurance: vi.fn(
+        async (_dir: string, update: (s: SessionState, now: string) => SessionState) => {
+          current = update(current, '2026-08-13T10:20:00.000Z');
+        },
+      ),
+      log: { info: vi.fn(), warn: vi.fn() },
+      logError,
+    };
+    const input = {
+      sessionId: 'parent',
+      attemptId: initial.reviewAssurance!.attempts[0]!.attemptId,
+      childSessionId: CHILD_SESSION,
+      now: '2026-08-13T10:20:00.000Z',
+    };
+    await Promise.all([
+      replayAndPersistObservations(deps, input),
+      replayAndPersistObservations(deps, input),
+    ]);
+    expect(deps.updateReviewAssurance).toHaveBeenCalledTimes(2);
+    expect(current.reviewAssurance!.attempts[0]!.observations).toHaveLength(1);
+    expect(logError).not.toHaveBeenCalled();
+  });
+
+  it('keeps already bound observations unchanged and surfaces the response mismatch', async () => {
+    const { replayAndPersistObservations } = await import('./observation-replay-persist.js');
+    const attemptId = state.reviewAssurance!.attempts[0]!.attemptId;
+    const boundObservation = { observationId: 'already-bound', path: 'src/bound.ts' };
+    const persisted = {
+      ...state,
+      binding: { ...state.binding, worktree: repo },
+      reviewAssurance: {
+        ...state.reviewAssurance!,
+        attempts: state.reviewAssurance!.attempts.map((attempt) => ({
+          ...attempt,
+          observations: [boundObservation],
+        })),
+      },
+    } as unknown as SessionState;
+    const superseded = JSON.stringify({
+      path: 'src/foo.ts',
+      revision: 'head',
+      representation: 'utf8_text',
+      content: 'head-content\n',
+    });
+    await writeCapture({ responseDigest: responseDigestOf(superseded) });
+    const warn = vi.fn();
+    const updateReviewAssurance = vi.fn();
+
+    await replayAndPersistObservations(
+      {
+        resolveSessionAuthority: async () =>
+          ({ status: 'resolved', sessDir: '/unused', state: persisted }) as never,
+        updateReviewAssurance,
+        log: { info: vi.fn(), warn },
+        logError: vi.fn(),
+      },
+      {
+        sessionId: 'parent',
+        attemptId,
+        childSessionId: CHILD_SESSION,
+        now: '2026-08-13T10:20:00.000Z',
+      },
+    );
+
+    // Nothing new to persist: the existing authority is never rewritten.
+    expect(updateReviewAssurance).not.toHaveBeenCalled();
+    expect(persisted.reviewAssurance!.attempts[0]!.observations).toEqual([boundObservation]);
+    const messages = warn.mock.calls.map(([, message]) => message);
+    expect(messages).toContain(
+      'observation capture response differs from the current canonical observation response',
+    );
+    const dropped = warn.mock.calls.find(
+      ([, message]) => message === 'observation captures dropped during replay',
+    );
+    expect(dropped?.[2]).toMatchObject({ dropped: 1, reasons: { response_digest_mismatch: 1 } });
   });
 });

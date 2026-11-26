@@ -12,12 +12,55 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
+import type { SessionAuthorityResolution } from '../../../adapters/session-authority.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
-import { replayObservationCaptures, type ObservationReplayResult } from './observation-replay.js';
+import {
+  replayObservationCaptures,
+  observationReplayKey,
+  type ObservationReplayResult,
+} from './observation-replay.js';
+import { buildEnforcementError } from '../../blocked-result.js';
+import type { RepositoryObservation } from '../../../state/evidence.js';
+
+function applyReplayedObservations(
+  s: SessionState,
+  input: { readonly attemptId: string; readonly childSessionId: string },
+  observations: readonly RepositoryObservation[],
+) {
+  const assurance = ensureReviewAssurance(s.reviewAssurance);
+  const attempt = assurance.attempts.find((item) => item.attemptId === input.attemptId);
+  const obligation = assurance.obligations.find(
+    (item) => item.obligationId === attempt?.obligationId,
+  );
+  if (
+    !attempt ||
+    attempt.status !== 'created' ||
+    attempt.childSessionId !== input.childSessionId ||
+    obligation?.status !== 'pending' ||
+    assurance.capacityLock
+  )
+    throw buildEnforcementError(
+      'REVIEW_ATTEMPT_UNAVAILABLE',
+      'Observation replay lost its exact current child/attempt/obligation lineage.',
+    );
+  const existing = new Set((attempt.observations ?? []).map(observationReplayKey));
+  const added = observations.filter(
+    (observation) => !existing.has(observationReplayKey(observation)),
+  );
+  const attempts = assurance.attempts.map((a) =>
+    a.attemptId !== input.attemptId
+      ? a
+      : {
+          ...a,
+          observations: [...(a.observations ?? []), ...added],
+        },
+  );
+  return { state: { ...s, reviewAssurance: { ...assurance, attempts } }, count: added.length };
+}
 
 export interface ReplayPersistDeps {
-  getSessionDir(sessionId: string): string | null;
+  resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
@@ -30,12 +73,8 @@ export interface ReplayPersistDeps {
   logError(message: string, err: unknown): void;
 }
 
-/** Read-only state access for the replay (dependency-injected for tests). */
-export type ReplayStateReader = (sessDir: string) => Promise<SessionState | null>;
-
 export async function replayAndPersistObservations(
   deps: ReplayPersistDeps,
-  readPersistedState: ReplayStateReader,
   input: {
     readonly sessionId: string;
     readonly attemptId: string;
@@ -43,10 +82,9 @@ export async function replayAndPersistObservations(
     readonly now: string;
   },
 ): Promise<void> {
-  const sessDir = deps.getSessionDir(input.sessionId);
-  if (!sessDir) return;
-  const state = await readPersistedState(sessDir);
-  if (!state) return;
+  const resolution = await deps.resolveSessionAuthority(input.sessionId);
+  if (resolution.status !== 'resolved') return;
+  const { sessDir, state } = resolution;
 
   let replay: ObservationReplayResult;
   try {
@@ -68,26 +106,39 @@ export async function replayAndPersistObservations(
       sessionId: input.sessionId,
       attemptId: input.attemptId,
       dropped: replay.dropped,
+      reasons: replay.dropReasons,
     });
   }
+  if (replay.responseMismatches.length > 0) {
+    // Visible cause for a later REVIEW_EVIDENCE_NOT_OBSERVED: the captured
+    // payload is not the current canonical observation response (for example a
+    // capture recorded before an observation-response format change). It is
+    // never reinterpreted as authority.
+    deps.log.warn(
+      'review',
+      'observation capture response differs from the current canonical observation response',
+      {
+        sessionId: input.sessionId,
+        attemptId: input.attemptId,
+        locations: replay.responseMismatches
+          .slice(0, 8)
+          .map((entry) => `${entry.revision}:${entry.path}`)
+          .join(', '),
+      },
+    );
+  }
   if (replay.observations.length === 0) return;
+  let persistedCount = 0;
   try {
     await deps.updateReviewAssurance(sessDir, (s: SessionState) => {
-      const assurance = ensureReviewAssurance(s.reviewAssurance);
-      const attempts = assurance.attempts.map((a) =>
-        a.attemptId !== input.attemptId
-          ? a
-          : {
-              ...a,
-              observations: [...(a.observations ?? []), ...replay.observations],
-            },
-      );
-      return { ...s, reviewAssurance: { ...assurance, attempts } };
+      const applied = applyReplayedObservations(s, input, replay.observations);
+      persistedCount = applied.count;
+      return applied.state;
     });
     deps.log.info('review', 'observation replay minted authoritative observations', {
       sessionId: input.sessionId,
       attemptId: input.attemptId,
-      count: replay.observations.length,
+      count: persistedCount,
     });
   } catch (err) {
     deps.logError('observation persistence failed', err);

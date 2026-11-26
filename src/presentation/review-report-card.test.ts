@@ -34,7 +34,7 @@ const baseCoverage = {
   changedPathCount: 1,
   objectivesCovered: 3,
   objectivesTotal: 3,
-  reviewAssurance: 'structured_high',
+  reviewAssurance: 'host_message_validated',
   missingVerification: [],
 } satisfies PeerReviewCoverage;
 
@@ -239,7 +239,7 @@ describe('buildReviewReportCard', () => {
     expect(card).toContain(`**Head SHA:** ${'b'.repeat(40)}`);
     expect(card).toContain('**Changed paths:** 1');
     expect(card).toContain('**Objectives covered:** 3/3');
-    expect(card).toContain('**Review assurance:** structured_high');
+    expect(card).toContain('**Review assurance:** host_message_validated');
     expect(card).toContain('**Missing verification:** none');
   });
 

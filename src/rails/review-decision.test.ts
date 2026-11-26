@@ -3,6 +3,7 @@ import { executeReviewDecision } from './review-decision.js';
 import {
   makeState,
   ARCHITECTURE_DECISION,
+  CURRENT_IMPL_RISK_ASSESSMENT,
   IMPL_EVIDENCE,
   PLAN_RECORD,
   FIXED_TIME,
@@ -21,6 +22,7 @@ import {
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
+import { planApprovalContextOf } from '../state/proofgraph-approval-context.js';
 
 const baseCtx = {
   now: () => FIXED_TIME,
@@ -200,6 +202,70 @@ describe('review-decision rail', () => {
     }
   });
 
+  it('blocks plan approval on persisted rejected critical claims without re-formatting the diagnostic', () => {
+    const rejectedClaimRef = '00000000-0000-4000-8000-000000000009';
+    const rejectedReason =
+      `Claim '${rejectedClaimRef}' was not admitted to the ProofGraph: counterexampleRequirement — ` +
+      'a critical claim requires a counterexample requirement; without it the claim can never become PROVEN. ' +
+      'Rejected critical claims block evidence approval until they are admitted or explicitly withdrawn in a new plan revision.';
+    const rejectedRecovery = [
+      'Correct the rejected declaration and resubmit the complete declaration set in a new plan revision',
+      'If no ProofGraph authority is required, resubmit the plan revision with an explicit empty claims array (claims: []) to withdraw the rejected declarations',
+    ];
+    const state = makeState('PLAN_REVIEW', {
+      plan: {
+        current: PLAN_RECORD.current,
+        history: PLAN_RECORD.history,
+        reviewFindings: [],
+        claimDeclarations: emptyClaimDeclarations('plan'),
+        reviewCompletion: 'reviewer_accepted',
+        claimSubmissionDiagnostics: {
+          submittedClaimDeclarationsDigest: 'a'.repeat(64),
+          acceptedClaimDeclarationsDigest: hashText(
+            canonicalJsonStringify(emptyClaimDeclarations('plan')),
+          ),
+          rejectedClaims: [
+            {
+              claimRef: rejectedClaimRef,
+              statement: 'the repository test suite passes',
+              critical: true,
+              disposition: 'rejected_blocking',
+              code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+              reason: rejectedReason,
+              recovery: rejectedRecovery,
+            },
+          ],
+        },
+      },
+      reviewAssurance: planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+      }),
+    });
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
+      baseCtx,
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
+      // The persisted canonical diagnostic is surfaced verbatim; a second
+      // registry pass would nest "claim declaration — <reason>" inside itself.
+      expect(result.reason).toBe(rejectedReason);
+      // Historical recovery is preserved and supplemented with the current
+      // catalog steps, so pre-fix sessions get the state-transition guidance.
+      expect(result.recovery).toEqual(
+        expect.arrayContaining([
+          ...rejectedRecovery,
+          expect.stringContaining('changes_requested'),
+          expect.stringContaining('claims: []'),
+        ]),
+      );
+    }
+  });
+
   it('preserves the decision evidence when changes_requested clears the persisted decision', () => {
     const state = makeState('PLAN_REVIEW', {
       plan: {
@@ -256,21 +322,37 @@ describe('review-decision rail', () => {
 
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
-      expect(result.state.plan?.approvalCertificate).toMatchObject({
+      const planCertificate = result.state.plan?.approvalCertificate;
+      expect(planCertificate).toMatchObject({
+        schemaVersion: 'plan-approval-certificate.v1',
         flow: 'plan',
         authorityDigest: PLAN_RECORD.current.digest,
         claimDeclarationsDigest: hashText(
           '{"claims":[{"authoritySectionId":"authentication","claimId":"00000000-0000-4000-8000-000000000003","claimScope":"specific_behavior","critical":true,"expectedCheckId":"test","statement":"The login flow rejects invalid credentials."}],"flow":"plan","version":"v2"}',
         ),
-        decisionAttestationDigest: baseCtx.digest(
-          '{"decidedAt":"2026-01-01T00:00:00.000Z","decisionIdentity":{"actorAssurance":"claim_validated","actorDisplayName":"Reviewer","actorEmail":"review@example.com","actorId":"reviewer-1","actorSource":"claim"},"rationale":"approved","verdict":"approve"}',
-        ),
         approvedAt: FIXED_TIME,
-        approvedBy: 'reviewer-1',
         planVersion: expect.any(Number),
         planRecordDigest: expect.any(String),
         certificateId: expect.any(String),
+        reviewBinding: expect.objectContaining({ kind: 'current_review' }),
+        approvalAttestation: expect.objectContaining({ kind: 'explicit_decision' }),
       });
+      // The attestation digest is the canonical digest over the full attested
+      // decision, not the bare decision JSON: the session/policy binding is
+      // part of what the certificate attests.
+      const context = planApprovalContextOf(state);
+      expect(planCertificate?.decisionAttestationDigest).toBe(
+        hashText(
+          canonicalJsonStringify({
+            kind: 'explicit_decision',
+            decision: result.state.reviewDecision,
+            flowguardSessionId: context.flowguardSessionId,
+            bindingDigest: context.bindingDigest,
+            policyHash: context.policyHash,
+            policyHashVersion: context.policyHashVersion,
+          }),
+        ),
+      );
       expect(result.state.plan?.history).toEqual(PLAN_RECORD.history);
       // approve is preserve-only: the recorded decision and the counters survive.
       expect(result.state.reviewDecision?.verdict).toBe('approve');
@@ -759,6 +841,7 @@ describe('review-decision rail', () => {
       ticket: ticketFixture('t', 'd'),
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
+      implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
       reducedCeremony: reducedCeremonyDecision,
       implReview: {
         iteration: 1,

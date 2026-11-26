@@ -12,7 +12,7 @@
  *
  * Source of truth for each field:
  * - phase              → state.phase
- * - allowedCommands    → isCommandAllowed() for each known command
+ * - allowedCommands    → phase admissibility via isCommandAllowed(), not prerequisite clearance
  * - directive          → resolveWorkflowDirective()
  * - blocker           → evaluate() waiting/pending reason
  * - evidenceSummary    → evaluateCompleteness()
@@ -48,13 +48,22 @@ import { projectCeremonyEligibility } from '../phase-tool-gate.js';
 import { reducedCeremonyReady } from '../../machine/guards.js';
 import { getReviewLoopProgress } from '../review/obligations/review-loop-progress.js';
 import { isConverged } from '../../machine/guards.js';
-import { projectStatusConclusion } from './status-conclusion.js';
+import {
+  projectApprovalBlockedConclusion,
+  projectStatusConclusion,
+  projectDirectiveBlock,
+} from './status-conclusion.js';
 import { summarizePersistedProofGraph } from '../../audit/proofgraph/summary.js';
 import { buildProofApprovalProjection } from '../proofgraph/approval-projection.js';
 import { projectProofStatusForState } from '../proofgraph/proof-summary-projectors.js';
 import { projectOpenImplementationChallengeIds } from '../../state/implementation-review-findings.js';
+import { resolveReviewContinuation } from '../../state/review-continuation.js';
 import type { StatusProjection } from './status-types.js';
-import { proofGraphGateRegistryCode } from './status-detail-projections.js';
+import {
+  proofGraphGateRegistryCode,
+  projectEvidenceApprovalBlock,
+  projectOpenMutationEpisodes,
+} from './status-detail-projections.js';
 
 const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 
@@ -162,7 +171,13 @@ export function buildStatusProjection(
   );
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
 
-  const blocker = buildBlocker(evalResult, state);
+  const approvalBlock = projectEvidenceApprovalBlock(state);
+  const directiveBlock = projectDirectiveBlock(directive);
+  const blocker = directiveBlock
+    ? buildDirectiveBlocker(directiveBlock, directive)
+    : approvalBlock
+      ? { reasonCode: approvalBlock.code, reasonText: approvalBlock.reason }
+      : buildBlocker(evalResult, state);
   const policyMode = state.policySnapshot?.mode ?? 'unknown';
   const profileId = state.activeProfile?.id ?? 'none';
 
@@ -188,6 +203,7 @@ export function buildStatusProjection(
     executionDisposition: resolveExecutionDisposition(state),
     directive,
     blocker,
+    mutationEpisodes: projectOpenMutationEpisodes(state),
     evidenceSummary: {
       present: completeness.summary.complete,
       missing: completeness.summary.missing,
@@ -203,8 +219,24 @@ export function buildStatusProjection(
     reviewLoop: getReviewLoopProgress(state, isConverged),
     implementationRework: projectImplementationRework(state),
     remainingChecks: remainingValidationChecks(state),
-    conclusion: projectStatusConclusion(evalResult, directive),
-    readiness: deriveReadinessField(evalResult, completeness),
+    conclusion: approvalBlock
+      ? projectApprovalBlockedConclusion(approvalBlock, directive)
+      : projectStatusConclusion(evalResult, directive),
+
+    readiness:
+      directiveBlock || approvalBlock ? 'BLOCKED' : deriveReadinessField(evalResult, completeness),
+  };
+}
+
+function buildDirectiveBlocker(
+  block: NonNullable<ReturnType<typeof projectDirectiveBlock>>,
+  directive: ReturnType<typeof resolveWorkflowDirective>,
+): NonNullable<StatusProjection['blocker']> {
+  const reasonParams = directive.context?.reasonParams;
+  return {
+    reasonCode: block.code,
+    reasonText: block.reason,
+    ...(reasonParams ? { reasonParams } : {}),
   };
 }
 
@@ -246,15 +278,38 @@ function buildBlocker(
         reasonText: evalResult.reason,
       };
     case 'pending':
-      // No structured code or text in canonical EvalPending
-      return {
-        reasonCode: null,
-        reasonText: null,
-      };
+      // No structured code or text in canonical EvalPending. A deterministically
+      // closed artifact review (plan/ADR unable_to_review) is different: the
+      // phase is still pending system work, but the only legal continuation is
+      // re-running the originating command. Surface that canonical recovery so
+      // /status never implies a normal in-progress review.
+      return blockedArtifactReviewBlocker(state) ?? { reasonCode: null, reasonText: null };
     case 'terminal':
     case 'transition':
       return null;
   }
+}
+
+/**
+ * A blocked latest plan/ADR review obligation is pending system work whose only
+ * legal continuation is a fresh submission of the originating command. Derived
+ * from the single review-lifecycle authority (`resolveReviewContinuation`) —
+ * never a parallel status interpretation. The machine directive and execution
+ * disposition stay untouched: nothing global is locked.
+ */
+function blockedArtifactReviewBlocker(state: SessionState): StatusProjection['blocker'] {
+  const obligationType =
+    state.phase === 'PLAN'
+      ? ('plan' as const)
+      : state.phase === 'ARCHITECTURE'
+        ? ('architecture' as const)
+        : null;
+  if (obligationType === null) return null;
+  const continuation = resolveReviewContinuation(state.reviewAssurance, obligationType);
+  if (continuation.kind !== 'blocked') return null;
+  const code = continuation.obligation.blockedCode;
+  if (code === null) return null;
+  return { reasonCode: code, reasonText: null };
 }
 
 function buildTicketRiskProjection(state: SessionState): StatusProjection['ticketRisk'] {

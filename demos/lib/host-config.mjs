@@ -1,0 +1,96 @@
+/**
+ * @module demos/lib/host-config
+ * @description Isolated OpenCode host configuration for the live demo runners.
+ *
+ * The host truncates any tool output above `tool_output.max_bytes` (default
+ * 50 KiB / 51200 bytes in the tested OpenCode 1.19.0) and replaces it with a
+ * marker; the demo transcript trust guard then rejects the governed output,
+ * turning an otherwise valid run into NOT_VERIFIED. The worst observed
+ * `flowguard_status` payload is 51,475 bytes, so the runners raise the budget
+ * in their isolated `OPENCODE_CONFIG_DIR`. Only `tool_output.max_bytes` is
+ * set — every other resolved setting keeps the host default — and any
+ * pre-existing configuration in the file is preserved, never silently
+ * overwritten.
+ *
+ * @version v1
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+
+/**
+ * Tested host tool-output budget for the live runners: at least 2x the worst
+ * observed `flowguard_status` payload (51,475 bytes), while still keeping host
+ * truncation as the fail-closed backstop for runaway outputs.
+ */
+export const HOST_TOOL_OUTPUT_MAX_BYTES = 131072;
+
+/** File name the host loader reads from `OPENCODE_CONFIG_DIR`. */
+export const HOST_CONFIG_FILE = 'opencode.json';
+
+/**
+ * Isolated service configuration. The demo must not share the default managed
+ * service port (49374) with a Desktop or background host; the runners execute
+ * in a separate config root and start their own service on this port.
+ */
+export const HOST_SERVICE_FILE = 'service.json';
+export const HOST_SERVICE_PORT = 49375;
+
+/**
+ * Environment for the isolated demo installer. The product installer otherwise
+ * discovers the user's shared service record at
+ * `~/.local/state/opencode/service.json` and may restart that service. Point it
+ * at an absent run-local record instead; the harness starts and verifies its
+ * own authenticated child after installation.
+ */
+export function isolatedInstallEnv(configDir, base = process.env) {
+  const record = path.join(configDir, 'service-record.unavailable.json');
+  fs.rmSync(record, { force: true });
+  return { ...base, FLOWGUARD_OPENCODE_SERVICE_RECORD: record };
+}
+
+/**
+ * Write the isolated host config into `configDir`. Creates the files when
+ * absent; when present, every existing config key is preserved and only
+ * `tool_output.max_bytes` is enforced. A conflicting pre-existing
+ * `tool_output.max_bytes` or service port fails loudly instead of being
+ * overridden.
+ */
+export function writeIsolatedHostConfig(configDir) {
+  const file = path.join(configDir, HOST_CONFIG_FILE);
+  let existing = {};
+  if (fs.existsSync(file)) {
+    existing = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const configured = existing?.tool_output?.max_bytes;
+    if (configured !== undefined && configured !== HOST_TOOL_OUTPUT_MAX_BYTES) {
+      throw new Error(
+        `isolated host config already sets tool_output.max_bytes=${String(configured)}; ` +
+          'refusing to override it',
+      );
+    }
+  }
+  const preserved = Object.fromEntries(
+    Object.entries(existing).filter(([key]) => key !== 'tool_output'),
+  );
+  const config = {
+    ...preserved,
+    tool_output: { ...(existing.tool_output ?? {}), max_bytes: HOST_TOOL_OUTPUT_MAX_BYTES },
+  };
+  const serviceFile = path.join(configDir, HOST_SERVICE_FILE);
+  try {
+    fs.writeFileSync(serviceFile, `${JSON.stringify({ port: HOST_SERVICE_PORT }, null, 2)}\n`, {
+      flag: 'wx',
+    });
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    const service = JSON.parse(fs.readFileSync(serviceFile, 'utf8'));
+    if (service?.port !== HOST_SERVICE_PORT) {
+      throw new Error(
+        `isolated service config has invalid port=${String(service?.port)}; ` +
+          `expected ${HOST_SERVICE_PORT}; refusing to override it`,
+      );
+    }
+  }
+  fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+  return file;
+}

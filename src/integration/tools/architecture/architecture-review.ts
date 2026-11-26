@@ -5,11 +5,15 @@
  * @version v1
  */
 
+import { DISCARDED_REVIEW_DRAFT, reviewExhaustsBudget } from '../../../state/evidence-review.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import type { ToolContext } from '../helpers.js';
-import { formatBlocked } from '../../blocked-result.js';
+import { formatBlocked, unableReviewDiagnostics } from '../../blocked-result.js';
 import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
-import { formatAutoAdvanceOverflow } from '../helpers.js';
+import {
+  formatAutoAdvanceBlocked,
+  formatAutoAdvanceOverflow,
+} from '../../../rails/auto-advance-overflow.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import { evaluate } from '../../../machine/evaluate.js';
@@ -26,7 +30,7 @@ import { validateAdrSections } from '../../../state/evidence.js';
 import {
   consumeReviewObligation,
   findLatestObligation,
-  findLatestUnconsumedObligation,
+  findLatestOpenObligation,
 } from '../../review/obligations/assurance.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 
@@ -43,6 +47,7 @@ import { buildReviewChallengeContract } from '../../review/obligations/challenge
 import { normalizeArchitectureClaims } from '../../../state/proofgraph-approval.js';
 
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
+import { parseArchitectureClaimsInput } from './architecture-shared.js';
 import { IntegrationInvariantError } from '../../errors.js';
 import {
   persistAndFormatReviewResult,
@@ -64,7 +69,7 @@ function validateReviewEntryState(state: SessionState): string | null {
 }
 
 function getObligationExpectation(
-  pendingObligation: ReturnType<typeof findLatestUnconsumedObligation>,
+  pendingObligation: ReturnType<typeof findLatestOpenObligation>,
   state: SessionState,
 ): { expectedIteration: number; expectedPlanVersion: number } {
   if (!pendingObligation) {
@@ -90,7 +95,7 @@ async function resolveArchitectureReview(
 ): Promise<ResolvedReview | string> {
   const { state } = session;
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
-  const pendingObligation = findLatestUnconsumedObligation(assuranceBase, 'architecture');
+  const pendingObligation = findLatestOpenObligation(assuranceBase, 'architecture');
   const { expectedIteration, expectedPlanVersion } = getObligationExpectation(
     pendingObligation,
     state,
@@ -164,7 +169,10 @@ function validateResolvedFindings(
   obligationId: string | undefined,
 ): string | null {
   if (effectiveFindings.overallVerdict === 'unable_to_review') {
-    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId: obligationId ?? 'unknown' });
+    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: obligationId ?? 'unknown',
+      ...unableReviewDiagnostics(effectiveFindings),
+    });
   }
   if (effectiveFindings.overallVerdict !== submittedVerdict) {
     return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
@@ -173,6 +181,24 @@ function validateResolvedFindings(
     });
   }
   return null;
+}
+
+/**
+ * True when this verdict consumes the last allowed architecture review
+ * iteration. The accompanying ADR revision was never reviewed and must not
+ * become the current approval authority.
+ */
+function adrReviewExhaustsBudget(
+  session: ArchitectureSession,
+  verdict: LoopVerdict | undefined,
+): boolean {
+  const selfReview = session.state.selfReview;
+  if (!selfReview) return false;
+  return reviewExhaustsBudget(
+    verdict,
+    selfReview.iteration,
+    session.policy.reviewBudget.architecture,
+  );
 }
 
 function applyAdrRevision(
@@ -196,6 +222,17 @@ function applyAdrRevision(
     return formatBlocked('MISSING_ADR_SECTIONS', { sections: missingSections.join(', ') });
   }
 
+  // Review exhaustion: record the negative verdict, but never adopt the
+  // un-reviewed revision. The reviewed ADR (and its claims) stays current.
+  if (adrReviewExhaustsBudget(session, verdict)) {
+    return {
+      currentAdr,
+      prevDigest,
+      revisionDelta: 'none',
+      discardedDraft: DISCARDED_REVIEW_DRAFT,
+    };
+  }
+
   const revisedDigest = ctx.digest(revisedText);
   revisionDelta = revisedDigest === prevDigest ? 'none' : 'minor';
   let claimDeclarations:
@@ -205,7 +242,9 @@ function applyAdrRevision(
       }
     | undefined;
   if (args.claims) {
-    const normalizedClaims = normalizeArchitectureClaims(args.claims);
+    const parsedClaims = parseArchitectureClaimsInput(args.claims);
+    if (parsedClaims.kind === 'blocked') return parsedClaims.message;
+    const normalizedClaims = normalizeArchitectureClaims(parsedClaims.claims);
     if (normalizedClaims === undefined) {
       throw new IntegrationInvariantError(
         'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
@@ -257,16 +296,19 @@ function buildReviewedState(
     review.evidenceInvocationId,
   );
 
+  const discarded = revision.discardedDraft !== undefined;
   return {
     ...state,
     architecture: {
       ...revision.currentAdr,
-      reviewCompletion: resolveArchitectureReviewCompletion(
-        iteration,
-        policy.reviewBudget.architecture,
-        revision.revisionDelta,
-        args.reviewVerdict as LoopVerdict,
-      ),
+      reviewCompletion: discarded
+        ? 'review_exhausted'
+        : resolveArchitectureReviewCompletion(
+            iteration,
+            policy.reviewBudget.architecture,
+            revision.revisionDelta,
+            args.reviewVerdict as LoopVerdict,
+          ),
       reviewFindings: newReviewFindings,
     },
     selfReview: {
@@ -322,6 +364,9 @@ export async function handleAdrReview(
   // #428: fail closed on overflow BEFORE persistence — no partially-advanced write.
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
+  }
+  if (advanced.kind === 'blocked') {
+    return formatAutoAdvanceBlocked(advanced);
   }
   return persistAndFormatReviewResult({ args, session, review, revision, advanced, iteration: 0 });
 }

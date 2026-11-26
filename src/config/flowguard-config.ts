@@ -21,6 +21,7 @@
  */
 
 import { z } from 'zod';
+import { RiskTriggerPathsSchema } from '../state/risk-trigger-paths.js';
 import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
 import { IdpConfigSchema, IdentityProviderModeSchema } from '../identity/index.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
@@ -37,6 +38,16 @@ import {
 } from './logging-config.js';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
+
+/** Absolute reviewer execution deadline from dispatch authorization. */
+const REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT = 600_000;
+
+/** Host-neutral transient presentation preference; unknown keys fail validation. */
+const PresentationConfig = z
+  .strictObject({
+    glyphProfile: z.enum(['unicode', 'ascii']).default('unicode'),
+  })
+  .default({ glyphProfile: 'unicode' });
 
 export const FlowGuardConfigSchema = z.object({
   /** Schema version for forward compatibility. Always "v1". */
@@ -161,6 +172,7 @@ export const FlowGuardConfigSchema = z.object({
       identityProviderMode: IdentityProviderModeSchema.optional(),
       /** Enforce machine-checked runtime risk classification. */
       enforceRiskClassification: z.boolean().optional(),
+      riskTriggerPaths: RiskTriggerPathsSchema.optional(),
       /** Permit structured risk-downgrade overrides. Initial presets keep this false. */
       /** Permit policy-gated reduced ceremony for runtime-verified TRIVIAL tasks. */
       allowReducedCeremony: z.boolean().optional(),
@@ -191,6 +203,20 @@ export const FlowGuardConfigSchema = z.object({
     .strict()
     .default({}),
 
+  /** Explicit root activation permission; installation and prompts never start governance. */
+  governance: z
+    .object({
+      autonomousActivation: z
+        .object({
+          enabled: z.boolean().default(false),
+          minimumActorAssurance: ActorAssuranceSchema.default('idp_verified'),
+        })
+        .strict()
+        .default({ enabled: false, minimumActorAssurance: 'idp_verified' }),
+    })
+    .strict()
+    .default({ autonomousActivation: { enabled: false, minimumActorAssurance: 'idp_verified' } }),
+
   /** Profile configuration. */
   profile: z
     .object({
@@ -202,17 +228,7 @@ export const FlowGuardConfigSchema = z.object({
     .default({}),
 
   /** Transient presentation preferences; never workflow or audit authority. */
-  presentation: z
-    .object({
-      /** OpenCode-only transient Markdown preferences. */
-      opencode: z
-        .object({
-          /** Glyph vocabulary for host-visible Markdown responses. */
-          glyphProfile: z.enum(['unicode', 'ascii']).default('unicode'),
-        })
-        .default({ glyphProfile: 'unicode' }),
-    })
-    .default({ opencode: { glyphProfile: 'unicode' } }),
+  presentation: PresentationConfig,
 
   /** Host execution configuration. Does not affect governance authority. */
   host: z
@@ -222,6 +238,25 @@ export const FlowGuardConfigSchema = z.object({
     })
     .default({}),
 
+  /**
+   * Independent-reviewer execution configuration. Model, variant and output
+   * budget stay host-native; FlowGuard sets no reviewer token cap.
+   *
+   * Only the current contract is accepted. Unknown keys fail validation;
+   * configuration recovery is manual (docs/configuration.md).
+   */
+  reviewer: z
+    .object({
+      /** Absolute deadline from reviewer dispatch authorization through evidence binding. */
+      executionTimeoutMs: z
+        .number()
+        .int()
+        .min(1000)
+        .max(1_800_000)
+        .default(REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT),
+    })
+    .strict()
+    .default({ executionTimeoutMs: REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT }),
   /** Archive configuration. */
   archive: z
     .object({

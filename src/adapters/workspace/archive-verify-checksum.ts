@@ -33,14 +33,52 @@ function addArchiveChecksumMismatch(findings: ArchiveFinding[], message: string)
   });
 }
 
+/**
+ * Read and shape-check the `.sha256` sidecar.
+ *
+ * This is the single sidecar parser: the archive verification stage and the
+ * verified-export reader both consume it, so a malformed sidecar has exactly
+ * one interpretation. The reader never treats a missing or malformed sidecar
+ * as a valid digest — callers decide the severity for their trust boundary.
+ */
+export type ArchiveSidecarRead =
+  | { readonly kind: 'ok'; readonly digest: string }
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'malformed' }
+  | { readonly kind: 'unreadable'; readonly message: string };
+
+export async function readArchiveSidecarDigest(
+  checksumSidecarPath: string,
+): Promise<ArchiveSidecarRead> {
+  if (!(await fileExists(checksumSidecarPath))) return { kind: 'missing' };
+
+  let sidecarContent: string;
+  try {
+    sidecarContent = await fs.readFile(checksumSidecarPath, 'utf-8');
+  } catch (error) {
+    return {
+      kind: 'unreadable',
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const sidecarTokens = sidecarContent.trim().split(/\s+/).filter(Boolean);
+  const expectedHash = sidecarTokens[0];
+  if (!expectedHash || isMalformedChecksumSidecar(expectedHash, sidecarTokens)) {
+    return { kind: 'malformed' };
+  }
+
+  return { kind: 'ok', digest: expectedHash };
+}
+
 export async function verifyArchiveChecksum(
   archiveTarPath: string,
   checksumSidecarPath: string,
   strict: boolean,
   findings: ArchiveFinding[],
 ): Promise<void> {
-  const checksumExists = await fileExists(checksumSidecarPath);
-  if (!checksumExists) {
+  const sidecar = await readArchiveSidecarDigest(checksumSidecarPath);
+  if (sidecar.kind === 'missing') {
     findings.push({
       code: 'archive_checksum_missing',
       severity: strict ? 'error' : 'warning',
@@ -48,23 +86,14 @@ export async function verifyArchiveChecksum(
     });
     return;
   }
-
-  let sidecarContent: string;
-  try {
-    sidecarContent = await fs.readFile(checksumSidecarPath, 'utf-8');
-  } catch (error) {
+  if (sidecar.kind === 'unreadable') {
     addArchiveChecksumMismatch(
       findings,
-      `Archive checksum sidecar is unreadable; archive checksum could not be verified: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      `Archive checksum sidecar is unreadable; archive checksum could not be verified: ${sidecar.message}`,
     );
     return;
   }
-
-  const sidecarTokens = sidecarContent.trim().split(/\s+/).filter(Boolean);
-  const expectedHash = sidecarTokens[0];
-  if (!expectedHash || isMalformedChecksumSidecar(expectedHash, sidecarTokens)) {
+  if (sidecar.kind === 'malformed') {
     addArchiveChecksumMismatch(
       findings,
       'Archive checksum sidecar is malformed or ambiguous; expected exactly one SHA-256 digest',
@@ -72,6 +101,7 @@ export async function verifyArchiveChecksum(
     return;
   }
 
+  const expectedHash = sidecar.digest;
   try {
     const archiveBuffer = await fs.readFile(archiveTarPath);
     const actualHash = hashBuffer(archiveBuffer);

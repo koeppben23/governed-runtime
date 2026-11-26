@@ -139,7 +139,7 @@ function buildBlockerSection(
   if (!hasBlockerDetail || !projection.blocker.reasonText) return null;
 
   const reasonProjection = projection.blocker.reasonCode
-    ? projectReasonFromRegistry(projection.blocker.reasonCode)
+    ? projectReasonFromRegistry(projection.blocker.reasonCode, projection.blocker.reasonParams)
     : null;
   const recovery = resolveRecovery(reasonProjection, projection.blocker.recoveryHint);
   return {
@@ -185,6 +185,8 @@ function resolveRecovery(
 
 function toPresentationConclusion(c: WhyConclusionProjection): PresentationConclusion {
   switch (c.kind) {
+    case 'recovery':
+      return { kind: 'recovery', message: c.message, steps: c.steps };
     case 'next_action':
       return { kind: 'next_action', action: { ...c.action } };
     case 'decision_required':

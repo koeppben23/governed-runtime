@@ -20,6 +20,7 @@
  */
 
 import type { PolicySnapshot } from '../state/evidence.js';
+import { policyContentFromSnapshot, computePolicySnapshotHash } from '../state/evidence-policy.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from '../state/evidence-identifiers.js';
 import { PolicyConfigurationError } from './policy-errors.js';
@@ -131,7 +132,7 @@ export function createPolicySnapshot(
     ? ('human_gated' as const)
     : ('auto_approve' as const);
 
-  return {
+  const snapshot: PolicySnapshot = {
     mode: policy.mode,
     hash,
     hashVersion: POLICY_DIGEST_VERSION,
@@ -154,6 +155,7 @@ export function createPolicySnapshot(
       counts: { ...policy.challengePolicy.counts },
     },
     enforceRiskClassification: policy.enforceRiskClassification,
+    riskTriggerPaths: policy.riskTriggerPaths.map((rule) => ({ ...rule })),
     allowReducedCeremony: policy.allowReducedCeremony,
     discoveryHealth: {
       enforcement: policy.discoveryHealth.enforcement,
@@ -165,6 +167,13 @@ export function createPolicySnapshot(
       allowNoCommands: policy.validationEvidence.allowNoCommands,
     },
   };
+  if (computePolicySnapshotHash(snapshot) !== snapshot.hash) {
+    throw new PolicyConfigurationError(
+      'POLICY_SNAPSHOT_INTEGRITY_MISMATCH',
+      'Policy snapshot creation changed executable policy content.',
+    );
+  }
+  return snapshot;
 }
 
 // ─── Policy Freeze — Resolution → Snapshot ────────────────────────────────────
@@ -195,45 +204,5 @@ export function freezePolicySnapshot(
 // ─── Snapshot → Runtime Policy ────────────────────────────────────────────────
 
 export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
-  return {
-    mode: snapshot.mode,
-    requireHumanGates: snapshot.requireHumanGates,
-    reviewBudget: { ...snapshot.reviewBudget },
-    maxIncoherentReviewerCaptureRetries: snapshot.maxIncoherentReviewerCaptureRetries,
-    maxReviewerAttempts: snapshot.maxReviewerAttempts,
-    allowSelfApproval: snapshot.allowSelfApproval,
-    challengePolicy: snapshot.challengePolicy,
-    minimumActorAssuranceForApproval: snapshot.minimumActorAssuranceForApproval,
-    audit: {
-      emitTransitions: snapshot.audit.emitTransitions,
-      emitToolCalls: snapshot.audit.emitToolCalls,
-      enableChainHash: snapshot.audit.enableChainHash,
-      timestampAssurance: {
-        enabled: snapshot.audit.timestampAssurance.enabled,
-        mode: snapshot.audit.timestampAssurance.mode,
-        strict: snapshot.audit.timestampAssurance.strict,
-        criticalEvents: [...snapshot.audit.timestampAssurance.criticalEvents],
-        ...(snapshot.audit.timestampAssurance.tsaUrl !== undefined
-          ? { tsaUrl: snapshot.audit.timestampAssurance.tsaUrl }
-          : {}),
-        ...(snapshot.audit.timestampAssurance.trustAnchors !== undefined
-          ? { trustAnchors: [...snapshot.audit.timestampAssurance.trustAnchors] }
-          : {}),
-        ...(snapshot.audit.timestampAssurance.ntpServers !== undefined
-          ? { ntpServers: [...snapshot.audit.timestampAssurance.ntpServers] }
-          : {}),
-        ntpDriftThresholdMs: snapshot.audit.timestampAssurance.ntpDriftThresholdMs,
-        tsaTimeoutMs: snapshot.audit.timestampAssurance.tsaTimeoutMs,
-      },
-    } satisfies AuditPolicy,
-    actorClassification: { ...snapshot.actorClassification },
-    ...(snapshot.identityProvider !== undefined
-      ? { identityProvider: snapshot.identityProvider }
-      : {}),
-    identityProviderMode: snapshot.identityProviderMode,
-    enforceRiskClassification: snapshot.enforceRiskClassification,
-    allowReducedCeremony: snapshot.allowReducedCeremony,
-    discoveryHealth: { ...snapshot.discoveryHealth },
-    validationEvidence: { ...snapshot.validationEvidence },
-  };
+  return policyContentFromSnapshot(snapshot);
 }

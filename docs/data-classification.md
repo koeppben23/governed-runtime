@@ -29,14 +29,14 @@ FlowGuard processes data in two contexts:
 
 ### Session State
 
-| Attribute                         | Classification   | Protection              |
-| --------------------------------- | ---------------- | ----------------------- |
-| **Session ID**                    | Internal         | FlowGuard runtime       |
-| **Phase**                         | Internal         | FlowGuard runtime       |
-| **Profile**                       | Internal         | FlowGuard runtime       |
-| **Evidence (ticket, plan, etc.)** | **Confidential** | Customer responsibility |
-| **Review decisions**              | **Confidential** | Customer responsibility |
-| **Policy snapshot**               | Internal         | Hash-protected          |
+| Attribute                         | Classification   | Protection                                                                         |
+| --------------------------------- | ---------------- | ---------------------------------------------------------------------------------- |
+| **Session ID**                    | Internal         | FlowGuard runtime                                                                  |
+| **Phase**                         | Internal         | FlowGuard runtime                                                                  |
+| **Profile**                       | Internal         | FlowGuard runtime                                                                  |
+| **Evidence (ticket, plan, etc.)** | **Confidential** | Customer responsibility                                                            |
+| **Review decisions**              | **Confidential** | Customer responsibility                                                            |
+| **Policy snapshot**               | Internal         | Content hash verified on read; local filesystem access remains customer-controlled |
 
 **Currently Delivered:**
 
@@ -152,7 +152,9 @@ External references recorded on `/ticket`, including URLs, tracker IDs, and bran
 | **Archives**             | Indefinite (customer-managed) | **10 years** when records are accounting/tax-relevant  | Customer responsibility |
 | **Discovery snapshots**  | Until archived                | Align with archive retention if used as audit evidence | Customer responsibility |
 
-For GoBD-relevant deployments (for example DATEV/accounting-adjacent change evidence), organizations should retain audit trail and archive artifacts for at least 10 years and document this in their retention policy.
+For GoBD-relevant deployments (for example accounting-related change evidence),
+organizations should retain audit trail and archive artifacts for at least 10
+years and document this in their retention policy.
 
 **Customer Responsibility:**
 
@@ -220,5 +222,5 @@ User Input → OpenCode → FlowGuard Tools → Session State → Audit Trail �
 
 ---
 
-FlowGuard Version: 2.0.0-tp.2
+FlowGuard Version: 2.0.0-tp.3
 _Last Updated: 2026-04-15_

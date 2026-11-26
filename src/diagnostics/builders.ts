@@ -108,7 +108,7 @@ function sessionDirMissing(detail: DiagnosticDetail): RuntimeDiagnostics {
     safeNextActions: [
       'Run /hydrate to recreate or bind a valid FlowGuard session.',
       'Verify the workspace/session directory exists and is writable.',
-      'Restart OpenCode if the sidecar session points to stale workspace state.',
+      'Restart the host runtime if the session points to stale workspace state.',
     ],
   };
 }
@@ -239,8 +239,9 @@ function subagentEvidenceReused(detail: DiagnosticDetail): RuntimeDiagnostics {
     required: ['fresh reviewer invocation evidence for each review obligation'],
     missingEvidence: ['fresh_review_invocation_evidence'],
     safeNextActions: [
-      'Re-run the reviewer subagent for the active obligation.',
-      'Do not reuse ReviewFindings or invocation evidence from a prior obligation.',
+      'Do not reuse ReviewFindings or invocation evidence from a prior obligation',
+      'Obtain a fresh, independent reviewer invocation; if the current obligation is consumed or blocked, create a fresh review obligation through the intended flow',
+      'After a persisted reuse incident, reduced ceremony stays withheld for the session; start a fresh governed session to restore it',
     ],
   };
 }

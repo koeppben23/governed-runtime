@@ -1,4 +1,5 @@
 import { renderCommandGovernanceRules } from '../mandates.js';
+import { PLAN_CLAIM_GUIDANCE } from '../plan-claim-guidance.js';
 import {
   SHARED_REVIEW_LOOP,
   DISCOVERY_REVIEW_CAPTURE,
@@ -21,7 +22,7 @@ Generate a comprehensive implementation plan for the current ticket, then obtain
 ### Phase 1: Check State
 
 1. Call \`flowguard_status\` to verify a session exists with a ticket in TICKET or PLAN phase.
-   - If no session: call \`flowguard_hydrate\` first.
+   - If governance is inactive: recommend explicit \`/start\` and stop; never start it automatically. If session authority is missing or unavailable, report the block without recreating it.
    - If no ticket: tell the user to run /ticket first and stop.
    - If phase does not allow /plan: report the current phase and stop.
 ${DISCOVERY_REVIEW_CAPTURE}
@@ -96,31 +97,10 @@ ${DISCOVERY_REVIEW_CAPTURE}
    \`## Verification\` — Numbered list citing the command AND its Source
    (e.g., \`Source: package.json#scripts.test\`). State \`NOT_VERIFIED\` with
    recovery steps if no repo-native candidate is available.
-4. Derive the structured claim declarations for this plan version. Each claim names
-   ONE falsifiable behavioral statement, the plan section that governs it, and the
-   check expected to establish it after implementation:
-   - Do NOT provide \`claimId\`. Claim identity is host-owned and deterministically minted by FlowGuard from the declaration authority.
-   - \`statement\`: the behavior or forbidden state asserted. Keep it no broader than the observable evidence named below; if the claim asserts an internal side effect, call ordering, or forbidden invocation, the selected evidence must directly observe that property rather than only an external outcome.
-    - \`critical\`: true when the change is unsafe to approve without this claim.
-    - \`claimScope\`: \`specific_behavior\` for one behavior, or \`suite\` only when
-      the claim concerns a whole verification suite.
-   - \`authoritySectionId\`: the governing \`## Implementation\` step or section.
-   - \`expectedCheckId\`: the check kind that must pass (from \`activeChecks\` /
-     \`verificationCandidates\`, e.g. \`build\`).
-    - \`counterexampleRequirement\`: required for critical claims.
-       A \`specific_behavior\` claim requires \`{ kind: "assertion", checkId: "test",
-       assertion: { providerId: "junit", localId: "com.example.SecurityTest#verifyNoXss" } }\`.
-       A \`suite\` claim requires \`{ kind: "aggregate_check", checkId: "test" }\` and
-       is accepted only when that provider registers aggregate coverage; structured assertion
-       reports are not aggregate coverage.
-      REQUIRED whenever \`critical\` is true — a critical claim without it can never
-      become PROVEN and is rejected at submission. \`checkId\` MAY match
-      \`expectedCheckId\`. Choose a counterexample check whose current verification
-      candidate is structurally capable of producing and binding the required
-       AssertionIdentity or aggregate capability. Check-ID diversity is not an independence requirement.
-      \`assertion.providerId\` and \`assertion.localId\` identify the specific test assertion
-   Declare at least one claim per critical behavioral change. Do NOT invent claims
-   that the plan does not actually assert.
+4. Derive at least one structured claim per critical behavioral change. Do NOT
+   invent claims that the plan does not actually assert. Follow this contract:
+
+${PLAN_CLAIM_GUIDANCE}
 5. Call \`flowguard_plan({ planText, claims })\` with the full plan markdown and the
    declarations from step 4.
 6. Read the response. The \`reviewDispatch\` field carries the review state, \`reviewInvocation\` carries the exact reviewer dispatch instructions, and \`directive\` carries the canonical next action.
@@ -168,6 +148,8 @@ ${SHARED_REVIEW_LOOP({
 - Declare structured \`claims\` on every plan submission and revision; a plan that asserts critical behavior without a claim leaves the ProofGraph contract empty.
 - Never declare a claim the plan does not assert, never make a claim broader than its bound observable evidence, and never name a check that is not active in this session.
 - A critical claim blocks the final evidence approval while its declared evidence is missing, stale, or contradicted. Declare \`critical: true\` only for behavior that genuinely must hold, and always with a structurally bindable counterexample check.
+- A counterexample is sufficient only when it is designed as a targeted falsification: it must exercise a concrete violating variant and show the selected check detects it. A second green execution of the same behavior is not a counterexample. A build/aggregate check may fill the counterexample role when the claimed property is checkable and a targeted faulty variant is provably rejected by that check; different check identities and separate attempts remain required, but different assertion identities are not.
+- When the reviewer returns \`changes_requested\`, address every blocking finding from that review. Map each finding to the changed plan section or claim; do not fix only the first finding. When the response reports that the iteration budget is exhausted (or the gate requires a governance override), stop and tell the user to run \`/request-changes\` for a fresh review cycle, or \`/override-approve <Begründung>\` to accept the reviewed plan.
 - Always complete the independent review before proceeding (use plugin findings or the reviewer subagent).
 - When revising a plan, include the COMPLETE plan text (not a diff).
 - Cite Source for each verification check, or state NOT_VERIFIED with recovery steps.

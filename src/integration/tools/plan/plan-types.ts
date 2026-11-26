@@ -70,6 +70,8 @@ export type PlanRevisionResult = {
   revisionDelta: RevisionDelta;
   prevDigest: string;
   verdict: LoopVerdict;
+  /** Present when the submitted revision was not adopted (review exhaustion). */
+  discardedDraft?: import('../../../state/evidence-review.js').DiscardedReviewDraft;
 };
 
 export type PlanSubmissionResponseInput = {

@@ -51,6 +51,12 @@ export {
 } from './evidence-review-card.js';
 export { buildArchitectureReviewCard } from './architecture-review-card.js';
 export { buildReviewReportCard } from './review-report-card.js';
+export {
+  WORKFLOW_CHOICE_ACTIONS,
+  WORKFLOW_CHOICE_QUESTION,
+  buildWorkflowChoiceConclusion,
+  buildWorkflowChoiceDocument,
+} from './workflow-choice.js';
 export { normalizedMarkdown, validateCodeLanguage, PresentationContractError } from './model.js';
 export {
   projectFindingRelation,

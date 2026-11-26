@@ -10,6 +10,14 @@ runs:
         node-version-file: .node-version
         cache: npm
         cache-dependency-path: package-lock.json
+    - name: Use runner temporary directory on Windows
+      if: runner.os == 'Windows'
+      shell: bash
+      env:
+        TEST_TEMP: ${{ runner.temp }}
+      run: |
+        : "${TEST_TEMP:?Runner temporary directory is required}"
+        printf 'TEMP=%s\nTMP=%s\n' "$TEST_TEMP" "$TEST_TEMP" >> "$GITHUB_ENV"
     - name: Install dependencies
       shell: bash
       run: npm ci

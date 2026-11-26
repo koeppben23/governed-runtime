@@ -57,7 +57,7 @@ import {
   MCP_FLOWGUARD_TOOL_PREFIX,
   TOOL_FLOWGUARD_STATUS,
 } from '../../integration/tool-names.js';
-import { collectProductionSources } from './production-source.js';
+import { collectProductionSources } from '../support/production-source.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 

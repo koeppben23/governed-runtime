@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findBindingArtifacts,
   findPublicationBinding,
+  lastPublicationBinding,
   isArtifactBindingEntry,
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
@@ -62,6 +63,13 @@ function sessionState(mode?: string): SessionState | null {
   return {
     policySnapshot: { mode },
   } as unknown as SessionState;
+}
+
+function publicationEvent(binding: ArchivePublicationBinding): Record<string, unknown> {
+  return {
+    event: 'archive:publication_bound',
+    detail: { schemaVersion: 'flowguard-archive-publication-binding.v1', ...binding },
+  };
 }
 
 // ─── findBindingArtifacts ─────────────────────────────────────────────────────
@@ -140,6 +148,29 @@ describe('findPublicationBinding', () => {
     });
     expect(findPublicationBinding([event(historical), event(current)], historical)).toBe(false);
     expect(findPublicationBinding([event(historical), event(current)], current)).toBe(true);
+  });
+});
+
+// ─── lastPublicationBinding ───────────────────────────────────────────────────
+
+describe('lastPublicationBinding', () => {
+  it('returns the trailing binding for the requested archive file', () => {
+    const binding = publicationBinding();
+    expect(lastPublicationBinding([publicationEvent(binding)], binding.archiveFile)).toEqual(
+      binding,
+    );
+  });
+
+  it('ignores a trailing binding for a different archive purpose', () => {
+    const binding = publicationBinding();
+    const events = [publicationEvent(binding), auditEvent('later')];
+    expect(lastPublicationBinding(events, 'export-session.tar.gz')).toBeUndefined();
+  });
+
+  it('requires the binding to be the trailing event (history must be republished)', () => {
+    const binding = publicationBinding();
+    const events = [publicationEvent(binding), auditEvent('later')];
+    expect(lastPublicationBinding(events, binding.archiveFile)).toBeUndefined();
   });
 });
 

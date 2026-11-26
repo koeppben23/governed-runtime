@@ -4,14 +4,18 @@ import { completedDispatchForInvocation } from '../../state/evidence-test-consta
 import { ReviewFindings } from '../../state/evidence.js';
 import {
   artifactReviewSubjectScope,
-  buildInvocationEvidence,
   createReviewObligation,
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from '../review/obligations/assurance.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../../review-invocation-test-helpers.js';
 import { hashFindings } from '../review/findings-hash.js';
-import { buildReviewFeedbackProjection } from './status-detail-projections.js';
+import {
+  buildPlanClaimAuthorityProjection,
+  buildReviewFeedbackProjection,
+  statusProjectionKind,
+} from './status-detail-projections.js';
 
 function feedbackState() {
   const base = makeState('ARCHITECTURE');
@@ -160,6 +164,46 @@ describe('buildReviewFeedbackProjection', () => {
     expect(buildReviewFeedbackProjection(mismatchedHost)).toBeNull();
   });
 
+  it('projects the exact consumed changes-requested feedback for implementation rework', () => {
+    const base = feedbackState();
+    const assurance = base.reviewAssurance!;
+    const rejectedDigest = 'rejected-implementation-digest';
+    const obligation = assurance.obligations[0]!;
+    const state = makeState('IMPLEMENTATION', {
+      implementationRework: { rejectedDigest, exhausted: false },
+      reviewAssurance: {
+        ...assurance,
+        obligations: assurance.obligations.map((item) => ({
+          ...item,
+          obligationType: 'implement' as const,
+          subjectDigest: rejectedDigest,
+          status: 'consumed' as const,
+          consumedAt: FIXED_TIME,
+        })),
+        invocations: assurance.invocations.map((item) => ({
+          ...item,
+          obligationType: 'implement' as const,
+          consumedByObligationId: obligation.obligationId,
+        })),
+        attempts: assurance.attempts.map((item) => ({
+          ...item,
+          obligationType: 'implement' as const,
+          subjectDigest: rejectedDigest,
+        })),
+        dispatches: assurance.dispatches.map((item) => ({
+          ...item,
+          obligationType: 'implement' as const,
+        })),
+      },
+    });
+
+    expect(buildReviewFeedbackProjection(state)).toMatchObject({
+      obligation: { type: 'implement', subjectDigest: rejectedDigest },
+      review: { verdict: 'changes_requested' },
+      missingVerification: ['Add a controller regression test for the null path.'],
+    });
+  });
+
   it('fails closed outside the owning phase, for a stale generation, or a different obligation type', () => {
     const state = feedbackState();
     const assurance = state.reviewAssurance!;
@@ -192,5 +236,81 @@ describe('buildReviewFeedbackProjection', () => {
     expect(buildReviewFeedbackProjection(architectureReview)).toBeNull();
     expect(buildReviewFeedbackProjection(staleGeneration)).toBeNull();
     expect(buildReviewFeedbackProjection(planObligation)).toBeNull();
+  });
+});
+
+describe('buildPlanClaimAuthorityProjection', () => {
+  it('projects only the current plan critical claim identities', () => {
+    const state = makeState('PLAN', {
+      plan: {
+        current: { planVersion: 2, digest: 'plan-digest' },
+        claimDeclarations: {
+          flow: 'plan',
+          version: 'v2',
+          claims: [
+            {
+              claimId: '11111111-1111-4111-8111-111111111111',
+              statement: 'critical',
+              critical: true,
+              authoritySectionId: 'implementation-step-1',
+            },
+            {
+              claimId: '22222222-2222-4222-8222-222222222222',
+              statement: 'noncritical',
+              critical: false,
+              authoritySectionId: 'implementation-step-1',
+            },
+          ],
+        },
+      },
+    } as never);
+    expect(buildPlanClaimAuthorityProjection(state)).toEqual({
+      planVersion: 2,
+      subjectDigest: 'plan-digest',
+      criticalClaims: [
+        {
+          claimId: '11111111-1111-4111-8111-111111111111',
+          statement: 'critical',
+          authoritySectionId: 'implementation-step-1',
+        },
+      ],
+    });
+  });
+
+  it('omits the projection when no plan exists', () => {
+    expect(buildPlanClaimAuthorityProjection(makeState('TICKET'))).toBeNull();
+  });
+});
+
+describe('statusProjectionKind (single projection-dispatch authority)', () => {
+  it('selects the full status without a focused flag', () => {
+    expect(statusProjectionKind({})).toBe('full');
+    expect(statusProjectionKind({ whyBlocked: false, evidence: undefined })).toBe('full');
+  });
+
+  it.each([null, undefined, 'evidence', 42])('treats non-object arguments (%j) as full', (args) => {
+    expect(statusProjectionKind(args)).toBe('full');
+  });
+
+  it.each([
+    'finish',
+    'whyBlocked',
+    'evidence',
+    'context',
+    'readiness',
+    'reviewFeedback',
+    'proofGraph',
+  ] as const)('selects the %s projection for its own flag', (flag) => {
+    expect(statusProjectionKind({ [flag]: true })).toBe(flag);
+  });
+
+  it('keeps first-match precedence when several flags are set', () => {
+    expect(statusProjectionKind({ proofGraph: true, finish: true, whyBlocked: true })).toBe(
+      'finish',
+    );
+    expect(statusProjectionKind({ reviewFeedback: true, evidence: true, whyBlocked: true })).toBe(
+      'whyBlocked',
+    );
+    expect(statusProjectionKind({ proofGraph: true, readiness: true })).toBe('readiness');
   });
 });

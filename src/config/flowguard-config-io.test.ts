@@ -41,7 +41,12 @@ function restoreReadFile(): void {
 }
 import { DEFAULT_CONFIG, type FlowGuardConfig } from './flowguard-config.js';
 import { globalConfigPath, repoConfigPath, PersistenceError } from '../adapters/persistence.js';
-import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
+import {
+  readConfig,
+  readEffectiveArchivePolicy,
+  writeGlobalConfig,
+  writeRepoConfig,
+} from '../adapters/persistence-config.js';
 import { runWithAdapterLogger, type AdapterLogger } from '../logging/adapter-logger.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
@@ -110,6 +115,37 @@ describe('readConfig', () => {
     expect(config.archive.redaction.allowRawExport).toBe(false);
     expect(config.archive.redaction.maxAuditEvents).toBe(10_000);
   });
+
+  it.each([
+    { reviewer: { outputTokenMax: 'host' } },
+    { reviewer: { toolTimeoutMs: 30_000 } },
+    { reviewer: { reviewTimeoutMs: 480_000 } },
+    { reviewer: { serializationTimeoutMs: 60_000 } },
+    { presentation: { opencode: { glyphProfile: 'ascii' } } },
+  ])(
+    'rejects obsolete config %j at both real file boundaries without fallback or rewrite',
+    async (obsolete) => {
+      for (const scope of ['repo', 'global'] as const) {
+        const file = scope === 'repo' ? repoConfigPath(tmpDir) : globalConfigPath();
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        const raw = `${JSON.stringify({ schemaVersion: 'v1', ...obsolete })}\n`;
+        await fs.writeFile(file, raw);
+        await expect(readConfig(scope === 'repo' ? tmpDir : undefined)).rejects.toMatchObject({
+          code: 'SCHEMA_VALIDATION_FAILED',
+        });
+        expect(await fs.readFile(file, 'utf8')).toBe(raw);
+        const recovered = {
+          schemaVersion: 'v1',
+          presentation: { glyphProfile: 'ascii' },
+          reviewer: { executionTimeoutMs: 120_000 },
+        };
+        await fs.writeFile(file, JSON.stringify(recovered));
+        const config = await readConfig(scope === 'repo' ? tmpDir : undefined);
+        expect(config.presentation.glyphProfile).toBe('ascii');
+        expect(config.reviewer).toEqual({ executionTimeoutMs: 120_000 });
+      }
+    },
+  );
 
   it('reads and parses a valid config file', async () => {
     const custom: FlowGuardConfig = {
@@ -446,18 +482,18 @@ describe('readConfig — precedence', () => {
       worktree,
       JSON.stringify({
         schemaVersion: 'v1',
-        presentation: { opencode: { glyphProfile: 'ascii' } },
+        presentation: { glyphProfile: 'ascii' },
       }),
     );
     await writeGlobalConfig(
       JSON.stringify({
         schemaVersion: 'v1',
-        presentation: { opencode: { glyphProfile: 'unicode' } },
+        presentation: { glyphProfile: 'unicode' },
       }),
     );
 
     const config = await readConfig(worktree);
-    expect(config.presentation.opencode.glyphProfile).toBe('ascii');
+    expect(config.presentation.glyphProfile).toBe('ascii');
   });
 
   // ── EDGE ───────────────────────────────────────────────────
@@ -484,6 +520,147 @@ describe('readConfig — precedence', () => {
     const config2 = await readConfig(worktree);
     expect(config2.logging.level).toBe('warn');
     expect(config2).not.toEqual(DEFAULT_CONFIG);
+  });
+
+  describe('readEffectiveArchivePolicy — admin ceiling', () => {
+    const redaction = (config: Record<string, unknown>): string =>
+      JSON.stringify({ schemaVersion: 'v1', archive: { redaction: config } });
+
+    it('explicit global true + repo true allows raw export', async () => {
+      await writeRawConfig(
+        worktree,
+        redaction({
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: true,
+        }),
+      );
+      await writeGlobalConfig(
+        redaction({
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: true,
+        }),
+      );
+
+      const effective = await readEffectiveArchivePolicy(worktree);
+
+      expect(effective).toMatchObject({
+        kind: 'resolved',
+        globalPresent: true,
+        policy: { allowRawExport: true },
+      });
+    });
+
+    it('repo true without a global config binds the secure default', async () => {
+      await writeRawConfig(
+        worktree,
+        redaction({
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: true,
+        }),
+      );
+
+      const effective = await readEffectiveArchivePolicy(worktree);
+
+      expect(effective).toMatchObject({
+        kind: 'resolved',
+        globalPresent: false,
+        policy: { allowRawExport: false },
+      });
+    });
+
+    it('global true without a repo config allows raw export', async () => {
+      await writeGlobalConfig(
+        redaction({
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: true,
+        }),
+      );
+
+      const effective = await readEffectiveArchivePolicy(worktree);
+
+      expect(effective).toMatchObject({
+        kind: 'resolved',
+        policy: { allowRawExport: true },
+      });
+    });
+
+    it('a repo false cannot be elevated by a permissive global config', async () => {
+      await writeRawConfig(
+        worktree,
+        redaction({
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: false,
+        }),
+      );
+      await writeGlobalConfig(
+        redaction({
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: true,
+        }),
+      );
+
+      const effective = await readEffectiveArchivePolicy(worktree);
+
+      expect(effective).toMatchObject({ kind: 'resolved', policy: { allowRawExport: false } });
+    });
+
+    it('allowedModes is intersected and maxAuditEvents is the minimum', async () => {
+      await writeRawConfig(
+        worktree,
+        redaction({ allowedModes: ['basic'], allowRawExport: false, maxAuditEvents: 25 }),
+      );
+      await writeGlobalConfig(
+        redaction({
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: false,
+          maxAuditEvents: 10_000,
+        }),
+      );
+
+      const effective = await readEffectiveArchivePolicy(worktree);
+
+      expect(effective).toMatchObject({
+        kind: 'resolved',
+        policy: { allowedModes: ['basic'], maxAuditEvents: 25 },
+      });
+    });
+
+    it('an empty allowedModes intersection is a fail-closed conflict', async () => {
+      await writeRawConfig(worktree, redaction({ allowedModes: ['none'], allowRawExport: false }));
+      await writeGlobalConfig(redaction({ allowedModes: ['basic'], allowRawExport: false }));
+
+      const effective = await readEffectiveArchivePolicy(worktree);
+
+      expect(effective).toMatchObject({ kind: 'blocked', code: 'ARCHIVE_POLICY_CONFLICT' });
+      if (effective.kind === 'blocked') expect(effective.reason).toContain('empty intersection');
+    });
+
+    it('a malformed global config fails closed even with a valid repo config', async () => {
+      await writeRawConfig(
+        worktree,
+        redaction({
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: true,
+        }),
+      );
+      await writeGlobalConfig('{not valid json');
+
+      await expect(readEffectiveArchivePolicy(worktree)).rejects.toBeInstanceOf(PersistenceError);
+    });
+
+    it('absent configs resolve to the secure defaults', async () => {
+      const effective = await readEffectiveArchivePolicy(worktree);
+
+      expect(effective).toMatchObject({
+        kind: 'resolved',
+        globalPresent: false,
+        policy: {
+          allowRawExport: false,
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          maxAuditEvents: 10_000,
+        },
+      });
+    });
   });
 });
 

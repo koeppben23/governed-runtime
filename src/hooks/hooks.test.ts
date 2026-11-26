@@ -32,14 +32,14 @@ import type { HookPlatform } from './shared/types.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function createReadableFromString(content: string): NodeJS.ReadableStream {
+function createReadableFromString(content: string): Readable {
   const stream = new Readable();
   stream.push(content);
   stream.push(null);
   return stream;
 }
 
-function createEmptyReadable(): NodeJS.ReadableStream {
+function createEmptyReadable(): Readable {
   const stream = new Readable();
   stream.push(null);
   return stream;

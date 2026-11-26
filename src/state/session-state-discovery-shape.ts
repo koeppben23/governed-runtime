@@ -8,6 +8,7 @@
  */
 
 import { z } from 'zod';
+import { RepositoryPathSchema } from './evidence-findings.js';
 import {
   DetectedStackSchema,
   DiscoverySummarySchema,
@@ -74,8 +75,8 @@ export const SessionStateDiscoveryShape = {
    * (e.g. a stale opencode.json) are subtracted so they are not attributed to
    * the implementation or used to raise the risk floor.
    *
-   * `dirtyFiles: null` means the capture was unavailable. Implement then
-   * records the full worktree and surfaces `baselineScoping: "unavailable"`.
+   * `dirtyFiles: null` means the capture was unavailable. Plan approval and
+   * implementation recording then block rather than attributing the full worktree.
    * The control-plane marker is captured independently.
    */
   implementationBaseline: z.object({
@@ -89,7 +90,7 @@ export const SessionStateDiscoveryShape = {
     dirtyFiles: z
       .array(
         z.object({
-          path: z.string(),
+          path: RepositoryPathSchema,
           hash: z.string().nullable(),
         }),
       )

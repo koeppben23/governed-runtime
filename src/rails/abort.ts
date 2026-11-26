@@ -18,7 +18,9 @@
  * - state.phase === "ABORTED"
  * - state.error !== null (code: "ABORTED")
  * - state.transition.event === "ABORT"
- * - The session is terminal — no further commands except /review
+ * - The session is terminal: flow commands and /continue are blocked by the
+ *   command policy, while /hydrate (read-only reload) and /abort (this
+ *   idempotent no-op) remain available. /review is not admissible at terminal.
  *
  * Distinguishing aborted from completed:
  * - Normal completion: state.error === null at COMPLETE
@@ -30,6 +32,7 @@
 import type { SessionState } from '../state/schema.js';
 import type { ErrorInfo } from '../state/evidence.js';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
+import { Command, isCommandAllowed } from '../machine/commands.js';
 import { TERMINAL } from '../machine/topology.js';
 import {
   applyTransition,
@@ -50,6 +53,15 @@ export interface AbortInput {
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
 export function executeAbort(state: SessionState, input: AbortInput, ctx: RailContext): RailResult {
+  // Canonical command authority at the entrypoint (D6/#1034).
+  if (!isCommandAllowed(state.phase, Command.ABORT)) {
+    return {
+      kind: 'blocked',
+      code: 'COMMAND_NOT_ALLOWED',
+      reason: `Command /abort is not allowed in phase ${state.phase}`,
+    };
+  }
+
   // 1. Idempotent at any terminal phase — already terminal, no overwrite
   if (TERMINAL.has(state.phase)) {
     const result = evaluate(state, ctx.policy);
@@ -62,7 +74,8 @@ export function executeAbort(state: SessionState, input: AbortInput, ctx: RailCo
   const error: ErrorInfo = {
     code: 'ABORTED',
     message: input.reason || 'Session aborted',
-    recoveryHint: 'Start a new session with /hydrate',
+    recoveryHint:
+      'Start a new host session with a different host-session id, then run /hydrate; /hydrate in this terminal session only reloads it read-only.',
     occurredAt: now,
   };
 

@@ -73,7 +73,7 @@ export const REASON_COPY: readonly MigratedReasonCopy[] = [
     impact: 'verification_incomplete',
     headline: 'Evidence approval is blocked because critical claims have no proof evaluation',
     explanation:
-      'Certificate-authorized critical plan claims have no persisted ProofGraph evaluation. Evidence approval cannot proceed on un-evaluated claims.',
+      'Certificate-authorized critical plan claims have no unique, correctly bound source and usable ProofGraph evaluation. Missing, duplicated or mismatched identities cannot authorize approval.',
   },
   {
     code: 'PROOFGRAPH_RISK_ASSESSMENT_STALE',

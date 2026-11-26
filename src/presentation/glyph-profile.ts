@@ -38,3 +38,15 @@ const ASCII_GLYPHS: PresentationGlyphs = {
 export function presentationGlyphs(options: PresentationRenderOptions = {}): PresentationGlyphs {
   return options.glyphProfile === 'ascii' ? ASCII_GLYPHS : UNICODE_GLYPHS;
 }
+
+/**
+ * Host-visible markdown variant for a review card: only transmitted when the
+ * configured glyph profile actually changes the canonical card, so an identical
+ * card is never sent twice.
+ */
+export function differencedCardPresentation(
+  presentationMarkdown: string,
+  canonicalCard: string,
+): { readonly markdown: string } | undefined {
+  return presentationMarkdown === canonicalCard ? undefined : { markdown: presentationMarkdown };
+}

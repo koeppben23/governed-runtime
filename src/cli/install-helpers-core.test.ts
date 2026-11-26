@@ -17,17 +17,24 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     readFile: vi.fn((...args: Parameters<typeof actual.readFile>) => actual.readFile(...args)),
     writeFile: vi.fn((...args: Parameters<typeof actual.writeFile>) => actual.writeFile(...args)),
     unlink: vi.fn((...args: Parameters<typeof actual.unlink>) => actual.unlink(...args)),
+    rename: vi.fn((...args: Parameters<typeof actual.rename>) => actual.rename(...args)),
   };
 });
 
-import { sha256, safeRead, safeUnlink, resolveOpencodeConfigPath } from './install-helpers.js';
+import {
+  sha256,
+  safeRead,
+  safeUnlink,
+  resolveOpencodeConfigPath,
+  writeIfAbsent,
+  detectInstalledArtifacts,
+} from './install-helpers.js';
+import { MANDATES_FILENAME, PLUGIN_RELATIVE_PATH } from './templates.js';
 import { rollbackArtifacts } from './install-helpers-rollback.js';
 import { PACKAGE_VERSION } from './install-types.js';
 import {
   createMalformedJsonBackup,
-  mergeOpencodeJson,
   mergePackageJson,
-  mergeReviewerTaskPermission,
   parseJsonc,
   vendorDependency,
 } from './install-json.js';
@@ -141,29 +148,6 @@ describe('install-helpers', () => {
     });
   });
 
-  describe('mergeReviewerTaskPermission', () => {
-    it('hardens a FlowGuard-owned task permission map', () => {
-      const parsed: Record<string, unknown> = {};
-      mergeReviewerTaskPermission(parsed);
-      const agent = parsed.agent as Record<string, unknown>;
-      const build = agent.build as Record<string, unknown>;
-      const permission = build.permission as Record<string, unknown>;
-      expect(permission.task).toEqual({ '*': 'deny', 'flowguard-reviewer': 'allow' });
-    });
-
-    it('preserves an explicit wildcard while adding the reviewer permission', () => {
-      const parsed = {
-        agent: { build: { permission: { task: { '*': 'allow', 'customer-agent': 'ask' } } } },
-      };
-      mergeReviewerTaskPermission(parsed);
-      expect(parsed.agent.build.permission.task).toEqual({
-        '*': 'allow',
-        'customer-agent': 'ask',
-        'flowguard-reviewer': 'allow',
-      });
-    });
-  });
-
   describe('safeRead / safeUnlink', () => {
     it('reads existing files and treats ENOENT as absence', async () => {
       const filePath = path.join(tmpDir, 'test.txt');
@@ -205,10 +189,35 @@ describe('install-helpers', () => {
   });
 
   describe('rollbackArtifacts', () => {
-    it('removes a newly created directory tree using explicit recursion', async () => {
+    it('removes a fully journaled newly created directory tree', async () => {
       const rollbackRoot = path.join(tmpDir, 'created');
-      await fs.mkdir(path.join(rollbackRoot, 'nested'), { recursive: true });
-      await fs.writeFile(path.join(rollbackRoot, 'nested', 'artifact.txt'), 'artifact', 'utf-8');
+      const nested = path.join(rollbackRoot, 'nested');
+      const artifact = path.join(nested, 'artifact.txt');
+      await fs.mkdir(nested, { recursive: true });
+      await fs.writeFile(artifact, 'artifact', 'utf-8');
+      const ops: Array<{ path: string; action: 'removed'; reason: string }> = [];
+      const errors: string[] = [];
+
+      await rollbackArtifacts(
+        [
+          { path: rollbackRoot, existed: false, expectedKind: 'directory', sequence: 1 },
+          { path: nested, existed: false, expectedKind: 'directory', sequence: 2 },
+          { path: artifact, existed: false, expectedKind: 'file', sequence: 3 },
+        ],
+        ops,
+        errors,
+      );
+
+      await expect(fs.lstat(rollbackRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(errors).toEqual([]);
+      expect(ops).toHaveLength(3);
+    });
+
+    it('preserves an unjournaled foreign file inside a newly created directory', async () => {
+      const rollbackRoot = path.join(tmpDir, 'created');
+      const foreignFile = path.join(rollbackRoot, 'foreign.txt');
+      await fs.mkdir(rollbackRoot);
+      await fs.writeFile(foreignFile, 'external content', 'utf-8');
       const ops: Array<{ path: string; action: 'removed'; reason: string }> = [];
       const errors: string[] = [];
 
@@ -218,9 +227,9 @@ describe('install-helpers', () => {
         errors,
       );
 
-      await expect(fs.lstat(rollbackRoot)).rejects.toMatchObject({ code: 'ENOENT' });
-      expect(errors).toEqual([]);
-      expect(ops).toHaveLength(1);
+      expect(errors.join('\n')).toContain('did not journal as its own');
+      await expect(fs.readFile(foreignFile, 'utf-8')).resolves.toBe('external content');
+      expect(ops).toEqual([]);
     });
 
     it('rejects a symlink swapped into a newly created rollback target', async () => {
@@ -240,7 +249,7 @@ describe('install-helpers', () => {
       await expect(fs.readFile(externalFile, 'utf-8')).resolves.toBe('must remain intact');
     });
 
-    it('rejects a symlink inside a newly created rollback directory', async () => {
+    it('preserves a symlink inside a newly created rollback directory', async () => {
       const rollbackRoot = path.join(tmpDir, 'created');
       const externalFile = path.join(tmpDir, 'external.txt');
       await fs.mkdir(rollbackRoot);
@@ -254,8 +263,10 @@ describe('install-helpers', () => {
         errors,
       );
 
-      expect(errors.join('\n')).toContain('contains a symlink');
+      // Non-empty after removing journaled content: preserved, never traversed.
+      expect(errors.join('\n')).toContain('did not journal as its own');
       await expect(fs.readFile(externalFile, 'utf-8')).resolves.toBe('must remain intact');
+      await expect(fs.lstat(path.join(rollbackRoot, 'link.txt'))).resolves.toMatchObject({});
     });
   });
 
@@ -274,6 +285,14 @@ describe('install-helpers', () => {
   });
 
   describe('resolveOpencodeConfigPath', () => {
+    it('resolves global config from the explicit target rather than the project', async () => {
+      const target = path.join(tmpDir, 'global');
+      await fs.mkdir(target);
+      await fs.writeFile(path.join(target, 'opencode.jsonc'), '{}');
+      expect(resolveOpencodeConfigPath('global', target, tmpDir)).toBe(
+        path.join(target, 'opencode.jsonc'),
+      );
+    });
     it('creates opencode.json path when no config exists', () => {
       expect(resolveOpencodeConfigPath('repo', undefined, tmpDir)).toBe(
         path.join(tmpDir, 'opencode.json'),
@@ -289,6 +308,95 @@ describe('install-helpers', () => {
     });
   });
 
+  describe('native artifact detection', () => {
+    it.each([
+      {
+        platform: 'opencode' as const,
+        files: [MANDATES_FILENAME, PLUGIN_RELATIVE_PATH, 'flowguard.json'],
+      },
+      {
+        platform: 'claude-code' as const,
+        files: [
+          'flowguard-plugin/.claude-plugin/plugin.json',
+          '.mcp.json',
+          'hooks/hooks.json',
+          'flowguard-plugin/agents/flowguard-reviewer.md',
+        ],
+      },
+      {
+        platform: 'codex' as const,
+        files: [
+          '.codex-plugin/plugin.json',
+          '.mcp.json',
+          'hooks/hooks.json',
+          'subagents/flowguard-reviewer.md',
+        ],
+      },
+    ])(
+      'distinguishes empty, partial and complete $platform artifacts without fabricating presence',
+      async ({ platform, files }) => {
+        expect(detectInstalledArtifacts(tmpDir, platform)).toEqual({ found: false, artifacts: [] });
+        for (const [index, file] of files.entries()) {
+          const full = path.join(tmpDir, file);
+          await fs.mkdir(path.dirname(full), { recursive: true });
+          await fs.writeFile(full, 'fixture');
+          expect(detectInstalledArtifacts(tmpDir, platform)).toEqual({
+            found: true,
+            artifacts: files.slice(0, index + 1),
+          });
+        }
+      },
+    );
+  });
+
+  describe('owned file writes', () => {
+    it.each([false, true])(
+      'creates missing parent directories before writing, force=%s',
+      async (force) => {
+        const file = path.join(tmpDir, 'missing', 'nested', 'plugin.ts');
+        expect((await writeIfAbsent(file, 'native definition', force)).action).toBe('written');
+        expect(await fs.readFile(file, 'utf8')).toBe('native definition');
+      },
+    );
+    it('preserves an existing file without force', async () => {
+      const file = path.join(tmpDir, 'plugin.ts');
+      await fs.writeFile(file, 'customer bytes');
+      expect((await writeIfAbsent(file, 'replacement', false)).action).toBe('skipped');
+      expect(await fs.readFile(file, 'utf8')).toBe('customer bytes');
+    });
+    it.each([
+      new Error('plain failure'),
+      Object.assign(new Error('permission failure'), { code: 'EPERM' }),
+    ])(
+      'surfaces non-EEXIST writes instead of treating them as existing files: %s',
+      async (failure) => {
+        vi.mocked(fs.writeFile).mockRejectedValueOnce(failure);
+        await expect(writeIfAbsent(path.join(tmpDir, 'plugin.ts'), 'value', false)).rejects.toBe(
+          failure,
+        );
+      },
+    );
+    it('uses an exclusive temporary write for force replacement', async () => {
+      const file = path.join(tmpDir, 'plugin.ts');
+      await fs.writeFile(file, 'old');
+      vi.mocked(fs.writeFile).mockClear();
+      expect((await writeIfAbsent(file, 'new', true)).action).toBe('written');
+      expect(vi.mocked(fs.writeFile).mock.calls).toEqual([
+        [expect.stringContaining(`${file}.tmp.`), 'new', { encoding: 'utf-8', flag: 'wx' }],
+      ]);
+      expect(await fs.readFile(file, 'utf8')).toBe('new');
+    });
+    it('preserves the destination and removes its temporary file after rename failure', async () => {
+      const file = path.join(tmpDir, 'plugin.ts');
+      await fs.writeFile(file, 'old');
+      const failure = new Error('rename failed');
+      vi.mocked(fs.rename).mockRejectedValueOnce(failure);
+      await expect(writeIfAbsent(file, 'new', true)).rejects.toBe(failure);
+      expect(await fs.readFile(file, 'utf8')).toBe('old');
+      expect(await fs.readdir(tmpDir)).toEqual(['plugin.ts']);
+    });
+  });
+
   describe('parseJsonc', () => {
     it('parses comments and trailing commas', () => {
       expect(parseJsonc<{ model: string }>('{ // c\n"model": "claude", }').model).toBe('claude');
@@ -300,151 +408,6 @@ describe('install-helpers', () => {
     });
   });
 
-  describe('mergeOpencodeJson — ownership boundary', () => {
-    it('customer config with plugin field receives only the FlowGuard instruction', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const input = {
-        $schema: 'https://opencode.ai/config.json',
-        plugin: ['opencode-helicone-session'],
-        instructions: [],
-      };
-      await fs.writeFile(filePath, JSON.stringify(input, null, 2), 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-
-      expect(result.action).toBe('merged');
-      expect(result.reason).toContain('preserved task permissions');
-      expect(content.plugin).toEqual(input.plugin);
-      expect(content.instructions).toContain('.opencode/flowguard-mandates.md');
-      expect(content.agent).toBeUndefined();
-    });
-
-    it('customer instructions remain untouched while FlowGuard appends its instruction', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const input = {
-        instructions: ['custom-rules.md', 'CONTRIBUTING.md'],
-      };
-      await fs.writeFile(filePath, JSON.stringify(input, null, 2), 'utf-8');
-
-      await mergeOpencodeJson(filePath, 'repo');
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-
-      expect(content.instructions).toEqual([
-        'custom-rules.md',
-        'CONTRIBUTING.md',
-        '.opencode/flowguard-mandates.md',
-      ]);
-      expect(content.agent).toBeUndefined();
-    });
-
-    it('FlowGuard-owned config gets reviewer task hardening', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      await fs.writeFile(
-        filePath,
-        JSON.stringify({ $schema: 'https://opencode.ai/config.json', instructions: [] }),
-        'utf-8',
-      );
-
-      await mergeOpencodeJson(filePath, 'repo');
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.agent?.build?.permission?.task).toEqual({
-        '*': 'deny',
-        'flowguard-reviewer': 'allow',
-      });
-    });
-
-    it('customer task permissions are preserved byte-for-value', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const customerTask = { '*': 'allow', 'customer-agent': 'ask' };
-      await fs.writeFile(
-        filePath,
-        JSON.stringify({
-          plugin: ['x'],
-          instructions: [],
-          agent: { build: { permission: { task: customerTask } } },
-        }),
-        'utf-8',
-      );
-
-      await mergeOpencodeJson(filePath, 'repo');
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.agent.build.permission.task).toEqual(customerTask);
-    });
-
-    it('repeated customer-owned merges are idempotent', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      await fs.writeFile(
-        filePath,
-        JSON.stringify({ plugin: ['x'], instructions: ['user-rules.md'] }),
-        'utf-8',
-      );
-
-      await mergeOpencodeJson(filePath, 'repo');
-      await mergeOpencodeJson(filePath, 'repo');
-      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-      expect(content.instructions).toEqual(['user-rules.md', '.opencode/flowguard-mandates.md']);
-      expect(content.agent).toBeUndefined();
-    });
-  });
-
-  describe('mergeOpencodeJson — JSONC support', () => {
-    it('parses JSONC with line comments', async () => {
-      const filePath = path.join(tmpDir, 'opencode.jsonc');
-      await fs.writeFile(
-        filePath,
-        '{ // comment\n "$schema": "https://opencode.ai/config.json", "model": "anthropic/claude" }',
-        'utf-8',
-      );
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('merged');
-      expect(JSON.parse(await fs.readFile(filePath, 'utf-8')).model).toBe('anthropic/claude');
-    });
-
-    it('preserves comment-like text inside string values', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      await fs.writeFile(filePath, '{ "instructions": ["path/with//slashes.md"] }', 'utf-8');
-      await mergeOpencodeJson(filePath, 'repo');
-      expect(JSON.parse(await fs.readFile(filePath, 'utf-8')).instructions).toContain(
-        'path/with//slashes.md',
-      );
-    });
-
-    it('backs up malformed config before replacing it', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const malformed = 'this is not json at all {{{{';
-      await fs.writeFile(filePath, malformed, 'utf-8');
-
-      const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('written');
-      expect(result.reason).toContain('backup');
-      const backupPath = await findBackupFor(filePath);
-      expect(backupPath).not.toBeNull();
-      await expect(fs.readFile(backupPath!, 'utf-8')).resolves.toBe(malformed);
-      const repairedConfig = await fs.readFile(filePath, 'utf-8');
-      expect(() => JSON.parse(repairedConfig)).not.toThrow();
-    });
-
-    it('blocks malformed config replacement when backup creation fails', async () => {
-      const filePath = path.join(tmpDir, 'opencode.json');
-      const malformed = 'this is not json at all {{{{';
-      await fs.writeFile(filePath, malformed, 'utf-8');
-      const realImpl = vi.mocked(fs.writeFile).getMockImplementation()!;
-      try {
-        vi.mocked(fs.writeFile).mockImplementation(
-          async (...args: Parameters<typeof fs.writeFile>) => {
-            const options = args[2];
-            if (typeof options === 'object' && options !== null && 'flag' in options) {
-              throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
-            }
-            return realImpl(...args);
-          },
-        );
-        await expect(mergeOpencodeJson(filePath, 'repo')).rejects.toThrow('EACCES');
-      } finally {
-        vi.mocked(fs.writeFile).mockImplementation(realImpl);
-      }
-      await expect(fs.readFile(filePath, 'utf-8')).resolves.toBe(malformed);
-    });
-  });
+  // Native OpenCode config preservation/rejection is exercised through the
+  // real installer in opencode-runtime-gate-install.test.ts; there is no merge API.
 });

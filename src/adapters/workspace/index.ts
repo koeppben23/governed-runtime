@@ -10,6 +10,7 @@
  * - archive-files.ts             — internal filesystem helpers shared by archive build and verification
  * - archive-verify-manifest.ts   — file-inventory and digest verification
  * - archive-verify-chain.ts      — audit-chain, timestamp, content-digest verification (owns verifyArchive)
+ * - archive-read-verified.ts     — verified-snapshot reader for read-only evidence projections
  *
  * All existing imports from "./workspace" or "../adapters/workspace" resolve
  * to this barrel unchanged because TypeScript resolves directory imports to index.ts.
@@ -23,6 +24,7 @@ export {
   type FingerprintResult,
   type WorkspaceInfo,
   type SessionPointer,
+  type WorkspaceErrorCode,
   WorkspaceError,
   validateFingerprint,
   validateSessionId,
@@ -59,4 +61,4 @@ export {
 
 // ── Archive ──────────────────────────────────────────────────────────────────
 export { archiveSession } from './archive.js';
-export { verifyArchive } from './archive-verify-chain.js';
+export { verifyArchive, verifyCompletionExport } from './archive-verify-chain.js';

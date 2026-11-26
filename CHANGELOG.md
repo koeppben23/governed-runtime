@@ -7,6 +7,2860 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Prepare the `v2.0.0-tp.3` Technical Preview release from the current
+  `develop` integration state: synchronize the version and generated
+  documentation, cut the changelog, and run the release verification gates
+  before the protected release PR and tag. This preparation commit does not
+  claim publication; the artifact is published only after the tag-triggered
+  workflow completes.
+
+### Security
+
+- Reconcile the release CodeQL baseline and triage follow-ups against the
+  scanned candidate; document the uninstall race's trusted-ancestor
+  assumption and record five individual owner decisions scoped to TP.3.
+  CodeQL and the remaining verification gates still block publication.
+
+## [2.0.0-tp.3] - 2026-11-25
+
+### Added
+
+- Correct the base mutation target inventory: reclassify the interface-only
+  `host-adapter.ts` and the TypeScript-checker-rejected `finding-identity.ts`
+  as not mutation suitable with measured evidence, and remove their stale
+  selectors, candidate entry and admission record. No admitted target,
+  aggregate threshold, test scope or runtime behavior changed.
+- Re-triage the 2026-11-01 OpenCode V2 opt-in finding as fixed on current
+  `develop` using the passing packed-installed parity and unstarted-session
+  integration suites. Desktop 2.2.x acceptance and live remote model refresh
+  remain `NOT_VERIFIED`; historical host-probe documents are unchanged.
+
+- Split the PR smoke gate into four measured groups that run on separate
+  runners, all consuming one SHA-256-verified release tarball packed from the
+  built dist. Every existing smoke file, real installation, isolated workspace,
+  installation scope and native host scenario is retained; a `smoke` aggregator
+  passes only when all groups succeed. The split adds runner minutes to shorten
+  the smoke critical path and does not change `ci-gate` or branch protection.
+
+- Align public support and security statements with the V2-only development
+  model: V2 Technical Preview is best-effort with no production support or
+  response-time commitment; V1.x is historical with no active maintenance;
+  earlier versions are unsupported. Generalize examples in public documentation
+  and demo text, add a current-tree public-disclosure guard, preserve the
+  synthetic ISO 27001 demo boundary, and clarify the reference demonstration
+  wording. No runtime, license, release or evidence change.
+- Run CI coverage as two completeness-bound shards: the canonical unit and
+  integration Vitest projects execute on separate runners with the unchanged
+  two-worker bound, and a merge job enforces the unchanged four global 80%
+  coverage thresholds over the combined native Vitest blobs. The merge fails
+  closed on missing, duplicate, foreign, damaged or coverage-less shard
+  artifacts and on any inventory divergence from `vitest list`; commit and
+  workflow run bind every artifact, while the recorded run attempt keeps
+  merge-job reruns compatible with shards from the same run. Local coverage and
+  the monolithic same-SHA baseline remain available. No test scope, threshold,
+  timeout or branch-protection change.
+- Lead the public README with the reference experiment's "green checks are not
+  enough" result and a version-bound evidence link, and add a LinkedIn contact
+  path for authorized hands-on evaluation that preserves the proprietary
+  read-only boundary.
+- Add a governed Java reference evidence case study with red-green proof, a
+  completed positive control, an exact `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN`
+  negative control with no package, and integrity controls A/B on the new
+  export. Record the integrated harness, product tarball, sessions, plans,
+  implementation, package and verifier identities. Separate the historical Java
+  red-green bugfix scenario from the final documentation-only controls and record
+  its historical product and harness provenance; include the positive claim's
+  `PROVEN` and passed adversarial assertion states. Publish only the package
+  manifest and hashes; the synthetic raw package remains withheld pending
+  explicit owner approval. No runtime or license change.
+- Rework the root README for product positioning and discoverability: lead with
+  the governance problem, add a read-only "Explore the Java demo" entry, group
+  capabilities into deterministic governance, independent review, evidence and
+  ProofGraph, and verifiable auditability, retain supported engineering
+  environments and archive provenance, explain the R4 limitation and release
+  checksum requirement, and move the existing lifecycle diagram and release
+  boundaries into the primary narrative. Auditability wording stays within the
+  documented trust model. Preserve the technical-preview, host-enforcement,
+  licensing, and installed-acceptance limits; no runtime behavior or license
+  terms change.
+- Add ADR-015 for the audit append proof and proposed segmented journal,
+  including the local threat model, external-anchor boundary and downgrade
+  contract. Add a standalone segment PoC plus canonical scale, independent-writer,
+  real-process SIGKILL and lifecycle-soak harnesses; unsupported CoW filesystems
+  remain explicitly `NOT_VERIFIED`.
+- Require a structural `flowguard-evidence-design` declaration for every
+  critical plan claim: positive observable, concrete faulty variant, expected
+  failure, and the active counterexample candidate. The preflight rejects
+  incomplete declarations before a plan version or review obligation exists; it
+  does not judge semantic sufficiency.
+- Mint host-authoritative finding identities once at native capture, preserve
+  them through review consumption, and expose them read-only for revision work.
+  Capture comparison ignores only host IDs, so reviewer-owned message, severity,
+  category, and anchor changes still fail closed.
+- Require a `flowguard-finding-resolutions` response for every bound blocking
+  finding on a revision, bound to the exact review obligation, iteration, plan
+  version, and finding identity. A reasoned clarification is valid; no cosmetic
+  edit is forced.
+- Require a `flowguard-claim-changes` declaration when a prior critical claim is
+  removed or replaced, forbid same-identity critical downgrades, and support
+  one-to-many critical replacement. Semantic requirement preservation remains a
+  reviewer judgment.
+- Expose the current plan's critical claim identities through the read-only
+  `reviewFeedback` status projection (`planClaimAuthority`).
+- Add ADR-014 documenting the boundary between structural preflight, independent
+  semantic review, and executed evidence.
+
+- Add candidate-host validation-progress transport probes: live native tool
+  events, real TUI rendering of read-only command snapshots, session/location
+  isolation and consumer-disconnect controls. Preserve the original lifecycle
+  counterexample and its product-path regression; the complete progress-feature
+  gate remains blocked.
+
+- Resume pending OpenCode validation on an admitted native successful execution,
+  not an unconditional idle alias: verify current root-session completion and
+  reject replayed/stale notifications. Preserve canonical retry authority and
+  reject delayed notifications created inside backoff. Prove real subprocess
+  interruption, persisted attempts and open-check-only resumption in both
+  validation phases; product progress UI remains unimplemented.
+
+- Complete FlowGuard command discoverability and help on `develop`: compose
+  installed, native-only and optional TUI command metadata into a
+  capability-aware catalog; make `/commands --all` meaningful without a session;
+  and report host availability, maturity and readiness consistently in Markdown
+  and JSON. No governance authority, phase transition or decision permission is
+  introduced.
+
+- Add the Desktop command slice to the capability-aware catalog. `/choose-workflow`
+  is mapped to both TUI and Desktop; `/flowguard-ui-probe` and
+  `/flowguard-inline` are documented as experimental Desktop-only commands with
+  separate host-session and governance-session preconditions. Add user-facing
+  Desktop/ComposerPill documentation, including read-only refresh behavior,
+  optional GUI API degradation and artifact-bound installed evidence. The GUI
+  bundle bytes and installed bundle hash remain unchanged; Desktop availability
+  stays `not_verified` without trusted host capability evidence.
+
+- Extend diagnostic export to `diagnostic-export.v2` with bounded FlowGuard
+  JSONL log artifacts, a source inventory and independent completeness status
+  for discovery, lineage, canonical state, audit, host history and logs.
+  CLI and native `/debug-export` share the same collector; OpenCode host
+  process logs remain explicitly `NOT_VERIFIED`. Missing or truncated logs,
+  malformed entries and uncorrelated records are explicit gaps.
+
+- Discover verified multi-level reviewer lineage from canonical invocation
+  chains. Only a child whose single invocation parent is verified and reachable
+  is read; attempts, observations, host parent IDs, names and timing never
+  authorize a read. Conflicting invocation parents remain `LINEAGE_CONFLICT` and
+  `not_verified`, and descendants read before the conflict are cleared. Add a
+  hard `maxDiscoveryNodes` graph budget (default 250, CLI
+  `--max-discovery-nodes`) plus bounded incremental candidate enumeration, and
+  keep the first overflow candidate in the known denominator. Time-budget stops,
+  unreadable child states and candidate-budget stops mark discovery `partial`;
+  children of a partially enumerated parent are never read and remain
+  `not_verified` with `SESSION_LINEAGE_PARENT_INCOMPLETE`. Add explicit
+  `DISCOVERY_TRUNCATED`/`DISCOVERY_CANDIDATE_LIMIT`/`SESSION_LIMIT_TRUNCATED`
+  reporting. The Session Explorer now projects the same multi-level lineage and
+  generation as `session-graph.json`. Complete continuation coverage remains
+  explicitly `not_verified` until a bounded trusted discovery source exists.
+
+- Harden OpenCode uninstall safety: preserve a runtime `flowguard.json` when
+  no valid scope-matched install ownership manifest exists; after deleting
+  the managed native plugin entry, warn that a live host may still have the
+  old plugin loaded until its location is reloaded or the service restarts.
+  Regression tests cover byte-exact config retention and the unload notice.
+
+- Add optional 30-second visible-sidecar-session read-only reconciliation to
+  the Desktop composer status. Host completion events remain fast-path hints,
+  missed transitions are reconciled best-effort when the GUI is visible and
+  connected, and concurrent refreshes are coalesced. Expose named regions and
+  polite atomic status announcements in the Workbench and chat card. Extend
+  isolated running-host uninstall regression with PID/liveness and unaffected
+  observer checks. Installed Desktop 2.2.6 acceptance on artifact `f9c53e8f`
+  observed the 30-second visible-session reconciliation without a click or
+  event, retained the immediate completion refresh, and confirmed the ARIA
+  semantics without governance mutation. The isolated active-uninstall smoke
+  test passed against the exact packed artifact with the pinned native CLI
+  candidate `2.2.5`; a one-off rerun with the installed Desktop `2.2.6` CLI
+  (temporary candidate-version override, restored afterwards) also passed. This
+  does not establish a screenreader PASS, a distinct revision zero-restart
+  upgrade, or live-profile uninstall acceptance.
+
+- Isolate the OpenCode Desktop sidecar lifecycle and `serverEndpoints` /
+  `servers` compatibility into a host bridge. Route all GUI RPC calls
+  through a typed facade that reuses the canonical governance contracts,
+  binds to the mounted session and preserves the server-side decision gate.
+  No new authority or host-independent UI runtime is introduced. Installed
+  Desktop 2.2.6 acceptance on artifact `e8e1e90d` covers the Workbench read
+  projections, manual and completion-driven pill refresh, a rendered
+  `flowguard-live` card, and an opened-then-dismissed canonical decision
+  chooser without mutation. The host bridge keeps the 2.2.6 `ctx.servers`
+  surface and the newer `ctx.serverEndpoints` typings; contract tests pin both.
+  Zero-restart upgrade, active-profile uninstall and screenreader coverage
+  remain open.
+
+- Remove the separate autonomous StartGovernance synthetic status transcript
+  (RPC result remains authoritative; interactive /start stays unchanged).
+  Add an optional sidecar session-completion listener for read-only composer
+  status refresh, bound to the current session and protected against
+  out-of-order RPC responses. Manual Refresh remains the fallback. Installed
+  Desktop 2.2.6 acceptance on artifact `2651c0cb` observed a disposable
+  session change from `FlowGuard · inspect` to `FlowGuard · NOT_VERIFIED ·
+last read` without a click, while a completion in another session left the
+  open demo pill unchanged; the demo stayed at 44 messages, the existing
+  `approve` decision, generation 1 and 72 verified audit events. The installed
+  host exposes `ctx.servers`; newer plugin typings use `ctx.serverEndpoints`,
+  so the bundle supports both. The autonomous removal is covered by code and
+  product-composition regression; no installed autonomous Start was run.
+  Zero-restart host upgrade, active-profile uninstall, independent screenreader
+  coverage and automatic refresh across every governance transition remain
+  open.
+
+- Add optional read-only FlowGuard status beside the Desktop chat composer via
+  the official `ComposerPill` API, with an explicit palette refresh action.
+  Reuse canonical `GetNextAction` and `GetWorkbenchReview`; no workflow
+  commands, decisions, audit writes or model turns are initiated. A
+  `flowguard-live` `CodeBlock` renderer supports intentionally authored
+  fenced blocks in existing chat messages. The earlier synthetic-message
+  prototype was removed because those messages could enter model context.
+  Installed Desktop 2.2.6 acceptance on artifact `e054159a` covers placement
+  above the composer, manual `last read` refresh at EVIDENCE_REVIEW/READY/PLAN,
+  honest `NOT_VERIFIED`, session switching, renderer reload, light/dark,
+  keyboard operation, a rendered `flowguard-live` `v1` card, `v2` fallback and
+  unchanged demo state (44 messages, `approve` decision, activation generation 1,
+  72 verified audit events). The acceptance also records the separate
+  autonomous-start synthetic report as remaining model-context exposure.
+
+- Add read-only native Session Explorer and verified audit-chain chronology to
+  Desktop PR #1207, preserving unverified reviewer lineage, bounded audit
+  integrity and evidence completeness, without introducing decision authority.
+  Installed Desktop 2.2.6 acceptance on artifact `9ea01ae8` shows the root
+  session `verified`, two reviewer children `not_verified` with explicit lineage
+  reasons, two review attempts, and 72 persisted `audit-chain.v3` events under
+  `PARTIAL` completeness. The new sections are collapsed by default and expanding
+  them issues no hydrate, workflow command or decision. Acceptance also fixed an
+  unformatted diagnostics projection before the 37/37 green CI run.
+
+- Extend #1207's native Desktop Workbench with a bounded, read-only review
+  transport timeline built from canonical reviewer-assurance timestamps, and
+  ProofGraph claim cards showing positive/counterexample references plus
+  certificate binding. The timeline is explicitly not a full audit timeline;
+  missing or truncated history stays visible. Installed Desktop 2.2.6
+  acceptance on artifact `8ef2cc11` covers a 16-event review-assurance
+  timeline, a `PROVEN` claim with one evidence and one counterexample reference,
+  certificate binding `current`, READY `NOT_VERIFIED` when no history exists,
+  default-collapsed timeline disclosure and no renderer-induced mutation.
+  Acceptance corrected the pinned bundle hash from `1615f16a…` to the actual
+  built bytes `460eb485…` and fixed formatting, projection complexity and the
+  650-LOC wrapper budget (the bundle moved to `gui-plugin-bundle.ts` with
+  byte-identical output) before the installed run.
+
+- Refine the native OpenCode Desktop Review Workbench in #1207 with compact
+  phase orientation, prominent but canonical next-action/decision entry, native
+  keyboard-accessible expandable review/evidence/recovery sections, forensic
+  binding details on demand, and responsive density for narrower windows.
+  No separate decision authority or automatic workflow transition is introduced.
+  Installed Desktop 2.2.6 acceptance on artifact `3bc54caa` covers READY,
+  EVIDENCE_REVIEW and BLOCKED states, native details/summary keyboard operation,
+  global expand/collapse, light/dark mode and a `900x900` window. Acceptance
+  found and fixed an initial compact-revision defect where the recovery section
+  opened at a decision gate; recovery now opens only for a true blocked state.
+  Active-profile uninstall remains `PARTIAL`.
+
+- Add the first native Desktop Review Workbench slice to #1196: a bounded
+  `GetWorkbenchReview` RPC projects the exact persisted review subject, verdict,
+  findings, missing verification and ProofGraph summary without raw subject
+  content or file paths. The installed side panel composes it with `GetNextAction`,
+  separates independent reviewer results from operator decisions, shows canonical
+  blocker recovery, and opens the existing revision-bound chooser only for a
+  matching, complete review. Installed Desktop 2.2.6 evidence covers READY, a
+  real PLAN-pending review that fails closed with `REVIEW_VERDICT_NOT_RECORDED`,
+  a complete bound PLAN_REVIEW with reviewer accept and one minor finding,
+  native `/approve` advancing to `IMPLEMENTATION`, a stale binding rejected with
+  `DECISION_BINDING_STALE`, and BLOCKED guided recovery for `aea39b90`. The
+  stuck session's dispatch is diagnosed as `outcome_unknown` even though its
+  child review completed; no ledger was reset. Narrow layout, light mode and
+  decision-dialog keyboard navigation are verified; active-profile uninstall
+  remains `PARTIAL`. A service restart is required to load the new RPC in a
+  long-running service.
+
+- Add an opt-in, read-only OpenCode Desktop Panel/Slot capability probe to #1196, with
+  a native FlowGuard side tab, manual status refresh, and an opt-in session-header
+  display consuming the existing `GetNextAction` projection. Existing native
+  chooser and decision authority remain unchanged. Installed OpenCode Desktop
+  2.2.6 paints the Panel and `session.header` Slot, keeps the session-specific
+  `READY` projection current through manual refresh and session switches, and
+  registers no duplicate controls after reload; the pinned 2.2.5 Desktop build
+  remains `NOT_VERIFIED`. The probe is not the finished Review Workbench. Add
+  Desktop product UX specification, pinned-host acceptance checklist, adapter
+  regression tests and bundle hash.
+
+- Add the optional Desktop GUI companion for #1196 as an installed prebuilt
+  `plugins/flowguard/gui-experimental.cjs` bundle. It exposes the same
+  `/choose-workflow` dialog only when explicitly requested; it installs no
+  persistent pill, panel or automatic modal. The command re-reads activation,
+  policy, state, obligation and subject bindings before executing and uses the
+  canonical `session.command` / `SubmitDecision` paths. The Desktop visual
+  surface remains `NOT_VERIFIED` until an installed OpenCode Desktop 2.2.5 proof
+  is recorded. The portable Markdown path remains complete.
+
+- Add revision-bound native review decisions for #1196. The read-only
+  `GetNextAction` projection now carries the current review obligation, subject
+  digest, activation identity/generation, policy digest, state digest and phase
+  at PLAN/ARCHITECTURE/IMPLEMENTATION review gates. A new `SubmitDecision` RPC
+  accepts only canonical native decision commands, re-reads every binding
+  immediately before commit, refuses stale or mismatched views with
+  `DECISION_BINDING_STALE`, and requires an explicit non-empty rationale for a
+  governance override. TUI decision dialogs use this path; the channel remains
+  `host_command` and never claims verified human authorship.
+
+- Add the optional TUI workflow chooser for #1196. The installer writes
+  `plugins/flowguard/tui.ts`; the TUI plugin opens the canonical three-choice
+  dialog (or `/choose-workflow` on demand), cancels without executing anything,
+  and re-reads state before requesting the selected command. A read-only
+  `GetNextAction` RPC exposes the existing status projection with session,
+  phase, policy, state-digest and canonical activation identity/generation
+  binding. The chooser re-checks the active session after that second read,
+  rejects late dialog results after plugin unload, opens only on an explicit
+  `/choose-workflow` request (never unsolicited), and never handles approval or
+  override decisions. An installed pinned-host PTY proof covers chooser open, cancel
+  without a transition, `/task` selection through `session.command`, and the
+  resulting READY → TICKET transition. The smoke job budget grows to 15 minutes
+  so that installed PTY proof runs without truncating the rest of the suite.
+  Desktop GUI and persistent status UI remain `NOT_VERIFIED`; the Markdown
+  chooser remains the complete fallback.
+
+- Unify the portable `CHOOSE_FLOW` presentation: when the canonical directive
+  is `CHOOSE_FLOW`, `/status`, `/why`, `/finish` and `/help` now show the same
+  three workflow choices as `/start` (`/task` recommended, `/architecture` and
+  `/review` available) as one explicit decision. Canonical blockers still take
+  precedence, and no workflow is preselected, auto-executed or promoted to a new
+  decision authority.
+
+- Add ADR-011 defining the post-cutover diagnostics and human-decision UX
+  contract. It establishes one read-only diagnostic projection over existing
+  authorities, scope-limited session collection with honest
+  `COMPLETE`/`PARTIAL`/`NOT_VERIFIED` reporting, schema-aware redaction before
+  persistence, and server-side revision binding for native decisions. It also
+  records that OpenCode decisions use the canonical `host_command` channel
+  without claiming verified human authorship, and splits ownership between
+  #1191 and #1196.
+
+- Add the first portable post-cutover diagnostic slice: `flowguard debug-export`
+  and native `/debug-export` create a bounded, write-once snapshot of the root
+  session and known reviewer children. The snapshot preserves native IDs,
+  verifies the audit chain, captures optional host transcripts, redacts before
+  persistence, records per-file SHA-256/size and reports separate lineage,
+  canonical-state and host-history completeness plus an overall
+  `COMPLETE`/`PARTIAL`/`NOT_VERIFIED` status. Known-but-unreachable sessions stay
+  in the denominator; children without a positive root invocation remain
+  unread, and host-only reviewer children cannot make the snapshot `COMPLETE`.
+  Per-file, total-byte and total-duration budgets are enforced with explicit
+  warnings instead of silent truncation. It works before ACTIVE governance and never starts,
+  hydrates, reconciles, approves or repairs. Doctor reports the native
+  diagnostic command as available in this build and keeps native Desktop
+  delivery explicitly `NOT_VERIFIED`; the
+  Session Explorer, review UI and notifications remain follow-up work.
+
+- Add the portable post-cutover diagnostic views tracked by #1202: native
+  `/diagnostics explorer`, `/diagnostics review`, `/diagnostics logs` and
+  `/diagnostics notifications` render bounded Markdown over existing
+  authorities. The explorer shows exact known parent/reviewer lineage,
+  obligation/attempt/dispatch/invocation IDs and explicit `not_verified` gaps
+  without speculative linkage. The review view shows the displayed subject
+  revision and digest, reviewer verdict, findings and ProofGraph declarations
+  versus evaluation while stating that decision authority is not granted.
+  Reviewer output is used as the current verdict only when it is positively
+  bound to the displayed revision; stale or unassigned output is shown
+  separately as historical material. This includes implementation-review loops
+  whose recorded `currDigest` no longer matches the displayed implementation. The log view reads only the newest tail of
+  the existing JSONL sink, applies level/session/trace/time filters, masks
+  sensitive fields and reports byte, file, line, malformed-line and
+  missing-correlation gaps explicitly. Notification
+  delivery remains `NOT_VERIFIED` with the file log as the complete fallback;
+  no toast, panel or governance action is attempted. Cross-surface tests keep
+  the export graph, explorer and rendered Markdown facts aligned.
+
+- Announce automatic plan-approval validation before it starts. The
+  `/approve` host command now presents a visible `Validation started` turn
+  naming the active checks (for example `build` and `test`) while the checks
+  run, then presents the existing decision report with their results.
+
+- Present the canonical READY flow choice immediately after `/start` under an
+  explicit `## Next` section with all three executable commands, and clarify that
+  `/task` is a default suggestion, not a completed workflow decision or human
+  approval. Deliver the activation report as a visible prompt turn instead of a
+  synthetic inbox item that the Desktop transcript does not show. Represent
+  `/start` as the native activation
+  command in the installed-command catalogue and command documentation;
+  `/hydrate` remains the compatibility refresh surface.
+
+- Recognize successful `edit` host calls from OpenCode's actual
+  `metadata.files` result shape, so completed edits bind to implementation
+  evidence instead of being recorded as unknown and blocking evidence review.
+  Correct the mutation-binding recovery guidance: unknown outcomes require a
+  later runtime lease and `flowguard_reconcile_mutation_episode`, not a
+  `/request-changes` retry loop.
+
+- Align the Java demo setup with the installer-owned host restart and document
+  `flowguard uninstall --install-scope global` as the safe reset instead of
+  deleting the entire OpenCode configuration root.
+
+- Present `/approve`, `/end-governance`, `/recover-capacity`, `/check`, and the
+  other native command results as readable, visible prompt turns instead of
+  synthetic inbox entries the Desktop transcript does not display. Decision
+  cards show the recorded verdict, current phase, automatic-validation status,
+  and next command; they explicitly do not request automatic continuation. A
+  successful plan approval that auto-validates into `IMPLEMENTATION` is now
+  visibly recorded; a repeated approval remains a non-mutating
+  `COMMAND_NOT_ALLOWED` at the closed gate.
+
+- Verify the actual running OpenCode service after an applied installation and
+  restart the exact executable of the `serve --service` process even when the
+  previously loaded plugin still reports active; active modules can be stale
+  after package files change. Restart is the non-interactive default; when the
+  installer runs inside the service it schedules a detached restart after the
+  installer exits, and `--no-restart-host` is the explicit read-only opt-out.
+  The installer reads only a loopback service record, checks location-scoped
+  `/api/plugin` and `/api/command`, and reports typed failures instead of
+  claiming activation. A restart failure leaves installed artifacts committed.
+
+- Reserve Java ISO report publication with Node's non-recursive filesystem
+  operation instead of shell `mkdir`, whose Ubuntu uutils implementation can
+  report success after `EEXIST`. Retain exclusive winner/report checks and add
+  broken-utility and denied-reservation regressions; reservation errors leave
+  no published report or staging output. Align the demo documentation contract
+  with this exclusive primitive and reject the old shell claim.
+
+- Measure the tool-access and native-completion performance contracts with the
+  canonical warm p99 helpers, retaining the complete workloads and `<10 ms` /
+  `<150 ms` budgets. Run the entire integration PERF selection with one file
+  worker; correct the property-access test's misleading module-import claim.
+
+- Distinguish explicitly labelled OpenCode host `/reload` guidance from installed
+  FlowGuard commands in the demo documentation guard, retaining negative tests
+  for unknown commands. Keep running-install smoke resources local to each case
+  and count cleanup within its existing test budget, preventing a timed-out
+  cleanup hook from corrupting the following case.
+
+- Publish OpenCode's native FlowGuard entrypoint only after the dependency tree
+  is live, so an already-running Desktop/server cannot discover the fresh plugin
+  before `@flowguard/core` exists. Keep late publication inside rollback coverage
+  and remove the unused non-transactional dependency installer and its duplicate
+  package-manager detector/export. Add installed-host
+  coverage for native `/start` after installation into a running host and document
+  recovery for processes that already retained a failed package import.
+
+- Verify Java demo installs with the canonical V2 doctor from the same tarball,
+  retaining the mandatory reviewer check for both scopes. Remove V1-only file
+  requirements, correct V2 reload/activation guidance and document the pinned
+  Node 22/npm 10 demo toolchain. No legacy files or duplicate registrations are
+  created to satisfy setup.
+
+- Correct doctor's OpenCode activation hint to V2 watched discovery and `/reload`,
+  while retaining the warning that installation does not verify activation.
+
+- Retire the four historical callback-driven execution rails and their five
+  suites after purpose-level mapping to executable current owners. Preserved
+  plan/implement/validate/continue assertions now run through the canonical
+  tools, automatic validation and read-only routing; obsolete callback executors
+  are explicitly retired and guarded against reintroduction. Add the missing
+  `REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING` reason and cover the stricter
+  headingless-plan boundary.
+
+- Label the inherited duplicate settlement assertion without implying a second
+  governance-rejection class, and put the current P0-10 status and SHA-scoped
+  evidence boundaries ahead of the retained historical audit checkpoints.
+
+- Complete P0-10 implementation cleanup and record its code evidence: Hosted CI
+  passes 37/37 on `31341f1f`, default mutation scores 81.10 against the unchanged
+  80 break threshold on the identical production tree, and the package/import
+  proof excludes all retired artifacts. A later docs-only HEAD has repeated
+  `integration-perf` budget misses with unchanged thresholds, so final green
+  closure remains open. The ISO publication race, R4 and installed product
+  acceptance remain separate open blockers.
+
+- Adapt the lifecycle artwork proposed in PR #1186 for the V2 README, retaining
+  its nine-step layout as an editable SVG. Correct activation (`/start`, not
+  `/hydrate`), clarify exhausted-review overrides, and state policy/omission,
+  human-provenance and unresolved R4/acceptance boundaries explicitly. Regression
+  tests bind every displayed phase and transition to the canonical state machine.
+
+- Retire the unused generic review-obligation settlement executor after porting
+  its seven assertion purposes to live plan and architecture continuation routes
+  with real persistence (14 cases). Missing attempts close deterministically;
+  frozen-material integrity failures leave status unchanged. Current schema
+  boundaries reject obsolete invalid fixtures rather than normalizing them;
+  authorized bounded retry lineage and preserved evidence remain intact.
+
+- Remove the uncalled V1 host compatibility classifier. Port its nine safety
+  cases to the current native candidate resolver: exact selection, rejection
+  of other/unknown/nightly versions and pin provenance, with no warning-only
+  fallback. Historical V1 config comparisons read their unchanged 1.19.5 JSON
+  snapshot directly; no executable classifier is retained as test support.
+
+- Preserve both ISO demo publisher outputs and the requested output directory
+  in concurrency-assertion failures. The same `[0, 1]` exclusivity assertion
+  and all execution budgets remain unchanged; this diagnoses the repeated
+  Hosted-CI `[0, 0]` counterexample without claiming an unproven cause or fix.
+
+- Align current `/continue` and `/check` metadata with their V2 contracts:
+  continue is read-only routing without a mutating CONTINUE target; check is a
+  native scoped operation, not a RUN_CHECK/VALIDATE alias. Synchronize help,
+  registration-consistency/ProofGraph projections, native registration copy,
+  routing tests and command documentation without changing command execution.
+  CI on `fd8d275f` passes, including coverage; the earlier ISO publication
+  counterexample remains unexplained, not claimed repaired by that green run.
+
+- Classify the remaining P0-10 test-only paths and six explicitly callable
+  command surfaces against current owners. Remove the uncalled metadata-only
+  review-provenance validator and classify built-in provider-catalogue validation
+  as test support, preserving every validation assertion. Async rail and old
+  settlement assertion porting remain open; no dormant runtime is reactivated.
+
+- Use `.sdk-baselines/opencode/cli-candidate.json` for active demo preflight,
+  including the exact V2 `opencode v<version>` output. Invalid/missing candidate
+  pins and other host versions fail closed without a V1 fallback. Preserve
+  historical V1 comparison pins; this is not installed ACTIVE certification.
+
+- Close the bounded P0-00 CLI/server Windows diagnosis on `2f4aa06d`: one
+  checksum-verified package passes 65/65 on Linux, macOS and Windows; required
+  CI passes on attempt 2. Retain the initial 182.47 ms PERF failure and the
+  independently attributed macOS runner-capacity cancellation. Neither green
+  reruns nor CLI evidence establish Desktop, full ACTIVE or R4 acceptance.
+
+- Record the bounded P0-10 import/ownership audit and its concrete remaining
+  blockers, including the live demo V1 pin and production-class modules outside
+  the shipped entrypoint graph. Remove the proven redundant, type-only
+  plugin-orchestrator facade; its one caller now imports the existing canonical
+  review wiring type directly. No runtime/governance behavior changes or net
+  complexity-reduction claim.
+
+- Apply runner-temp preparation to every current Windows CI test job through
+  the existing Node preparation action and a Windows-only release-smoke step.
+  Remove the redundant parity-only override, retain Linux/macOS/local defaults,
+  and guard workflow-wide coverage plus literal Windows-path export in tests.
+  No assertions, test selection, npm cache or time budgets change; measured
+  runtime evidence remains limited to parity, not other Windows jobs.
+
+- Use GitHub's runner temporary directory for all Windows installed-parity
+  fixtures after same-VM control run `41849104623` measured npm unpack at 17s
+  there versus 206–249s in system temp. Remove the completed extra control;
+  preserve all four shards, 65 cases, real installations and existing budgets.
+  This is a CI-harness correction, not a product or OS-root-cause claim.
+
+- Record npm unpack timings from failed acceptance run `41845002693` and add
+  a separate, same-VM runner-temp control for its two mixed-session cases. The
+  ordinary full matrix, its failures, shared package/cache/bootstrap and all
+  assertions/deadlines remain intact; the control is diagnostic, not acceptance
+  or a claimed filesystem root-cause fix.
+
+- Record the Windows installer trace from acceptance run `41841262945`: npm
+  discovery succeeds in the failed non-Git repo arm, but its npm install outlives
+  the 300-second installer deadline; 14 selected cases remain unexecuted.
+  Enable npm's own timing logs/JSON to identify the slow internal phase without
+  changing install arguments, dependencies, retries, assertions or deadlines.
+
+- Retain per-arm packed-installer phases, environment/executable candidates,
+  subprocess timings and exit causes for the failed Windows repo/global setup
+  in acceptance run `41836072753`. Keep bootstrap behavior, package-manager
+  selection, all deadlines and parity assertions unchanged; the diagnostic
+  harness does not claim a root cause or a new acceptance PASS.
+
+- Serialize the packed parity suites and reuse one digest-bound bootstrap after
+  the Windows diagnostic showed a solo npm install completing while two
+  concurrent installs time out. Replace the invalid PowerShell fixture command
+  with a cross-shell real-file effect and retain per-installer npm debug logs.
+  The shared artifact, 65 cases, assertions and 300-second budgets are unchanged;
+  no product code or governance behavior changes.
+
+- Record the executed Windows bootstrap diagnostic on the original package:
+  the solo npm install exits successfully after 267.8 seconds, both joint
+  installs time out, and the solo suite exposes native-control quoting and
+  installer-path failures. Preserve these as separate blockers, not evidence
+  of a governance regression or proven cache contention. Linux/macOS each pass
+  65/65 in the same diagnostic run; no product fix or budget change is made.
+
+- Instrument the packed-test npm bootstrap with phase/digest, PID, duration and
+  exit/timeout diagnostics plus retained stdout/stderr and verbose npm debug
+  logs. A bounded Windows solo-then-joint CI comparison uses the original shared
+  package and preserves all 65 parity cases, assertions and 300-second budgets.
+  It diagnoses the bootstrap failure; it does not change product behavior or
+  establish Windows acceptance.
+
+- Record same-artifact Linux/macOS installed-parity results (65 native cases
+  each), while retaining both Windows bootstrap timeouts (initial attempt and
+  unchanged rerun) as failed, unexecuted acceptance attempts rather than a product
+  PASS. Pinned Desktop and Windows acceptance remain open; no runtime gate or
+  test budget is weakened.
+
+- Reconcile the original INACTIVE shell/edit/catalogue counterprobes with the
+  earlier activation repair at `3a274edf`, and rerun their assertions against the
+  same packed bytes as the installed matrix. Real native Start, concurrent
+  ACTIVE/INACTIVE requests, live tool publication, reload and restart now check
+  per-session catalogue/context separation. A required Linux/macOS/Windows CI
+  matrix shares one tarball/checksum artifact; Desktop 2.2.4 acceptance and R4
+  remain open. No product guard or trust contract is changed.
+
+- Packed-installed INACTIVE native parity tests compare absent and actual
+  checksum-verified repo/global installs, with and without Git: provider context
+  and native tool definitions, model variants, shell/edit/subagent effects,
+  permission denial/approval, generation/compaction, restart and no implicit
+  hydration. The bounded macOS CLI/server result does not certify Desktop,
+  live catalogue refresh, ACTIVE V2 or R4; no product guard is changed.
+
+- Document the bounded R4 feasibility result for OpenCode 2.2.4: final reviewer
+  input integrity against untrusted co-installed plugins is `NOT_SUPPORTED` by
+  the public host APIs. Identify HTTP/WebSocket/SDK handoffs and required
+  host-side enforcement; the six unchanged diagnostics retain two successful
+  replacement counterexamples. R4 remains BLOCKED with no runtime or trust-model
+  change.
+
+- Native `/approve`, `/override-approve`, `/request-changes`, `/reject` and
+  `/review-decision` execute the canonical decision rail without prompting a
+  model. Their scoped operations bind action, rationale, state, policy, worktree
+  and activation generation, and are persisted with the existing atomic decision
+  audit outbox. Frozen policy still rejects autonomous decisions at human gates.
+  The obsolete TTL intent cache, unwired V1 command hook and decision prompt
+  templates are removed; independent-review and override preconditions remain
+  canonical and unchanged.
+
+- Native `/recover-capacity` releases a proven terminal reviewer closure lock
+  whose stale attempt, blocked obligation and `outcome_unknown` dispatch lineage
+  is durable; unknown execution outcomes remain blocked on their typed
+  `retry_transport` path. `/end-governance` closes activation through the
+  canonical ENDING→INACTIVE journal only after terminal workflow closure, no live
+  reviewer/mutation execution and reconciled audit operations. Both record the
+  actual `host_command` channel and resolved actor, remain idempotent/replay-safe,
+  and never claim verified human provenance. RecoverCapacity does not reopen the
+  blocked obligation; EndGovernance is not `/finish` or `/abort`.
+
+- Native `/check` installs the explicit check scope from its command callback,
+  runs the canonical check prompt under the `build` agent and restores the prior
+  agent afterwards, then clears the scope at idle. Verified ACTIVE non-reviewer
+  requests receive the phase-aware FlowGuard mandates through the context hook;
+  INACTIVE sessions and frozen reviewer contexts receive none. The compatibility
+  `/validate` surface is unchanged.
+
+- Route retryable native reviewer capture/binding failures through the existing
+  classifier and durable re-arm owner. The failed dispatch becomes
+  `outcome_unknown`, the spent attempt stays attributable as `stale`, one fresh
+  attempt is minted on the same frozen obligation, and the caller receives the
+  canonical bounded `reviewRetry` envelope. The canonical pre-bind,
+  incoherent-verdict and expired-dispatch closures are wired into native
+  authorization/capture. Terminal/provenance/mandate failures remain
+  fail-closed. Product-composition tests cover exhaustion, concurrent capture and
+  late old-child rejection; pinned-host/installed acceptance and R4 remain open.
+
+- Document the distinction between autonomous-activation RPC access and the
+  server-resolved actor identity, including shared-instance access-control and
+  installed-acceptance limits. Actor assurance does not authenticate each caller.
+
+- Explicit native `flowguard-governance.StartGovernance` RPC for autonomous root
+  activation. `governance.autonomousActivation.enabled` defaults to `false`, with
+  `idp_verified` as the default minimum actor assurance. Requests bind the root
+  session, canonical worktree and policy digest; server-resolved actor checks
+  precede hydration. Autonomous and interactive starts share the locked lifecycle,
+  idempotent activation audit and durable audit-confirmation admission gate.
+
+- **Native Start transaction and audit (#1190, WS3).** The activation lock now
+  covers journal preflight and workflow preparation, not just the final journal
+  writes. ACTIVE and interrupted ACTIVATING starts validate/reuse their frozen
+  workflow without hydrating again; concurrent starts hydrate once. A hydrate
+  result that reports an error/blocked outcome cannot activate state it may have
+  prepared. Successful activation is recorded exactly once as
+  `governance:activated` in the existing audit trail, bound to
+  actor/channel/session/generation/policy and activation identity.
+  Audit-write/acknowledgement recovery does not mint another decision,
+  and a failed hydration audit does not suppress the activation audit. A durable
+  confirmation marker is written only after the activation audit; while it is
+  missing, governed runtime admission is blocked with
+  `GOVERNANCE_AUTHORITY_BLOCKED`, and a later `/start` confirms it and re-admits
+  the runtime. Catalogue/report failures after that commit emit an explicit ACTIVE warning
+  instead of reporting a failed activation; `/start` can retry presentation.
+  Hydration and repeated Start share the canonical auto-approve notice renderer.
+
+- **Required observation fault regressions (#1190).** Two composition tests
+  inject an observation-replay read failure and an observation-persistence write
+  failure with a valid child capture and a required repository citation. Both
+  retain the logged cause, reject findings with `REVIEW_EVIDENCE_NOT_OBSERVED`
+  and persist no invocation or authoritative observation. No production error
+  handling or optional/advisory observation semantics change.
+
+- **V2 reviewer repository-observation replay (#1190).** An enrolled native
+  reviewer can call the existing sanctioned observation tool during initial
+  investigation, without gaining parent workflow/approval tools. Execution keeps
+  the real child session identity while resolving workspace authority through
+  its governed parent. Parent capture replays immutable repository bytes through
+  the canonical observation owner before findings bind; persistence rechecks
+  current child/attempt/obligation lineage and deduplicates concurrent replays.
+  Native tests bind a cited frozen-commit finding and reject foreign/parent
+  session, wrong revision and changed content/response digests. Pre-bind failures
+  retain their actual reason code instead of being reported as a missing attempt.
+  R4 and the remaining retry/closure parity requirements are not closed by this.
+
+- **Reviewer acceptance evidence (#1190).** Split P0-05/P0-08 into the passing
+  native recovery/E2E subcontracts at `b9a41e5b` and the still-open restart,
+  settlement-race, R4 and reviewer-parity requirements. Earlier red results and
+  mutation scores remain explicitly historical, not current acceptance.
+- **Reviewer restart and settlement regressions (#1190).** Native tests kill
+  the real host after a committed V6 result-projection failure and during
+  settlement after interrupt; canonical continuation retains evidence/lineage
+  without repeating the committed review. Composition tests cover competing
+  recovery, failed settlement and stale-child rejection. R4 diagnostics reproduce
+  the still-open dynamic-context/HTTP plugin replacements; their successful
+  reproduction is not security acceptance.
+
+- **R4 reviewer tool-result integrity (#1190, Finding 6, #1169 WS4).** Co-installed
+  plugins are untrusted for review evidence. When a reviewer child is admitted,
+  FlowGuard registers per-child tail hooks that run after every setup-time hook:
+  an `execute.after` tail rejects a read result that no longer matches the digest
+  FlowGuard recorded at its own position, and a `context` tail rejects any
+  model-input tool result that differs from the host projection of the stored
+  native tool part. Either invalidates the run before the replaced bytes reach the
+  model or bind evidence; tails are released after capture and on plugin
+  shutdown. The three native R4 counterexamples (after replacement, forced
+  truncation replacement, context replacement) are now rejection tests; the
+  observe positive stays. Hooks registered after the tails, hooks ordered before
+  FlowGuard and transport-level replacement remain documented limits.
+
+- **Unknown reviewer outcome recovery (#1190, Finding 6 step 4, #1169 WS4).** An
+  obligation blocked with `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` is reopened only by
+  a typed `retry_transport` call of the originating review tool that proves a
+  later user turn (user message after the failed release), host settlement of the
+  stale child (interrupt without resume, wait, two identical history reads ending
+  in an idle boundary) and the exact durable lineage (one stale attempt, one
+  `outcome_unknown` dispatch, no evidence, no successor). One durable mutation
+  reopens the obligation and clears the capacity lock, audited as
+  `review:obligation_reopened`; history stays verbatim and the existing re-arm
+  mints one fresh attempt within the frozen budget. The release fence now admits
+  only that superseding attempt instead of fencing the session forever. An
+  interrupted serialization without an assistant row is classified as an unknown
+  outcome instead of a provenance violation. Caller text, idle events and
+  timeouts still release nothing; step-budget/output locks keep no V2 release.
+  Recovery texts of both reason codes describe the actual path. R2 and R4 remain
+  open.
+- **R2 restart reconciliation component proof (#1190, #1169 WS4).** A composition
+  test on real persistence and outbox commits generation-6 evidence, injects a
+  projection failure, then completes the review after a simulated restart (no
+  plugin runtime, fence, pending review or reviewer child): the canonical plan
+  verdict consumes the committed invocation and no second reviewer runs. The
+  native SIGKILL/reload follow-up above adds the actual process-restart proof;
+  complete installed workflow acceptance remains open.
+
+- **Host-neutral core guard (#1190, ADR-010 D1, #1169 WS2).**
+  `src/architecture/__tests__/host-neutral-core.test.ts` enforces that the core
+  (all governed modules except host adapters, plus every `integration` file that
+  is not OpenCode plugin composition or host runtime) imports no
+  `@opencode/*`/`@opencode-ai/*` package, and freezes every remaining line that
+  names OpenCode or its message-ID format in an exact, reasoned per-file budget.
+  New occurrences fail; removed occurrences must lower the budget. The initial
+  baseline is 62 lines in 30 files, including persisted locations and the
+  persisted message-ID check that stay by design.
+- **Native tool-result boundary probes (#1190, R4).** Four pinned-host
+  diagnostics correlate a real read's After result, normalized/truncated success
+  event, stored history, outgoing Context and provider-received request. Later
+  privileged test hooks can replace After or Context content without preventing
+  review fulfillment. These are native counterexamples, not unprivileged exploit
+  or assurance-positive tests; no production attestation is added. The evidence
+  report records why an early result digest or History reread cannot prove the
+  final consumed representation. R4 and Finding 6 remain blocked.
+- **Initial native reviewer provenance (#1190, R1/R3).** Every initial
+  assistant step now requires a live context/primary-request boundary. Multi-step
+  reviews retain permitted local tools with exact native before/after receipts;
+  unexplained assistants, foreign input, changed history and unobserved tool
+  continuations fail closed before JSON capture. Receipts are not reconstructed
+  after reload. The exclusive serialization lease and canonical evidence/audit
+  recorder remain unchanged; unknown-outcome recovery and R2 reconciliation are
+  still separate step-4 blockers. The evidence report distinguishes receipt
+  identity/input/status validation from unproved tool-result-byte provenance
+  and records the bounded 82.57% aggregate mutation result without claiming
+  every file or survivor is covered.
+- **Native mutation runner configuration.** Stryker 10.1.1 now runs through
+  its supported fork-pool option and upstream Vitest 5 test-name handling. The
+  obsolete 10.0.0-only dependency patch is removed from local and CI commands,
+  without changing profile selectors, tests or mutation thresholds.
+
+- **Native V2 same-child capture and evidence generation 6 (#1190, Finding 6
+  step 3).** The authorized native subagent child now runs one exclusive,
+  request-correlated serialization window. Terminal history, exact request,
+  effective model/variant, primary model request, tool absence and strict JSON
+  are verified; findings go through the canonical validators and the durable
+  attempt/invocation/dispatch/obligation/audit mutation. `transportVersion: 6`
+  (`native_subagent_message_json`) is explicit; historical v5 evidence remains
+  unchanged. Tool contamination rejects without evidence; interrupted/unknown
+  terminals remain blocked pending step-4 recovery. At the historical step-3
+  checkpoint, three required product capture contracts passed and recovery was
+  red; all four pass at the reviewed `b9a41e5b` checkpoint.
+- **Native reviewer dispatch authority (#1190, Finding 6 step 2).** The existing
+  review ledger now authorizes a fresh foreground V2 `subagent` before native
+  release and durably binds its actual progress-receipt child to the exact parent
+  call, obligation and attempt. Replay, foreign/stale authority, competing releases,
+  caller model overrides, partial persistence and reloads fail closed. Pending
+  invocation instructions/commands use native V2 arguments, not V1 Task aliases.
+  Missing review state is an explicit write failure. Initial reviewer execution
+  remains separate from capture/evidence/audit binding and recovery, which stay
+  blocked; no approval or autonomous-start authority is added.
+
+- **Native reviewer transport prerequisite probes (#1190).** A real pinned-host
+  Foreground→same-child→terminal test and foreign-input, denied-read, interruption
+  and compaction controls expose the V2 request window without creating FlowGuard
+  review evidence. The existing four product fixtures now explicitly enroll their
+  strict component scope and compare dispatches with the owning native
+  session/message/call tuple. Their required titles/outcomes remain unchanged and
+  failing; no reviewer block or proof generation is relaxed. The version-bound
+  implementation plan keeps capture, audit and recovery acceptance separate.
+  The README ADR reference is aligned with the existing documentation path check.
+  CI portability of the step-1 interruption probe is tightened to the actual
+  security outcome (interrupted idle and no normal completion) rather than
+  requiring a host-scheduling-dependent aborted assistant row. The four required
+  product reviewer contracts and titles are untouched.
+
+- **Pinned UI-to-RPC source counterexample (#1190).** The real PTY/TUI probe now
+  follows a keyboard callback through ordinary plugin RPC and replays its payload
+  through the SDK without another UI interaction. Both reach the same
+  handler-visible context; copied origin/key fields do not establish operator
+  authority. The version-bound source trace and canonical handoff inventory retain
+  Finding 5 as blocked; no product decision endpoint or acceptance is introduced.
+
+- **Explicit native governance scope (#1190).** A host-private, digest-bound
+  activation journal separates verified INACTIVE sessions from ACTIVE and blocked
+  authority before workflow, Git, logging or enforcement access. Enrollment
+  markers survive loss of a session journal; incomplete transitions, corrupt
+  history and stale generations fail closed. Setup exposes inert help only;
+  productive tools are prepared for active request snapshots and filtered from
+  inactive/delegated requests. Ordinary native `subagent` dispatches retain
+  state/error, integrity, command and audit gates; exact parent-call progress
+  receipts enroll children and continuations into the root generation without
+  granting parent decision authority or treating delegation as mutation success.
+  Settled receipt replays cannot rebind a child to an older call after continuation;
+  bounded-wait and independent scope/journal negatives exercise this boundary.
+  Root activation is provided by the native `/start` command (below);
+  deactivation and reviewer provenance remain separate acceptance paths.
+
+- **Activation decision channel and actor (#1190).** Activation journal revisions
+  (schema version 2) record the decision channel (`host_command`, `autonomous`,
+  `delegation`) and the canonically resolved decision actor returned by the
+  authorization port, never by the caller. Delegated children carry exactly the
+  `delegation` channel and the root actor; one decision keeps one channel and one
+  actor across its revisions. `host_command` names the native command channel and
+  is not a verified-human claim. Earlier record versions fail closed as corrupt
+  authority.
+
+- **Native `/start` command (#1190).** The V2 plugin registers a native `start`
+  command. In a root session it hydrates the workflow (optional single argument:
+  a policy mode), resolves the actor under the frozen policy's identity-provider
+  rules and commits Start and its completion under one activation lock, bound to
+  the hydrated policy digest and worktree. The decision is recorded as
+  `host_command`, which is not a verified-human claim. A repeated `/start` is
+  idempotent; one interrupted by a storage failure or restart is completed under
+  the same decision and actor, never a newly minted one. Delegated child
+  sessions, unsupported arguments, ENDING scopes, replayed decisions and a stopped
+  plugin are rejected before any authority write. The productive catalogue is
+  published and a non-resuming synthetic message reports the result together with
+  the hydrate presentation; an auto-approve gate notice that cannot be reported
+  fails Start before any activation write. The hydrate call is audited through the
+  same canonical path the former template used (`tool_call`,
+  `lifecycle:session_created`, committed semantic operations); a blocking audit
+  outcome fails the command visibly. New reason
+  code `START_ARGUMENTS_INVALID`; the `GOVERNANCE_NOT_ACTIVE` recovery now names
+  `/start`. ADR-004 records the new composition file. A live smoke test drives
+  `/start` through the SDK command channel of the pinned host, including restart
+  and an untouched sibling session.
+
+- **`/start` is no longer an installed command template (#1190).** The
+  `start.md` template is removed; the command catalogue marks `/start` as a
+  native plugin command without a template file, and the canonical command name
+  is owned by `shared/flowguard-identifiers.ts`. OpenCode install and `doctor`
+  refuse a target containing `commands/start.md`, whoever owns it, with
+  `MANAGED_ARTIFACT_CONFLICT` and preserve its bytes; `--force` does not remove
+  it, and uninstall is unaffected. The installed template set and its golden hash
+  shrink accordingly.
+
+- **ADR-010 native command channel amendment (#1190).** OpenCode cannot
+  distinguish operator UI input from SDK or agent command callers, so the
+  distinguishable host-UI requirement is withdrawn for OpenCode: operator
+  decisions use the native command channel, recorded as `host_command` with the
+  canonically resolved actor and never as a verified human; policy decides
+  whether that channel satisfies a gate. The operator handoff, implementation
+  inventory, Phase-0 gates, trust boundaries and independent-review docs now
+  state that interactive `/start` is connected while autonomous activation and
+  the other operator decisions remain open.
+
+- **Native authority-source mechanism probes (#1190).** Actual V2 host tests
+  establish private plugin-storage persistence across reload, graceful restart
+  and forced process termination, while exposing its host-wide plugin-ID scope.
+  A real PTY/TUI comparison distinguishes keyboard input from programmatic
+  dispatch and SDK command/prompt attempts; synthetic command events are not
+  treated as operator proof. A separate probe demonstrates that `log.synced`
+  alone does not establish historical coverage with default event persistence.
+  These are prerequisite observations, not implemented activation, accepted
+  operator decisions or repairs of Findings 2–4/8.
+
+- **Executable opt-in conformance regressions (#1190).** Real native-host
+  comparisons exercise shell/edit effects in Git and non-Git directories and
+  compare the effective provider-wire tool catalogue before any FlowGuard start.
+  A component fault-injection test checks that event-stream loss cannot veto an
+  unrelated unstarted session. They exercise the inactive boundary without
+  inventing activation authority or certifying a packed install.
+  Bootstrap tests now require fresh unstarted/Git-free calls to pass; missing-state
+  safety tests instead exercise loss of previously observed workflow state.
+
+- **ISO/IEC 27001:2022 evidence-to-control mapping (#1083).** New opt-in,
+  read-only companion report `flowguard inspect --session <id>
+--iso27001-mapping <file>` links organization-owned policy requirements to
+  evidence from the verified raw completion export. The strict mapping schema
+  is edition-specific, uses a closed evidence-selector vocabulary with separate
+  organization namespaces, and fails closed on duplicates, unknown controls,
+  unsupported selectors, and asserted exclusions (no
+  `NOT_APPLICABLE_BY_SOA` in v1). Emitted states are limited to
+  `EVIDENCE_LINKED_VERIFIED`, `EVIDENCE_PRESENT_UNVERIFIED`,
+  `EVIDENCE_MISSING`, `NOT_VERIFIED`, and `NOT_MAPPED`; the report never emits
+  a conformity, certification, audit verdict, or score, and never conflates
+  the internal session `ComplianceSummary` with an ISO decision. The reader
+  requires the `.sha256` sidecar independently of verifier strictness, blocks
+  redacted sharing archives and tampered packages, and binds findings to the
+  exact verified snapshot bytes. The offline, self-checking demo
+  `demos/iso27001-evidence-mapping/run-demo.mjs` exercises the export,
+  verification and projection chain in a temporary foreign repository with a
+  synthetic fixture and asserts the positive, negative (skipped assertion and
+  aggregate report) and tamper outcomes itself.
+
+- **Forensic demo assurance (#1080 follow-up).** The live-demo harness now
+  classifies denials and recoveries from structured host transcripts with
+  occurrence-bound recovery proofs (a denial after the last successful call is
+  never `recovered`), and unreadable governed output can no longer ground a
+  success claim. Killed negative controls are reported as `CONTROL_PASSED`
+  instead of being counted as completed workflows, `review_exhausted` and
+  review-stage subagent blocks (`SUBAGENT_UNABLE_TO_REVIEW`,
+  `SUBAGENT_FINDINGS_VERDICT_MISMATCH`, capture/consistency codes) are
+  classified as `NOT_VERIFIED` for positive proofs, an unresolved recoverable
+  denial (including plan/implement call-shape guards and admissibility guards)
+  is `NOT_VERIFIED` rather
+  than a contract violation, `flowguard_help` text output is recognized as
+  by-design, and the specialized runners
+  drive the persisted plan gate with bounded state-driven continuations instead
+  of a single `/plan` turn. Claim and risk controls share one full proof oracle
+  (positive and adversarial assertion, distinct attempts, role-specific
+  bindings, freshness, real package absence). `demos/run-all-demos.sh` adds a
+  mandatory dry-run environment gate (pins, npm-10 canary install, isolation,
+  checksum, provider ping) and a per-run install lock. See
+  `demos/DEMO_ASSURANCE.md`. Plan-gate classification now derives from the
+  persisted review obligation and its bound invocation (not findings counters),
+  JSONL framing losses abort a proof with `NOT_VERIFIED`, one immutable
+  digest-recorded product tarball is bound to every runner (replan included,
+  installed into an isolated npm prefix), the wrapper-owned lease is
+  token-checked with a fail-closed administrative force-remove, INT/TERM
+  terminate and confirm absence of the controlled demo process group (including
+  TERM-resistant grandchildren) before cleanup,
+  both replan sessions run through the state-driven continuation, attempt
+  identity is part of the plan-gate progress proof, typed identity conflicts
+  cannot be overridden by a matching claim, only operation-bound
+  recoveries resolve in-turn (a later tool success needs an independent
+  operation-scoped persistence witness, not any state-file change), structured
+  re-arms require explicit retry authorization and complete obligation/attempt
+  binding (anonymous retryable hints are observations only),
+  unexpected runner exit codes aggregate to FAILED, and
+  a failed product build aborts the wrapper.
+
+- **Assertion-identity integrity and exactly-once claims (#1080).** Structured
+  assertion evidence whose provider-scoped identity occurs more than once in one
+  extraction, or contradicts its extraction provider, no longer qualifies as
+  proof for either evidence role — regardless of `exitCode: 0`, `passed: true` or
+  a valid cryptographic binding. Binding reports
+  `PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS` /
+  `PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH`; a cached `PROVEN` projection that
+  references such an attempt is re-evaluated fail-closed. Certificate-authorized
+  critical claims must occur exactly once in the declared contract and once in
+  the projection with matching certificate binding before the gate counts them.
+  The claim-specific assertion binding now resolves provider-scoped identities
+  instead of first-match, and live demo controls only record `PASS` after their
+  parent and reviewer transcripts were captured and validated. Raw observations
+  remain auditable and the persisted formats are unchanged.
+
+- **Truthful ProofGraph planning and recovery (#1079).** OpenCode, Claude Code,
+  Codex and the plan tool share claim guidance requiring distinct check identities
+  and attempts, structurally bindable assertion/aggregate evidence and explicit
+  critical risk-trigger coverage. Diagnostics now distinguish evidence repair
+  from a required new authority. Post-approval authority recovery explicitly
+  preserves and aborts the old session, prepares a trusted pre-change worktree,
+  creates a different host/FlowGuard binding and obtains a new certificate before
+  governed reapplication and fresh verification. Hydrate is not a session reset.
+  Status/help consume the existing approval preflight and no longer advertise a
+  ready approval after an automatic-policy denial. Deterministic two-session
+  recovery and negative tests cover identical bytes, old authority, dirty-baseline
+  exclusion, unauthorized early mutation and in-place coverage widening.
+
+- **Live risk-trigger coverage controls.** `demos/risk-trigger-fixture/` is an
+  isolated minimal Maven repository whose governed artifact lives under
+  `src/state/` (HIGH-RISK + `state_integrity`),
+  driven by `run-live-risk-trigger-controls.mjs`. The uncovered case holds a valid
+  certificate-authorized critical claim that does not declare coverage and must be
+  denied with exactly `PROOFGRAPH_RISK_TRIGGER_UNCOVERED`; the covered case declares
+  `coversRiskTriggers` inside the approved claim set, reaches `PROVEN` and passes
+  ordinary approval. No runtime or demo change was required.
+
+- **Unified evidence-approval preconditions (#1078).** A single canonical,
+  side-effect-free preflight now gates every `EVIDENCE_REVIEW -> EXPORT_READY`
+  approval: the explicit decision rail, governance overrides, and policy
+  automatic approval on reviewer acceptance all consume the same certificate,
+  authorized-claim, coverage, risk-assessment, and proof-state decision. The
+  generic transition applier refuses the protected edge; the LOWEST persistence
+  boundary (`writeStateAlreadyLocked`, covering `writeState`, the
+  artifact/audit commit path, and any direct caller) re-evaluates exactly what
+  is written and refuses a bootstrap directly into `EXPORT_READY`; a denied
+  automatic approval carries no state, no decision receipt, and no completion
+  artifact. A denied automatic implementation approval persists the legitimate
+  review progress at the evidence gate first, so the reported phase always
+  matches the persisted phase. Explicit full-review approvals re-attest the
+  live governed worktree bytes before approval. Automatic plan approval mints
+  a `policy_auto` certificate from the same bound review evidence as the
+  explicit path; an exhausted or uncertifiable accepted review blocks at the
+  plan gate itself with the canonical review-evidence error. Certificate ids
+  are recomputed canonically at parse and authorization time, and the upgrade
+  preflight classifies the archived session state through the same boundary
+  authority as the live read (`v10` archives are `incompatible`, malformed
+  current archives `invalid`).
+
+- **Live critical-claim controls.** `run-live-claim-controls.mjs` drives two real
+  cases through the reduced evidence gate: a retained critical claim proven by
+  independent positive (`test`) and adversarial (`build`) executions, and the same
+  claim with the genuinely skipped adversarial assertion at otherwise green checks.
+  It asserts `PROVEN` plus ordinary approval for the first and the exact
+  `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN` denial for the second, backed by canonical
+  state/audit and validated host transcripts. The fixtures — documentation ticket,
+  positive JUnit assertion and a distinct adversarial falsification probe — are
+  committed before governance starts; nothing is simulated.
+
+- **Risk-trigger coverage authority (ProofGraph).** Every specific risk trigger
+  detected for the current implementation must be explicitly covered by a
+  certificate-authorized critical fact claim. Coverage is declared with
+  `coversRiskTriggers` on the plan claim — a claim may cover several triggers and
+  several claims may split the coverage — and is bound into the approval
+  certificate. The final gate enforces the certificate-bound relation, never the
+  persisted projection, so a stale or tampered projection cannot widen the
+  approved contract; a PROVEN claim only counts when its provenance binds the
+  current plan certificate and it appears exactly once in the projection. A
+  detected trigger without coverage blocks final
+  evidence approval with `PROOFGRAPH_RISK_TRIGGER_UNCOVERED`. `ceremony_only`
+  neither requires nor accepts coverage.
+
+- **Pre-upgrade preflight (`flowguard inspect --upgrade-check`).** Read-only,
+  workspace-scoped report of what must be cleaned up before a hard-cut
+  upgrade: active sessions, incompatible/unreadable state, missing state with
+  a live audit trail, and invalid live audit trails are blockers; historical
+  archives are inventoried and classified under the current contract
+  (`extractable`, `compatible | incompatible | invalid | unknown`) as warnings
+  only. Exits 1 when the workspace is not upgrade-ready; `--json` emits the
+  structured report.
+
+### Fixed
+
+- Serialize duplicate native reviewer capture completions per child. Two
+  concurrent settlements could release the shared result-integrity tails while
+  the winner was verifying, leaving zero recorded invocations. The existing
+  exactly-once suite now passes 10/10 consecutive runs; no test, threshold or
+  timeout changed.
+
+- Publish archives without destroying the previously attested generation. The
+  current archive/checksum pair is retained as `.previous` before any canonical
+  name is rewritten, restored byte for byte when the new publication fails, and
+  removed only after the new pair is published. A publish journal records the
+  next pair's digests as the commit point, so recovery never rolls a published
+  generation back onto an older retained copy, and a crash during the retain
+  step restores the single moved file instead of aborting. A failed publish no
+  longer deletes the old archive, the old sidecar or the staged inputs. The
+  existing regression test that pinned the destructive outcome (`all four paths
+removed`) is inverted to assert restoration instead.
+
+- Classify an empty audit trail explicitly instead of inheriting the vacuously
+  valid `verifyChain([])` result. An archived audit member with no record is
+  `unknown` (never `compatible`, and never masking a legacy `incompatible`
+  sibling), and a live session whose audit file is empty while its persisted
+  state proves audit evidence (outbox acknowledgements or a retired checkpoint)
+  is a blocker with `AUDIT_EVIDENCE_MISSING`. An empty trail without such
+  evidence remains a legitimate fresh session. `verifyChain` itself keeps its
+  general semantics.
+
+- Give the session state and audit locks a real owner identity instead of a bare
+  PID. The lock record now carries the writer's host, boot reference and, where
+  the platform exposes it, the process start identity, so a lock left by a
+  crashed process is reclaimed across restarts and after a reboot. A live PID
+  whose start identity differs (PID reuse) is provably a different process and
+  no longer blocks the session forever; an owner that cannot be positively
+  proven gone is still treated as alive (fail-closed). Serialize stale
+  reclamation through a directory guard whose deletion is conditional on
+  emptiness, so a reclaimer can never delete a lock that another process created
+  after its stale verdict, and a release can never remove a foreign owner's
+  entry. Add deterministic regression tests for the reclamation race, previous
+  boot, recovered PID, crash recovery and live-owner eviction, plus an
+  independent-process acceptance matrix (`npm run perf:lock-exclusivity`).
+
+- Remove the empty enrollment-waiter map entry after its final timeout, release
+  full settled reviewer dispatch objects while retaining bounded identity
+  bindings for enrolled children, and serialize concurrent duplicate
+  `session.deleted` retirement so cleanup runs exactly once per admitted session.
+- Bind the in-process audit append proof to a SHA-256 digest of the complete
+  trail content, not mutable filesystem metadata; restoring `mtime`/size after a
+  byte change no longer bypasses verification. Write the durable
+  `.audit-history` continuity marker with file and directory fsync before any
+  audit publication; a crash in that window fails closed instead of silently
+  starting a new chain, and a failed first publish removes only a freshly
+  created marker while the trail is still absent. Refuse a missing trail when
+  the proof, marker, an `audit_committed`/`reconciled` outbox entry or a retired
+  outbox checkpoint proves prior audit evidence, without blocking a legitimate
+  `state_committed` first append. Retain event membership in a fixed-size
+  no-false-negative Bloom filter with exact replay fallback, and hash the next
+  content incrementally while resolving the reflink fallback lazily.
+- Add real-Git runtime bootstrap, durable audit CoW p50/p95/p99, and interleaved
+  compact-status latency measurements to the V2 hardening verification suite.
+  Enforce the requested factor-three status threshold in CI. Compact status
+  skips derived implementation guidance with an explicit NOT_VERIFIED advisory
+  while retaining the typed response shape; full status is unchanged. Do not
+  treat unsupported reflink filesystems or unexecuted crash tests as verified.
+
+- Reuse the fingerprint already verified during a V2 runtime load for its
+  diagnostic/logging bootstrap instead of running a redundant Git probe.
+  Every subsequent session security boundary still resolves canonical authority
+  independently; no authorization cache or performance speedup is claimed.
+
+- Retire transient session workspace/enforcement state on verified native
+  deletion of delegated or inactive sessions. Preserve the root's canonical
+  audit handler and leave blocked activation and in-flight sessions untouched.
+
+- Retire native delegation dispatch, child and linking caches immediately
+  after observed enrollment settles; durable activation records continue to
+  reject replay. Bound unsettled dispatch reservations to 256 per governed
+  root and fail closed rather than retaining unbounded host calls.
+
+- Retire native event-fence session routing hints after a verified ACTIVE or
+  INACTIVE session deletion. Keep blocked activation and failed-root fences
+  sticky, including duplicate host deletion events.
+
+- Bound the state-owned reconciled outbox to at most 64 recent records,
+  compacting to a 32-operation tail in verified batches. Older reconciled
+  copies retire only after complete canonical chain and digest verification
+  with an atomic checkpoint; unresolved operations are never removed.
+
+- Release native session routing metadata on a deleted, inactive host session
+  without treating it as an ACTIVE governance event. Preserve blocked authority
+  fencing and avoid leaking session-root mappings across long-lived hosts.
+
+- Bind every canonical audit append and idempotent retry to the persisted
+  FlowGuard session identity. Reject foreign-session events and previously
+  mixed-session histories with CHAIN_BREAK before changing audit bytes.
+
+- Make flowguard_status compact a genuine low-latency projection: preserve
+  canonical persisted state and Discovery health while skipping full repository
+  drift rediscovery and toolchain probes. Explicitly mark both skipped checks
+  NOT_VERIFIED; keep full status as the default.
+
+- Verify the complete persisted audit chain before acknowledging an already
+  recorded operation or trusting read-only transition evidence. Malformed
+  chain hashes and reordered records now fail closed during reconciliation.
+
+- Use a same-directory copy-on-write clone to prepare the next canonical
+  audit.jsonl version when the filesystem supports reflinks, then append,
+  fsync and atomically rename. Keep the fully durable rewrite on filesystems
+  without clone support, preserving existing audit semantics and contracts.
+
+- Read and schema-validate the audit trail once per durable outbox reconciliation
+  batch rather than once per pending operation. Index only relevant operation
+  identities, retaining fail-closed digest comparison and writer idempotency.
+
+- Advance the reconciliation audit-chain cursor only after a durable append
+  succeeds, using the writer-tracked persisted chain tip rather than an
+  uncommitted provisional event hash.
+
+- Verify each existing canonical audit-chain.v3 record's sequence, hash
+  linkage, chain hash and semantic digest under the append lock before
+  extending the trail. A previously tampered or reordered chain now
+  fails closed with CHAIN_BREAK even on an idempotent retry.
+
+- Reject an unterminated canonical JSONL audit record before appending the next
+  event, preserving the original evidence bytes and failing closed with
+  AUDIT_ENVELOPE_INVALID instead of concatenating two JSON objects.
+
+- Reduce durable audit-outbox order validation from quadratic to linear membership
+  checks without weakening conflict detection; add deterministic ordering tests
+  and an executable baseline-versus-current performance benchmark.
+
+- Bound status drift rediscovery to a single flight per workspace, requesting cancellation
+  on timeout and propagating abort signals through Git subprocesses and file-scanning
+  collectors. Preserve read-only advisory status and fail-closed timeout diagnostics.
+
+- Fail closed on native event-handler saturation without blocking event consumption,
+  bounding simultaneous event handler work while preserving synchronous reviewer
+  progress observation and session-scoped error fencing.
+
+- Release per-session reviewer enforcement state when a host session is deleted,
+  so long-lived plugin processes do not retain enforcement registries for
+  terminated sessions.
+- Clarify shared plan-author guidance across OpenCode, Claude Code and Codex:
+  design claim-specific falsification before submission, distinguish incidental
+  suite coverage without dropping required critical claims, and bind warning-free
+  promises to diagnostic evidence. Reviewer criteria and runtime gates are unchanged.
+- Filter the native reviewer child's per-request tool map to the canonical
+  read/observe allowlist. Parent session permissions can otherwise override the
+  reviewer agent file and offer browser tools, causing the reviewer attempt to
+  fail before serialization. Unauthorized tool parts remain fail-closed and now
+  name the offending tool.
+- Reject structurally unreachable positive plan assertions before independent
+  review. Preserve `expectedAssertion` through claim admission, and keep the
+  canonical rule that the same regression assertion may serve as the
+  falsification witness when the positive and counterexample checks and
+  executions differ.
+- Do not adopt a plan revision submitted with the final review verdict. Report
+  `adopted: false`, the current and discarded versions, and the exact
+  `/request-changes` / `/override-approve <Begründung>` next actions.
+- Require a revised plan to address every blocking finding from the previous
+  review; at an exhausted gate the author stops for the user's decision instead
+  of submitting another silent revision.
+- Wait for an early-returning native reviewer child before capture. A host may
+  return the `subagent` tool before the child's first model request; FlowGuard
+  now keeps the authorized dispatch and attempt intact and waits for the exact
+  bound child instead of invalidating the attempt and denying the child's model
+  request. A stale `time.idle` timestamp is not treated as terminal when the
+  child has a newer busy step. Genuine child failures and missing terminal
+  boundaries remain `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`.
+- Synchronize native review retries with the exact durably re-armed attempt before
+  offering another reviewer dispatch; retain provenance checks and attempt budgets.
+  Project native OpenCode `patch` to the canonical `apply_patch` mutation path in
+  both hooks without widening tool permissions.
+- Bind baseline progress to its current operation and attempt, discard superseded
+  updates, and close the display when execution ends. Show the current check in
+  the existing Desktop status label. Replace the added one-second presentation
+  poller with read-only RPC invalidations; keep original chat responses and controls.
+  Installed Desktop rendering acceptance remains unverified.
+- Show the existing model-free check display during post-implementation
+  validation (`IMPL_VALIDATION`) after `/implement`, using the same current
+  operation binding, existing label, and no additional controls or model turns.
+- Block plan approval when a plan target path was already dirty at session start
+  or is dirty at approval; report the affected paths and require a clean
+  baseline/new session. `/implement` now distinguishes pre-existing worktree
+  changes from genuinely missing evidence.
+- Instruct a revised plan response to dispatch the fresh reviewer explicitly
+  before requesting review feedback, and cover interrupted reviewer children
+  with the canonical fresh-submission recovery path.
+- Fix `flowguard inspect` to distinguish bound validation attempts, successful
+  explicit calls, machine outcomes and canonical no-command policy exceptions.
+  Outcomes alone no longer prove execution or imply automatic commands; missing
+  phase-specific evidence remains `NOT_VERIFIED`. Read session state without
+  mutation and report the actual terminal lifecycle event.
+- Separate declared plan targets from Discovery classification paths, read
+  Discovery from the bound workspace, and replace rather than accumulate targets
+  on plan revision. Close baseline path-alias bypasses, reject escaping targets,
+  block unknown dirty scopes and fail closed on missing baseline capture instead
+  of attributing the full worktree.
+- Report pre-admission claim rejection as `PLAN_CLAIM_SUBMISSION_REJECTED` with
+  exact diagnostics and in-place repair guidance, without withdrawing critical
+  claims or spending plan/reviewer authority. Bind declared positive assertions
+  to their exact provider and identity: failed, errored, skipped or missing
+  assertions cannot be hidden by a green overall check.
+- Report a revised plan response as pending a fresh independent review instead of
+  presenting the prior `changes_requested` verdict as the current result. The
+  response continues to require the exact reviewer dispatch.
+
+- Limit model-free progress to canonical validation after `/approve` and after
+  `/implement`. Restore the original `/start` workflow-choice chat response,
+  final decision/check-result chat report with the next command, lifecycle and
+  diagnostic responses. Remove the added `/implement` button, automatic Start
+  dialog, report dialogs/command and summary API; preserve the original explicit
+  chooser and 30-second read-only status reconciliation. Validation progress uses
+  a bounded ephemeral channel without extra model turns or changes to plan,
+  evidence, tool permissions or canonical validation. Installed visual acceptance
+  and confirmed subprocess-start instrumentation remain unverified.
+
+- Align native host-adapter contract tests with timestamped execution-success
+  wakeups, using complete typed notification fixtures and exact projection
+  assertions. Remove the superseded expectation that success is unhandled;
+  notifications still supply no review approval or check-result evidence.
+
+- Route native OpenCode events only to their exact session-location owner and
+  exclude completed-child idle/success wakeups before execution admission, so
+  an independent `changes_requested` review no longer fences its parent.
+  Persist one audit record per native session-error identity under the canonical
+  audit lock; replay survives reload/phase changes while conflicting content
+  and persistence failures still fail closed. Reviewer admission is unchanged.
+
+- Use canonical host-neutral session reasons in tool helpers, verification-check
+  errors and hook session resolution instead of direct Hydrate bootstrap advice.
+  Preserve error codes and fail-closed authority checks; native OpenCode
+  activation and Claude Code/Codex MCP start behavior are unchanged.
+- Correct HTTP API guidance to show an ungoverned message rather than prompt-based
+  activation, and align ACP smoke instructions with the pinned native V2 CLI
+  candidate and the existing lifecycle-only test scope.
+
+- Correct PR #1221's shared Hydrate metadata and generic session-recovery copy:
+  canonical preparation/reload remains available to the installed Claude Code
+  and Codex MCP Start skills; native OpenCode activation stays enforced only by
+  its existing host boundary. Test real MCP `tools/list` metadata against both
+  filesystem-installed Start skills without changing runtime admission.
+- Make `CONFIG_INVALID` recovery backup-first and field-specific: preserve
+  unrelated settings, manually correct invalid keys, and retry. Never recommend
+  deleting `flowguard.json` or treating `install --force` as config migration.
+
+- Align OpenCode command templates, directly affected recovery reasons and
+  product documentation with explicit V2 Start authority. Hydrate remains the
+  internal preparation/reload mechanism, not external activation or authority
+  repair. Terminal/ACTIVE bindings are not restarted; new-work recovery requires
+  a distinct host session and trustworthy pre-change baseline where applicable.
+- Compare host output exactly against the native V2 CLI candidate, reject
+  malformed/prerelease/foreign outputs, and install that candidate in ProofGraph
+  live controls instead of the historical V1 host. A matching candidate is not
+  ACTIVE product or Desktop certification. Document native reviewer dispatch
+  authorization and same-child capture instead of hidden V1 SDK child creation.
+
+- Harden diagnostic log export: redacted mode rejects non-technical or
+  secret-shaped trace IDs, and a failed JSONL/index publication marks the log
+  source `PARTIAL` instead of reporting `COMPLETE` while the artifact is
+  missing.
+
+- Separate control-plane credential failures from actual drift. Strict
+  verification now exits with `AUTH_FAILED` (exit code 2) for HTTP 401/403 and
+  does not open a misleading `control-plane-drift` issue; rotate
+  `CONTROL_PLANE_READ_TOKEN` and re-run the workflow. Only a real divergence
+  opens or refreshes the drift issue.
+
+- Execute the read-only help projection through the inactive native path so
+  `/help` and `/commands --all` work before `/start` without activating
+  governance. Align native diagnostic readiness with the real no-session
+  handlers, distinguish file-writing `/debug-export` from read-only
+  `/diagnostics`, and expose capability provenance plus host readiness in
+  Markdown and JSON.
+
+- Keep formatting and documentation checks deterministic by invoking the
+  installed Prettier and Vitest binaries directly. `check:doc-drift` and the
+  pre-push hook no longer depend on `npx` package resolution and fail only on
+  real formatting or inventory drift.
+
+- Reopen an author-resolved implementation review from the current
+  **unsuperseded** stale attempt rather than failing when an earlier retry left a
+  second historical stale attempt. The recovery refuses to run while an
+  authorized dispatch is live, requires exactly one `outcome_unknown` dispatch
+  for the selected attempt, keeps the frozen re-arm budget, and emits a durable
+  `review:obligation_reopened` semantic audit intent with the predecessor
+  lineage. Add a regression with a retryable A→`dispatch_rearm` B chain followed
+  by B's unresolved-challenge block.
+
+- Report `SUBAGENT_UNABLE_TO_REVIEW` instead of the misleading
+  `SUBAGENT_EVIDENCE_REUSED` when a standalone peer reviewer honestly declares
+  the supplied content unreviewable. The native capture consumes that
+  obligation in the same transition that binds the invocation, so the
+  unable-to-review check must precede the consumed-evidence diagnostic. The
+  recovery now says to abort the blocked review before starting a fresh
+  governed session.
+
+- Make standalone `/review` usable for manual text and URL content by requiring
+  `targetPaths` on the first `flowguard_review` call when changed paths do not
+  auto-resolve. The command previously allowed only the content field, so a
+  valid text review dead-ended at `RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE`;
+  the risk blocker now names the actionable recovery instead of suggesting a
+  fresh session.
+
+- Restore implementation-review authority after the author records the last
+  missing resolution for a prior failing challenge. A reviewer acceptance that
+  arrived before that resolution is correctly rejected with
+  `SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED`, but the rejection previously left a
+  terminal capacity lock that no later command could clear. Recording the
+  resolution now mints one durable re-arm attempt and clears the lock only when
+  no other prior challenge remains unaddressed, so the fresh reviewer can
+  independently close the challenge without `/recover-capacity` or a manual
+  state edit.
+
+- Keep the exact bound `changes_requested` implementation review readable
+  through `flowguard_status({ reviewFeedback: true })` while the workflow is
+  back in `IMPLEMENTATION` for rework. The consumed review is projected only
+  when its subject digest is the rejected implementation digest and its
+  invocation was consumed by that same obligation, so the agent can repair the
+  findings and continue the review loop without a manual `/request-changes`
+  recovery step.
+
+- Preserve the reviewer child's terminal failure code in the parent capture
+  error and durably close the exact authorized dispatch before returning it.
+  Terminal causes such as `REVIEWER_COMPLETION_UNVERIFIABLE` remain terminal and
+  never offer `retry_transport`; non-terminal unknown outcomes retain that
+  recovery only after the dispatch, attempt and capacity lineage are proven.
+  Add bounded call-ID, tool, shape and digest diagnostics to the native
+  tool-result integrity mismatch without logging content or weakening the
+  comparison. Match the canonical error envelope
+  `{type:"error", value:{error, content}}` used by both OpenCode 2.2.4 and
+  2.2.5, while still rejecting changed error text or content.
+
+- Run marked unit PERF contracts in a dedicated single-worker CI phase and
+  exclude them from the parallel unit phase. This preserves every test and the
+  unchanged budgets while preventing cross-file CPU contention from deciding a
+  wall-clock p99 assertion; a 6 µs p99 operation produced a 4.199 ms CI sample
+  under concurrent unit files. The test name now reports the actual CI-aware
+  budget.
+
+- Reconcile current Windows CLI/server acceptance in Quick Start and the P0-00
+  remaining-gates section with the executed 65/65 result. Bound OpenCode's
+  synchronous enforcement claim to intercepted governed paths, explicitly
+  retaining the R4, unobservable-host-path and Desktop/ACTIVE acceptance limits.
+  Add regression checks for these documentation claims and record that the
+  label-triggered acceptance workflow is not yet a required merge check.
+
+- **P0-00 Windows parity fixture efficiency.** The original counterprobe suite
+  performs one real packed installation per run and copies the installed
+  `.opencode` tree into its cases; the installed comparison suite still runs the
+  real installer per repo/global Git/non-Git arm. Path normalization now handles
+  Windows forward- and backslash spellings, and host cleanup hooks get a bounded
+  60-second ceiling so Windows process teardown cannot fail otherwise-passing
+  cases; locked temp trees are removed with bounded retries. Mixed-session
+  installation is setup, not test work, so its 300-second test cap is unchanged.
+  Test count and assertions are unchanged.
+
+- **Whole-PR documentation alignment.** Remove the Quick Start GA claim and the
+  `/hydrate` activation wording; make approval gates policy-dependent; show
+  separate activation authority, native review lineage/capture and the
+  `REDUCED_CEREMONY` edge in the architecture/phase diagrams; refresh the
+  current P0 gate rows and record the P0-10 aggregate measurement as an open
+  audit. No runtime behavior or test assertion changes.
+
+- **Windows P0-00 execution budget.** Current-build run `41806050855` was
+  cancelled at the 20-minute job limit midway through the second matrix scope
+  after four successful installs and no assertion failure. The 35-minute rerun
+  `41809656855` completed all installs and the installed suite, then reached the
+  final seven-case suite before cancellation at 35m08s, again with no installer
+  or assertion failure. Windows parity is now split into four parallel 25-minute
+  jobs (`mixed`, `repo`, `global`, `original`), pinned by the CI-source test.
+  Test, hook and coverage budgets, case count and assertions are unchanged.
+
+- **P0-00 Windows CLI/server PASS and acceptance-CI split.** Current-build run
+  `41829567943` on `d5d88a8e` executes all **65/65** Windows cases across the
+  split jobs, 0 failed, on the shared checksum-verified artifact. Because the
+  full installed matrix is acceptance evidence rather than per-PR feedback, it
+  now runs in the separate `opencode-parity.yml` workflow (`workflow_dispatch`,
+  nightly schedule, and the `run-parity-acceptance` PR label); the PR gate keeps the fast unit/integration/
+  architecture checks. Test count, assertions and budgets are unchanged.
+
+- **P0-00 current-build evidence and smoke follow-ups (#1190).** The
+  installed-parity matrix now downloads the current build job's package and
+  checksum instead of the historical diagnostic artifact; `pwsh` is declared as
+  an external test-host binary for Knip; and the last post-reload registry read
+  reuses the existing transient-plugin-activation helper. No assertions,
+  governance behavior or timeout budgets change.
+
+- **Installer dependency spec for paths with `~`, spaces or `#` (#1190).** The
+  dependency transaction wrote the vendored core as a `file://` URL. npm never
+  percent-decodes `file:` specs, so any target path containing `~` (Windows 8.3
+  short names such as `C:\Users\RUNNER~1`), a space (for example a Windows user
+  name) or `#` failed with `DEPENDENCY_INSTALL_FAILED`/`ENOENT`. The staging
+  package now uses an unencoded `file:` spec relative to the staging root, the
+  form the installed `package.json` template already uses. Found through the
+  Windows P0-00 bootstrap diagnosis; a real-npm test covers such a path.
+
+- **Native-host smoke harness on Windows and slow plugin activation (#1190).**
+  The pinned host answers a registry read with `ServiceUnavailableError`
+  ("Location plugins did not finish activating") when plugin loading outlasts its
+  per-request wait; activation then completes, while a failed activation is
+  reported as plugin state `failed`, never with this answer. Probe start-up,
+  restart and reload now retry exactly that answer within the existing 60 s
+  deadline and record the deferrals. The activation-scope shell fixture uses a
+  shell-neutral `node -e` command (PowerShell call operator on Windows). No
+  product timeout changed.
+
+- **Native command installation collisions (#1190).** Install and doctor now
+  refuse any pre-existing `commands/<name>.md` for every natively registered
+  command (`/start`, `/approve`, `/override-approve`, `/request-changes`,
+  `/reject`, `/review-decision`). The conflicting file is preserved byte-for-byte,
+  is never overwritten or removed by `--force`, and the shared native-command
+  list is parity-tested against the installed command catalogue.
+
+- **Production build-boundary guard timeout (#1190).** The guard that builds
+  the real production program timed out at the 15 s default on loaded CI
+  runners (coverage job). It now skips the default library and ambient type
+  packages, which cannot add a `src/` file to the graph, and carries an explicit
+  60 s budget. The transitive-inclusion contract is unchanged.
+- **Native regular edit-error recovery (#1190).** Exact current native
+  session/message/call history can close a local typed edit failure through the
+  existing root-owned completion and audit writer, including delegated calls.
+  Missing, ambiguous, hosted, interrupted and historical raw-ID observations stay
+  unresolved. Process-lifetime runtime identity now survives native plugin reload
+  without weakening live-holder lease fencing. The retained event/reload positives
+  and a real child regression use explicit component-only activation, not operator
+  or reviewer authority; full ACTIVE V2 acceptance remains NO-GO.
+
+- **Governed event failures fence their ACTIVE scope (#1190).** The canonical
+  event handler no longer swallows session-error audit, failed-tool mutation
+  reconciliation or system-work resume failures; they propagate to the V2 scope
+  fence, so a failed audit append blocks further governed operations of that
+  root while unrelated INACTIVE sessions continue. Only in-memory cleanup of a
+  deleted session stays non-blocking. Delegated-session errors are audited in
+  the governed root trail with their native session ID.
+
+- **Native call identity includes session and assistant message (#1190).**
+  OpenCode passes provider tool-call IDs verbatim, unique only within one
+  assistant message. Mutation episodes, completion binding, failed-tool
+  reconciliation and delegation dispatch keys now use `{ sessionId, messageId,
+callId }`, so a provider-reused ID in a delegated child or a later message is
+  no longer rejected as `MUTATION_EPISODE_REPLAY_BLOCKED`; replay of the same
+  native call remains blocked. The unused `nativeCompletionText` export was removed.
+
+- **Preserve unproven dependency contents on uninstall (#1190).** Removing an
+  installer-created `package.json` no longer authorizes recursive deletion of
+  `node_modules`. Nonempty trees, symlinks and non-directory roots are preserved
+  and reported; only an empty directory is removed atomically. Regression tests
+  protect later-added foreign bytes at the root and inside package directories,
+  including `@flowguard/core`, concurrent additions and unexpected I/O errors.
+  Ownership regressions also cover modified/pre-existing package shells and zod
+  declarations, unchanged customer bytes, modified native entrypoints and explicit
+  filesystem failures. The installer mutation selection additionally includes the
+  existing non-creating Codex uninstall contract; mutation thresholds and existing
+  exclusions are unchanged.
+
+- **Critical Windows scheduling (#1190).** The complete critical unit suite runs
+  with one Vitest worker to avoid competition with the warm state-serialization
+  benchmark. The existing test set, p99 budget and performance enforcement remain
+  unchanged; hosted Windows timing still requires verification.
+
+- **Shell-free independent-review verifier (#1190).** The verifier launches the
+  locally installed Vitest package's declared CLI with Node and an argument array,
+  never `npx.cmd` or a shell. Test-name regex pipes remain literal arguments on
+  Windows. Regression fixtures use paths with spaces and shell metacharacters,
+  an empty PATH and exact filter checks; all required acceptance titles and
+  failure exit codes remain enforced.
+
+- **Native ACP smoke lifecycle (#1190).** ACP probes keep stdio input open,
+  require the exact native CLI pin and isolate global paths. Premature exit and
+  startup errors reject awaited tests instead of escaping timer callbacks;
+  termination succeeds only after actual process closure, not a PID or kill
+  request. Cleanup targets owned process groups without changing smoke budgets.
+
+- **Native V2 CI infrastructure (#1169/#1190).** Smoke and independent-review
+  jobs pin `@opencode/cli` separately from historical support evidence. Native
+  fixtures load the actual product once and observe V2 hooks, inbox admission,
+  tool records and provider requests without a V1 factory or duplicate product
+  registration. Evals materialize canonical native templates while preserving
+  customer config bytes; doctor distinguishes obsolete registration errors from
+  warning-only native configuration. Coverage CI limits competing workers rather
+  than increasing timeouts or reducing coverage scope. Mandatory reviewer positives
+  and regular-error recovery remain failing acceptance gates, not waived proofs;
+  PR #1190 remains Draft and ACTIVE V2 NO-GO.
+
+- **Migration baseline checks (#1169).** Condensed contributor instructions
+  within existing loading budgets without removing requirements; removed stale
+  changelog exemptions from governance templates and corrected duplicate
+  Unreleased categories. The mutation-reconciliation concurrency test now uses
+  an explicit read barrier while retaining exactly-once audit and idempotence
+  assertions, rather than depending on filesystem scheduling.
+
+- **Security audit closure for transitive runtime/dev dependencies:** align the
+  OpenCode plugin's pinned `zod` with the application's patched `4.6.7`, move
+  `fast-uri` to patched `3.1.9`, and refresh `body-parser` (2.4.0), `hono`
+  (4.13.14) and `ip-address` (10.7.5). `npm audit --audit-level=high` now
+  reports zero vulnerabilities; the host/SDK pin and validation contracts are
+  unchanged.
+
+- **OpenCode docs drift is pinned to the tested host (#1164):** the scheduled
+  documentation check previously fetched from the moving `dev` branch, so
+  unrelated upstream edits were reported as integration drift. It now fetches
+  the exact tag in `.sdk-baselines/opencode/host-version.json` (currently
+  `v1.19.3`), records that tag in `docs-hashes.json`, refuses partial fetch
+  results, and rejects a baseline pinned to another host version. The SDK update
+  workflow refreshes the docs baseline at the new tag in the same reviewed PR.
+  Drift at an already-adopted immutable tag is reported as a tag-mutation or
+  fetch-integrity incident rather than prompting a blind baseline update.
+
+- **Security audit dependency closure:** pin Effect's transitive `toml` parser
+  to patched 5.0.1 for GHSA-4qx8-w7c3-pj3p, GHSA-9j65-hcg3-gc64 and
+  GHSA-9qmh-m7c6-f92p. The OpenCode SDK/host baseline stays at 1.19.3 and the
+  high-severity audit gate remains enforced.
+
+- **MUT4: recover throwing host edits without weakening episode fencing (#1172).**
+  Regular OpenCode edit errors are observed from an exact, freshly read host
+  ToolPart through asynchronous event wakeups and a synchronous barrier before
+  `/implement`. All completion channels share one locked, lease-authorized,
+  audit-outbox-backed writer. Cleanup/interrupted parts, ambiguous identities,
+  unknown outcomes and already resolved episodes never become observed success.
+  Full status, `/why`, readiness and recovery now project open episode IDs and
+  the actual blocker without recommending unconditional implementation progress.
+  `allowedCommands` remains explicitly phase-only; detailed status rendering
+  labels that list with its prerequisite limitation rather than "Available actions".
+  Live tests pin OpenCode 1.19.3 and cover the real edit failure, event loss,
+  cleanup and shell-descendant limitation; automatic error reconciliation is
+  deliberately admitted only for `edit` (MUT5 / #1173 tracks shell quiescence).
+
+- **Reviewer execution closure (#1170):** cleanup now requires exact recorded
+  execution identity and persisted terminality. Serialization SDK failures and
+  hanging abort/status requests retain an immediate evidence-binding fence and
+  close through the durable dispatch authority, with retry on persistence
+  failure. Reconciliation preserves completed child-rebound invocations and
+  installs an idempotent capacity lock for unresolved released attempts without
+  duplicate block audit intents.
+
+- **Reviewer recovery after an exhausted re-arm budget is stated and executable.**
+  In the 2026-10-19 GUI run two token-truncated plan reviews exhausted the
+  re-arm budget. Three outputs then misdescribed the persisted state:
+  - The re-armed reviewer prompt said "FlowGuard rejected the previous
+    structured output". A completion failure (`REVIEWER_OUTPUT_TRUNCATED`,
+    `REVIEWER_TASK_INCOMPLETE`, `REVIEWER_STEP_BUDGET_EXHAUSTED`) never
+    produced structured output. The prompt now reports "Prior Reviewer Task
+    Not Completed" with the code, and contract errors keep their
+    rejected-output section.
+  - The closure output listed "A fresh reviewer attempt … was re-armed
+    automatically. Invoke the reviewer Task again." These codes are only
+    surfaced as a blocked result when no attempt was authorized. Their
+    recovery now says not to invoke the Task again and to re-run the
+    originating command (for `/plan`: submit the current plan again).
+  - `reviewRecovery: "retry_transport"` on a closed obligation said "the
+    review authority must be restored or the session aborted". It now states
+    that a transport retry never reopens a closed obligation and that
+    submitting the artifact again mints a fresh obligation.
+
+  A new end-to-end test drives a real `/plan` submission through two
+  truncated native reviewer Tasks. It proves that neither another Task nor
+  `retry_transport` adds an attempt to the closed obligation. It also proves
+  that resubmitting the unchanged plan mints exactly one fresh obligation with
+  the regular budget and releases a reviewer Task again. The completion-code
+  vocabulary moved to `review/types.ts` so the prompt and the classifier share
+  it. No state, audit, or reason-code shape changed.
+
+- **A truncated or unfinished reviewer task is never serialized or accepted.**
+  The structured follow-up ("serialize the findings you concluded") ran
+  whenever the reviewer child had fewer assistant steps than the step limit.
+  In a real OpenCode plan review (2026-10-19) the child ended after five steps
+  with `finish: "length"`, 32,000 reasoning tokens and no final answer; the
+  follow-up still produced a bindable `accept`. The native reviewer transport
+  now proves completion from the host-recorded messages before any
+  serialization, for every obligation type (plan, architecture,
+  implementation, peer review), evaluated on the last assistant step in a
+  fixed order: an aborted task (`MessageAbortedError`) is
+  `REVIEWER_TASK_ABORTED` and is never restarted automatically; a
+  token-truncated task (`finish: "length"` / `MessageOutputLengthError`) is
+  `REVIEWER_OUTPUT_TRUNCATED`; a `stop` without a non-blank final answer is
+  `REVIEWER_TASK_INCOMPLETE`; the host step-budget stop stays
+  `REVIEWER_STEP_BUDGET_EXHAUSTED`; any other host error, more steps than the
+  limit, a tool call or a missing `stop` in the last step is
+  `REVIEWER_COMPLETION_UNVERIFIABLE`. Truncated, incomplete and step-limited
+  tasks re-arm a fresh attempt on the same frozen obligation within
+  `maxReviewerAttempts`; aborted and unverifiable ones fail closed. A normal
+  completion is only a precondition: findings, scope, observation and
+  challenge validation still decide binding. **Upgrade impact:**
+  `REVIEWER_STEP_BUDGET_UNVERIFIABLE` is replaced by
+  `REVIEWER_COMPLETION_UNVERIFIABLE` (no alias). A run that previously ended
+  `COMPLETE` on a truncated review now ends with a reviewer retry or a block;
+  that is the correct detection of the truncation, not a new failure.
+- **Demo harness v5 records the real re-arm lifecycle.** A structured re-arm
+  that was fresh at dispatch and whose attempt failed later is now recorded as
+  `rearm_attempt_failed` with its child session, ending denial, and
+  capture/obligation state instead of the misleading "spent or unknown"
+  classification. Bound attempts are `rearm_proven`; created attempts remain
+  `rearm_authorized`. Only unknown, foreign, non-re-arm, or replayed envelopes
+  stay stale. Terminal blocks remain visible. Harness identity:
+  `demo-harness.v5`.
+
+- **Missing-change findings are anchored at the changed location that introduces
+  the requirement (peer review).** A reviewed change that adds a requirement
+  while unchanged code fails to implement it is a blocking correctness finding
+  of the changed functionality, not `scopeCreep`. The reviewer criteria state
+  the rule; unchanged files are cited only as observed `evidenceLocations`. The
+  out-of-scope recovery text now teaches this distinction, and the retry
+  diagnostics carry the frozen allowed subject paths from the obligation's
+  `reviewSubjectScope` (bounded, quoted data). The scope validator is unchanged:
+  a finding without a changed-site anchor still fails closed and no artificial
+  link is accepted.
+
+- **Reviewer step-budget detection reaches the real host client (F2).** The SDK
+  session's `messages()` method was called without its receiver, so the pinned
+  host path could never establish a host-enforced step stop and silently ran the
+  structured serialization follow-up against a truncated review. The method is
+  now invoked on its session object (keeping `this._client`), and the real
+  ten-step child transcript is a regression fixture.
+- **Unverifiable host step-budget evidence fails closed.** `exhausted`,
+  `not_exhausted`, and `ambiguous` remain distinct; only `not_exhausted`
+  proceeds to serialization. A verified host stop re-arms a fresh attempt on the
+  same frozen obligation and never binds an `accept`. An ambiguous state is now
+  terminal (`REVIEWER_STEP_BUDGET_UNVERIFIABLE`): it is logged, never retried
+  automatically, never serialized, and never consumed as reviewer findings; the
+  demo harness classifies it as `NOT_VERIFIED`. Reason register: 339/126.
+
+- **Demo harness v4 binds ticket recovery and audited refusals end to end.**
+  Both `TICKET_SOURCE_CONFLICT` and `TICKET_SOURCE_ORIGIN_CONFLICT` now require
+  their observed code in the bound adoption audit sequence, fixing the live
+  `71690ff6` case where a corrected file-backed ticket still stopped the next
+  plan turn. Unavailable audit data no longer becomes an empty history.
+  A tolerated `HUMAN_DECISION_REQUIRED` refusal requires the exact host call,
+  session, contiguous audit sequence and start/end interval; writes before tool
+  completion are no longer overlooked. Unprovable evidence is `NOT_VERIFIED`;
+  witnessed mutation remains `FAILED`, including after a terminal transition.
+  Earlier review progress remains legal. Product gates and audit-chain
+  verification are unchanged. See `demos/DEMO_ASSURANCE.md` for evidence limits.
+
+- **The ticket input-origin conflict has its own message (F8).** `ticketSource`
+  reads the ticket from the worktree; an explicit non-workspace `inputOrigin`
+  alongside it is now rejected as `TICKET_SOURCE_ORIGIN_CONFLICT` with a message
+  that names the actual conflict (and the `text` conflict keeps its own
+  `TICKET_SOURCE_CONFLICT` message). The demo harness treats the new code as the
+  same recoverable ticket-source family, still settled only by a bound ticket
+  adoption witness.
+- **The agent can no longer mistake itself for the user at a decision gate
+  (F9).** The shared review-loop template states that `flowguard_decision`
+  records the USER's decision and must never be called by the agent; the user
+  invokes it only through `/approve`, `/request-changes`, `/reject`, or
+  `/override-approve`. A self-initiated call is refused with
+  `HUMAN_DECISION_REQUIRED` plus an `agentInstruction` that names the user
+  command — and at an exhausted review gate names `/override-approve` with a
+  durable rationale. Template hashes regenerated; no gate or validator change.
+
+- **Stale reviewer attempts keep their child provenance (F6).** The atomic
+  abandon/re-arm mutation now writes the failing reviewer child session onto the
+  staled attempt when the native Task release already bound it. Exact
+  dispatch/attempt lineage still gates the write, an existing different child is
+  never overwritten, and the stale attempt remains non-evidence-authorizing. The
+  harness additionally exports children discovered through attempt observations.
+- **Demo harness v3 review/recovery fidelity (F4, F5, F7).** An in-session
+  `HUMAN_DECISION_REQUIRED` refusal is tolerated only when the turn's audit trail
+  proves no state write and no transition; otherwise the flow still stops. A
+  wait-state guard (`ADR_REVIEW_IN_PROGRESS`) counts as corrected only when the
+  same operation succeeds and the persisted review projection advanced in that
+  turn. An `expectedDenial` step now settles a carried recovery instead of
+  silently skipping it. Fresh `structured_rearm` observations become `proven`
+  once their attempt is bound. The latency baseline classifies
+  `GOVERNANCE_OVERRIDE_REQUIRED` and `HUMAN_DECISION_REQUIRED` as their own
+  refusal classes instead of `unexpected`. Harness identity is
+  `demo-harness.v3`; v1/v2 samples are not combined with v3.
+
+- **Counterexample sufficiency is stated once (review criteria `p42-v6`).** A
+  counterexample must be a targeted falsification: it exercises a concrete
+  violating variant and demonstrates that the bound check detects it. A second
+  successful execution of the same behavior, without such a mechanism, does not
+  prove the claim. A build or aggregate check may fill the counterexample role
+  when the claimed property is checkable and a targeted faulty variant is
+  provably rejected by it — for example the same regression assertion that
+  passes on the original implementation and fails on a targeted mutation.
+  Different check identities and separate attempt identities remain required;
+  different assertion identities do not. This addresses the live class in which
+  equivalently built plans were accepted or rejected inconsistently over `build`
+  as the counterexample (5 of 8 plan `changes_requested` in the last four runs;
+  direct cause of one plan-review exhaustion). Generation `p42-v6`: obligations
+  minted under `p42-v5` fail closed and recover through a fresh obligation. No
+  structural rule, validator, or gate change.
+
+- **A host-enforced reviewer step-budget stop is retried, not consumed as a
+  review verdict.** When the reviewer child reached its configured host step
+  limit (`steps: ${REVIEWER_STEP_LIMIT}` in the reviewer agent template), the
+  structured follow-up still ran and the honest `unable_to_review` verdict
+  consumed the obligation, forbidding a retry — a pure capacity limit became a
+  governance dead end (observed live: 10/10 steps, host recorded `finish:
+stop`, reviewer child reported it could not complete the falsification).
+  The native transport now verifies the host stop **before** the structured
+  follow-up from the recorded child messages: exactly the configured step
+  count, last step `finish: stop`, and no tool call. A verified stop re-arms a
+  fresh attempt on the same frozen obligation through the existing bounded
+  re-arm budget (`REVIEWER_STEP_BUDGET_EXHAUSTED`, retryable); the discarded
+  child remains untouched. Anything unreadable or mismatched stays on the
+  normal capture path — no invented retry success. The step limit is exported
+  from the canonical reviewer template as `REVIEWER_STEP_LIMIT`.
+
+- **An exhausted review no longer adopts the un-reviewed revision.** When the
+  `changes_requested` verdict consumes the last allowed review iteration, the
+  accompanying plan/ADR revision was previously written as the current artifact
+  even though no reviewer ever saw it; the governance override then failed
+  closed with `*_OVERRIDE_SUBJECT_MISMATCH`, making the offered
+  `/override-approve` path a dead end (observed live in a plan and an ADR
+  exhaustion). The exhausting revision is now explicitly **not adopted**: the
+  last independently reviewed artifact, its claim declarations, and its lineage
+  remain current, the negative verdict and the exhaustion are persisted, and the
+  response/card state that the draft was not adopted. The explicit human
+  override approves exactly the reviewed digest; the strict
+  `*_OVERRIDE_SUBJECT_MISMATCH` check is unchanged, so a genuinely divergent
+  subject stays blocked. No revision is silently discarded: the disposition
+  names `/override-approve`, `/request-changes`, and `/reject`.
+
+- **Demo harness negative-probe precision and measurement honesty.** The
+  architecture-negative scenario now verifies its pristine precondition
+  immediately before the controlled probe: architecture work performed in the
+  `/start` turn (observed live) is `NOT_VERIFIED` instead of a misleading
+  product-`FAILED`. A real mutation by the rejected probe call stays fail-closed
+  via a step-local comparison of the architecture digest, the phase, and audit
+  `state_write`/`transition` events (which also catches an intermediate
+  mutation that was reverted). `captureProvenance` error messages name the flow
+  instead of stringifying the record, and the perf baseline reports controlled
+  negatives by class instead of counting them as unattributed cost.
+  `KNOWN_ISSUES.md` records that the `/start` command boundary is guidance, not
+  enforcement (tools are released by phase, not by the running command).
+
+- **Architecture ADR recovery guidance names the working call forms.**
+  `ADR_SUBMISSION_MIXED_INPUTS` now states that the prohibition is `title`
+  combined with a review verdict — never a revised body together with a verdict.
+  `ADR_SUBMISSION_MIXED_INPUTS`, `ADR_REVIEW_IN_PROGRESS`, `EMPTY_ADR_TEXT` and
+  the tool description name the three canonical forms: initial
+  `{ title, adrText, claims }`, revision
+  `{ reviewVerdict: "changes_requested", adrText, claims }` **without** `title`,
+  and approval `{ reviewVerdict: "accept" }`. A live architecture review loop
+  had required three rejected calls per revision (in 2/2 revisions) because the
+  previous recovery text split `reviewVerdict` and `adrText` into separate
+  calls; the shape gate itself was already correct.
+
+- Preserve separately declared architecture claims, review evidence and assumptions
+  in native reviewer prompts; route every Task return through terminal/retry/completed
+  handling before requiring completion evidence. Standalone peer-review cards omit
+  identical duplicate presentation Markdown while preserving distinct glyph variants.
+- Re-export each live-demo transcript target on every capture attempt, keep earlier
+  exports as immutable numbered attempt evidence, retain successful partial manifests
+  and failed bytes, and continue other reviewer exports after a target fails. Receipts
+  record integrity but are never reuse authority, because a continued host session
+  can leave older bytes valid yet stale. Harness v2 separates observed/pending recovery
+  from proven recovery and attributes costs only to bound occurrences without charging
+  overlapping spans or shared recovery turns twice. Export metrics read digest-bound
+  manifest entries. See `demos/DEMO_ASSURANCE.md` for the evidence limits.
+
+- **Review capture diagnostics, recovery fidelity, and runtime efficiency
+  (review criteria `p42-v5`).** A reviewer capture that violates the challenge
+  evidence contract now reaches the retry with the exact validated position and
+  missing evidence class: `validateChallengeConsistency` reports the
+  `challengeIndex`, the native capture boundary carries the structured
+  details instead of stringifying them, and the retry diagnostic names
+  `challenges.<i>.evidenceRefs` with `reasonKind` `validation_attempt_missing`
+  or `implementation_reference_missing` and the required reference type —
+  bounded to machine-produced values. A passing `implementation_challenge` now
+  requires BOTH evidence classes: execution evidence (a successful
+  validation attempt on the current implementation digest) and content evidence
+  (the current implementation ref, whose diff grounds changed/unchanged
+  content); a validation attempt alone never proves unobserved content. The
+  shared review loop, the standalone `/review` command, `/check`, and the
+  Claude plugin surface handle a `reviewRetry` envelope before any
+  dispatch-shape/completion assumption, so a re-armed retry is invoked instead
+  of being read as a broken dispatch. The finding-relation grammar states
+  `evidenceLocations` as required-but-may-be-empty (matching the schema) and
+  renders only the subject-anchor kind the review scope admits. The demo
+  harness binds structured re-arm recovery credit to a fresh persisted attempt
+  (a retryable envelope referencing a spent attempt is an observation), proves
+  implementation-review recovery through the consumed acceptance bound to its
+  own invocation, exports discarded reviewer children, counts governed denial
+  occurrences (not affected turns), never counts a foreign tool's error
+  envelope as a control proof, and records harness and contract versions with
+  separate host-turn, reviewer-child, model-span, and process-overhead
+  timings. The compact `flowguard_status({ compact: true })` projection keeps
+  routing and evidence-critical fields plus Discovery context while replacing
+  the repeated profile-rule and mandate bodies with digests (the full
+  projection stays the default); plan/review commands use it. Reviewer prompts
+  embed the claim declarations once (the frozen material already carries
+  them), include the positive assertion binding when declared, and require
+  prose-complete conclusions with a single structured serialization path.
+  Discovery snapshots persist the full canonical verification candidates
+  (capability and report spec included). **Upgrade impact:** obligations
+  minted under `p42-v4` fail closed and recover through a fresh obligation;
+  persisted Discovery snapshots in the superseded compact candidate shape are
+  rejected at the schema boundary (`KNOWN_ISSUES.md` S5).
+
+- **Risk controls classify an unrecorded implementation as `NOT_VERIFIED`.** In
+  the `eff9cc1e` validation arm, `risk-uncovered` ended `FAILED` with
+  `state_integrity trigger not detected: []` although the `/implement` turn had
+  recorded no implementation at all (the author's edit was auto-rejected by the
+  host). The trigger oracle could not tell "no implementation" from "trigger
+  misclassified", and the plain error outranked `NOT_VERIFIED` in the aggregate
+  exit. The risk runner now re-enters `/implement` at most once while nothing is
+  recorded and then reports `NOT_VERIFIED`; only a recorded implementation is
+  judged by the trigger and evidence oracles, so a missing trigger on a real
+  change stays `FAILED`. An author that stops at `IMPL_REVIEW` now gets the same
+  bounded resume as the matrix (`completeImplementationReview`).
+
+- **Unreadable session state is no longer reported as "no session".** The
+  canonical session authority reports an unreadable, unparseable,
+  schema-invalid or mis-bound state as an `unavailable` value, but `/status`,
+  `/continue`, `flowguard_run_check` and automatic validation only checked for
+  a null state: the output was byte-identical to an absent session ("No
+  FlowGuard session found", recommending `/start`), and automatic validation
+  returned "no work" instead of `SYSTEM_WORK_STATE_UNREADABLE`. These surfaces
+  now report the authority's typed code (for example `PARSE_FAILED`), and
+  automatic validation fails closed with `SYSTEM_WORK_STATE_UNREADABLE`.
+  `/help` keeps its orientation output outside a repository.
+- **Automatic validation re-runs only the open checks.** After a technical
+  outcome (for example a timeout) a retry re-executed the whole active check
+  set, including checks with a fresh passing result. It now executes only the
+  checks the phase's evidence authority still reports as open
+  (`missingValidationChecks` for VALIDATION, new in `machine/validation-evidence`
+  and used by the `allValidationsPassed` guard;
+  `evaluateImplValidationEvidence(...).missing` for IMPL_VALIDATION). If all
+  checks are satisfied but the phase was not left, the full set is re-run so the
+  transition is re-evaluated. The `/validate`, `/check` and `/implement`
+  templates no longer call `activeChecks` and `remainingChecks` equivalent.
+- **`/why` and `/finish` no longer recommend a refused approval.** While the
+  evidence-approval preflight blocks, full status already offered only
+  non-approve decisions, but `/why` listed `/approve` as available and `/finish`
+  recommended it as next action on a BLOCKED card. `/why` now uses the same
+  decision projection as full status, and `/finish` concludes with the
+  preflight's own recovery.
+- **Automatic-validation retry timing is stated honestly.** There is no timer:
+  a re-armed validation retries on the first host lifecycle event (such as the
+  session becoming idle) after its backoff. The phase guidance and the module
+  contract now say so.
+
+- **Standalone `/review` never completes without bound reviewer evidence.** A
+  content-free `flowguard_review({ reviewObligationId })` returned early from the
+  content-source check before the explicit obligation id was resolved; with no
+  bound evidence it fell through to an empty findings executor and completed
+  as `PEER_REVIEW_COMPLETE` with a `clean` report while the obligation stayed
+  `pending` with no invocation. An id-only call now resolves the named
+  obligation first: unknown, consumed or blocked obligations fail with
+  `REVIEW_OBLIGATION_NOT_FOUND`, a pending obligation re-emits its dispatch
+  authority (or re-arms an interrupted dispatch), and only a fulfilled
+  obligation proceeds to its bound structured evidence. A named obligation
+  whose evidence does not resolve fails closed with `SUBAGENT_EVIDENCE_MISSING`
+  instead of completing a report. A content-free `/review` without an id is
+  unchanged.
+- **Standalone `unable_to_review` evidence persists.** The recorder consumed a
+  pending peer-review obligation without first recording its invocation lineage
+  and `fulfilledAt`, which the assurance schema requires for consumed
+  obligations, so the write failed with `SCHEMA_VALIDATION_FAILED` and the
+  honest verdict never bound. The obligation is now fulfilled and consumed in
+  the same transition.
+
+- **Risk fixture scopes the head-only observation offer to plan review.** The
+  risk-trigger fixture ticket said "Base-revision observation is not available
+  to this obligation: do not assert base-vs-head comparisons", and its README
+  said the same of "these obligations". A live plan reviewer concluded that a
+  later baseline/implementation diff could not be produced anywhere in the run,
+  although the implementation review carries its own frozen `base`/`head`
+  candidate pair. Both texts now scope the `head`-only offer to the plan review
+  obligation and allow the plan to name the implementation diff as later
+  evidence without presenting it as observed; the fixture contract test derives
+  the offered revisions from `resolveObservationRevisions`. The two remaining
+  false-positive classes of the `1ed7c479` validation run (a build check read as
+  unable to observe test assertions, and this phase/observation confusion) plus
+  a self-declared minor issue bound as blocking are recorded in
+  `demos/review-counter-cases/plan-review-false-positives.json`, with a schema
+  test that verifies their repository-checkable refutations; their reviewer
+  behavior stays `NOT_VERIFIED`.
+
+- **Reviewer Discovery context lists every verification candidate.** The
+  attempt-bound Discovery section rendered only the first six persisted
+  verification candidates and dropped the rest without a note, although plan
+  review must assess checks against the supplied candidates (kind,
+  `candidateId`, executable command). With all seven canonical kinds, or an
+  alternate `test` profile, `coverage`/`security` disappeared silently. Every
+  candidate is now rendered with its `candidateId`; the planner bounds the
+  set. The attempt Discovery snapshot schema is canonical-only:
+  `candidateId`, `changedContributorNames`, and the drift `currentDigest` /
+  `persistedDigest` (string or null) are required, and the legacy
+  `changedCollectorNames` read-time projection is removed (`KNOWN_ISSUES.md`
+  S4). **Upgrade impact:** a persisted attempt snapshot in a superseded shape
+  is rejected at the schema boundary instead of being normalized; current
+  producers have written the canonical shape since before session state
+  `v11`, which already rejects older sessions.
+
+- **Observation rejection names the offered revision.** A plan or
+  architecture review (frozen context authority) offers only `head`. A
+  reviewer request for `base` was rejected with
+  `REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE`, whose recovery said the
+  obligation "carries no frozen repository authority — repository evidence is
+  unavailable", and every reviewer prompt's finding grammar said
+  `Only "base" | "head" are valid.` A live plan reviewer concluded from three
+  rejected `base` requests that `head` was unavailable too. The tool now
+  returns the new `REVIEW_OBSERVATION_REVISION_NOT_OFFERED` for a revision
+  outside the obligation's offer; it names the offered revision(s) and states
+  that the rejection is not evidence about them.
+  `REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE` is returned only when the
+  obligation has no frozen repository authority. The observation contract and
+  the finding grammar render only the revisions this attempt can observe,
+  derived from the same `resolveObservationRevisions` projection the tool
+  uses. No schema, authority, or capture change.
+
+- **Plan-review evidence roles stated once, and a plan blocking-issue bar
+  (review criteria `p42-v4`).** The per-claim evidence-role sentence introduced
+  with `p42-v3` was repeated for every claim in both the advisory ProofGraph
+  context and the frozen review material, and its negated wording ("do not
+  imply ... share an attempt") was read by a live plan reviewer as forbidding
+  overlapping test suites. Claim rendering now carries only the concrete
+  positive and counterexample bindings; the plan criteria state the rule once
+  and affirmatively: positive and counterexample evidence come from separate
+  executions of their respective checks, each with its own attempt identity,
+  and different checks may run overlapping test suites. (Binding the same
+  check to both roles remains an `evidence_role_collision`.) Plan review now
+  carries the same kind of actionable blocking-issue bar as implementation
+  review: unmet requirement or concrete plan defect, exact plan section,
+  supplied evidence, feasible minimal repair; an unestablished fact is
+  `NOT_VERIFIED`, not a demonstrated defect. **Upgrade impact:** review
+  obligations minted under `p42-v3` are no longer the current review
+  generation and are not dispatched (fail-closed); recovery is a fresh review
+  obligation, never re-stamping the old one. The reviewer mandate digest and
+  installed agent templates are unchanged.
+
+- **Plan-review verification authority and phase (review criteria `p42-v3`,
+  #1120).** The plan-review criteria no longer say checks are "sourced from
+  repo scripts/contracts". Check authority is the persisted verification
+  candidates supplied to the review (kind, candidateId, executable command);
+  the executable command is the selected candidate command (for npm scripts
+  `npm run <script> --`), and repository script bodies only describe its
+  implementation. Unobservable claimed check authority is `NOT_VERIFIED`, never
+  assumed. Plan review now explicitly precedes baseline and implementation
+  validation: reviewers judge whether planned checks and assertions are
+  executable and sufficient and must not require future validation results as
+  existing evidence. Reviewer-facing plan claims name evidence roles
+  (`Positive evidence check`, `Counterexample (adversarial) check`). The
+  risk-trigger fixture ticket now separates check selection, executed command,
+  script definition and evidence roles.
+  **Upgrade impact:** review obligations minted under `p42-v2` are no longer the
+  current review generation and are not dispatched (fail-closed); recovery is a
+  fresh review obligation under the current contract, never re-stamping the old
+  one. Persisted historical evidence and frozen review material are unchanged.
+  The reviewer mandate digest and installed agent templates are unchanged.
+
+- **Risk-adaptive implementation review and a convergent challenge-repair loop
+  (#1081).** The implementation reviewer criteria now carry the bounded
+  five-point quality checklist (acceptance/correctness, architecture fit,
+  safety/error boundaries, behavior-specific verification, minimal complexity)
+  scaled to the frozen risk class and triggers, plus an explicit
+  blocking-finding contract (violated approved obligation, exact changed code,
+  evidence/reproduction, feasible minimal repair) and a no-fabricated-findings
+  rule; optional style suggestions stay non-blocking. The reviewer prompt now
+  carries the persisted, digest-bound implementation risk focus (class,
+  triggers, touched surfaces) as advisory prioritization context. The #747
+  challenge-repair loop is convergent again: the native capture boundary
+  (`validateCapturedFindings`) enforces the same author-addressed challenge
+  requirements as the tool consumption boundary, and the canonical reviewer
+  prompt supplies the exact prior failing challenge identities plus the
+  author's advisory resolution bindings. A resolution recorded after reviewer
+  dispatch cannot be counted as independently reviewed (fail-closed with a
+  typed reason and bounded re-arm). The reviewer criteria generation advanced
+  to `p42-v2`; stale review obligations fail closed under the documented
+  `REVIEW_GENERATION_MISMATCH` recovery. The /implement, /check, Claude Code,
+  and Codex instructions now name the typed transport recovery
+  (`flowguard_review_implementation({ reviewRecovery: "retry_transport" })`),
+  the policy review budget, and dispatch on the returned phase instead of
+  assuming `IMPL_VALIDATION` or advertising the unreachable in-session
+  `/plan` recovery. Deterministic fixtures cover the correct minimal
+  implementation, the repaired failing challenge, and the concrete
+  test-fitting finding; scripted fixtures prove the lifecycle, not model
+  detection quality.
+
+- **Live-demo transcript completeness.** Host exports are captured directly to
+  files and validated for JSON structure and session/worktree/parent identity
+  before their hashes are registered. Architecture negative-probe recovery now
+  creates a ticket-aligned ADR under full independent review and ordinary approval.
+
+- **Live-matrix recovery is evidence-bound.** A recoverable typed denial counts
+  as recovered only with proof: the same tool succeeding later in the turn
+  (`same_turn_retry_success`), a structured reviewer re-arm (`structured_rearm`),
+  or — for the pre-mutation `CONTINUE_AMBIGUOUS` admissibility signal — the next
+  required step completing with a demonstrable state transition
+  (`next_step_state_transition:<step>`). A denial without proof stops the flow.
+  Terminal blocks record `phaseBefore`/`phaseAfter`, and `denialAfterTerminal` is
+  `true` only when the terminal phase was already persisted before the turn;
+  otherwise it is `null` and no ordering is claimed. Package verification stays
+  mandatory, and any block before the terminal phase still stops the flow.
+
+- **ProofGraph soundness hardening.** One execution or check can no longer
+  satisfy both the positive and the adversarial evidence obligation of a claim:
+  declarations that reuse a check are rejected
+  (`PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE`), a materialized contract never binds
+  the same validation attempt to both evidence roles, and a persisted contract
+  that reuses a check (even from distinct attempts) or an execution can no
+  longer reach `PROVEN` (`PROOFGRAPH_EVIDENCE_ROLE_COLLISION`). Persisted
+  contract coverage also rejects undeclared claims with any governing provenance
+  (`approved_ticket`, `plan_adr_section`, `canonical_authority`). Final evidence approval now also fails
+  closed with `PROOFGRAPH_RISK_ASSESSMENT_STALE` when an implementation revision
+  has no current risk assessment, persisted contract coverage requires exact
+  claim-set identity, and failure evidence bound to a superseded revision is
+  historical (`STALE`) instead of blocking the current revision.
+
+- **Reviewer-capability smoke isolation.** The real-host probe uses private
+  OpenCode directories and the installed locked dependency graph, retains startup
+  failures and proves execution of the allowed observation-tool fixture. Tarball
+  verification preserves subprocess failure diagnostics, including timeout signals.
+
+- **Architecture claims are validated at the tool boundary.** Schema-invalid or
+  plan-shaped architecture claims previously crashed `flowguard_architecture`
+  with an untyped `INTERNAL_ERROR` (spread over a missing
+  `requiredReviewEvidence`). They now block with `ARCHITECTURE_CLAIM_INVALID`
+  and recovery guidance, leaving phase and state unchanged; the normalizers only
+  run on schema-valid input. The review-revision path validates the same way.
+
+- **The verified completion export is immutable across `/archive`.** `/export`
+  now materializes `export-{sessionId}.tar.gz`, the user archive keeps
+  `{sessionId}.tar.gz`, and regulated evidence keeps
+  `regulated-{sessionId}.tar.gz`. A later manual or solo auto archive can no
+  longer overwrite the verified completion package (`/export` stays admissible
+  only at `EXPORT_READY`), and archive publication bindings are file-scoped.
+
+- **Plan claim admission fails before spending review capacity.** Blocking
+  declarations prevent creation of a new plan version, obligation, attempt or
+  dispatch. Continuation and reviewer-verdict routing retain priority. Claim
+  rejection disposition now comes from the canonical admission batch, including
+  noncritical incomplete contracts; explicit `claims: []` remains withdrawal.
+  Recovery distinguishes submission, plan approval and evidence approval phases.
+  The blocking presentation retains the canonical blocker and appends every
+  rejected declaration's statement, disposition, reason and recovery; carried
+  rejection diagnostics are explicitly identified as historical.
+
+- **Rejected plan claims name their consequence, transition, and withdrawal
+  path.** `PROOFGRAPH_CLAIM_NOT_DECLARED` no longer labels blocking critical
+  declarations as "non-critical": the persisted diagnostic states whether
+  evidence approval is blocked or the accepted claims remain valid, the plan
+  presentation derives that consequence from the actual claim dispositions, and
+  the recovery steps name the full path out of the blocked gate
+  (`changes_requested` to return to PLAN, then `/plan` with corrected claims or
+  an explicit empty `claims: []` to withdraw). The plan-approval gate surfaces
+  the stored diagnostic reason verbatim, supplemented with the current catalog
+  recovery for sessions blocked before a catalog change.
+
+- **Tool-boundary input normalization is robust to host arg handling.**
+  Architecture and plan claim normalizers project inputs onto their declared
+  fields instead of spreading host-supplied keys into persisted state (which
+  made the whole state write fail with `SCHEMA_VALIDATION_FAILED`), and
+  `flowguard_ticket` resolves its documented `source` default itself instead of
+  trusting a host-applied Zod default.
+
+- **Terminal command admissibility is enforced (#1034).** Hydrate and abort
+  entrypoints consult the canonical command policy. A terminal hydrate reload is
+  strictly read-only — no state write, no artifact/discovery/outbox mutation, no
+  audit event — and a `claimedTaskClass` that would durably change the persisted
+  value is denied with `TERMINAL_STATE_MUTATION_DENIED`; an equal or lower claim
+  is a no-op. Terminal abort remains an idempotent no-op without any state or
+  audit rewrite.
+- **Hydrate is bound to the canonical session authority (#1033).** The hydrate
+  tool no longer derives its worktree/session location from the raw tool
+  context: it resolves the canonical worktree/fingerprint/session projection
+  (including the MCP claimed fingerprint), tolerates `absent` only as the
+  documented bootstrap path, and fails closed on root/fingerprint/binding drift.
+  The canonical location is re-validated under the session write lock before any
+  bootstrap or update (TOCTOU); the architecture guard now sanctions every
+  `initWorkspace`/`ensureWorkspace` call site.
+
+- **Hook git probes share one deadline budget (#1031).** The canonical session
+  authority accepts an optional monotone `deadlineMs`: the worktree and
+  remote-origin probes each receive `min(5s, remaining)` and an exhausted budget
+  fails closed with `GIT_TIMEOUT` instead of starting another probe. Hook paths
+  use a 4s budget inside the advertised 10s host window; a timed-out remote
+  probe now propagates instead of silently falling back to the local-path
+  fingerprint. The budget bounds the git probes, not Node startup or file I/O.
+
+- **Oversized and malformed PostToolUse payloads leave a bounded failure
+  record (#1032).** PostToolUse payloads that can never become a tool-call
+  audit event are now recorded in a bounded, lock-protected transport
+  ingestion-failure ledger (single-generation rotation, metadata only) with the
+  reason code, observed byte count, and a binary-exact SHA-256 digest of the
+  observed raw prefix (or an explicit `unavailable`). The ledger stores no raw
+  payload bytes, never claims a session or audit-chain link, and a broken ledger
+  cannot stall the informational hook; digest claims cover only bytes the reader
+  actually observed.
+
+- **Raw archive export is an administrator ceiling (#1030).** The configurable
+  `/archive` export (and the solo auto-archive) projects one effective redaction
+  policy: `allowRawExport=true` requires an explicit global
+  `~/.config/opencode/flowguard.json` AND a repository config that does not
+  forbid it (an absent global config binds the secure default `false`), so a
+  repository config can only restrict, never elevate. `allowedModes` is the
+  intersection (an empty intersection fails closed with an explicit conflict)
+  and `maxAuditEvents` is the minimum; a malformed global config fails closed
+  even with a valid repository config. The adapter binds the policy worktree to
+  the persisted session binding before reading the repository policy, and the
+  canonical `/export` completion rail and regulated completion remain
+  workflow-authorized raw exports. OS-level protection of the global config file
+  is an explicit deployment precondition and `NOT_VERIFIED` by FlowGuard.
+
+- **The hook session-directory override is a canonical assertion (#1029).**
+  `FLOWGUARD_SESSION_DIR` no longer bypasses session-authority resolution: hook
+  paths resolve the canonical worktree/fingerprint/session projection and accept
+  the override only when its realpath equals the derived session directory.
+  Foreign workspaces, wrong host sessions, symlink escapes, stale bindings, and
+  unresolvable paths fail closed
+  (`SESSION_OVERRIDE_MISMATCH`/`SESSION_OVERRIDE_UNRESOLVABLE`); an
+  unresolvable payload `cwd` now fails closed even when the override is set.
+
+- **HTTP `PreToolUse` transport failures are host-observable DENY (#1027).**
+  Authenticated pre-tool-use requests with an invalid content type, an
+  unreadable or oversized body, or malformed JSON now receive an HTTP 200
+  protocol DENY (`HOOK_PAYLOAD_INVALID` / `HOOK_STDIN_INVALID`) instead of a
+  bare 4xx that Claude Code treats as non-blocking. Authentication (401),
+  method (405), unknown route (404), unreachable-server, client-disconnect, and
+  timeout behavior are unchanged and documented as residual risks; the
+  informational hook routes keep their status codes.
+
+- **Reused reviewer evidence no longer frees the ceremony shortcut (#1028).**
+  A `SUBAGENT_EVIDENCE_REUSED` integrity incident is authorization-relevant
+  separately from deterministic transport/exhaustion blocks: reduced-ceremony
+  eligibility and the approval waiver stay closed for the session while
+  `blocked` stays terminal and open work (`isOpenReviewObligation`) is
+  unchanged. Persisted evidence cannot prove event order after the incident, so
+  later obligations or invocations never auto-resolve it; recovery is a fresh
+  governed session, and the full-ceremony review path remains available.
+
+- **Persisted policy snapshots are transformation-free.** The snapshot
+  contract now uses strict canonical schemas: non-canonical IdP shapes (scalar
+  `audience`, missing `claimMapping`, missing jwks `cacheTtlSeconds`) and
+  unknown fields anywhere in the persisted policy tree (IdP signing keys,
+  challenge policy, audit/timestamp assurance, review budget, discovery
+  health, validation evidence) fail closed instead of being normalized,
+  defaulted, or stripped on read. Config input keeps its documented authoring
+  normalization, and snapshots written by current code are already canonical,
+  so active sessions are unaffected.
+
+- **Hydrate risk-class escalation is raise-only.** Re-hydrating an existing
+  session with a lower `claimedTaskClass` no longer lowers the persisted
+  escalation: the rail clamps to `maxTaskClass(existing, claim)`, matching the
+  documented raise-only contract. A blocked `riskGate` still stays fail-closed
+  and requires a fresh governed session.
+
+- **Archive config follows the repo → global chain.** `/archive` and the solo
+  auto-archive now resolve `flowguard.json` from the canonical worktree first
+  (repo config wins over global), and `archiveSession()` requires a worktree so
+  a future caller cannot silently fall back to global-only config. A malformed
+  repo config fails closed instead of being replaced by a permissive global
+  config, and the archive response guidance uses the same resolution as the
+  gate. Regulated and completion evidence packages stay workflow-authorized and
+  intentionally independent of user config.
+
+- **Terminal command admissibility (#G6).** Command policy and terminal
+  handling no longer diverge for `/hydrate` and `/abort`: `/abort` is an
+  idempotent no-op on terminal phases, and `/hydrate` stays available as the
+  bootstrap/reload/recovery entrypoint (no terminal transition; its explicit
+  `claimedTaskClass` escalation is raise-only and never clears a blocked risk
+  gate). Flow commands and `/continue` stay
+  blocked in terminal phases, and help/status project the same command policy;
+  `/status` reports `['/hydrate', '/abort']` for terminal sessions.
+
+- **Fail-closed hook protocol delivery (#H6).** Hook DENY responses now share
+  one stdout transport primitive for sync-throw, write-callback, and stream
+  errors, and the stdout guard uses it with the writer captured at install
+  time. `PreToolUse` handles unexpected fatal errors inside the guard
+  lifetime: a delivered DENY keeps exit 0, an undeliverable DENY exits 2 with
+  a best-effort stderr copy, fatal logging can never break the rescue path,
+  and a prior delivery failure is terminal instead of triggering a second
+  protocol write.
+
+- **Non-OpenCode installer fail-closed config handling (#956).** Claude Code
+  and Codex installs no longer skip an existing `flowguard.json` silently: a
+  late conflicting write fails closed with `NON_OPENCODE_CONFIG_EXISTS`, and a
+  malformed or wrong-shape existing config fails with
+  `NON_OPENCODE_CONFIG_INVALID` instead of a raw `SyntaxError`/`TypeError`. A
+  pre-existing FlowGuard plugin tree without a complete install now blocks
+  before any write (`PARTIAL_INSTALL_CONFLICT` when FlowGuard ownership is
+  proven, `MANAGED_ARTIFACT_CONFLICT` for unproven/customer-owned material).
+  Codex marketplace diagnostics distinguish
+  `INSTALLED_AND_REGISTERED`, `INSTALLED_NOT_ACTIVATED`,
+  `MARKETPLACE_UNREADABLE`, and `MARKETPLACE_MALFORMED`; installer error codes
+  are preserved end-to-end in recovery output; and `flowguard install` prints
+  the derived outcome (`applied`, `skipped`, or `failed`).
+
+### Changed
+
+- Use one fixed, repository-grounded plan candidate for both Java reference
+  controls, submitted through the normal `/plan` path while preserving
+  independent review and revision. Deliver the authoritative plan and claims
+  through git-ignored files read by the agent, so the headless host's prompt
+  JSON encoding cannot corrupt the fenced evidence-design JSON. Bind the
+  persisted plan version 1 to the candidate with the installed product
+  normalizer and expected digest; later reviewed revisions remain allowed, and
+  their finding-resolution block may reference only bound `blockingIssues`.
+  The candidate judges positive and counterexample evidence by their own
+  assertions and records the heading/order checks as read-only manual
+  inspections. The harness verifies the delivered `Getting started` section and
+  exact test line read-only, avoids unrequested API claims, and describes the
+  `-DskipTests` counterexample as plan reasoning only.
+- Separate Java claim-control ticket adoption from plan creation: `/task` must
+  settle at `TICKET` with the exact repository ticket and no plan before `/plan`
+  is dispatched; a planning spill is `NOT_VERIFIED`. Require the repository
+  ticket's `inputOrigin: workspace` and file reference, and accept ticket
+  recovery only through the complete audit window plus a canonical product
+  transition chain from the `READY -> TICKET` adoption to the settled phase.
+  Keep one shared plan prompt
+  that describes the hypothetical `-DskipTests` counterexample without
+  implementing it, and bind finding resolutions to the current review.
+- Harden the live Java demo harness (`demo-harness.v6`): run prompt templates
+  through headless OpenCode and native decisions through a dedicated,
+  authenticated loopback service. Bind approvals and refusals to the current
+  persisted audit and state, stop without replay on unknown transport outcomes,
+  and keep raw HTTP response bodies out of evidence and diagnostics. Bind the
+  negative assertion skip at service startup and require a completed final
+  transcript response and exclusive evidence writes. No runtime or
+  governance-authority changes. Remove the obsolete V2
+  `FLOWGUARD_REVIEWER_EFFORT` export from the demo scripts and live-control
+  instructions; V2 selects the native model variant instead.
+- Require native decision approval windows to reject ambiguous tool outcomes,
+  unexplained error events and mixed success/error evidence. Bind the decision
+  receipt and every transition to the installed product's canonical
+  state-authority digest, rejecting automatic follow-up transitions with
+  missing or malformed digest pairs. Record the
+  persisted reviewer obligation/invocation/attempt binding beside each
+  reviewer transcript; transcript validation remains structural and
+  `ReviewFindings` remains the review-completion authority.
+- Point the demo setup installer at an absent run-local service record so it
+  never discovers or restarts the user's shared OpenCode service. The harness
+  starts and verifies its own authenticated child instead. Drive native
+  `/start` and `/check` through the generated session's host command API; the
+  headless CLI is reserved for prompt templates. Require a fresh host-command
+  activation record for `/start` and audited, persisted check attempts for
+  `/check`, both within a complete, dispatch-bound audit window. Bind every
+  new check attempt to the dispatch's baseline or implementation subject.
+- Split the Java live matrix into bounded modules for setup, scenarios, host
+  transport, turn recovery and evidence, preserving its CLI and runner API.
+- Fix Java demo recovery rejecting valid V2 reviews: validate captured evidence
+  using the installed product's current review contract. Recovery still requires
+  a consumed acceptance bound to the parent, obligation, invocation, attempt
+  and current subject; historical transport does not qualify.
+- Treat current plan-preflight edits (evidence design, finding resolutions,
+  claim lineage, claim submission, pending-subject guard) as correctable
+  observations. Keep them pending until the same plan revision and consumed
+  independent acceptance are verified at the gate and native approval is witnessed.
+  Ignore host control messages such as `model-switched` when validating the
+  structural review exchange, and bind `/task` to the repository ticket file
+  instead of passing its body as planning context.
+- Align public documentation with current behavior: refine README demo copy and
+  lifecycle alt text, retain the peer-review host preconditions, update the
+  Product One Pager to the OpenCode V2-scoped native reviewer mechanism and the
+  four product pillars, bind the Quick Start to a matching development build,
+  remove the unmeasured five-minute onboarding claim, and distinguish the
+  released artifact, development snapshot, installed host acceptance, and
+  production readiness. No runtime behavior or license terms change.
+- Bump `actions/setup-java` from 6.2.0 to 6.3.0 in the CI and
+  proofgraph-live-controls workflows while keeping the pins SHA-addressed.
+  Temurin Java 21 remains pinned; no governance authority, evidence format or
+  transition contract changes.
+- Bump `actions/setup-go` from 7.0.0 to 7.1.0 while keeping the workflow pin
+  SHA-addressed. The Go toolchain remains pinned to 1.23 for golden-fixture
+  compatibility; no governance authority, evidence format or transition
+  contract changes.
+- Bump `actions/dependency-review-action` from 5.0.0 to 5.0.1 while keeping
+  the workflow pin SHA-addressed. The dependency-review job remains a
+  non-blocking PR advisory; no governance authority, evidence format or
+  transition contract changes.
+- Updated native OpenCode API packages and type baselines to 2.3.2; installed Desktop/CLI support is not certified by this update.
+
+- Bump the production dependency group: `asn1js` 4.0.0 → 4.1.0 and `jose`
+  6.2.17 → 6.2.18. Minor/patch update of ASN.1 and JWT verification
+  dependencies; no governance authority, evidence format or transition contract
+  changes.
+- Bump the development dependency group: `@vitest/coverage-v8` 5.1.0 → 5.1.1,
+  `eslint` 10.14.0 → 10.15.0, `fast-check` 4.10.2 → 4.10.3, `knip`
+  6.45.1 → 6.46.1, and `typescript-eslint` 8.72.2 → 8.73.0. Toolchain-only
+  update; no product runtime, governance authority or evidence contract changes.
+
+- Harden repository developer experience and security assurance: align the
+  canonical debugging guide and Node onboarding with OpenCode V2, complete the
+  CI job documentation, upload CodeQL SARIF to GitHub code scanning, mark the
+  PVR check as declarative, document the `2.0.0-tp.x` technical-preview support
+  status, harden generated-file ignores and git-hook installation, format root
+  Markdown, and add a fresh-clone onboarding measurement. The proprietary
+  license is unchanged; code contributions remain limited to authorized
+  contributors.
+
+- Add an owner-approved, time-boxed `npm audit` exception for the unpatched
+  `picomatch` advisory `GHSA-fc5q-39xc-vjpf` / `CVE-2026-112366`, expiring
+  `2026-12-17`. The gate continues to fail on any other high or critical
+  advisory and on expiry; it is not a blanket ignore.
+
+- Add a methodological-depth requirement to the phase-specific Implementation
+  Checklist: for STANDARD and HIGH-RISK work, choose concrete methods by actual
+  risk, inspect authoritative raw evidence, define an ambitious but observable
+  quality bar and concrete failure conditions, and prefer falsification.
+  Role-playing, summaries, repeated green runs, and self-assessment are not
+  verification substitutes; the rule explicitly forbids using it to expand task
+  scope or complexity. The checklist now participates in concise
+  PLAN/IMPLEMENTATION projections; the persistent installed kernel, reviewer
+  system prompt, reviewer criteria, and review generation are unchanged.
+
+- Bump the production dependency group: `jose` 6.2.15 → 6.2.17, the OpenTelemetry
+  exporters/sdk from 0.301.0 → 0.301.2, `@opentelemetry/sdk-logs` 3.1.0 → 3.1.1
+  and `@opentelemetry/auto-instrumentations-node` 0.83.0 → 0.83.1. Patch-level
+  update of optional telemetry and JWT verification dependencies; no governance
+  authority, evidence format or transition contract changes.
+- Bump the development dependency group: `knip` 6.44.1 → 6.45.1, `prettier`
+  3.9.10 → 3.10.1 and `typescript-eslint` 8.72.1 → 8.72.2. Toolchain-only
+  update; no product runtime, governance authority or evidence contract changes.
+
+- Add a deterministic persistence-phase SIGKILL matrix for the continuity
+  marker, first and existing audit publication, clone fallback and
+  session-state writes. The matrix kills a real child at each temp/open,
+  fsync, rename and directory-fsync phase, then verifies old-or-new state,
+  valid chains and restart behavior in a separately spawned fresh process;
+  session-state crashes are compared by full canonical state digest. Add
+  `perf:persistence-crash-matrix` to the `integration-perf` CI job; clone-only
+  phases remain `NOT_VERIFIED` on filesystems without forced reflink support.
+- Add restart-process verification to the audit scale and history-depth
+  benchmarks, a 100k outbox checkpoint harness that persists and re-reads the
+  compacted state, and duration/memory sampling to the lifecycle soak so
+  bounded map/RSS behavior can be observed over an extended run.
+- Add append-proof cache regression coverage for proof reuse, failure
+  invalidation, bounded session retention, the 60-second/256-append full
+  verification windows, no-false-negative filter membership and marker-before-
+  publication crash recovery. Add a retained-memory harness that reports fixed
+  filter bytes plus heap/RSS deltas across multiple cached sessions. The
+  targeted mutation scores are 85.59% for `persistence-audit.ts`, 80.43% for
+  the continuity guard and 92.86% for the id filter against the 80% break
+  threshold.
+- Wire the 1,000-event audit scale, 32 independent writers, real SIGKILL
+  recovery (including a deterministic marker-before-publication cut-point),
+  bounded append-proof memory and lifecycle-soak harnesses into the
+  `integration-perf` CI job; a green job now exercises these forensic gates.
+- Run the default `npm test` path without timing-sensitive PERF tests; dedicated
+  `test:unit:perf` and `test:integration:perf` jobs remain the only performance
+  gates. Full status now runs independent discovery drift and toolchain probes
+  concurrently, while compact status continues to skip both explicitly.
+- Updated native OpenCode API packages and type baselines to 2.2.7; the
+  independently verified CLI host smoke pin remains 2.2.5, and installed
+  Desktop/CLI support is not certified by this update.
+
+- Refresh pinned GitHub Actions and production OpenTelemetry dependencies:
+  `actions/setup-java` 6.2.0, `github/codeql-action` 4.39.3, and
+  OpenTelemetry 0.301.0/3.1.0.
+- Update the CI and proofgraph-live-controls workflows to
+  `actions/setup-java` 6.2.0.
+
+- Update `jose` from 6.2.14 to 6.2.15.
+- Update dev dependencies: `@vitest/coverage-v8` and `vitest` from 5.0.5 to 5.1.0, `eslint` from 10.13.0 to 10.14.0, and `knip` from 6.44.0 to 6.44.1.
+- Update the optional OpenTelemetry production dependency group to
+  0.301.0/3.1.0.
+- Update `github/codeql-action/init` from 4.39.1 to 4.39.2.
+- Update `github/codeql-action/analyze` from 4.39.1 to 4.39.2.
+- Keep CodeQL init and analyze on the same pinned action version and document
+  that alignment in the security workflow.
+
+- **R4 reviewer-input boundary decision (#1190).** Record R4 as permanently
+  `NOT_SUPPORTED` on the public OpenCode 2.2.4/2.2.5 APIs, never `PASS`, and
+  limit the supported V2 operating model to trusted/operator-controlled
+  co-installed plugins. Untrusted or adversarial co-installed plugins are
+  explicitly outside the supported security boundary. FlowGuard keeps its
+  fail-closed capture/evidence diagnostics; the six unchanged probes and two
+  replacement counterexamples remain. Synchronize ADR-010, phase gates, R4
+  reports, platform limitations, README, Quick Start and the PR acceptance
+  matrix. This is a documented product limitation, not a technical resolution
+  and not a runtime bypass.
+
+- **Workflow choice card (#1190).** `/start` and `/hydrate` now render one
+  compact decision card instead of repeating the workflow list in `## Workflows`,
+  `## Next`, and a recommendation line. The card lists `/task` (recommended),
+  `/architecture`, and `/review` with action-oriented descriptions and states
+  that nothing runs until the user sends a command. Already-active `/start`
+  renders the same card when no hydrate card is present.
+
+- **Reviewer evidence binds the model of every step (#1190, ADR-010 D5, #1169
+  WS4).** The initial review accepted a different effective model or variant on a
+  later step and bound only the last one. A mid-review switch now invalidates the
+  run (`REVIEWER_COMPLETION_UNVERIFIABLE`), so the single recorded model/variant
+  truthfully covers every step. Model choice itself stays host-native; no model
+  is restricted or substituted. The evidence format is unchanged.
+- **Host-neutral state identities (#1190, WS2).** State-owned host session and
+  assistant-message identifiers, plus the exact `{sessionId, messageId, callId}`
+  call tuple, now use neutral `Host*` schemas owned by
+  `src/state/host-identity.ts`. Encoding remains byte-identical for persisted call
+  IDs and message validation keeps the recorded format. The HAI no longer needs
+  an OpenCode host-name copy for these identities, and the architecture ratchet
+  drops the former naming exceptions.
+- **Minimal HAI (#1190, WS2).** `HostAdapter` now declares only the ports the
+  product invokes: lifecycle, exact session lookup, native history reading and
+  logging. Removed the static platform/capability/enforcement projection,
+  reviewer-support boolean, unused synchronous block-delivery method and the
+  review-transport capability table from the adapter contract. Doctor capability
+  text remains a local diagnostic projection, never an assurance source; stale
+  governance baseline schemas are removed.
+- **Host-neutral presentation configuration (#1190, WS2).** Transient glyph
+  selection now lives at `presentation.glyphProfile`. Earlier installer
+  configuration at `presentation.opencode.glyphProfile` is read with unchanged
+  meaning; differing duplicate values fail validation. The existing
+  `presentation.markdown` output contract is unchanged.
+- **Host-neutral recovery vocabulary (#1190, WS2).** Reason and recovery copy no
+  longer names the OpenCode SDK or its installation paths. Plugin, session,
+  worktree, model-transport and reviewer guidance now addresses the active host;
+  reviewer recovery says reviewer subagent rather than the retired V1 Task.
+  Rejection codes, precedence and canonical byte-envelope structure are unchanged.
+- **Host-neutral core guard closure (#1190, WS2).** The exact ratchet drops from
+  62 host-specific lines in 30 files to 24 lines in 7 files, all documented as
+  persisted install/runtime locations, persisted evidence/config compatibility,
+  or the cross-host risk-path classifier. A new zero-tolerance rule rejects host
+  selection from `FLOWGUARD_HOST_PLATFORM`/`FLOWGUARD_PLATFORM` inside the core;
+  those variables remain entrypoint/host-runtime wiring.
+- **WS2 closure verification (#1190).** A test-only independent host adapter
+  consumes the neutral review-mode/instruction contract without OpenCode SDK,
+  adapter or plugin imports; native-structured and external-instruction
+  capabilities preserve the same obligation/attempt/attestation authority. A
+  fixed V5 export generated by the historical V5-capable commit `33efb381`
+  verifies with an informational historical finding, rejects tampering, and is
+  never bindable. The remaining V1 reviewer mechanisms without V2 call paths are
+  mapped to concrete implementation and positive/negative product-test
+  obligations in the WS2 closure/parity report; they remain open parity work,
+  not WS2 host-neutralization.
+
+- **Reviewer config is host-native; existing configs keep working; unreadable
+  config fails closed (#1190, #1169 WS1/WS2).** `reviewer.outputTokenMax` and the
+  V1 watchdog sub-budgets (`toolTimeoutMs`, `reviewTimeoutMs`,
+  `serializationTimeoutMs`) are removed together with `reviewer-output-cap.ts`;
+  FlowGuard sets no reviewer output cap and never rewrites model options. A
+  config written by an earlier installer stays valid: a retired key whose value
+  equals its former default is dropped at read time and `install --force`
+  rewrites the current shape. A retired key with any other value (a numeric
+  cap or a custom watchdog budget) fails with `CONFIG_INVALID` and a reason
+  naming the key; unknown `reviewer` keys are rejected. An unreadable or
+  invalid config previously blocked only the reviewer context while other
+  ACTIVE operations silently ran on default policy; it now blocks every ACTIVE
+  operation of the worktree (an ACTIVE prompt is refused at admission), a
+  readable config is re-read on the next call, and INACTIVE sessions are
+  unaffected. `doctor` no longer reports a reviewer cap.
+- **V2 parity and autonomous-activation contract (#1190).** ADR-010 now explicitly
+  requires V1-equivalent capabilities/governance guarantees, including
+  policy-permitted fully autonomous workflows. Interactive and authorized
+  autonomous starts are separate required paths; human UI provenance is not a
+  universal start prerequisite and autonomous requests cannot impersonate human
+  approvals. Required independent AI review remains fully automatable with no new
+  policy exceptions or weaker evidence/release gates. Gates, trust/support/recovery
+  documentation and the source-probe interpretation are synchronized; this changes
+  the specification, not runtime authorization or release acceptance.
+
+- **Published V2 installer provenance (#1169).** Corrected the stale pre-push
+  description of checkpoint `1750b6b1` and linked its exact source tree, CI merge,
+  failing checks and CI artifact digest. The installed lifecycle smoke can now
+  consume a named tarball/checksum and bootstraps its installer from that packed
+  package rather than workspace dist. A new bounded run binds the verified CI
+  dist bytes to the tested npm tarball without claiming green CI, reviewer/UI
+  acceptance or ACTIVE V2 support.
+
+- **Native V2 installation checkpoint (#1169, not release-ready).** OpenCode
+  installation now writes one default-export plugin directory; the plugin owns
+  all tool registrations. Removed V1 tool-file discovery, always-on mandate
+  instruction installation and build-agent task-permission rewrites. Existing
+  OpenCode JSON/JSONC is preserved byte-for-byte; obsolete FlowGuard installs
+  require explicit archival and fresh installation, not `--force` migration.
+  Ownership manifests use the current format only; foreign host/scope provenance
+  blocks before artifact writes, and uninstall surfaces package restoration
+  failures while retaining recovery provenance. Reviewer model selection
+  preserves native `provider/model#variant` references without an effort
+  allowlist; the removed OpenCode effort translation fails explicitly. Doctor
+  and reload notices distinguish installed artifacts from runtime/activation
+  proof. INACTIVE parity, operator UI and reviewer acceptance remain unverified.
+
+- **Native V2 CI follow-up (#1169).** The API-update workflow writes its
+  changelog entry through a quoted JavaScript heredoc, with executable positive
+  and missing-heading tests, rather than shell-ambiguous inline quoting. Removed
+  unused pre-cutover reviewer factories, a task predicate, telemetry bootstrap
+  and test scaffolding; module-private helpers no longer expose unused API.
+  Unused-export and ShellCheck gates remain enforced without baseline expansion
+  or warning suppressions.
+
+- **Native V2 entrypoint/client work (#1169, not release-ready).** Replaced the
+  callable OpenCode factory with `Plugin.define({ id, setup })`, single native
+  hook/tool registrations, event subscription and owned cleanup. Review consumers
+  use semantic host operations instead of V1 `path/body` requests and SDK response
+  envelopes. Agent lookup follows the actual session location without a
+  process-global capability cache; recovery no longer searches a session list or
+  accepts a part-id alias. Native failure notifications use `type/data` and
+  structured `error.type/message`, with diagnostics redacted before audit writes.
+  Cleanup drains owned in-flight operations; lifecycle availability is rechecked
+  after asynchronous scope resolution. Removed the V1 output-token rewrite;
+  host budgeting is untouched and explicit overrides remain blocked without V2
+  headroom/wire proof. Read-only completion diagnostics reuse only an already
+  scoped runtime and preserve native rich content without another authority read;
+  before-hooks, mutations and FlowGuard completions retain fresh scope lookup.
+  Authoritative rich results retain attachments/native fields while projecting
+  exactly one text part; ambiguous or text-free results fail explicitly.
+  Ported root, bootstrap, mutation/recovery and SDK contracts to native hooks;
+  canonical review positives/negatives now use explicit semantic fixtures rather
+  than manufactured V1 callback provenance. Removed the old SDK dependency,
+  factory fixtures and active V1 API baselines. Snapshot/update tooling pins native
+  plugin/client contracts without a latest-version bypass, silent metadata fallback
+  or inferred installed-host certification. Unproved V2 regular edit-error history
+  cannot complete a mutation; native error notifications remain wakeups only.
+  These API/domain tests do not certify installed behavior: operator UI provenance,
+  reviewer execution/capture, lifecycle and INACTIVE parity remain unverified.
+  PR #1190 stays Draft and supported ACTIVE V2/merge remain NO-GO.
+
+- **Single-owner plugin hook composition (#1169).** Removed post-construction
+  hook replacement for reviewer capture, output caps and execution monitoring.
+  The composition root now registers each handler once with explicit
+  fence-before-governance, cap-before-capture and exact-completion ordering.
+  Removed the capture wrapper module; authorization, evidence, recovery and host
+  contracts remain unchanged. This prepares, but does not complete, the V2 port.
+- **V2 preparatory HAI simplification (#1169).** Removed three ineffective
+  argument/result/compaction delivery methods, their unused mutation DTO and the
+  pass-through OpenCode adapter factory. The composition root now constructs the
+  adapter directly; actual hook mutation, synchronous block delivery, capability
+  validation and lifecycle cleanup retain their existing owners and behavior.
+  Updated the live HAI baseline and rejection tests without compatibility aliases.
+  This is preparatory cleanup, not a completed V2 runtime or installed support.
+- **Explicit V2 governance-scope correction (#1169).** Revised ADR-010, trust
+  documentation, acceptance gates and the decision report to require strict
+  FlowGuard decision/evidence integrity and preventive gates on controlled host
+  paths, not universal host/OS/provider containment. A sandbox, second runtime
+  or external authentication service is not a porting prerequisite. Real reviewer
+  provenance, audit/recovery, explicit decisions, native models and actual V1
+  removal/simplification remain required. Operator decisions require an explicit
+  host-UI interaction distinguishable from agent/SDK calls; the concrete V2
+  mechanism remains unverified, and SDK callbacks alone are inadmissible.
+  Historical probe bytes and
+  results and the unresolved concurrent-publication stability finding remain
+  unchanged; no product gate, support release or merge is certified. A targeted
+  Issue #1169 body/checklists now publish the accepted scope correction; the
+  host-UI distinction assumes trusted OpenCode/OS, not compromised-OS resistance.
+- **V2 prevention/reviewer feasibility observations (#1169).** Added isolated
+  probes for an advertised MCP tool deny with an executable control, visible
+  hosted-definition pre-request denial, command-template shell interpolation,
+  and an exact V2 reviewer request→terminal chain with child-reuse and
+  tool-attempt counterexamples. MCP denial is bounded to the tested fixture;
+  provider-executed actions remain unproven, shell blocks run before prompt
+  admission outside tool hooks, and a later SDK prompt can make a naive latest
+  answer forged. No P0-04/P0-05 product PASS or reviewer evidence generation is
+  claimed.
+- **V2 scope/lifecycle feasibility observations (#1169).** Added isolated
+  Session/Worktree/Child-Lineage and graceful/in-flight-crash restart probes,
+  with exact native-tool/event correlation and adversarial SDK parent/ID cases.
+  Reports keep caller-supplied parentage, mutable locations, instruction-entry
+  non-propagation and post-crash `wait()` without terminal success distinct from
+  product authorization. No V2 product support or passing full P0-02-H is claimed.
+
+- **Bounded V2 feasibility infrastructure (#1169).** Defined the Phase-02 probe
+  threat model without treating same-user credentials as human authorization.
+  Isolated probe processes now use an explicit environment, reject detected
+  ambient discovery inputs, pin host/SDK versions and distinguish absent,
+  passive and diagnostic plugins. Added a native-parity fixture separate from
+  installed FlowGuard INACTIVE acceptance; no V2 product security gate is claimed.
+  A real model-driven shell reproduced plugin command admission with an
+  agent-accessible fixture credential, refuting human-origin inference from
+  that API/callback alone; independent operator authorization remains blocked.
+  Probe-source checkout rules preserve exact LF evidence bytes on Windows;
+  an autocrlf regression test protects the byte-level source binding.
+
+- **Host-neutral opt-in governance architecture contract (#1169).** Documented
+  explicit operator-authorized activation, STRICT security/evidence boundaries,
+  unrestricted host-native models and effort levels, and versioned Phase-0
+  NO-GO gates. Changelog and affected documentation synchronization are mandatory.
+  The PR check requires a new or revised nonempty Unreleased entry relative to
+  the PR merge base; historical-only, deletion-only and formatting-only changes
+  do not satisfy it. Documentation drift is enforced through `ci-gate`.
+  No OpenCode V2 runtime support or passing host-security gate is claimed.
+
+- **Model-neutral reviewer JSON transport.** OpenCode reviews no longer require
+  `format: json_schema` or its forced StructuredOutput tool call. After a normal
+  native Task completion, FlowGuard sends one serialization prompt in the same
+  child with the completed call's model and variant, an explicit request
+  `messageID`, and no `format` or tool-choice override. Synchronous host hooks
+  prove request/response identity, one tool-free model step, successful
+  completion and no concurrent work; a lease-bound fence rejects any attempted
+  tool and permanently invalidates that capture. The exact correlated assistant
+  text must be one strict bounded JSON object and is validated by the unchanged
+  `ReviewerFindingsInput`, evidence, observation, obligation and reuse gates.
+  Invocation evidence generation 5 records request/response identities, model
+  selection, payload/findings digests and `host_message_validated` assurance.
+  The installer no longer injects an implicit `reasoningEffort`, and
+  `reviewer.outputTokenMax` defaults to the host's resolved budget while explicit
+  numeric caps remain fail-closed. The pinned host/SDK baseline moves to 1.19.5.
+  OpenCode's formatted-history persistence defect remains upstream (#40169,
+  #26929); FlowGuard neither rewrites history nor fabricates provenance.
+- **Bounded reviewer execution.** The OpenCode reviewer now has explicit tool,
+  review, serialization, and absolute execution deadlines. Tool use is limited
+  to `read` and the authorized repository observation tool; `glob` and `grep`
+  are denied. Expiry requests termination of the exact child and blocks
+  terminally only after host termination is confirmed; otherwise the attempt is
+  persisted as `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`. A same-child serialization
+  contract violation may receive one bounded, semantically-preserving format
+  correction; an incoherent verdict or changed finding content blocks.
+
+- **Terminal reviewer capacity failures.** A reviewer step-budget or output-limit
+  failure is no longer retried automatically. The exact authorized dispatch is
+  closed as `outcome_unknown`, the spent attempt is staled, the obligation is
+  blocked with its original code, and one `review:obligation_blocked` event is
+  committed in the same durable mutation. A persisted capacity lock prevents
+  the same parent user turn from minting another review or starting another
+  reviewer Task; only a new explicit host-observed review command clears it
+  under the session lock. The observed command hook proves command provenance,
+  not human identity, so internal command simulation remains `NOT_VERIFIED`.
+  The Lauf-1 at-limit child remains `REVIEWER_STEP_BUDGET_EXHAUSTED` even with a
+  plausible final text: `finish: "stop"` at the host step limit is not a
+  voluntary completion proof.
+
+- **Compact reviewer output contract (review criteria `p42-v7`).** The
+  2026-10-19 GUI runs (build `6a4ff271`, OpenCode 1.19.3, `deepseek-flash`)
+  ended both plan reviews at the shared 32,000-token output limit. One child
+  was cut mid-way through restating offered evidence-ref objects in prose; the
+  other re-examined settled points until the limit. The criteria, evidence
+  requirements, and validators are unchanged. The task-prompt contract changes:
+  - Offered challenge evidence refs are numbered `Ref 1`…`Ref N` in offer
+    order. The prose cites them only by number and never restates digests,
+    section paths, attempt IDs, or ref objects.
+  - The same-child serialization prompt expands each cited number to the
+    exact offered object. An unexpanded number fails the canonical findings
+    contract and is a retryable `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`.
+  - The output boundary asks for compact, complete prose: verdict first, then
+    each finding by severity, category, subject, `path:line` evidence, and
+    smallest repair, then each challenge.
+  - A falsification that finds no violation is stated as a complete, valid
+    result. The required challenge count is never a request to find a defect.
+  - A working instruction asks the reviewer not to reconsider an assessed
+    point without new evidence, a concrete contradiction, or an unresolved
+    requirement. Such evidence always reopens a conclusion, and required
+    falsification checks are never shortened.
+
+  `REVIEW_CRITERIA_VERSION` advances to `p42-v7`, so obligations minted under
+  `p42-v6` fail closed and are recovered through the documented fresh-review
+  route. The reviewer mandate digest is unchanged: no installed template
+  changed. Whether this reduces truncation is not yet measured.
+
+- **Reviewer output-token baseline and fixed reference suite.** Added a
+  versioned 15-case reference suite (`demos/reviewer-reference-suite/`) that
+  separates termination from evaluation and includes the R-A adjudication, the
+  B counterexample calibration, and explicit subject-fidelity exclusions. The
+  selected productive baseline is the OpenCode host setting
+  `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536` with 32K as fallback; FlowGuard
+  does not set the host-process variable automatically. Evidence: 65K
+  single-review matrix 9/9 expected, full-loop B 3/3 bound `changes_requested`,
+  and targeted full-loop R 3/3 `accept` (3/4 including the earlier R-B false
+  positive); 32K bound full-loop B in only 1/2 comparable runs and produced a
+  real single-call truncation at 32,000 reasoning tokens. This is a conditional
+  baseline, not a statistical validation; the R-B false positive remains a
+  monitored residual risk. The suite-only step-budget override is gated by
+  `FLOWGUARD_REFERENCE_SUITE=1`; the product reviewer step limit remains 10, and
+  no prompt, criteria, model, or governance gate changed.
+
+- **Automatic reviewer output cap on OpenCode.** The resolved
+  `reviewer.outputTokenMax` (default `65536`) is now applied by the FlowGuard
+  OpenCode plugin's `chat.params` hook to the `flowguard-reviewer` agent only; the
+  parent and other agents keep the host default. A fresh install writes the
+  default, existing configs resolve it without migration, and explicit values
+  are preserved. A model limit below the configured cap, an unknown model limit,
+  or an unreadable/invalid config fails the reviewer request closed before the
+  provider call and blocks the obligation terminally instead of re-arming.
+  `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a host-wide fallback when the
+  plugin hook is not active. The hook changes only the provider request's output
+  ceiling; OpenCode's internal compaction reservation is unchanged. The final
+  provider-request capture and GUI acceptance are recorded in the reviewer
+  reference suite. No reviewer prompt, criteria, model, reasoning, step-budget,
+  or governance-gate change.
+
+- **Repository observations state their citable line count.** The evidence
+  binder rejects a `line`/`endLine` beyond the observed file's line count
+  (for example line 57 of a 48-line `pom.xml`), which forced a full reviewer
+  re-run, but the observation response never told the reviewer that bound.
+  `flowguard_observe_repository` now returns `lineCount` for UTF-8 text
+  (`lineCountOfUtf8`, the exact count the binder enforces; binary content has
+  none), and the observation contract tells the reviewer to cite only within
+  `1..lineCount`. The tool and the parent replay build the response through the
+  same function, so `responseDigest` covers the field. **Upgrade impact:** a
+  capture recorded with the previous response shape (for example during an
+  upgrade while a review is running) no longer matches the canonical response
+  and is dropped at replay, never reinterpreted; observations already bound
+  stay unchanged. Replay drops are now logged per reason, and a response
+  mismatch is logged with its locations, so a later
+  `REVIEW_EVIDENCE_NOT_OBSERVED` has a visible cause.
+- **Reviewer structured output is constrained to the obligation.** The
+  same-child serialization follow-up sent the static findings schema, so
+  exact-equality facts of the capture gate were only checked after the host
+  accepted the output: a wrong `iteration`, `planVersion` or attestation
+  obligation id became a terminal `SUBAGENT_MANDATE_MISMATCH`, and a challenge
+  of the wrong kind or with a ref that was not offered forced a full reviewer
+  re-run. The follow-up now sends `buildObligationFindingsJsonSchema`, derived
+  from the same persisted snapshot as the capture gate (`obligationCaptureContract`):
+  those facts are `const`, the challenge item admits only the required kind, and
+  evidence refs must be one of the offered refs as a whole object, so
+  digest/section cross-combinations are not expressible. The schema reaches
+  the model as the StructuredOutput tool's parameter schema, so the model is
+  told the exact admissible values. The pinned OpenCode host (1.19.0) does
+  **not** validate the answer against it (it wraps the schema with the AI SDK
+  `jsonSchema()` without a validator; pinned by the live smoke), so there is no
+  host-side correction: the FlowGuard capture gate stays the only enforcement
+  and still rejects a violating answer. Nothing the gate accepts in more than
+  one form is narrowed (host-stamped
+  challenge `obligationId`, subject anchors, evidence locations, challenge count
+  and verdict, resolution verdicts), and every validator still runs. A ref added
+  after the dispatch is logged as contract growth. `ajv` is a new
+  devDependency for the schema/validator parity tests.
+- **Challenge evidence refs are offered once.** The reviewer challenge
+  contract now lists the offered evidence refs exactly once as a numbered
+  whitelist and the challenge shape example cites exactly one offered ref that
+  fits the challenge kind (first `validation_attempt` for implementation, first
+  `plan_adr_section` for plan/ADR, the `content` ref for content reviews;
+  otherwise the first offered ref). Previously the example embedded the entire
+  whitelist, which read as "cite all refs". Reviewers cite a non-empty subset;
+  a passing implementation challenge must cite at least one
+  `validation_attempt`. Validation is unchanged: refs outside the offer are
+  still rejected, and without offered refs the reviewer still returns
+  `unable_to_review`.
+- **BREAKING — session state v11 and the versioned plan approval certificate.**
+  The plan approval certificate is replaced by `plan-approval-certificate.v1`
+  with an explicit `explicit_decision` / `policy_auto` attestation bound to the
+  session binding and frozen policy; `approvedBy` no longer exists for plan
+  certificates, and a `policy_auto` certificate can only certify an accepted
+  review. Every `EVIDENCE_REVIEW -> EXPORT_READY` approval — automatic exactly
+  like explicit — must clear the canonical evidence preflight. Existing session
+  state (`v10`/earlier), including previously compatible active sessions, is
+  rejected with `SESSION_STATE_INCOMPATIBLE`; there is no migration path, and
+  historical exports require the matching previous runtime for re-verification.
+
+- **Single canonical session authority (#957).** Plugin hooks, tool execution,
+  MCP projection, and hook session resolution now resolve sessions through
+  `resolveSessionAuthority`: the canonical git worktree is fingerprinted and
+  the persisted worktree/fingerprint binding is validated before any state is
+  trusted. Worktree drift now fails closed with `WORKTREE_MISMATCH`; fingerprint
+  drift on the same root fails closed with the new `SESSION_BINDING_MISMATCH`
+  reason code, and unexpected resolution failures surface as
+  `SESSION_AUTHORITY_UNAVAILABLE`. The explicit `FLOWGUARD_SESSION_DIR` hook
+  override is unchanged. Full base-profile mutation admission for
+  `src/adapters/session-authority.ts`: 100 % (20 killed, 0 survived).
+
+### Removed
+
+- Remove the non-emitted `MAX_REVIEW_ITERATIONS_REACHED` reason retained solely
+  for registry compatibility on the reviewed recovery surface. Current review
+  budgets, convergence, decisions and audit behavior are unchanged.
+
+- **Breaking configuration change:** reject `presentation.opencode` and all
+  retired reviewer keys (`outputTokenMax`, `toolTimeoutMs`, `reviewTimeoutMs`,
+  `serializationTimeoutMs`), including former installer defaults. No read-time
+  normalization or automatic `install --force` migration remains. Document
+  backup-first manual recovery while preserving current settings, session state
+  and audit evidence. The independent config `schemaVersion: "v1"` is unchanged.
+- Remove the obsolete host-update trigger. Move the V1 docs integrity workflow
+  out of scheduled/current V2 acceptance into an explicit manual historical-only
+  check with no baseline-write mode. V2 docs-drift coverage remains
+  `NOT_VERIFIED`; retained baseline and historical evidence bytes are unchanged.
+
+- **V1 reviewer Task transport (#1190, #1169 WS1).** The V2 entrypoint never
+  registered it and the V2 host adapter threw for every V1 reviewer call, so it
+  is removed instead of kept as a dormant second path: the native Task hooks,
+  the V1 same-child follow-up and message-shape completion classifier, provider
+  error and agent resolution, the V1 capture fence, the execution watchdog and
+  its failure persisters, the output-cap failure persister, the runtime failure
+  maps, the trace-id fallback registry and the always-throwing adapter members
+  (`executeReviewerPrompt`, `reviewerCall`, `quiescence`, `interrupt`,
+  `listAgents`). The review host port is reduced to `readHistory`; adapter
+  initialization now requires the session methods actually called (`prompt`,
+  `wait`) instead of unused ones. Reason codes without an emitter are removed
+  (`STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`,
+  `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE`,
+  `REVIEWER_HOST_MESSAGE_ENCODING_FAILED`, `REVIEWER_EXECUTION_TIMEOUT`,
+  `REVIEWER_OUTPUT_CAP_INVALID`). Live residues move to single V2 owners
+  (`native-review-findings.ts`, `native-review-execution.ts`,
+  `native-review-types.ts`). The V1 glue that only connected retry and closure
+  policy to the Task after-hook (`capture-failure-routing.ts`, binding-failure
+  routing, the unable-to-review output projection) is removed; the canonical
+  retry classification, durable re-arm transition and closure owners stay with
+  their tests but are still not wired into the V2 capture; the reviewer
+  observation replay likewise has no V2 production caller. The implementation
+  inventory lists the V1 behaviors that must be re-proven natively (Finding 6
+  remains BLOCKED). The base mutation scope drops the three removed targets (138
+  to 135 files); the `review-capture` profile keeps only the strict-JSON and
+  message-capture primitives, and the V2 capture owners are not yet in a
+  committed profile. Seven stale unused-export baseline entries are dropped.
+- **V1 OpenCode instruction-source diagnostics (#1190, #1169 WS1).**
+  `cli/opencode-runtime-detect.ts`, the `instructions[]` runtime classifier and
+  the never-emitted `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` reason are removed;
+  they had no production importer after the global mandate instruction was
+  dropped. `opencode-runtime-compat.ts` keeps only the retained old-generation
+  exact host pin used by demo/live harnesses and SDK update tests.
+
+### Security
+
+- Start the forensic CodeQL triage for the `v2.0.0-tp.3` release diff. Fix
+  confirmed findings in Markdown/diagnostic escaping, file reads, owner-file
+  removal, the Java method detector, transport error responses, changelog
+  parsing and test fixtures; document false positives with reachability
+  evidence; and track four operator-harness TOCTOU findings and the production
+  uninstall pathname race with individual owner decisions scoped to TP.3.
+  The bounded `O_NOFOLLOW` reader, linear Java method-name scan, adversarial
+  regressions, and eval snapshot hardening are included. Alerts are closed only
+  as fixed or individually dismissed with a documented rule-scoped reason.
+  Stryker's coverage-instrumented test run disables wall-clock PERF budgets,
+  matching the coverage boundary; the integration-perf gate still enforces
+  them.
+- Raise the mutation job timeout to 360 minutes (the GitHub-hosted maximum).
+  The candidate run reached 93% at 3h55m and needed about 4h10m; the previous
+  240-minute cap truncated it, and 300 minutes left little margin. No mutant,
+  scope, admission rule or score threshold changed.
+- Harden mutation coverage for archive publication and after-hook review
+  authority: isolated journal-schema failures, one-sided retention recovery,
+  retain-failure rollback, review-dispatch mismatch blocking, and idle
+  system-work wakeup. No thresholds, selectors or admission rules changed.
+  See `docs/security/codeql-triage-2026-11-25.md`.
 
 ## [2.0.0-tp.2] - 2026-10-04
 
@@ -46,7 +2900,7 @@ pending`) instead of the later live verification status. A small
   add an optional adversarial host-tool denial step (`HOST_TOOL_PHASE_DENIED` /
   `enforcement:denied`).
 
-- **Reviewer execution-continuity provenance (state schema v6).** Every
+- **BREAKING — reviewer execution-continuity provenance (state schema v6).** Every
   runtime-executed validation attempt now persists the host-observed execution
   continuity (`executionObservedStateDigest`, `preCommitStateDigest`), and the
   reviewer projection derives `stateChangedDuringExecution` from that pair
@@ -534,6 +3388,27 @@ true })` returns the evaluated projection. Key invariants:
   gate always remains, `implReview` is reported as an explicit `waived` status
   instead of fabricated evidence, and approval/export re-attest the frozen
   bytes before proceeding.
+
+- **BREAKING — session state v8 requires the risk-trigger and risk-assessment slots.**
+  `SessionState.riskTriggers` is now required (no absent field; empty is the
+  explicit `[]`) and `implementationRiskAssessment` is nullable instead of
+  optional, so "not yet assessed" is the explicit `null` rather than a missing
+  key. `v7` and earlier states are rejected at the read boundary with
+  `SESSION_STATE_INCOMPATIBLE`; there is no read default or migration. The
+  historic `TaskClass` re-export from the state layer is removed (breaking
+  TypeScript API change); import the vocabulary from its owning module. Dead
+  compatibility surfaces such as the legacy review-binding fallback are
+  deleted rather than migrated.
+
+- **BREAKING — session state v9 hard cut after the policy digest change.**
+  The semantically empty `PlanReviewPolicy` scope field is removed from the
+  policy contract, so `POLICY_DIGEST_VERSION` advances to `policy-digest.v4`
+  and the policy snapshot digest changes. Any state carrying an older digest,
+  and every state written as `v8` or earlier, is rejected at the read boundary
+  with `SESSION_STATE_INCOMPATIBLE`; there is no read default or migration.
+  The same change deletes unused review facades, aliases and dead exports
+  (breaking TypeScript API change) and replaces hard review-zone budgets with
+  named, justified `budgetExceptions`.
 
 - **Shared state-write preparation and recovery regression coverage.** Governed
   writes now finalize the Implementation Base and refresh the ProofGraph once

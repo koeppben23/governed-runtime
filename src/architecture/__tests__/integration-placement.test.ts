@@ -28,7 +28,7 @@ import {
   type IntegrationOwner,
   type IntegrationPlacementEntry,
   type IntegrationPlacementZone,
-} from './integration-placement-manifest.js';
+} from '../support/integration-placement-manifest.js';
 import {
   analyzeIntegrationPlacement,
   isRootCompositionFile,
@@ -36,9 +36,9 @@ import {
   isToolCommandContextFile,
   placementOwnerOf,
   type IntegrationPlacementViolation,
-} from './integration-placement-analyzer.js';
-import { isTestSourcePath } from './module-classification.js';
-import { collectProductionSources } from './production-source.js';
+} from '../support/integration-placement-analyzer.js';
+import { isTestSourcePath } from '../support/module-classification.js';
+import { collectProductionSources } from '../support/production-source.js';
 
 const SRC = join(process.cwd(), 'src');
 
@@ -143,6 +143,22 @@ describe('integration placement authority', () => {
     }
   });
 
+  it('pins the root zone owner counts as explicit architecture invariants', () => {
+    // ADR-004: the root bound is a deliberate matrix decision, not a projection
+    // of the current tree. The literals below are the invariant; the placement
+    // manifest is the file mapping they constrain.
+    const rootFiles = INTEGRATION_PLACEMENT.filter((entry) => targetZoneOf(entry) === 'root');
+    const countByOwner = (owner: string) =>
+      rootFiles.filter((entry) => entry.owner === owner).length;
+
+    expect(countByOwner('root-composition')).toBe(38);
+    // The extracted native-dispatch cache is explicitly part of host runtime,
+    // not an unchecked extra module or an owner-free budget exception.
+    expect(countByOwner('root-host-runtime')).toBe(9);
+    expect(countByOwner('root-authority')).toBe(15);
+    expect(rootFiles.length).toBe(62);
+  });
+
   it('freezes the host/runtime boundary set exactly', () => {
     const hostRuntimeFiles = INTEGRATION_PLACEMENT.filter(
       (entry) => entry.owner === 'root-host-runtime',
@@ -151,7 +167,12 @@ describe('integration placement authority', () => {
       .sort();
 
     expect(hostRuntimeFiles).toEqual([
+      'integration/gui-rpc-client-contract.ts',
+      'integration/host-mutation-observation.ts',
       'integration/installed-commands.ts',
+      'integration/opencode-governance-dispatch-cache.ts',
+      'integration/opencode-governance-rpc.ts',
+      'integration/opencode-governance.ts',
       'integration/opencode-host-adapter.ts',
       'integration/runtime-instance.ts',
       'integration/runtime-lease.ts',
@@ -161,7 +182,7 @@ describe('integration placement authority', () => {
   it('exposes positive placement helpers for the context boundaries', () => {
     expect(placementOwnerOf('integration/plugin.ts')).toBe('root-composition');
     expect(placementOwnerOf('integration/plugin-helpers.ts')).toBe('root-composition');
-    expect(placementOwnerOf('integration/review/dispatch/native-task-review.ts')).toBe(
+    expect(placementOwnerOf('integration/review/dispatch/native-review-capture.ts')).toBe(
       'review-dispatch',
     );
     expect(placementOwnerOf('integration/rogue.ts')).toBeNull();

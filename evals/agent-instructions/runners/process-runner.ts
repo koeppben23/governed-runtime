@@ -7,7 +7,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  readFileSync,
   readdirSync,
   lstatSync,
   cpSync,
@@ -22,14 +21,20 @@ import type { InstructionHost, InstructionSurface, RunnerConfig } from '../schem
 import type { WorkspaceSnapshot } from '../assertions.js';
 import { buildMandatesContent } from '../../../src/rendering/mandates-renderer.js';
 import { computeMandatesDigest } from '../../../src/cli/install-helpers.js';
-import { mergeOpencodeJson } from '../../../src/cli/install-json.js';
+import { assertNativeOpenCodeInstallTarget } from '../../../src/cli/install-ownership.js';
 import {
   CLAUDE_CODE_PLUGIN_DIR,
   claudeCodePluginFiles,
   CODEX_PLUGIN_NAME,
   codexPluginFiles,
+  PLUGIN_RELATIVE_PATH,
+  PLUGIN_WRAPPER,
+  REVIEWER_AGENT_FILENAME,
+  REVIEWER_AGENT,
+  COMMANDS,
 } from '../../../src/cli/templates.js';
 import { PACKAGE_VERSION } from '../../../src/shared/package-version.js';
+import { SafeFileReadError, readRegularFileBounded } from '../../../src/shared/safe-file-read.js';
 
 export interface CompletedOutcome {
   status: 'completed';
@@ -60,6 +65,7 @@ export type RunnerOutcome = CompletedOutcome | RunnerErrorOutcome;
 const IGNORED_PREFIXES = ['.git', 'node_modules', 'eval-results', 'tmp'];
 const IGNORED_NAMES = new Set(['.DS_Store', 'Thumbs.db']);
 const MAX_CAPTURE_CHARS = 1_000_000;
+const MAX_SNAPSHOT_FILE_BYTES = 1_000_000;
 
 function isIgnored(relPath: string): boolean {
   if (IGNORED_NAMES.has(basename(relPath))) return true;
@@ -78,11 +84,11 @@ export interface WorkspaceObservation {
   errors: string[];
 }
 
-export function snapshotWorkspace(root: string): WorkspaceObservation {
+export async function snapshotWorkspace(root: string): Promise<WorkspaceObservation> {
   const entries: WorkspaceSnapshot = new Map();
   const contents = new Map<string, string>();
   const errors: string[] = [];
-  walk(root, '', entries, contents, errors);
+  await walk(root, '', entries, contents, errors);
   return { entries, contents, errors };
 }
 
@@ -92,13 +98,13 @@ function observeError(errors: string[], operation: string, relPath: string, erro
   );
 }
 
-function walk(
+async function walk(
   root: string,
   relDir: string,
   entries: WorkspaceSnapshot,
   contents: Map<string, string>,
   errors: string[],
-): void {
+): Promise<void> {
   const fullDir = join(root, relDir);
   let dirents: ReturnType<typeof readdirSync>;
   try {
@@ -122,18 +128,28 @@ function walk(
     }
     if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
-      walk(root, relPath, entries, contents, errors);
+      await walk(root, relPath, entries, contents, errors);
       continue;
     }
     if (!stat.isFile()) continue;
 
     try {
-      const buf = readFileSync(fullPath);
+      // A file that vanishes after readdir is an observation failure, never a
+      // silent omission. The reader pins the final inode; ancestor-directory
+      // replacement remains an operator-controlled fixture-root assumption.
+      const result = await readRegularFileBounded(fullPath, {
+        maxBytes: MAX_SNAPSHOT_FILE_BYTES,
+      });
       const snapshotPath = relPath.split(sep).join('/');
-      entries.set(snapshotPath, { sha256: sha256(buf), bytes: buf.length });
-      contents.set(snapshotPath, buf.toString('utf-8'));
+      entries.set(snapshotPath, { sha256: sha256(result.raw), bytes: result.bytes });
+      contents.set(snapshotPath, result.content);
     } catch (error) {
-      observeError(errors, 'read', relPath, error);
+      observeError(
+        errors,
+        'read',
+        relPath,
+        error instanceof SafeFileReadError ? error.message : error,
+      );
     }
   }
 }
@@ -220,13 +236,20 @@ async function materializeInstructionSurface(
 
   if (instructionHost === 'opencode') {
     const mandatesDir = join(workspaceRoot, '.opencode');
+    await assertNativeOpenCodeInstallTarget(mandatesDir, [workspaceRoot, mandatesDir]);
     mkdirSync(mandatesDir, { recursive: true });
     writeFileSync(
       join(mandatesDir, 'flowguard-mandates.md'),
       buildMandatesContent(PACKAGE_VERSION(), computeMandatesDigest()),
       'utf-8',
     );
-    await mergeOpencodeJson(join(workspaceRoot, 'opencode.json'), 'repo');
+    writeTemplateTree(mandatesDir, {
+      [PLUGIN_RELATIVE_PATH]: PLUGIN_WRAPPER,
+      [`agents/${REVIEWER_AGENT_FILENAME}`]: REVIEWER_AGENT,
+      ...Object.fromEntries(
+        Object.entries(COMMANDS).map(([name, content]) => [`commands/${name}`, content]),
+      ),
+    });
     return null;
   }
 
@@ -327,7 +350,7 @@ export async function runProcess(
     };
   }
 
-  const before = snapshotWorkspace(workspaceRoot);
+  const before = await snapshotWorkspace(workspaceRoot);
   if (before.errors.length > 0) {
     cleanup();
     return observationFailure('before', before.errors, metadata);
@@ -410,7 +433,7 @@ export async function runProcess(
       });
     });
 
-    child.on('close', (code, signal) => {
+    child.on('close', async (code, signal) => {
       clearTimeout(timer);
       if (signal) {
         finish({
@@ -424,7 +447,7 @@ export async function runProcess(
         return;
       }
 
-      const after = snapshotWorkspace(workspaceRoot);
+      const after = await snapshotWorkspace(workspaceRoot);
       if (after.errors.length > 0) {
         finish(observationFailure('after', after.errors, metadata, stdout, stderrOut));
         return;

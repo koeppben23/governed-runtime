@@ -21,6 +21,29 @@ export type ReducedCeremonySubjectAttestation =
   | { readonly kind: 'ok'; readonly digest: string }
   | { readonly kind: 'subject_changed'; readonly expected: string; readonly actual: string };
 
+/**
+ * Re-attest the frozen governed implementation subject for a final evidence
+ * approval — reduced ceremony exactly like a full independent implementation
+ * review. Returns null when no implementation subject exists (claimless
+ * workflow), never a silent pass for a missing subject.
+ */
+export async function attestApprovalWorktreeSubject(input: {
+  readonly state: SessionState;
+  readonly worktree: string;
+  readonly digest: (text: string) => string;
+}): Promise<ReducedCeremonySubjectAttestation | null> {
+  const implementation = input.state.implementation;
+  if (implementation === null) return null;
+  return reattestImplementationSubject({
+    worktree: input.worktree,
+    frozenFiles: implementation.changedFiles,
+    expectedDigest: implementation.digest,
+    baseline: input.state.implementationBaseline,
+    digest: input.digest,
+    ignoredArtifacts: flowguardReportArtifacts(input.state),
+  });
+}
+
 export async function attestReducedCeremonySubject(input: {
   readonly state: SessionState;
   readonly worktree: string;

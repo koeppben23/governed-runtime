@@ -46,6 +46,7 @@ export const ProofContractCoverage = z
       'unverified_mutation_profile',
       'invalid_counterexample_contract',
       'aggregate_counterexample_unsupported',
+      'evidence_role_collision',
     ]),
   })
   .strict()

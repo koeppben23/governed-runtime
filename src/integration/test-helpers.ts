@@ -19,6 +19,7 @@ import * as path from 'node:path';
 import { readState } from '../adapters/persistence.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
 import type {
+  BindingInfo,
   ReviewAttempt,
   ReviewFindings,
   ReviewObligation,
@@ -27,7 +28,6 @@ import type {
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-  buildInvocationEvidence,
   findLatestObligation,
 } from './review/obligations/assurance.js';
 import { hashFindings } from './review/findings-hash.js';
@@ -35,35 +35,13 @@ import { hashText } from '../shared/hashing.js';
 import { mintObservationCapabilityIfResolvable } from './review/obligations/attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
+import { isOpenReviewObligation } from '../state/review-dispatch.js';
 import { writeStateWithAuditOperations } from './audit-outbox.js';
 import { buildReviewChallengeContract } from './review/obligations/challenge-contract.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../review-invocation-test-helpers.js';
+import { mintHostFindingIds } from './review/evidence/finding-identity.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
-
-/**
- * Structural OpenCode client stub that satisfies plugin boot validation.
- *
- * `FlowGuardAuditPlugin` fail-closes at boot unless the client exposes
- * `session.create`, `session.prompt`, and the agent registry. Tests that only
- * exercise hook behavior use this base and override the fields they need.
- */
-export function createBootableHostClient(overrides?: {
-  session?: Record<string, unknown>;
-  app?: Record<string, unknown>;
-}): { session: Record<string, unknown>; app: Record<string, unknown> } {
-  return {
-    session: {
-      create: async () => ({}),
-      prompt: async () => ({}),
-      ...(overrides?.session ?? {}),
-    },
-    app: {
-      log: async () => {},
-      agents: async () => ({ data: [] }),
-      ...(overrides?.app ?? {}),
-    },
-  };
-}
 
 /**
  * Assert that OPENCODE_CONFIG_DIR is set and points to a temporary directory.
@@ -115,8 +93,12 @@ export interface TestToolContext {
   agent: string;
   directory: string;
   worktree: string;
+  /** MCP transport claimed fingerprint (authority parity check). */
+  workspaceFingerprint?: string;
   abort: AbortSignal;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
+  autoValidationProgress?: import('./tools/helpers.js').AutoValidationProgress;
+  helpCapabilities?: import('./help/command-catalog.js').HelpCapabilities;
 }
 
 /**
@@ -166,16 +148,23 @@ export interface TestWorkspace {
 export async function createTestWorkspace(): Promise<TestWorkspace> {
   const originalEnv = process.env.OPENCODE_CONFIG_DIR;
   const originalGuard = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-integ-'));
-  process.env.OPENCODE_CONFIG_DIR = tmpDir;
+  const created = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-integ-'));
+  // Canonicalize the temp path: git resolves symlinks, so the session
+  // authority must compare physical paths (macOS /var vs /private/var).
+  const tmpDir = await fs.realpath(created);
+  // The test-directory guard compares against the OS tmpdir spelling, so the
+  // env var keeps `created`; both spellings are the same physical directory.
+  process.env.OPENCODE_CONFIG_DIR = created;
   process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
   assertTestConfigDir();
 
-  // Make tmpDir look like a real worktree so the plugin's `isUsableWorktree`
-  // check (fail-closed: rejects non-repo paths to avoid creating rogue
-  // workspace folders) accepts it. Tests that pass `worktree: ws.tmpDir` to
-  // the plugin rely on this marker.
-  await fs.mkdir(path.join(tmpDir, '.git'), { recursive: true });
+  // A real git repository is required: the canonical session authority
+  // resolves the worktree root through `git rev-parse --show-toplevel`.
+  // A bare `.git` marker is not a repository and fails closed now.
+  const { execFileSync } = await import('node:child_process');
+  execFileSync('git', ['init', '--quiet', tmpDir], { windowsHide: true });
+  // Byte-exact fixture content on every platform (no CRLF conversion).
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: tmpDir, windowsHide: true });
 
   return {
     tmpDir,
@@ -200,6 +189,44 @@ export async function createTestWorkspace(): Promise<TestWorkspace> {
         // Best effort
       }
     },
+  };
+}
+
+/**
+ * Build a canonical session binding for a test worktree.
+ *
+ * Realpaths the root, computes the canonical workspace fingerprint and returns
+ * a `BindingInfo` that `resolveSessionAuthority` validates. Tests that seed
+ * session state must use this (or an equivalent canonical binding) so the
+ * single authority resolves their session directory instead of failing with
+ * WORKTREE_MISMATCH / SESSION_BINDING_MISMATCH.
+ *
+ * @param root - Worktree root; must already exist on disk.
+ * @param hostSessionId - Host session recorded in the binding.
+ */
+export async function canonicalBinding(
+  root: string,
+  hostSessionId: string = crypto.randomUUID(),
+): Promise<BindingInfo> {
+  let canonicalRoot = await fs.realpath(root);
+  // Dynamic import keeps the workspace/git module graph out of this helper's
+  // static imports: test files mock the git adapter, and a static edge here
+  // would be evaluated before the vi.mock factory installs the mock.
+  const { resolveRoot } = await import('../adapters/git-repo.js');
+  const { computeFingerprint } = await import('../adapters/workspace/index.js');
+  try {
+    // Fingerprint the git-canonical root like the session authority does so a
+    // path alias (Windows 8.3 short names) cannot select a divergent workspace.
+    canonicalRoot = await resolveRoot(canonicalRoot);
+  } catch {
+    // Non-repository roots keep the physical path fingerprint.
+  }
+  const { fingerprint } = await computeFingerprint(canonicalRoot);
+  return {
+    hostSessionId,
+    worktree: canonicalRoot,
+    fingerprint,
+    resolvedAt: new Date().toISOString(),
   };
 }
 
@@ -379,6 +406,14 @@ export async function fulfillStrictReviewObligation(
     planVersion: number;
     overallVerdict?: ReviewFindings['overallVerdict'];
     childSessionId?: string;
+    /** Explicit falsification scenarios for tests exercising multi-challenge reviews. */
+    challengeScenarios?: readonly string[];
+    /**
+     * Outcome per required challenge (index-aligned; defaults to the approved
+     * outcome per kind). Tests exercise the #747 failing-challenge repair loop
+     * with `'fail'`.
+     */
+    challengeOutcomes?: readonly ('pass' | 'fail')[];
     /** Bind this exact attempt; defaults to the obligation's first attempt. */
     attemptId?: string;
     /**
@@ -387,6 +422,18 @@ export async function fulfillStrictReviewObligation(
      * fixture.
      */
     blockingIssueCount?: number;
+    /**
+     * Explicit blocking-issue messages (index-aligned with blockingIssueCount)
+     * for fixtures that assert a specific, actionable finding survives the
+     * repair flow.
+     */
+    blockingIssueMessages?: readonly string[];
+    /**
+     * Independent reviewer resolution verdicts for prior failing challenges
+     * (#747). The consumption boundary requires exactly one verdict per
+     * author-addressed open challenge.
+     */
+    resolutionVerdicts?: ReviewFindings['challengeResolutionVerdicts'];
   },
 ): Promise<ReviewFindings> {
   const state = await readState(sessDir);
@@ -410,13 +457,16 @@ export async function fulfillStrictReviewObligation(
   // host-observed identity must match exactly, including artifact section paths.
   const canonicalRefs = buildReviewChallengeContract(state, obligation)?.evidenceRefs as
     ReviewFindings['challenges'][number]['evidenceRefs'] | undefined;
-  const challenges = Array.from({ length: obligation.requiredChallengeCount ?? 0 }, () => {
+  const challenges = Array.from({ length: obligation.requiredChallengeCount ?? 0 }, (_, index) => {
     const challengeId = crypto.randomUUID();
+    const requestedOutcome = input.challengeOutcomes?.[index];
     if (obligation.requiredChallengeKind === 'implementation_challenge') {
       return {
         challengeId,
         obligationId: obligation.obligationId,
-        scenario: 'Exercise the changed behavior against its implementation evidence.',
+        scenario:
+          input.challengeScenarios?.[index] ??
+          'Exercise the changed behavior against its implementation evidence.',
         claim: 'The implementation handles the reviewed scenario.',
         locations: ['implementation evidence'],
         kind: 'implementation_challenge' as const,
@@ -437,13 +487,15 @@ export async function fulfillStrictReviewObligation(
                 crypto.randomUUID(),
             },
           ] satisfies ReviewFindings['challenges'][number]['evidenceRefs']),
-        outcome: 'pass' as const,
+        outcome: requestedOutcome ?? 'pass',
       };
     }
     return {
       challengeId,
       obligationId: obligation.obligationId,
-      scenario: 'Exercise the reviewed design against its canonical section.',
+      scenario:
+        input.challengeScenarios?.[index] ??
+        'Exercise the reviewed design against its canonical section.',
       claim: 'The design addresses the reviewed scenario.',
       locations: ['plan section'],
       kind: 'design_challenge' as const,
@@ -475,9 +527,19 @@ export async function fulfillStrictReviewObligation(
     blockingIssues: Array.from({ length: input.blockingIssueCount ?? 0 }, (_, index) => ({
       severity: 'major' as const,
       category: 'correctness' as const,
-      message: `captured incoherent finding ${String(index + 1)}`,
+      message:
+        input.blockingIssueMessages?.[index] ?? `captured incoherent finding ${String(index + 1)}`,
       relation: {
-        subjectAnchors: [{ kind: 'content' as const, subjectDigest: obligation.subjectDigest }],
+        subjectAnchors:
+          obligation.obligationType === 'implement' &&
+          obligation.reviewSubjectScope?.kind === 'implementation'
+            ? [
+                {
+                  kind: 'implementation' as const,
+                  implementationDigest: obligation.reviewSubjectScope.implementationDigest,
+                },
+              ]
+            : [{ kind: 'content' as const, subjectDigest: obligation.subjectDigest }],
         evidenceLocations: [],
       },
     })),
@@ -499,7 +561,9 @@ export async function fulfillStrictReviewObligation(
       reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
     challenges,
+    ...(input.resolutionVerdicts ? { challengeResolutionVerdicts: input.resolutionVerdicts } : {}),
   };
+  const findingsWithIdentity = mintHostFindingIds(findings);
 
   const boundAttempt = bindHostTaskAttempt(
     assurance.attempts,
@@ -513,15 +577,15 @@ export async function fulfillStrictReviewObligation(
     mandateDigest: obligation.mandateDigest,
     criteriaVersion: obligation.criteriaVersion,
     parentSessionId: state.binding.hostSessionId,
-    childSessionId: findings.reviewedBy.sessionId,
+    childSessionId: findingsWithIdentity.reviewedBy.sessionId,
     promptHash: hashText(`${input.obligationType}:${input.iteration}:${input.planVersion}`),
-    findingsHash: hashFindings(findings),
+    findingsHash: hashFindings(findingsWithIdentity),
     invokedAt: new Date().toISOString(),
     fulfilledAt: new Date().toISOString(),
     attemptId: boundAttempt.attemptId,
     // Host-observed contract: the structured capture is the only findings
     // authority; the captured verdict is derived from it by the builder.
-    capturedRawFindings: findings,
+    capturedRawFindings: findingsWithIdentity,
   });
   const obligationAcceptedByReviewer = true;
 
@@ -553,7 +617,7 @@ export async function fulfillStrictReviewObligation(
     },
   });
 
-  return findings;
+  return findingsWithIdentity;
 }
 
 /**
@@ -581,6 +645,8 @@ export function repositoryDiscoveryContext(
       drift: {
         status: 'not_assessed',
         drifted: false,
+        currentDigest: null,
+        persistedDigest: null,
         changedContributorNames: [],
         notVerified: [],
       },
@@ -657,25 +723,16 @@ function bindHostTaskAttempt(
  * this helper to satisfy the same strict obligation contract. The tool resolves
  * the captured evidence itself; the caller keeps submitting ONLY the verdict.
  */
-function findPendingObligation(
-  allObligations: Array<{
-    obligationType: string;
-    status?: string;
-    consumedAt?: unknown;
-    iteration: number;
-    planVersion: number;
-  }>,
-): { obligationType: string; obligation: { iteration: number; planVersion: number } } | null {
-  const findPending = (type: string) =>
+function findOpenObligation(
+  allObligations: readonly ReviewObligation[],
+): { obligationType: ReviewObligationType; obligation: ReviewObligation } | null {
+  const findOpen = (type: ReviewObligationType) =>
     [...allObligations]
       .reverse()
-      .find(
-        (item) =>
-          item.obligationType === type && item.status !== 'consumed' && item.consumedAt == null,
-      );
-  const pending = findPending('architecture') ?? findPending('implement') ?? findPending('plan');
-  if (!pending) return null;
-  return { obligationType: pending.obligationType, obligation: pending };
+      .find((item) => item.obligationType === type && isOpenReviewObligation(item));
+  const open = findOpen('architecture') ?? findOpen('implement') ?? findOpen('plan');
+  if (!open) return null;
+  return { obligationType: open.obligationType, obligation: open };
 }
 
 function isValidVerdict(v: unknown): boolean {
@@ -692,15 +749,13 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
   if (!state) return args;
 
   const allObligations = state.reviewAssurance?.obligations ?? [];
-  const pending = findPendingObligation(allObligations);
-  if (!pending) return args;
+  const open = findOpenObligation(allObligations);
+  if (!open) return args;
 
   await fulfillStrictReviewObligation(sessDir, {
-    obligationType: pending.obligationType as Parameters<
-      typeof fulfillStrictReviewObligation
-    >[1]['obligationType'],
-    iteration: pending.obligation.iteration,
-    planVersion: pending.obligation.planVersion,
+    obligationType: open.obligationType,
+    iteration: open.obligation.iteration,
+    planVersion: open.obligation.planVersion,
     overallVerdict: verdict as 'accept' | 'changes_requested',
   });
 

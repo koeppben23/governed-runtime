@@ -28,6 +28,7 @@ import {
   export as exportTool,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { makePolicySnapshot } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { computeFingerprint, sessionDir } from '../adapters/workspace/index.js';
 import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
@@ -35,7 +36,10 @@ import { verifyChain } from '../audit/integrity.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeChainHash, type ChainedAuditEvent } from '../audit/types.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ToolDefinition } from './tools/helpers.js';
 
 vi.mock('./git-control-plane', async (importOriginal) => {
@@ -122,7 +126,7 @@ function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void 
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,
@@ -288,7 +292,7 @@ describe('audit/archive tamper matrix', () => {
   });
 
   afterEach(async () => {
-    clearUserDecisionIntents();
+    clearComponentDecisions();
     vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
       id: 'initiator',
       email: 'initiator@example.com',
@@ -491,7 +495,7 @@ describe('audit/archive tamper matrix', () => {
     expect(state).not.toBeNull();
     const tsaCriticalState: SessionState = {
       ...state!,
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...state!.policySnapshot,
         audit: {
           ...state!.policySnapshot.audit,
@@ -507,7 +511,7 @@ describe('audit/archive tamper matrix', () => {
             tsaTimeoutMs: 10000,
           },
         },
-      },
+      }),
     };
 
     const events = await readArchivedAuditEvents(ids);

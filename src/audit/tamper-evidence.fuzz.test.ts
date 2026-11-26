@@ -7,7 +7,7 @@
  * `npm test`/release at the default run count; this variant widens the search.
  *
  * Both variants delegate ALL logic to the single shared, fast-check-free harness
- * (`tamper-evidence-harness.ts`) — no duplicated hashing or generation logic;
+ * (`tamper-evidence-test-helpers.ts`) — no duplicated hashing or generation logic;
  * only the thin fast-check wiring differs per Vitest project glob.
  *
  * run control:
@@ -34,7 +34,7 @@ import {
   deepReorderKeys,
   type RichEventParams,
   type ChainedAuditEventForTest,
-} from './__tests__/tamper-evidence-harness.js';
+} from './tamper-evidence-test-helpers.js';
 
 const FC_OPTIONS = {
   numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,

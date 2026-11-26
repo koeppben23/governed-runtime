@@ -1,27 +1,79 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { archiveSession, initWorkspace, verifyArchive } from './workspace/index.js';
-import { archiveFileName, archiveRegulatedEvidence } from './workspace/archive.js';
+import {
+  archiveSession as realArchiveSession,
+  initWorkspace,
+  verifyArchive,
+} from './workspace/index.js';
+import {
+  archiveCompletionExport,
+  archiveRegulatedEvidence,
+  type ArchivePayloadOptions,
+} from './workspace/archive.js';
+import { archiveFileName } from './workspace/archive-layout.js';
 import { verifyRegulatedArchive } from './workspace/archive-verify-chain.js';
+import { verifyCompletionExport } from './workspace/index.js';
 import { writeState, readState } from './persistence.js';
+import { hashFile } from '../shared/hashing.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import * as persistenceAudit from './persistence-audit.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeChainHash, type ChainedAuditEvent } from '../audit/types.js';
 import { verifyChain } from '../audit/integrity.js';
-import { makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
+import { BINDING, makePolicySnapshot, makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { withTestEnv } from '../integration/test-helpers.js';
+import { createTempWorktree, runCleanups } from './workspace-test-helpers.js';
+
+/**
+ * Temporary git worktree for the current test. The suite must never bind the
+ * real repository root: `workspace-archive` writes repo-scoped config under
+ * `{worktree}/.opencode/`, and a real-root binding could clobber or leak a
+ * developer's local `flowguard.json` (#1047).
+ */
+let WORKTREE: string;
+
+/**
+ * Session state bound to the canonical repo worktree this suite archives from.
+ * The configurable archive export validates the worktree against the persisted
+ * binding before reading the repository policy.
+ */
+function boundState(
+  phase: Parameters<typeof makeState>[0] = 'READY',
+  overrides: Partial<SessionState> = {},
+): SessionState {
+  return makeState(phase, { ...overrides, binding: { ...BINDING, worktree: WORKTREE } });
+}
 
 const cleanups: Array<() => Promise<void>> = [];
-afterEach(async () => {
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+beforeEach(async () => {
+  const temp = await createTempWorktree({ prefix: 'archive-v2-worktree-' });
+  WORKTREE = temp.worktree;
+  cleanups.push(temp.cleanup);
 });
+afterEach(async () => {
+  // LIFO and complete: reverse registration order so nested environment
+  // restores unwind correctly, and aggregate failures instead of letting the
+  // first one skip the remaining resources.
+  await runCleanups(cleanups.splice(0).reverse());
+});
+
+/**
+ * All adapter archive tests bind the repository worktree explicitly; the
+ * repo → global config precedence itself is covered by the integration suite.
+ */
+function archiveSession(
+  fingerprint: string,
+  sessionId: string,
+  opts: ArchivePayloadOptions,
+): Promise<string> {
+  return realArchiveSession(fingerprint, sessionId, { ...opts, worktree: WORKTREE });
+}
 
 async function createArchive() {
   const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
@@ -31,22 +83,18 @@ async function createArchive() {
     await fs.rm(configDir, { recursive: true, force: true });
   });
   const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-  const worktree = path.resolve('.');
+  const worktree = WORKTREE;
   const initialized = await initWorkspace(worktree, sessionId);
-  await writeState(initialized.sessionDir, makeState('COMPLETE'));
+  await writeState(initialized.sessionDir, boundState('COMPLETE'));
 
-  // Write config to both global and repo-scoped locations.
+  // The global fixture config is sufficient: the repo-scoped precedence and
+  // negative-path coverage lives in the dedicated tests below. Writing a
+  // repo-scoped config here would only duplicate the global one (policy-equivalent).
   const configBody = {
     schemaVersion: 'v1' as const,
     archive: { redaction: { allowedModes: ['none'] as const, allowRawExport: true } },
   };
   await fs.writeFile(path.join(configDir, 'flowguard.json'), JSON.stringify(configBody), 'utf8');
-  const repoOpenCode = path.join(worktree, '.opencode');
-  await fs.mkdir(repoOpenCode, { recursive: true });
-  await fs.writeFile(path.join(repoOpenCode, 'flowguard.json'), JSON.stringify(configBody), 'utf8');
-  cleanups.push(async () => {
-    await fs.rm(path.join(repoOpenCode, 'flowguard.json'), { force: true });
-  });
 
   const archivePath = await archiveSession(initialized.fingerprint, sessionId, {
     redactionMode: 'none',
@@ -142,11 +190,13 @@ function resealAuditTrailWithClockAnomaly(
 }
 
 describe('Archive Layout v2', () => {
-  it('uses a distinct filename for mandatory regulated evidence', () => {
+  it('uses distinct filenames per archive purpose', () => {
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
 
     expect(archiveFileName(sessionId)).toBe(`${sessionId}.tar.gz`);
-    expect(archiveFileName(sessionId, true)).toBe(`regulated-${sessionId}.tar.gz`);
+    expect(archiveFileName(sessionId, 'archive')).toBe(`${sessionId}.tar.gz`);
+    expect(archiveFileName(sessionId, 'regulated')).toBe(`regulated-${sessionId}.tar.gz`);
+    expect(archiveFileName(sessionId, 'export')).toBe(`export-${sessionId}.tar.gz`);
   });
 
   it('fails closed when the session directory disappears during archive setup', async () => {
@@ -157,7 +207,7 @@ describe('Archive Layout v2', () => {
       await fs.rm(configDir, { recursive: true, force: true });
     });
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeConfigForTest(configDir, 'none', true);
     await fs.rm(initialized.sessionDir, { recursive: true, force: true });
 
@@ -221,11 +271,11 @@ describe('Archive Layout v2', () => {
       'utf8',
     );
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
-    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
     await appendAuditEvent(initialized.sessionDir, {
       id: '11111111-1111-4111-8111-111111111111',
-      flowguardSessionId: makeState().flowguardSessionId,
+      flowguardSessionId: boundState().flowguardSessionId,
       hostSessionId: sessionId,
       phase: 'PLAN_REVIEW',
       event: 'decision:DEC-ARCHIVE-001',
@@ -302,8 +352,8 @@ describe('Archive Layout v2', () => {
       'utf8',
     );
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
-    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
 
     await expect(
       archiveSession(initialized.fingerprint, sessionId, {
@@ -329,8 +379,8 @@ describe('Archive Layout v2', () => {
       'utf8',
     );
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
-    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
 
     await expect(
       archiveSession(initialized.fingerprint, sessionId, {
@@ -366,8 +416,8 @@ describe('Archive Layout v2', () => {
     });
     await fs.writeFile(path.join(configDir, 'flowguard.json'), config, 'utf8');
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
-    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
     await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
 
     await expect(
@@ -396,8 +446,8 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'basic', false);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
-    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
 
     await expect(
       archiveSession(initialized.fingerprint, sessionId, {
@@ -423,10 +473,10 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'basic', false);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(
       initialized.sessionDir,
-      makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
+      boundState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
     );
     const state = await readState(initialized.sessionDir);
     await appendAuditEvent(initialized.sessionDir, {
@@ -456,10 +506,10 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'basic', false);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(
       initialized.sessionDir,
-      makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
+      boundState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
     );
     await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
 
@@ -474,6 +524,53 @@ describe('Archive Layout v2', () => {
     expect((await verifyRegulatedArchive(initialized.fingerprint, sessionId)).passed).toBe(true);
   });
 
+  it('keeps the verified completion export byte-identical across later sharing archives', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    // Sharing-only policy: the user archive is a redacted sharing package, the
+    // completion export stays workflow-authorized raw evidence.
+    await writeConfigForTest(configDir, 'basic', false);
+
+    const sessionId = '550e8400-e29b-41d4-a716-4466554400aa';
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
+
+    const exportPath = await archiveCompletionExport(initialized.fingerprint, sessionId);
+    expect(path.basename(exportPath)).toBe(`export-${sessionId}.tar.gz`);
+    const exportDigestBefore = await hashFile(exportPath);
+    expect((await verifyCompletionExport(initialized.fingerprint, sessionId)).passed).toBe(true);
+
+    const archivePath = await archiveSession(initialized.fingerprint, sessionId, {
+      redactionMode: 'basic',
+      includeRaw: false,
+    });
+    expect(path.basename(archivePath)).toBe(`${sessionId}.tar.gz`);
+    expect(archivePath).not.toBe(exportPath);
+
+    // The export artifact keeps its bytes and stays independently verifiable.
+    expect(await hashFile(exportPath)).toBe(exportDigestBefore);
+    expect((await verifyCompletionExport(initialized.fingerprint, sessionId)).passed).toBe(true);
+
+    // Repeated archiving must not touch the export either.
+    await archiveSession(initialized.fingerprint, sessionId, {
+      redactionMode: 'basic',
+      includeRaw: false,
+    });
+    expect(await hashFile(exportPath)).toBe(exportDigestBefore);
+    expect((await verifyCompletionExport(initialized.fingerprint, sessionId)).passed).toBe(true);
+
+    // Publication bindings are file-scoped: both artifacts carry their own.
+    const bindings = (await readAuditTrail(initialized.sessionDir))
+      .filter((event) => event.event === 'archive:publication_bound')
+      .map((event) => (event.detail as { archiveFile?: string }).archiveFile);
+    expect(bindings).toContain(`export-${sessionId}.tar.gz`);
+    expect(bindings).toContain(`${sessionId}.tar.gz`);
+  });
+
   it('rejects the regulated evidence path for a non-regulated session', async () => {
     const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
     const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
@@ -484,8 +581,8 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'none', false);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
-    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
     await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
 
     await expect(
@@ -503,16 +600,16 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'basic', false);
 
     const missingStateSession = '550e8400-e29b-41d4-a716-446655440000';
-    const missingState = await initWorkspace(path.resolve('.'), missingStateSession);
+    const missingState = await initWorkspace(WORKTREE, missingStateSession);
     await expect(
       archiveRegulatedEvidence(missingState.fingerprint, missingStateSession),
     ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
 
     const abortedSession = '550e8400-e29b-41d4-a716-446655440001';
-    const aborted = await initWorkspace(path.resolve('.'), abortedSession);
+    const aborted = await initWorkspace(WORKTREE, abortedSession);
     await writeState(
       aborted.sessionDir,
-      makeState('COMPLETE', {
+      boundState('COMPLETE', {
         policySnapshot: REGULATED_POLICY_SNAPSHOT,
         error: {
           code: 'ABORTED',
@@ -537,14 +634,14 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'basic', false);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(
       initialized.sessionDir,
-      makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
+      boundState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
     );
     await appendAuditEvent(initialized.sessionDir, {
       id: crypto.randomUUID(),
-      flowguardSessionId: makeState().flowguardSessionId,
+      flowguardSessionId: boundState().flowguardSessionId,
       hostSessionId: sessionId,
       phase: 'COMPLETE',
       event: 'lifecycle:session_completed',
@@ -568,8 +665,8 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'none', true);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
-    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
     await fs.mkdir(path.join(initialized.sessionDir, 'artifacts'), { recursive: true });
     await fs.writeFile(path.join(initialized.sessionDir, 'artifacts', 'proof.json'), '{}', 'utf8');
 
@@ -617,8 +714,8 @@ describe('Archive Layout v2', () => {
     });
     await writeConfigForTest(configDir, 'none', true);
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
-    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
     const proofPath = path.join(initialized.sessionDir, 'artifacts', 'proof.json');
     await fs.mkdir(path.dirname(proofPath), { recursive: true });
     await fs.writeFile(proofPath, '{"version":1}', 'utf8');
@@ -891,7 +988,7 @@ describe('Archive Layout v2', () => {
     const state = await readState(sessionDir);
     const strictTsaState: SessionState = {
       ...state!,
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...state!.policySnapshot,
         mode: 'team',
         audit: {
@@ -908,7 +1005,7 @@ describe('Archive Layout v2', () => {
             tsaTimeoutMs: 10000,
           },
         },
-      },
+      }),
     };
     await writeState(sessionDir, strictTsaState);
     // A critical lifecycle event WITHOUT any external TSA token.
@@ -933,10 +1030,10 @@ describe('Archive Layout v2', () => {
       restore();
       await fs.rm(configDir, { recursive: true, force: true });
     });
-    await writeConfigForTest(configDir, 'none', true, path.resolve('.'));
+    await writeConfigForTest(configDir, 'none', true, WORKTREE);
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
-    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
     const archivePath = path.join(
       configDir,
       'workspaces',
@@ -969,6 +1066,62 @@ describe('Archive Layout v2', () => {
       includeRaw: true,
     });
     expect((await verifyArchive(initialized.fingerprint, sessionId)).passed).toBe(true);
+  });
+
+  it('rejects a foreign worktree that would bypass the bound repository policy', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+
+    // Global administrator config permits raw export.
+    await fs.writeFile(
+      path.join(configDir, 'flowguard.json'),
+      JSON.stringify({
+        schemaVersion: 'v1',
+        archive: {
+          redaction: { allowedModes: ['none', 'basic', 'pseudonymous'], allowRawExport: true },
+        },
+      }),
+      'utf8',
+    );
+
+    const sessionId = '550e8400-e29b-41d4-a716-446655440099';
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
+
+    // The bound worktree's repository config forbids raw export.
+    const repoDir = path.join(WORKTREE, '.opencode');
+    await fs.mkdir(repoDir, { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, 'flowguard.json'),
+      JSON.stringify({
+        schemaVersion: 'v1',
+        archive: { redaction: { allowedModes: ['basic'], allowRawExport: false } },
+      }),
+      'utf8',
+    );
+    cleanups.push(async () => {
+      await fs.rm(path.join(repoDir, 'flowguard.json'), { force: true });
+    });
+
+    // A caller-supplied foreign worktree without a repository config must not
+    // become the policy source for a session bound elsewhere.
+    const foreignWorktree = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-foreign-'));
+    cleanups.push(async () => fs.rm(foreignWorktree, { recursive: true, force: true }));
+
+    await expect(
+      realArchiveSession(initialized.fingerprint, sessionId, {
+        worktree: foreignWorktree,
+        redactionMode: 'none',
+        includeRaw: true,
+      }),
+    ).rejects.toMatchObject({
+      code: 'ARCHIVE_FAILED',
+      message: expect.stringContaining('does not match the persisted session binding'),
+    });
   });
 
   it('verifies the tarball independently of later live-session mutations', async () => {

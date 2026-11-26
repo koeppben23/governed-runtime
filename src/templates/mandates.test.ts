@@ -37,10 +37,11 @@ describe('mandates — contract anchors', () => {
     expect(REVIEWER_AGENT).toContain('mode: subagent');
     expect(REVIEWER_AGENT).toContain('independent FlowGuard reviewer');
     expect(REVIEWER_AGENT).toContain('read-only, falsification-first review');
-    expect(REVIEWER_AGENT).toContain('flowguard_*: deny');
-    expect(REVIEWER_AGENT).toContain('mcp__flowguard__*: deny');
-    expect(REVIEWER_AGENT).toContain('task: deny');
+    expect(REVIEWER_AGENT).toContain('action: "*", resource: "*", effect: deny');
+    expect(REVIEWER_AGENT).toContain('permissions:');
+    expect(REVIEWER_AGENT).not.toMatch(/^permission:/m);
     expect(REVIEWER_AGENT).toContain('The task prompt supplies the current obligation');
+    expect(REVIEWER_AGENT).not.toContain('Increase methodological depth');
   });
 
   it('CLAUDE_REVIEWER_AGENT contains platform marker', () => {

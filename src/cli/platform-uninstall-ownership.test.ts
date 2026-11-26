@@ -1,9 +1,17 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { claudeCodePluginFiles } from './templates.js';
-import { uninstallClaudeCodePlugin } from './platform-uninstall.js';
+import { unlinkPinnedOwnedFile, uninstallClaudeCodePlugin } from './platform-uninstall.js';
 
 function writeTree(root: string, files: Record<string, string>): void {
   for (const [relativePath, content] of Object.entries(files)) {
@@ -61,6 +69,48 @@ describe('platform uninstall ownership', () => {
       const result = await uninstallClaudeCodePlugin(target);
       expect(result.some((entry) => entry.action === 'removed')).toBe(true);
       expect(readFileSync(join(pluginRoot, 'customer-note.txt'), 'utf-8')).toBe('keep me');
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses removal when the pinned file identity changes before unlink', async () => {
+    const target = mkdtempSync(join(tmpdir(), 'fg-claude-swap-'));
+    const pluginRoot = join(target, 'flowguard-plugin');
+    try {
+      writeTree(pluginRoot, claudeCodePluginFiles('1.2.3'));
+      const file = join(pluginRoot, 'skills/start/SKILL.md');
+      const before = statSync(file);
+      const result = await unlinkPinnedOwnedFile(
+        file,
+        { dev: Number(before.dev), ino: Number(before.ino) },
+        async () => ({
+          isSymbolicLink: () => false,
+          isFile: () => true,
+          dev: before.dev,
+          ino: before.ino + 1,
+        }),
+      );
+      expect(result).toBe('skipped');
+      expect(existsSync(file)).toBe(true);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it('removes the exact pinned file identity', async () => {
+    const target = mkdtempSync(join(tmpdir(), 'fg-claude-pinned-'));
+    const pluginRoot = join(target, 'flowguard-plugin');
+    try {
+      writeTree(pluginRoot, claudeCodePluginFiles('1.2.3'));
+      const file = join(pluginRoot, 'skills/start/SKILL.md');
+      const before = statSync(file);
+      const result = await unlinkPinnedOwnedFile(file, {
+        dev: Number(before.dev),
+        ino: Number(before.ino),
+      });
+      expect(result).toBe('removed');
+      expect(() => readFileSync(file, 'utf-8')).toThrow();
     } finally {
       rmSync(target, { recursive: true, force: true });
     }

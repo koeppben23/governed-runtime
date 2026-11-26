@@ -12,8 +12,6 @@ import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { CliInstallError } from './errors.js';
 import {
   computeMandatesDigest,
-  findParallelOpencodeConfig,
-  resolveOpencodeConfigPath,
   resolveTarget,
   reviewerDefinitionForPlatform,
   safeRead,
@@ -21,11 +19,18 @@ import {
   sha256,
   toCliError,
 } from './install-helpers.js';
-import type { CliArgs, CliResult, FileOp, InstallPlatform } from './install-types.js';
+import type {
+  CliArgs,
+  CliError,
+  CliNotice,
+  CliResult,
+  FileOp,
+  InstallPlatform,
+} from './install-types.js';
 import { FLOWGUARD_OWNED_FILES, FLOWGUARD_TARBALL_PATTERN } from './install-types.js';
-import { removeFromOpencodeJson } from './install-json.js';
 import {
   ownershipManifestPath,
+  assertNoObsoleteOpenCodeInstallation,
   readInstallOwnershipManifest,
   type InstallOwnershipManifest,
 } from './install-ownership.js';
@@ -34,7 +39,11 @@ import {
   COMMANDS,
   MANDATES_FILENAME,
   PLUGIN_WRAPPER,
-  TOOL_WRAPPER,
+  PLUGIN_RELATIVE_PATH,
+  TUI_PLUGIN_WRAPPER,
+  TUI_PLUGIN_RELATIVE_PATH,
+  GUI_PLUGIN_BUNDLE,
+  GUI_PLUGIN_RELATIVE_PATH,
   extractManagedBody,
   extractManagedDigest,
   isManagedArtifact,
@@ -93,8 +102,9 @@ async function mayRemoveMandate(fullPath: string, warnings: string[]): Promise<b
 }
 
 function expectedOpenCodeFile(relPath: string): string | null {
-  if (relPath === 'tools/flowguard.ts') return TOOL_WRAPPER;
-  if (relPath === 'plugins/flowguard-audit.ts') return PLUGIN_WRAPPER;
+  if (relPath === PLUGIN_RELATIVE_PATH) return PLUGIN_WRAPPER;
+  if (relPath === TUI_PLUGIN_RELATIVE_PATH) return TUI_PLUGIN_WRAPPER;
+  if (relPath === GUI_PLUGIN_RELATIVE_PATH) return GUI_PLUGIN_BUNDLE;
   const reviewer = reviewerDefinitionForPlatform('opencode');
   if (relPath === reviewer.relativePath) return reviewer.content;
   if (relPath.startsWith('commands/')) return COMMANDS[basename(relPath)] ?? null;
@@ -106,6 +116,17 @@ async function removeExactManagedFile(
   expectedContent: string,
   warnings: string[],
 ): Promise<FileOp> {
+  try {
+    const entry = await lstat(fullPath);
+    if (entry.isSymbolicLink() || !entry.isFile()) {
+      warnings.push(`${fullPath} is not a regular managed file — preserved`);
+      return { path: fullPath, action: 'skipped', reason: 'ownership/type mismatch' };
+    }
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      return { path: fullPath, action: 'not_found' };
+    throw error;
+  }
   const content = await safeRead(fullPath);
   if (content === null) return { path: fullPath, action: 'not_found' };
   if (content !== expectedContent) {
@@ -222,46 +243,45 @@ async function cleanupPackageJson(
     ];
   }
 
+  let parsed: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
-    const packageOwnership = ownership.packageJson;
-    restorePackageDependencies(parsed, packageOwnership, pkgPath, warnings);
-
-    const restoreAbsent =
-      packageOwnership.created === true &&
-      isGeneratedPackageShell(parsed) &&
-      !parsed['dependencies'];
-    if (restoreAbsent) {
-      await safeUnlink(pkgPath);
-      return [
-        {
-          path: pkgPath,
-          action: 'removed',
-          reason: 'installer-created package restored to absent pre-state',
-        },
-      ];
-    }
-
-    const updated = JSON.stringify(parsed, null, 2) + '\n';
-    if (updated === pkgContent) {
-      return [
-        { path: pkgPath, action: 'skipped', reason: 'owned dependency state already restored' },
-      ];
-    }
-    await writeFile(pkgPath, updated, 'utf-8');
-    return [
-      {
-        path: pkgPath,
-        action: 'merged',
-        reason: 'restored installer-owned dependency changes from provenance',
-      },
-    ];
+    parsed = JSON.parse(pkgContent) as Record<string, unknown>;
   } catch {
     return [{ path: pkgPath, action: 'skipped', reason: 'malformed JSON' }];
   }
+  const packageOwnership = ownership.packageJson;
+  restorePackageDependencies(parsed, packageOwnership, pkgPath, warnings);
+
+  const restoreAbsent =
+    packageOwnership.created === true && isGeneratedPackageShell(parsed) && !parsed['dependencies'];
+  if (restoreAbsent) {
+    await safeUnlink(pkgPath);
+    return [
+      {
+        path: pkgPath,
+        action: 'removed',
+        reason: 'installer-created package restored to absent pre-state',
+      },
+    ];
+  }
+
+  const updated = JSON.stringify(parsed, null, 2) + '\n';
+  if (updated === pkgContent) {
+    return [
+      { path: pkgPath, action: 'skipped', reason: 'owned dependency state already restored' },
+    ];
+  }
+  await writeFile(pkgPath, updated, 'utf-8');
+  return [
+    {
+      path: pkgPath,
+      action: 'merged',
+      reason: 'restored installer-owned dependency changes from provenance',
+    },
+  ];
 }
 
-async function cleanupOwnedDependencyTree(
+async function cleanupEmptyDependencyDirectory(
   target: string,
   packageOps: readonly FileOp[],
 ): Promise<FileOp[]> {
@@ -284,39 +304,41 @@ async function cleanupOwnedDependencyTree(
         },
       ];
     }
-    await rm(modulesPath, { recursive: true });
+    // Package-declaration provenance does not establish ownership of mutable
+    // dependency contents. rmdir atomically refuses any nonempty directory.
+    await rmdir(modulesPath);
     return [
       {
         path: modulesPath,
         action: 'removed',
-        reason: 'removed dependency tree owned by installer-created package shell',
+        reason: 'empty dependency directory after restoring installer-created package shell',
       },
     ];
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return [{ path: modulesPath, action: 'not_found' }];
     }
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      (error.code === 'ENOTEMPTY' || error.code === 'EEXIST')
+    ) {
+      return [
+        {
+          path: modulesPath,
+          action: 'skipped',
+          reason:
+            'nonempty dependency directory; exclusive content ownership not proven; preserved',
+        },
+      ];
+    }
     throw error;
   }
 }
 
-async function cleanupOpencodeConfig(
-  args: CliArgs,
-  target: string,
-  ownership: InstallOwnershipManifest | null,
-): Promise<FileOp[]> {
+async function cleanupOpencodeConfig(args: CliArgs, target: string): Promise<FileOp[]> {
   const installPlatform = args.installPlatform ?? 'opencode';
-  if (installPlatform === 'opencode') {
-    const opencodeJsonPath = resolveOpencodeConfigPath(args.installScope, target);
-    const ops = [
-      await removeFromOpencodeJson(opencodeJsonPath, args.installScope, {
-        removeManagedTaskHardening: ownership?.opencode?.taskHardeningAdded === true,
-      }),
-    ];
-    const parallelConfig = findParallelOpencodeConfig(opencodeJsonPath);
-    if (parallelConfig) ops.push(await removeFromOpencodeJson(parallelConfig, args.installScope));
-    return ops;
-  }
+  if (installPlatform === 'opencode') return [];
   if (installPlatform === 'claude-code') return uninstallClaudeCodePlugin(target);
   return uninstallCodexPlugin(args.installScope);
 }
@@ -340,37 +362,110 @@ async function cleanupEmptyCodexTarget(target: string): Promise<FileOp> {
   }
 }
 
+async function resolveUninstallOwnership(
+  args: CliArgs,
+  target: string,
+): Promise<InstallOwnershipManifest | null> {
+  const manifestPath = ownershipManifestPath(target);
+  const ownership = await readInstallOwnershipManifest(target);
+  if (ownership === null && existsSync(manifestPath)) {
+    throw new CliInstallError(
+      'OWNERSHIP_MANIFEST_INVALID',
+      `${manifestPath} exists but is not a valid FlowGuard ownership manifest; refusing uninstall because ownership cannot be proven`,
+    );
+  }
+  if (
+    ownership &&
+    (ownership.platform !== (args.installPlatform ?? 'opencode') ||
+      ownership.scope !== args.installScope)
+  ) {
+    throw new CliInstallError(
+      'OWNERSHIP_MANIFEST_SCOPE_MISMATCH',
+      `${manifestPath} belongs to another host/scope; preserving installation and evidence.`,
+    );
+  }
+  if ((args.installPlatform ?? 'opencode') === 'opencode') {
+    await assertNoObsoleteOpenCodeInstallation(target, [
+      target,
+      ...(args.installScope === 'repo' ? [resolve('.')] : []),
+    ]);
+  }
+  return ownership;
+}
+
+function runtimeConfigPath(
+  args: CliArgs,
+  target: string,
+  installPlatform: InstallPlatform,
+): string {
+  if (installPlatform !== 'opencode') return join(target, 'flowguard.json');
+  return args.installScope === 'global'
+    ? globalConfigPath()
+    : join(resolve('.'), '.opencode', 'flowguard.json');
+}
+
+async function cleanupRuntimeConfig(
+  args: CliArgs,
+  target: string,
+  installPlatform: InstallPlatform,
+  ownership: InstallOwnershipManifest | null,
+  result: { readonly ops: FileOp[]; readonly warnings: string[] },
+): Promise<void> {
+  const cfgPath = runtimeConfigPath(args, target, installPlatform);
+  // A same-named runtime config is user data unless a valid, scope-matched
+  // installation manifest establishes that FlowGuard provisioned this scope.
+  // Do not turn an orphaned/partial install into destructive config cleanup.
+  if (ownership === null && existsSync(cfgPath)) {
+    result.warnings.push(`${cfgPath}: configuration ownership is not proven — preserved`);
+    result.ops.push({
+      path: cfgPath,
+      action: 'skipped',
+      reason: 'configuration ownership not proven',
+    });
+    return;
+  }
+  const removedCfg = await safeUnlink(cfgPath);
+  result.ops.push({ path: cfgPath, action: removedCfg ? 'removed' : 'not_found' });
+}
+
+function hostUnloadNotices(
+  installPlatform: InstallPlatform,
+  target: string,
+  errors: readonly string[],
+  ops: readonly FileOp[],
+): CliNotice[] {
+  const removedNativePlugin =
+    installPlatform === 'opencode' &&
+    errors.length === 0 &&
+    ops.some((op) => op.path === join(target, PLUGIN_RELATIVE_PATH) && op.action === 'removed');
+  if (!removedNativePlugin) return [];
+  return [
+    {
+      kind: 'next',
+      message:
+        'Managed files were removed, but a running OpenCode service may still have the plugin loaded. After safely completing active work, reload that location or restart the service and verify FlowGuard is absent from the live plugin list. File removal alone is not proof of unload.',
+    },
+  ];
+}
+
 export async function uninstall(args: CliArgs): Promise<CliResult> {
   const installPlatform = args.installPlatform ?? 'opencode';
   const target = resolveTarget(args.installScope, installPlatform);
   const ops: FileOp[] = [];
   const errors: string[] = [];
+  const errorDetails: CliError[] = [];
   const warnings: string[] = [];
 
   try {
     const manifestPath = ownershipManifestPath(target);
-    const ownership = await readInstallOwnershipManifest(target);
-    if (ownership === null && existsSync(manifestPath)) {
-      throw new CliInstallError(
-        'OWNERSHIP_MANIFEST_INVALID',
-        `${manifestPath} exists but is not a valid FlowGuard ownership manifest; refusing uninstall because ownership cannot be proven`,
-      );
-    }
-
+    const ownership = await resolveUninstallOwnership(args, target);
     await removeManagedFiles(target, installPlatform, ops, warnings);
     const packageOps = await cleanupPackageJson(target, ownership, warnings);
     ops.push(...packageOps);
-    ops.push(...(await cleanupOwnedDependencyTree(target, packageOps)));
-    ops.push(...(await cleanupOpencodeConfig(args, target, ownership)));
+    ops.push(...(await cleanupEmptyDependencyDirectory(target, packageOps)));
+    ops.push(...(await cleanupOpencodeConfig(args, target)));
 
-    const cfgPath =
-      installPlatform !== 'opencode'
-        ? join(target, 'flowguard.json')
-        : args.installScope === 'global'
-          ? globalConfigPath()
-          : join(resolve('.'), '.opencode', 'flowguard.json');
-    const removedCfg = await safeUnlink(cfgPath);
-    ops.push({ path: cfgPath, action: removedCfg ? 'removed' : 'not_found' });
+    await cleanupRuntimeConfig(args, target, installPlatform, ownership, { ops, warnings });
 
     const removedManifest = await safeUnlink(manifestPath);
     ops.push({ path: manifestPath, action: removedManifest ? 'removed' : 'not_found' });
@@ -380,7 +475,9 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
       error: err instanceof Error ? err.message : String(err),
     });
     errors.push(err instanceof Error ? err.message : String(err));
+    errorDetails.push(toCliError(err));
   }
 
-  return { target, ops, errors, errorDetails: errors.map(toCliError), warnings, notices: [] };
+  const notices = hostUnloadNotices(installPlatform, target, errors, ops);
+  return { target, ops, errors, errorDetails, warnings, notices };
 }

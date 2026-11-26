@@ -48,6 +48,7 @@ export interface HydratePolicyOptions {
   configIdentityProvider?: IdpConfig;
   configIdentityProviderMode?: IdentityProviderMode;
   configEnforceRiskClassification?: boolean;
+  configRiskTriggerPaths?: FlowGuardPolicy['riskTriggerPaths'];
   configAllowRiskDowngradeOverride?: boolean;
   configAllowReducedCeremony?: boolean;
   configDiscoveryHealth?: Partial<DiscoveryHealthPolicy>;
@@ -105,6 +106,7 @@ function applyConfigOverrides(
     configIdentityProvider?: IdpConfig;
     configIdentityProviderMode?: IdentityProviderMode;
     configEnforceRiskClassification?: boolean;
+    configRiskTriggerPaths?: FlowGuardPolicy['riskTriggerPaths'];
     configAllowRiskDowngradeOverride?: boolean;
     configAllowReducedCeremony?: boolean;
     configDiscoveryHealth?: Partial<DiscoveryHealthPolicy>;
@@ -130,6 +132,7 @@ function applyConfigOverrides(
     enforceRiskClassification:
       opts.configEnforceRiskClassification ?? basePolicy.enforceRiskClassification,
     allowReducedCeremony: opts.configAllowReducedCeremony ?? basePolicy.allowReducedCeremony,
+    riskTriggerPaths: opts.configRiskTriggerPaths ?? basePolicy.riskTriggerPaths,
     discoveryHealth: resolveDiscoveryHealth(basePolicy.discoveryHealth, opts.configDiscoveryHealth),
     validationEvidence: resolveValidationEvidence(
       basePolicy.validationEvidence,

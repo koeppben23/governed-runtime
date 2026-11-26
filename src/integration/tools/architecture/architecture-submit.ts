@@ -8,7 +8,10 @@
 import { declaredTaskClassFor } from '../../phase-tool-gate.js';
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
-import { buildArchitectureReviewInstruction } from './architecture-shared.js';
+import {
+  buildArchitectureReviewInstruction,
+  parseArchitectureClaimsInput,
+} from './architecture-shared.js';
 import { formatBlocked } from '../../blocked-result.js';
 import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
 import { IntegrationInvariantError } from '../../errors.js';
@@ -17,10 +20,10 @@ import { executeArchitecture } from '../../../rails/architecture.js';
 import { normalizeArchitectureClaims } from '../../../state/proofgraph-approval.js';
 import {
   appendObligationWithAttempt,
-  artifactReviewSubjectScope,
   createReviewObligation,
   freezeReviewMaterial,
 } from '../../review/obligations/assurance.js';
+import { artifactReviewSubjectScopeFromSections } from '../../review/context/subject-scope.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
@@ -35,7 +38,7 @@ import { resolveAttemptDiscoveryOrBlock } from '../../review/context/discovery-a
 import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
 import { repositoryEvidenceUnavailableField } from '../../review/observations/observation-access.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
-import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
+import { buildFrozenArtifactReviewMaterial } from '../../review/context/reviewer-context.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mode A: ADR Submission
@@ -62,7 +65,6 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
 > {
   const classification = await resolvePreImplementationChallengeClassification(
     ctx.state,
-    ctx.worktree,
     ctx.targetPaths,
   );
   const resolvedTargetPaths =
@@ -125,6 +127,12 @@ async function mintArchSubmissionObligation(
   const digest = ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`;
   const adrText = ctx.state.architecture?.adrText ?? '';
   const freeze = await freezeContextAuthorityAtHead(ctx.worktree);
+  const artifactReviewMaterial = buildFrozenArtifactReviewMaterial({
+    obligationType: 'architecture',
+    state: ctx.state,
+    artifact: adrText,
+    renderPlanClaimDeclarations,
+  });
   return createReviewObligation({
     obligationType: 'architecture',
     iteration: 0,
@@ -134,18 +142,14 @@ async function mintArchSubmissionObligation(
     subjectDigest: digest,
     // Frozen review material: the exact ADR artifact plus originating
     // ticket context, canonicalized and digest-bound at creation time.
-    reviewMaterial: freezeReviewMaterial(
-      buildFrozenReviewMaterialContent({
-        obligationType: 'architecture',
-        state: ctx.state,
-        artifact: adrText,
-        renderPlanClaimDeclarations,
-      }),
-      digest,
-    ),
+    reviewMaterial: freezeReviewMaterial(artifactReviewMaterial.content, digest),
     // The ADR artifact is the review SUBJECT; changedFiles below stay
     // challenge-classification and repository-evidence context only.
-    reviewSubjectScope: artifactReviewSubjectScope('adr', adrText, digest),
+    reviewSubjectScope: artifactReviewSubjectScopeFromSections(
+      'adr',
+      artifactReviewMaterial.subjectSectionPaths,
+      digest,
+    ),
     policySnapshot: ctx.policySnapshot,
     changedFiles: resolvedTargetPaths,
     declaredTaskClass: declaredTaskClassFor(ctx.state),
@@ -180,7 +184,9 @@ export async function handleAdrSubmission(
   if (!args.title) return formatBlocked('EMPTY_ADR_TITLE');
   if (!args.adrText) return formatBlocked('EMPTY_ADR_TEXT');
 
-  const claims = normalizeArchitectureClaims(args.claims);
+  const parsedClaims = parseArchitectureClaimsInput(args.claims);
+  if (parsedClaims.kind === 'blocked') return parsedClaims.message;
+  const claims = normalizeArchitectureClaims(parsedClaims.claims);
   const result = executeArchitecture(
     state,
     {

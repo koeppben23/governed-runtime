@@ -15,7 +15,7 @@ import {
   InputOriginSchema,
   ExternalReferenceSchema,
 } from './evidence-primitives.js';
-import { OpenCodeSessionId } from './evidence-assurance-internal.js';
+import { HostSessionId } from './host-identity.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
 
 describe('evidence-primitives', () => {
@@ -87,11 +87,11 @@ describe('evidence-primitives', () => {
       expect(ExternalReferenceSchema.parse(ref)).toEqual(ref);
     });
 
-    it('OpenCodeSessionId accepts valid session IDs', () => {
-      expect(OpenCodeSessionId.parse('ses_260740c65ffe77OjxRP7z40yH8')).toBe(
+    it('HostSessionId accepts valid session IDs', () => {
+      expect(HostSessionId.parse('ses_260740c65ffe77OjxRP7z40yH8')).toBe(
         'ses_260740c65ffe77OjxRP7z40yH8',
       );
-      expect(OpenCodeSessionId.parse('abc123')).toBe('abc123');
+      expect(HostSessionId.parse('abc123')).toBe('abc123');
     });
   });
 
@@ -112,9 +112,9 @@ describe('evidence-primitives', () => {
       expect(() => ReviewObligationType.parse('design')).toThrow();
     });
 
-    it('OpenCodeSessionId rejects unsafe IDs', () => {
-      expect(() => OpenCodeSessionId.parse('../etc/passwd')).toThrow();
-      expect(() => OpenCodeSessionId.parse('bad/session')).toThrow();
+    it('HostSessionId rejects unsafe IDs', () => {
+      expect(() => HostSessionId.parse('../etc/passwd')).toThrow();
+      expect(() => HostSessionId.parse('bad/session')).toThrow();
     });
   });
 
@@ -141,8 +141,8 @@ describe('evidence-primitives', () => {
   });
 
   describe('EDGE', () => {
-    it('OpenCodeSessionId rejects empty string', () => {
-      expect(() => OpenCodeSessionId.parse('')).toThrow();
+    it('HostSessionId rejects empty string', () => {
+      expect(() => HostSessionId.parse('')).toThrow();
     });
   });
 });

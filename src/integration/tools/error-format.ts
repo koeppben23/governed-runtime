@@ -32,6 +32,19 @@ function summarizeSchemaIssues(err: ZodError): string {
 }
 
 /**
+ * An `unavailable` session authority (unreadable, unparseable, schema-invalid
+ * or mis-bound state) is not "no session": it is reported under the
+ * authority's own typed code, exactly as `requireWorkspacePaths` throws it, so
+ * the diagnosis and recovery are never replaced by a bootstrap hint.
+ */
+export function formatSessionUnavailable(authority: {
+  readonly code: string;
+  readonly reason: string;
+}): string {
+  return formatBlocked(authority.code, { message: authority.reason, reason: authority.reason });
+}
+
+/**
  * Wrap any thrown error into a structured JSON string via the reason registry.
  *
  * A schema violation is reported under its own code instead of `INTERNAL_ERROR`:

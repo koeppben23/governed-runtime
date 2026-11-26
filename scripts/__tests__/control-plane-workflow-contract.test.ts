@@ -77,11 +77,17 @@ describe('scripts/control-plane-workflow-contract', () => {
       expect(verifyJob).toContain('--mode strict');
       expect(verifyJob).toContain("if: github.event_name != 'pull_request'");
       expect(verifyJob).toContain('CONTROL_PLANE_TOKEN: ${{ secrets.CONTROL_PLANE_READ_TOKEN }}');
+      expect(verifyJob).toContain('id: verify');
+      expect(verifyJob).toContain('continue-on-error: true');
+      expect(verifyJob).toContain('verification: ${{ steps.verify.outputs.exit_code }}');
+      expect(verifyJob).toContain('Fail verification');
       expect(verifyJob).not.toContain('issues: write');
     });
 
-    it('runs privileged remediation only on trusted non-PR events', () => {
-      expect(workflow).toContain("if: failure() && github.event_name != 'pull_request'");
+    it('runs privileged remediation only for real drift, not auth failures', () => {
+      expect(workflow).toContain(
+        "if: failure() && github.event_name != 'pull_request' && needs.verify.outputs.verification != '2'",
+      );
       const remediateJob = workflow.slice(workflow.indexOf('  remediate:'));
       expect(remediateJob).toContain('issues: write');
       expect(remediateJob).not.toContain('actions/checkout');
@@ -89,6 +95,27 @@ describe('scripts/control-plane-workflow-contract', () => {
 
     it('never grants contents write', () => {
       expect(workflow).not.toContain('contents: write');
+    });
+  });
+
+  describe('security workflow', () => {
+    const workflow = readRepoFile('.github/workflows/security.yml');
+    const ci = readRepoFile('.github/workflows/ci.yml');
+
+    it('uploads CodeQL SARIF so code scanning receives findings', () => {
+      expect(workflow).toContain('security-events: write');
+      expect(workflow).toContain('upload: always');
+      expect(workflow).not.toContain('upload: never');
+    });
+
+    it('labels the PVR check as declarative, not a live-setting check', () => {
+      expect(ci).toContain('Check declarative PVR configuration intent');
+      expect(ci).toContain('does not verify the live GitHub setting');
+    });
+
+    it('uses the time-boxed audit gate instead of a blanket audit command', () => {
+      expect(workflow).toContain('node scripts/security-audit.mjs');
+      expect(workflow).not.toContain('npm audit --audit-level=high');
     });
   });
 

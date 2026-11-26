@@ -20,6 +20,8 @@ import {
   declaredTaskClassFor,
   MUTATING_HOST_TOOLS,
   HOST_MUTATION_PHASE,
+  hostMutationIntegrityGate,
+  requiresHostAuthority,
 } from './phase-tool-gate.js';
 import type { Phase } from '../state/schema.js';
 import {
@@ -32,6 +34,84 @@ import {
 } from '../fixtures.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { hashText } from '../shared/hashing.js';
+
+describe('native delegation authority and state-write defense', () => {
+  const state = makeState('PLAN');
+  it.each([
+    ['subagent', true],
+    ['read', false],
+    ['flowguard_help', false],
+    ['bash', true],
+    ['edit', true],
+    ['unknown', true],
+  ] as const)('requires host authority for %s: %s', (tool, expected) => {
+    expect(requiresHostAuthority(tool)).toBe(expected);
+  });
+  it.each([
+    [
+      'bash',
+      'NODE -e write /ENROLLED-STATE',
+      '/enrolled-state',
+      'SESSION_STATE_DIRECT_WRITE_DENIED',
+    ],
+    [
+      'bash',
+      'tee /workspaces/a/sessions/b/state.json',
+      undefined,
+      'SESSION_STATE_DIRECT_WRITE_DENIED',
+    ],
+    ['bash', 'cat /workspaces/a/sessions/b/state.json', undefined, null],
+    ['bash', 'tee /workspaces/unrelated', undefined, null],
+    ['bash', 'tee /sessions/unrelated', undefined, null],
+    ['bash', 'echo ok > /unrelated', '/enrolled-state', null],
+    ['bash', 'cat /enrolled-state', '/enrolled-state', null],
+    ['subagent', 'tee /enrolled-state', '/enrolled-state', null],
+  ] as const)(
+    'classifies %s %s without conflating reads, effects and path scope',
+    (tool, command, directory, code) => {
+      const result = hostMutationIntegrityGate(tool, state, { command }, directory);
+      expect(result).toMatchObject(code ? { kind: 'blocked', code } : { kind: 'clear' });
+    },
+  );
+  it('preserves integrity denial for delegation but does not convert a read into a mutation', () => {
+    const incident = {
+      ...state,
+      reviewAssurance: {
+        obligations: [{ status: 'blocked', blockedCode: 'SUBAGENT_EVIDENCE_REUSED' }],
+      },
+    } as unknown as typeof state;
+    expect(hostMutationIntegrityGate('subagent', incident)).toMatchObject({
+      kind: 'blocked',
+      code: 'INTEGRITY_INCIDENT_MUTATION_DENIED',
+    });
+    expect(hostMutationIntegrityGate('read', incident)).toEqual({ kind: 'clear' });
+  });
+  it.each([
+    ['provisional', true, 'STANDARD'],
+    ['provisional', false, 'TRIVIAL'],
+    ['final', true, 'TRIVIAL'],
+    ['final', false, 'TRIVIAL'],
+  ] as const)(
+    'binds the scope floor and reported facts for %s/unknown=%s',
+    (mode, unknownScope, minimumTaskClass) => {
+      const result = isRiskClassificationAllowed({
+        state: makeState('IMPLEMENTATION', { claimedTaskClass: 'HIGH-RISK' }),
+        changedFiles: ['docs/z.md', 'docs/a.md', 'docs/z.md'],
+        now: '2026-11-01T00:00:00Z',
+        mode,
+        unknownScope,
+      });
+      expect(result).toMatchObject({
+        minimumTaskClass,
+        effectiveTaskClass: 'HIGH-RISK',
+        escalatedTaskClass: 'HIGH-RISK',
+        provisional: mode === 'provisional',
+        unknownScope,
+        changedFiles: ['docs/a.md', 'docs/z.md'],
+      });
+    },
+  );
+});
 
 function implementationAttempt(
   checkId: string,
@@ -114,8 +194,8 @@ describe('phase-tool-gate', () => {
     });
 
     describe('CORNER — non-host tools return false', () => {
-      it('T8: task → false (has its own enforcement)', () => {
-        expect(isMutatingHostTool('task')).toBe(false);
+      it('T8: subagent → false (has separate dispatch enforcement)', () => {
+        expect(isMutatingHostTool('subagent')).toBe(false);
       });
 
       it('T9: flowguard_plan → false (FlowGuard tools excluded)', () => {
@@ -529,18 +609,18 @@ describe('phase-tool-gate', () => {
       ]);
     });
 
-    it('HAPPY — root tool/editor config (opencode.json, tsconfig, vitest config) is not a STANDARD floor', () => {
+    it('HAPPY — editor config is not a STANDARD floor; verification config is', () => {
       for (const cfg of [
         'opencode.json',
         'opencode.jsonc',
         'tsconfig.json',
-        'vitest.config.ts',
         '.eslintrc.json',
         '.prettierrc',
         '.gitignore',
       ]) {
         expect(assessMinimumTaskClass([cfg]).minimumTaskClass, cfg).toBe('TRIVIAL');
       }
+      expect(assessMinimumTaskClass(['vitest.config.ts']).minimumTaskClass).toBe('STANDARD');
     });
 
     it('BAD — high-risk config stays HIGH-RISK and is NOT downgraded as non-domain config', () => {
@@ -736,6 +816,85 @@ describe('phase-tool-gate', () => {
 
       expect(result.profile).toBe('full');
       expect(result.reason).toBe('REVIEW_OBLIGATION_REQUIRED');
+    });
+
+    it('GOOD — a deterministically blocked obligation keeps reduced ceremony', () => {
+      const implementation = IMPL_EVIDENCE;
+      const base = makeState('IMPL_VALIDATION', {
+        claimedTaskClass: 'TRIVIAL',
+        verificationCandidates: VERIFICATION_CANDIDATES,
+        implementation,
+        activeChecks: ['test', 'lint'],
+        implValidation: [validationResult('test'), validationResult('lint')],
+        validationAttempts: [
+          implementationAttempt('test', implementation),
+          implementationAttempt('lint', implementation),
+        ],
+      });
+      const blockedObligation = {
+        ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+        status: 'blocked' as const,
+        blockedCode: 'REVIEW_ATTEMPT_UNAVAILABLE',
+        invocationId: null,
+        fulfilledAt: null,
+        consumedAt: null,
+      };
+      const state = {
+        ...base,
+        policySnapshot: { ...base.policySnapshot, allowReducedCeremony: true },
+        reviewAssurance: { ...PLAN_REVIEW_ASSURANCE, obligations: [blockedObligation] },
+      };
+
+      const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
+
+      expect(result.profile).toBe('reduced');
+      expect(result.reason).toBe('POST_IMPL_VERIFIED_TRIVIAL');
+    });
+
+    it('BAD — a reuse integrity incident keeps full ceremony despite later evidence', () => {
+      const implementation = IMPL_EVIDENCE;
+      const base = makeState('IMPL_VALIDATION', {
+        claimedTaskClass: 'TRIVIAL',
+        verificationCandidates: VERIFICATION_CANDIDATES,
+        implementation,
+        activeChecks: ['test', 'lint'],
+        implValidation: [validationResult('test'), validationResult('lint')],
+        validationAttempts: [
+          implementationAttempt('test', implementation),
+          implementationAttempt('lint', implementation),
+        ],
+      });
+      const incident = {
+        ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+        status: 'blocked' as const,
+        blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+        invocationId: null,
+        fulfilledAt: null,
+        consumedAt: null,
+      };
+      // A successor review cannot be proven to have happened after the
+      // incident from persisted evidence; reduced ceremony stays closed.
+      const successor = {
+        ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+        obligationId: '00000000-0000-4000-8000-0000000000d2',
+        status: 'fulfilled' as const,
+        invocationId: '00000000-0000-4000-8000-0000000000d3',
+        fulfilledAt: '2026-01-03T00:00:00.000Z',
+        consumedAt: null,
+      };
+      const state = {
+        ...base,
+        policySnapshot: { ...base.policySnapshot, allowReducedCeremony: true },
+        reviewAssurance: {
+          ...PLAN_REVIEW_ASSURANCE,
+          obligations: [incident, successor],
+        },
+      };
+
+      const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
+
+      expect(result.profile).toBe('full');
+      expect(result.reason).toBe('REVIEW_INTEGRITY_INCIDENT');
     });
 
     it('BAD — default policy keeps full ceremony even for TRIVIAL evidence', () => {

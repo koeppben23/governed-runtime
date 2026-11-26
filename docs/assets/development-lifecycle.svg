@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1790" viewBox="0 0 2000 1790" role="img" aria-labelledby="title description">
+  <title id="title">FlowGuard development lifecycle — standard human-gated ticket flow</title>
+  <desc id="description">Intended full-ceremony workflow: task, independent plan review, policy-required approval, baseline validation, implementation, fresh post-implementation verification, independent implementation review, evidence approval and persisted export. Dashed arrows show revision paths. This is not OpenCode V2 acceptance evidence; R4 is a documented NOT_SUPPORTED trusted-plugin limitation.</desc>
+  <!-- Adapted from Andreas Winter (wandi34), PR #1186, commit 87b211f64811773175806ca7088d78aaf472d78b.
+       Editable V2 correction: /hydrate is not activation; scope and acceptance limits are explicit.
+       Phase/edge annotations are checked against src/machine/topology.ts by development-lifecycle.test.ts. -->
+  <defs>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #4b5563; }
+      .eyebrow { font-size: 24px; font-weight: 700; letter-spacing: 4px; fill: #2563eb; }
+      .heading { font-size: 58px; font-weight: 700; fill: #111827; }
+      .subtitle { font-size: 28px; }
+      .card { stroke-width: 2.5; }
+      .work { fill: #eff6ff; stroke: #93c5fd; }
+      .review { fill: #f5f3ff; stroke: #c4b5fd; }
+      .gate { fill: #fffbeb; stroke: #fdba74; }
+      .number { font-size: 24px; font-weight: 700; fill: #fff; text-anchor: middle; }
+      .label { font-size: 30px; font-weight: 700; fill: #111827; }
+      .phase { font-size: 18px; font-weight: 700; fill: #1d4ed8; }
+      .review-phase { fill: #6d28d9; }
+      .gate-phase { fill: #b45309; }
+      .detail { font-size: 23px; }
+      .forward { fill: none; stroke: #64748b; stroke-width: 4; marker-end: url(#forward-arrow); }
+      .revision { fill: none; stroke: #b45309; stroke-width: 2.5; stroke-dasharray: 9 6; marker-end: url(#revision-arrow); }
+      .revision-label { font-size: 21px; font-weight: 700; fill: #92400e; }
+      .note { font-size: 21px; }
+      .boundary { font-size: 22px; font-weight: 700; fill: #92400e; }
+    </style>
+    <marker id="forward-arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#64748b"/>
+    </marker>
+    <marker id="revision-arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#b45309"/>
+    </marker>
+  </defs>
+  <rect width="2000" height="1790" rx="28" fill="#f7fafb"/>
+  <text x="100" y="90" class="eyebrow">FLOWGUARD / DEVELOPMENT LIFECYCLE</text>
+  <text x="100" y="165" class="heading">From task to verified delivery</text>
+  <text x="100" y="220" class="subtitle">Intended human-gated ticket flow · Full ceremony · Activate with /start</text>
+
+  <g aria-label="Forward progression">
+    <path class="forward" data-from="TICKET" data-events="PLAN_READY" data-to="PLAN" d="M 600 412 H 750"/>
+    <path class="forward" data-from="PLAN" data-events="SELF_REVIEW_MET" data-to="PLAN_REVIEW" d="M 1250 412 H 1400"/>
+    <path class="forward" data-from="PLAN_REVIEW" data-events="APPROVE" data-to="VALIDATION" d="M 1650 512 V 688"/>
+    <path class="forward" data-from="VALIDATION" data-events="ALL_PASSED" data-to="IMPLEMENTATION" d="M 1400 788 H 1250"/>
+    <path class="forward" data-from="IMPLEMENTATION" data-events="IMPL_COMPLETE" data-to="IMPL_VALIDATION" d="M 750 788 H 600"/>
+    <path class="forward" data-from="IMPL_VALIDATION" data-events="ALL_PASSED" data-to="IMPL_REVIEW" d="M 350 888 V 1063"/>
+    <path class="forward" data-from="IMPL_REVIEW" data-events="REVIEW_MET REVIEW_EXHAUSTED" data-to="EVIDENCE_REVIEW" d="M 600 1163 H 750"/>
+    <path class="forward" data-from="EVIDENCE_REVIEW" data-events="APPROVE" data-to="EXPORT_READY" d="M 1250 1163 H 1400"/>
+    <path class="forward" data-from="EXPORT_READY" data-events="EXPORT_MATERIALIZED" data-to="COMPLETE" d="M 1650 1263 V 1326"/>
+  </g>
+  <g aria-label="Revision paths">
+    <path class="revision" data-from="PLAN_REVIEW" data-events="CHANGES_REQUESTED" data-to="PLAN" d="M 1650 312 V 270 H 1000 V 312"/>
+    <text x="1230" y="256" class="revision-label">Changes requested</text>
+    <path class="revision" data-from="VALIDATION" data-events="CHECK_FAILED" data-to="PLAN" d="M 1810 688 V 594 H 1000 V 512"/>
+    <text x="1155" y="580" class="revision-label">Baseline failed → revise the plan</text>
+    <path class="revision" data-from="IMPL_VALIDATION" data-events="CHECK_FAILED" data-to="IMPLEMENTATION" d="M 350 888 V 950 H 1000 V 888"/>
+    <text x="535" y="936" class="revision-label">Checks failed → fix the code</text>
+    <path class="revision" data-from="IMPL_REVIEW" data-events="CHANGES_REQUESTED" data-to="IMPLEMENTATION" d="M 600 1125 H 675 V 738 H 750"/>
+    <text x="641" y="1024" class="revision-label">Revise</text>
+    <path class="revision" data-from="EVIDENCE_REVIEW" data-events="CHANGES_REQUESTED" data-to="IMPLEMENTATION" d="M 1000 1063 V 988 H 1150 V 888"/>
+    <text x="1170" y="1006" class="revision-label">Changes requested</text>
+  </g>
+
+  <g data-phase="TICKET">
+    <rect x="100" y="312" width="500" height="200" rx="24" class="card work"/>
+    <rect x="128" y="340" width="42" height="38" rx="10" fill="#1d4ed8"/>
+    <text x="149" y="367" class="number">1</text>
+    <text x="190" y="368" class="label">Define the task</text>
+    <text x="130" y="418" class="phase">TICKET</text>
+    <text x="130" y="468" class="detail">/task · Capture scope and intent</text>
+  </g>
+  <g data-phase="PLAN">
+    <rect x="750" y="312" width="500" height="200" rx="24" class="card review"/>
+    <rect x="778" y="340" width="42" height="38" rx="10" fill="#6d28d9"/>
+    <text x="799" y="367" class="number">2</text>
+    <text x="840" y="368" class="label">Plan + review</text>
+    <text x="780" y="418" class="phase review-phase">PLAN</text>
+    <text x="780" y="468" class="detail">Independent reviewer · Revise iteratively</text>
+  </g>
+  <g data-phase="PLAN_REVIEW">
+    <rect x="1400" y="312" width="500" height="200" rx="24" class="card gate"/>
+    <rect x="1428" y="340" width="42" height="38" rx="10" fill="#b45309"/>
+    <text x="1449" y="367" class="number">3</text>
+    <text x="1490" y="368" class="label">Approve the plan</text>
+    <text x="1430" y="418" class="phase gate-phase">PLAN_REVIEW</text>
+    <text x="1430" y="468" class="detail">/approve · Policy-required human gate</text>
+  </g>
+  <g data-phase="VALIDATION">
+    <rect x="1400" y="688" width="500" height="200" rx="24" class="card work"/>
+    <rect x="1428" y="716" width="42" height="38" rx="10" fill="#1d4ed8"/>
+    <text x="1449" y="743" class="number">4</text>
+    <text x="1490" y="744" class="label">Validate the baseline</text>
+    <text x="1430" y="794" class="phase">VALIDATION</text>
+    <text x="1430" y="844" class="detail">Run the active verification checks</text>
+  </g>
+  <g data-phase="IMPLEMENTATION">
+    <rect x="750" y="688" width="500" height="200" rx="24" class="card work"/>
+    <rect x="778" y="716" width="42" height="38" rx="10" fill="#1d4ed8"/>
+    <text x="799" y="743" class="number">5</text>
+    <text x="840" y="744" class="label">Implement the plan</text>
+    <text x="780" y="794" class="phase">IMPLEMENTATION</text>
+    <text x="780" y="844" class="detail">/implement · Record change evidence</text>
+  </g>
+  <g data-phase="IMPL_VALIDATION">
+    <rect x="100" y="688" width="500" height="200" rx="24" class="card work"/>
+    <rect x="128" y="716" width="42" height="38" rx="10" fill="#1d4ed8"/>
+    <text x="149" y="743" class="number">6</text>
+    <text x="190" y="744" class="label">Verify the code</text>
+    <text x="130" y="794" class="phase">IMPL_VALIDATION</text>
+    <text x="130" y="844" class="detail">Re-run checks on the implementation</text>
+  </g>
+  <g data-phase="IMPL_REVIEW">
+    <rect x="100" y="1063" width="500" height="200" rx="24" class="card review"/>
+    <rect x="128" y="1091" width="42" height="38" rx="10" fill="#6d28d9"/>
+    <text x="149" y="1118" class="number">7</text>
+    <text x="190" y="1119" class="label">Review the changes</text>
+    <text x="130" y="1169" class="phase review-phase">IMPL_REVIEW</text>
+    <text x="130" y="1219" class="detail">Independent reviewer · Assess the result</text>
+  </g>
+  <g data-phase="EVIDENCE_REVIEW">
+    <rect x="750" y="1063" width="500" height="200" rx="24" class="card gate"/>
+    <rect x="778" y="1091" width="42" height="38" rx="10" fill="#b45309"/>
+    <text x="799" y="1118" class="number">8</text>
+    <text x="840" y="1119" class="label">Approve the evidence</text>
+    <text x="780" y="1169" class="phase gate-phase">EVIDENCE_REVIEW</text>
+    <text x="780" y="1219" class="detail">/approve · Policy-required human gate</text>
+  </g>
+  <g data-phase="EXPORT_READY">
+    <rect x="1400" y="1063" width="500" height="200" rx="24" class="card work"/>
+    <rect x="1428" y="1091" width="42" height="38" rx="10" fill="#1d4ed8"/>
+    <text x="1449" y="1118" class="number">9</text>
+    <text x="1490" y="1119" class="label">Export the evidence</text>
+    <text x="1430" y="1169" class="phase">EXPORT_READY</text>
+    <text x="1430" y="1219" class="detail">/export · Persist a verifiable package</text>
+  </g>
+  <g data-phase="COMPLETE">
+    <rect x="1400" y="1326" width="500" height="80" rx="40" fill="#059669"/>
+    <text x="1650" y="1377" font-size="30" font-weight="700" text-anchor="middle" style="fill: #fff">COMPLETE · Export persisted</text>
+  </g>
+
+  <text x="100" y="1362" class="detail">Solid arrows: forward progression</text>
+  <text x="100" y="1404" class="detail" style="fill: #92400e">Dashed arrows: revision paths</text>
+  <path d="M 100 1450 H 1900" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="100" y="1500" class="note">Policy may auto-approve ticket gates outside this human-gated example. /hydrate reloads workflow state; it does not activate governance.</text>
+  <text x="100" y="1540" class="note">Approving an exhausted review requires /override-approve; requesting changes or rejecting remains possible.</text>
+  <text x="100" y="1580" class="note">Eligible reduced ceremony may skip IMPL_REVIEW only after post-implementation verification; policy gates still apply.</text>
+  <text x="100" y="1620" class="note">Technical validation blocks stay in their validation phase for retry. Review self-loops, rejection, abort and other flows are omitted.</text>
+  <text x="100" y="1670" class="boundary">V2 migration: intended contract, not acceptance evidence. R4 is a documented NOT_SUPPORTED trusted-plugin limitation.</text>
+  <text x="100" y="1720" class="note">Authority: src/machine/topology.ts · Activation: src/integration/plugin-start-command.ts · Command origin is not verified human identity.</text>
+</svg>

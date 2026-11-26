@@ -2,6 +2,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { StdinReadError } from './shared/stdin-reader.js';
+import { MAX_HOOK_PAYLOAD_BYTES } from './shared/limits.js';
+
 const mockReadStdin = vi.hoisted(() => vi.fn());
 const mockResolveSession = vi.hoisted(() => vi.fn());
 
@@ -63,6 +66,60 @@ describe('pre-tool-use review obligation enforcement', () => {
     vi.restoreAllMocks();
     delete process.env['FLOWGUARD_HOOK_TOKEN'];
     process.exitCode = undefined;
+  });
+
+  it('denies an oversized stdin read failure as HOOK_STDIN_INVALID', async () => {
+    let stdout = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk, encodingOrCallback, callback) => {
+      stdout += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+      const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+      if (done) done(null);
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    mockReadStdin.mockRejectedValue(
+      new StdinReadError('STDIN_TOO_LARGE', `stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`),
+    );
+
+    await import('./pre-tool-use.js');
+    await vi.waitFor(() => expect(stdout.trim()).not.toBe(''));
+
+    const output = JSON.parse(stdout) as {
+      hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+    };
+    expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain('HOOK_STDIN_INVALID');
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain(
+      `stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`,
+    );
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it('denies with WORKTREE_MISMATCH when the payload cwd is not the bound worktree', async () => {
+    let stdout = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk, encodingOrCallback, callback) => {
+      stdout += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+      const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+      if (done) done(null);
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    mockReadStdin.mockResolvedValue(payload);
+    mockResolveSession.mockResolvedValue({
+      ok: false,
+      code: 'WORKTREE_MISMATCH',
+      reason: 'Session was created for worktree "/bound" but current worktree is "/other".',
+    });
+
+    await import('./pre-tool-use.js');
+    await vi.waitFor(() => expect(stdout.trim()).not.toBe(''));
+
+    const output = JSON.parse(stdout) as {
+      hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+    };
+    expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain('WORKTREE_MISMATCH');
+    expect(mockResolveSession).toHaveBeenCalledWith('/tmp/project', 'sess_test');
   });
 
   it('denies a mutating tool when a review obligation is unresolved', async () => {
@@ -160,6 +217,70 @@ describe('pre-tool-use review obligation enforcement', () => {
     await vi.waitFor(() => expect(mockResolveSession).toHaveBeenCalled());
 
     expect(stdout).toBe('');
+  });
+  it('allows a mutating tool when only terminal obligations remain', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test',
+      state: {
+        phase: 'IMPLEMENTATION',
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: 'blocked-1',
+              status: 'blocked',
+              consumedAt: null,
+            },
+            {
+              obligationId: 'done',
+              status: 'consumed',
+              consumedAt: '2026-07-15T00:00:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+
+    let stdout = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdout += String(chunk);
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    mockReadStdin.mockResolvedValue(payload);
+    await import('./pre-tool-use.js');
+    await vi.waitFor(() => expect(mockResolveSession).toHaveBeenCalled());
+
+    expect(stdout).toBe('');
+  });
+
+  it('BAD: denies a mutating tool while an integrity incident (evidence reuse) is unresolved', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test',
+      state: {
+        phase: 'IMPLEMENTATION',
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: 'reused-1',
+              status: 'blocked',
+              blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+              consumedAt: null,
+            },
+          ],
+        },
+      },
+    });
+
+    const stdout = await runPreToolUse(payload);
+    const output = JSON.parse(stdout.trim()) as {
+      hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+    };
+    expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain(
+      'INTEGRITY_INCIDENT_MUTATION_DENIED',
+    );
   });
 });
 

@@ -6,12 +6,32 @@ const mockSessionDir = vi.hoisted(() => vi.fn());
 const mockAppendAuditEvent = vi.hoisted(() => vi.fn());
 const mockResolveSession = vi.hoisted(() => vi.fn());
 const mockWriteLog = vi.hoisted(() => vi.fn());
+const mockResolveRoot = vi.hoisted(() => vi.fn());
+const mockAppendHookIngestFailure = vi.hoisted(() =>
+  vi.fn(async (..._args: unknown[]) => ({ recorded: true })),
+);
 
 vi.mock('./shared/stdin-reader.js', () => ({
+  StdinReadError: class StdinReadError extends Error {
+    readonly observedBytes = null;
+    readonly observedPrefix = null;
+  },
   readStdin: (...args: unknown[]) => mockReadStdin(...args),
+  readStdinRaw: async (...args: unknown[]) => {
+    const payload = (await mockReadStdin(...args)) as Record<string, unknown>;
+    return { payload, raw: Buffer.from(JSON.stringify(payload)) };
+  },
   validateSessionPayload: (payload: Record<string, unknown>) => payload,
   validateToolHookPayload: (payload: Record<string, unknown>) => payload,
 }));
+
+vi.mock('../adapters/persistence-hook-ingest.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/persistence-hook-ingest.js')>();
+  return {
+    ...actual,
+    appendHookIngestFailure: (...args: unknown[]) => mockAppendHookIngestFailure(...args),
+  };
+});
 
 vi.mock('./shared/stdout-writer.js', () => ({
   writeLog: (...args: unknown[]) => mockWriteLog(...args),
@@ -28,6 +48,11 @@ vi.mock('../adapters/workspace/index.js', () => ({
   sessionDir: (...args: unknown[]) => mockSessionDir(...args),
 }));
 
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/git.js')>();
+  return { ...actual, resolveRoot: (...args: unknown[]) => mockResolveRoot(...args) };
+});
+
 vi.mock('../adapters/persistence-audit.js', () => ({
   appendAuditEvent: (...args: unknown[]) => mockAppendAuditEvent(...args),
 }));
@@ -37,9 +62,10 @@ vi.mock('./shared/session-resolver.js', () => ({
 }));
 
 vi.mock('./shared/phase-gate.js', () => ({ isMutatingHostTool: () => false }));
-vi.mock('./shared/obligation-tracker.js', () => ({
-  assessObligationEscalation: () => ({ message: null }),
-}));
+vi.mock('./shared/obligation-tracker.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./shared/obligation-tracker.js')>();
+  return { ...actual, assessObligationEscalation: () => ({ message: null }) };
+});
 
 const SESSION_PAYLOAD = { session_id: 'session-1', cwd: '/workspace' };
 const TOOL_PAYLOAD = {
@@ -71,11 +97,14 @@ describe('informational command hooks', () => {
       sessionDir: '/workspace/.flowguard/sessions/session-1',
       state: { phase: 'IMPLEMENTATION', reviewAssurance: { obligations: [] } },
     });
+    mockResolveRoot.mockReset();
+    mockResolveRoot.mockResolvedValue('/workspace');
     process.exitCode = undefined;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    delete process.env['FLOWGUARD_SESSION_DIR'];
     process.exitCode = undefined;
   });
 
@@ -118,6 +147,34 @@ describe('informational command hooks', () => {
         }),
       );
     });
+
+    it('bootstraps the git-resolved worktree root, not the raw payload cwd', async () => {
+      mockReadStdin.mockResolvedValue({ session_id: 'session-1', cwd: '/workspace/subdir' });
+      mockResolveRoot.mockResolvedValue('/workspace');
+
+      await importHook('./session-start.js', () => mockAppendAuditEvent.mock.calls.length > 0);
+
+      expect(mockResolveRoot).toHaveBeenCalledWith('/workspace/subdir');
+      expect(mockEnsureWorkspace).toHaveBeenCalledWith('/workspace');
+    });
+
+    it('skips bootstrap and audit when the cwd is not a git worktree', async () => {
+      mockResolveRoot.mockRejectedValue(new Error('not a git repository'));
+
+      await importHook('./session-start.js', () => mockWriteLog.mock.calls.length > 0);
+
+      expect(mockEnsureWorkspace).not.toHaveBeenCalled();
+      expect(mockAppendAuditEvent).not.toHaveBeenCalled();
+    });
+
+    it('skips bootstrap entirely under the explicit session-dir override', async () => {
+      process.env['FLOWGUARD_SESSION_DIR'] = '/override/dir';
+
+      await importHook('./session-start.js', () => mockAppendAuditEvent.mock.calls.length > 0);
+
+      expect(mockResolveRoot).not.toHaveBeenCalled();
+      expect(mockEnsureWorkspace).not.toHaveBeenCalled();
+    });
   });
 
   describe('BAD', () => {
@@ -154,6 +211,33 @@ describe('informational command hooks', () => {
       expect(mockAppendAuditEvent).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ detail: expect.objectContaining({ pendingObligations: 1 }) }),
+      );
+    });
+    it('does not warn for deterministically blocked terminal obligations', async () => {
+      mockResolveSession.mockResolvedValue({
+        ok: true,
+        sessionDir: '/workspace/.flowguard/sessions/session-1',
+        state: {
+          phase: 'IMPLEMENTATION',
+          reviewAssurance: {
+            obligations: [
+              {
+                obligationId: 'blocked-1',
+                status: 'blocked',
+                consumedAt: null,
+              },
+            ],
+          },
+        },
+      });
+      await importHook('./stop.js', () => mockAppendAuditEvent.mock.calls.length > 0);
+
+      expect(mockWriteLog).not.toHaveBeenCalledWith(
+        expect.stringContaining('unresolved review obligation'),
+      );
+      expect(mockAppendAuditEvent).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ detail: expect.objectContaining({ pendingObligations: 0 }) }),
       );
     });
   });

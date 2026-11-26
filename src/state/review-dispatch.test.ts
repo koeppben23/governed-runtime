@@ -11,9 +11,11 @@ import { describe, expect, it } from 'vitest';
 import {
   appendReviewDispatch,
   emptyReviewAssurance,
-  rebindReviewDispatchHostCall,
+  hasOutstandingReviewObligation,
+  hasUnresolvedIntegrityIncident,
+  isOpenReviewObligation,
 } from './review-dispatch.js';
-import type { ReviewDispatchRecord } from './evidence-review.js';
+import type { ReviewDispatchRecord, ReviewObligation } from './evidence-review.js';
 
 const ATTEMPT_ID = '11111111-2222-4111-8111-111111111111';
 const OTHER_ATTEMPT_ID = '99999999-2222-4111-8111-111111111111';
@@ -33,83 +35,94 @@ function dispatch(overrides: Partial<ReviewDispatchRecord> = {}): ReviewDispatch
   };
 }
 
-describe('state/review-dispatch host-call rebinding', () => {
-  describe('HAPPY', () => {
-    it('rebinds the authorized dispatch to the bound child session', () => {
-      const before = appendReviewDispatch(emptyReviewAssurance(), dispatch());
-      const after = rebindReviewDispatchHostCall(before, 'task-call-1', 'child-session-1');
+describe('review obligation open-work semantics', () => {
+  function obligation(
+    status: ReviewObligation['status'],
+    consumedAt: string | null,
+  ): ReviewObligation {
+    return { status, consumedAt } as unknown as ReviewObligation;
+  }
 
-      expect(after.dispatches).toHaveLength(1);
-      expect(after.dispatches[0]).toMatchObject({
-        dispatchId: '88888888-8888-4888-8888-888888888888',
-        attemptId: ATTEMPT_ID,
-        hostCallId: 'child-session-1',
-        dispatchStatus: 'authorized',
-        canonicalPromptDigest: 'a'.repeat(64),
-      });
-    });
+  it('HAPPY — pending and fulfilled obligations are open work', () => {
+    expect(isOpenReviewObligation(obligation('pending', null))).toBe(true);
+    expect(isOpenReviewObligation(obligation('fulfilled', null))).toBe(true);
   });
 
-  describe('BAD', () => {
-    it('never rebinds a dispatch that already concluded', () => {
-      const before = appendReviewDispatch(
-        emptyReviewAssurance(),
-        dispatch({ dispatchStatus: 'completed', completedAt: AUTHORIZED_AT }),
-      );
-      const after = rebindReviewDispatchHostCall(before, 'task-call-1', 'child-session-1');
-
-      expect(after.dispatches[0]?.hostCallId).toBe('task-call-1');
-    });
-
-    it('never rebinds an unknown-outcome dispatch', () => {
-      const before = appendReviewDispatch(
-        emptyReviewAssurance(),
-        dispatch({ dispatchStatus: 'outcome_unknown' }),
-      );
-      const after = rebindReviewDispatchHostCall(before, 'task-call-1', 'child-session-1');
-
-      expect(after.dispatches[0]?.hostCallId).toBe('task-call-1');
-    });
+  it('BAD — consumed and deterministically blocked obligations are terminal', () => {
+    expect(isOpenReviewObligation(obligation('consumed', '2026-01-01T00:00:00.000Z'))).toBe(false);
+    expect(isOpenReviewObligation(obligation('blocked', null))).toBe(false);
   });
 
-  describe('CORNER', () => {
-    it('is a no-op when the provisional host call is absent', () => {
-      const before = appendReviewDispatch(emptyReviewAssurance(), dispatch());
-      const after = rebindReviewDispatchHostCall(before, 'unknown-call', 'child-session-1');
-
-      expect(after).toEqual(before);
-    });
-
-    it('is idempotent when the record is already bound', () => {
-      const rebound = rebindReviewDispatchHostCall(
-        appendReviewDispatch(emptyReviewAssurance(), dispatch()),
-        'task-call-1',
-        'child-session-1',
-      );
-      const again = rebindReviewDispatchHostCall(rebound, 'task-call-1', 'child-session-1');
-
-      expect(again).toEqual(rebound);
-    });
+  it('EDGE — a consumedAt stamp alone closes an obligation', () => {
+    expect(isOpenReviewObligation(obligation('pending', '2026-01-01T00:00:00.000Z'))).toBe(false);
   });
 
-  describe('EDGE', () => {
-    it('rebinds only the exact provisional host call', () => {
-      let assurance = appendReviewDispatch(emptyReviewAssurance(), dispatch());
-      assurance = appendReviewDispatch(
-        assurance,
-        dispatch({
-          dispatchId: '77777777-8888-4888-8888-888888888888',
-          attemptId: OTHER_ATTEMPT_ID,
-          hostCallId: 'task-call-2',
+  it('hasOutstandingReviewObligation counts only open work', () => {
+    expect(
+      hasOutstandingReviewObligation({
+        ...emptyReviewAssurance(),
+        obligations: [
+          obligation('blocked', null),
+          obligation('consumed', '2026-01-01T00:00:00.000Z'),
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      hasOutstandingReviewObligation({
+        ...emptyReviewAssurance(),
+        obligations: [obligation('blocked', null), obligation('fulfilled', null)],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('review integrity incident semantics (D7)', () => {
+  function blocked(code: string | null): ReviewObligation {
+    return {
+      status: 'blocked',
+      blockedCode: code,
+      consumedAt: null,
+    } as unknown as ReviewObligation;
+  }
+
+  function settled(status: 'consumed' | 'fulfilled'): ReviewObligation {
+    return {
+      status,
+      blockedCode: null,
+      invocationId: '00000000-0000-4000-8000-0000000000e1',
+      fulfilledAt: '2026-01-03T00:00:00.000Z',
+      consumedAt: status === 'consumed' ? '2026-01-03T00:00:00.000Z' : null,
+    } as unknown as ReviewObligation;
+  }
+
+  it('BAD — absent assurance and deterministic blocks are not integrity incidents', () => {
+    expect(hasUnresolvedIntegrityIncident(undefined)).toBe(false);
+    expect(hasUnresolvedIntegrityIncident(null)).toBe(false);
+    expect(
+      hasUnresolvedIntegrityIncident({
+        ...emptyReviewAssurance(),
+        obligations: [blocked('REVIEW_ATTEMPT_UNAVAILABLE'), blocked(null)],
+      }),
+    ).toBe(false);
+  });
+
+  it('HAPPY — a reused-evidence block is an integrity incident', () => {
+    expect(
+      hasUnresolvedIntegrityIncident({
+        ...emptyReviewAssurance(),
+        obligations: [blocked('SUBAGENT_EVIDENCE_REUSED')],
+      }),
+    ).toBe(true);
+  });
+
+  it('BAD — later settled obligations never auto-resolve the incident', () => {
+    for (const successor of [settled('fulfilled'), settled('consumed')]) {
+      expect(
+        hasUnresolvedIntegrityIncident({
+          ...emptyReviewAssurance(),
+          obligations: [blocked('SUBAGENT_EVIDENCE_REUSED'), successor],
         }),
-      );
-
-      const after = rebindReviewDispatchHostCall(assurance, 'task-call-2', 'child-session-2');
-
-      expect(after.dispatches.map((record) => record.hostCallId)).toEqual([
-        'task-call-1',
-        'child-session-2',
-      ]);
-    });
+      ).toBe(true);
+    }
   });
 });

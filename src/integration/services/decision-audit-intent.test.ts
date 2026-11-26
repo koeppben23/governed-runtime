@@ -18,6 +18,7 @@ import type { ReviewDecision } from '../../state/evidence.js';
 import type { PendingAuditOperation } from '../../state/schema.js';
 import type { TransitionRecord } from '../../rails/types.js';
 import { buildDecisionAuditIntent, resolveDecisionSequence } from './decision-audit-intent.js';
+import type { WorkflowDecisionOperation } from '../../state/governance-activation.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -54,6 +55,7 @@ function receiptEvent(decisionSequence: number): ChainedAuditEvent {
       fromPhase: 'PLAN_REVIEW',
       toPhase: 'VALIDATION',
       transitionEvent: 'APPROVE',
+      transitionAt: NOW,
       policyMode: 'team',
     },
     occurredAt: NOW,
@@ -119,6 +121,7 @@ describe('buildDecisionAuditIntent', () => {
         fromPhase: 'PLAN_REVIEW',
         toPhase: 'VALIDATION',
         transitionEvent: 'APPROVE',
+        transitionAt: NOW,
         policyMode: 'team',
       },
       actor: 'human',
@@ -155,6 +158,41 @@ describe('buildDecisionAuditIntent', () => {
     });
 
     expect(intent.actorInfo).toEqual(actorInfo);
+  });
+
+  it('HAPPY: binds an explicit operation only when supplied', () => {
+    const operation: WorkflowDecisionOperation = {
+      sessionId: 'session-1',
+      rootSessionId: 'session-1',
+      activationId: 'activation-1',
+      generation: 1,
+      directory: '/workspace',
+      worktreeRoot: '/workspace',
+      policyDigest: 'a'.repeat(64),
+      operationId: '00000000-0000-4000-8000-000000000001',
+      source: 'host_command',
+      stateDigest: 'b'.repeat(64),
+      verdict: 'approve',
+      rationaleDigest: 'c'.repeat(64),
+    };
+    const withOperation = buildDecisionAuditIntent({
+      transition: TRANSITION,
+      decision: DECISION,
+      policyMode: 'team',
+      decisionSequence: 1,
+      actor: 'human',
+      operation,
+    });
+    expect(withOperation.detail.operation).toEqual(operation);
+
+    const withoutOperation = buildDecisionAuditIntent({
+      transition: TRANSITION,
+      decision: DECISION,
+      policyMode: 'team',
+      decisionSequence: 1,
+      actor: 'human',
+    });
+    expect('operation' in withoutOperation.detail).toBe(false);
   });
 
   it('HAPPY: omits actorInfo entirely when no persisted actor info is supplied', () => {

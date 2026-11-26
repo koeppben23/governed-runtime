@@ -72,6 +72,17 @@ describe('buildArchitectureReviewCard', () => {
     );
   });
 
+  it('warns that the exhausting revision was not adopted', () => {
+    const card = buildArchitectureReviewCard({
+      ...baseInput,
+      reviewCompletion: 'review_exhausted' as const,
+      revisionNotAdopted: true,
+    });
+    expect(card).toContain('The revision submitted with the final verdict was NOT adopted.');
+    expect(card).toContain('Only the independently reviewed ADR shown here is current');
+    expect(card).toContain('/override-approve');
+  });
+
   it('renders header with ADR title and status', () => {
     const card = buildArchitectureReviewCard({
       ...baseInput,
@@ -121,6 +132,7 @@ describe('buildArchitectureReviewCard', () => {
       'The current revision was submitted after the final independent review ' +
         'and has not itself been independently reviewed.',
     );
+    expect(card).toContain('Re-run `/request-changes`');
   });
 
   it('omits the mismatch warning when the reviewed digest matches the current digest', () => {

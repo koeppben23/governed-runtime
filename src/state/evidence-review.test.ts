@@ -1,10 +1,17 @@
+import { messageCaptureFixture } from '../review-invocation-test-helpers.js';
+
 /**
  * @module evidence-review.test
  * @description Tests for evidence-review module.
  * Extracted from evidence-split.test.ts.
  */
 import { describe, it, expect } from 'vitest';
-import { ReviewObligation, ReviewAssuranceState } from './evidence-review.js';
+import {
+  ReviewObligation,
+  ReviewAssuranceState,
+  reviewExhaustsBudget,
+  DISCARDED_REVIEW_DRAFT,
+} from './evidence-review.js';
 import { Finding, RepositoryLocation } from './evidence-findings.js';
 import {
   ChallengeResolution,
@@ -683,7 +690,13 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'native_task_structured_followup' as const,
+        invocationMode: 'native_task_message_json' as const,
+        transportVersion: 5 as const,
+        capture: messageCaptureFixture({
+          childSessionId: 'ses_child',
+          obligationId: FIXED_UUID,
+          attemptId: '22222222-2222-4222-8222-222222222222',
+        }),
         hostVisible: true,
         transcriptNavigable: true,
         source: 'host-orchestrated' as const,
@@ -695,14 +708,13 @@ describe('evidence-review', () => {
         fulfilledAt: null,
         consumedByObligationId: null,
         capturedRawFindings: { overallVerdict: 'accept' },
-        reviewOutputMode: 'structured_output' as const,
-        structuredOutputUsed: true,
-        reviewAssuranceLevel: 'structured_high' as const,
+        reviewOutputMode: 'validated_json' as const,
+        reviewAssuranceLevel: 'host_message_validated' as const,
       };
       const parsed = ReviewInvocationEvidence.parse(invocation);
-      expect(parsed.reviewOutputMode).toBe('structured_output');
-      expect(parsed.structuredOutputUsed).toBe(true);
-      expect(parsed.reviewAssuranceLevel).toBe('structured_high');
+      expect(parsed.reviewOutputMode).toBe('validated_json');
+      expect(parsed.transportVersion).toBe(5);
+      expect(parsed.reviewAssuranceLevel).toBe('host_message_validated');
       expect(parsed.capturedRawFindings).toEqual({ overallVerdict: 'accept' });
     });
 
@@ -725,7 +737,13 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'native_task_structured_followup' as const,
+        invocationMode: 'native_task_message_json' as const,
+        transportVersion: 5 as const,
+        capture: messageCaptureFixture({
+          childSessionId: 'ses_child',
+          obligationId: FIXED_UUID,
+          attemptId: String(overrides.attemptId ?? '22222222-2222-4222-8222-222222222222'),
+        }),
         hostVisible: true,
         transcriptNavigable: true,
         source: 'host-orchestrated' as const,
@@ -738,9 +756,8 @@ describe('evidence-review', () => {
         consumedByObligationId: null,
         attemptId: '22222222-2222-4222-8222-222222222222',
         capturedRawFindings: { overallVerdict: 'accept' },
-        reviewOutputMode: 'structured_output' as const,
-        structuredOutputUsed: true,
-        reviewAssuranceLevel: 'structured_high' as const,
+        reviewOutputMode: 'validated_json' as const,
+        reviewAssuranceLevel: 'host_message_validated' as const,
         ...overrides,
       };
     }
@@ -967,7 +984,7 @@ describe('evidence-review', () => {
       const result = parseAssuranceWith(invocation, linkedAttempt());
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
-      expect(JSON.stringify(result.error.issues)).toContain('structured_output');
+      expect(JSON.stringify(result.error.issues)).toContain('validated_json');
     });
 
     it('rejects agent-submitted transport claiming host-structured provenance', () => {
@@ -979,7 +996,7 @@ describe('evidence-review', () => {
       const result = parseAssuranceWith(invocation, linkedAttempt());
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
-      expect(JSON.stringify(result.error.issues)).toContain('native_task_structured_followup');
+      expect(JSON.stringify(result.error.issues)).toContain('native_task_message_json');
     });
 
     it('rejects a capability-less repository-governed attempt', () => {
@@ -1017,6 +1034,8 @@ describe('evidence-review', () => {
             drift: {
               status: 'not_assessed' as const,
               drifted: false,
+              currentDigest: null,
+              persistedDigest: null,
               changedContributorNames: [],
               notVerified: [],
             },
@@ -1068,7 +1087,13 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'native_task_structured_followup' as const,
+        invocationMode: 'native_task_message_json' as const,
+        transportVersion: 5 as const,
+        capture: messageCaptureFixture({
+          childSessionId: 'ses_child',
+          obligationId: FIXED_UUID,
+          attemptId: '22222222-2222-4222-8222-222222222222',
+        }),
         hostVisible: true,
         transcriptNavigable: true,
         source: 'host-orchestrated' as const,
@@ -1082,9 +1107,8 @@ describe('evidence-review', () => {
         capturedVerdict: 'accept',
         capturedRawFindings: { overallVerdict: 'accept' },
         attemptId: '22222222-2222-4222-8222-222222222222',
-        reviewOutputMode: 'structured_output' as const,
-        structuredOutputUsed: true,
-        reviewAssuranceLevel: 'structured_high' as const,
+        reviewOutputMode: 'validated_json' as const,
+        reviewAssuranceLevel: 'host_message_validated' as const,
       };
       const contradictory = {
         ...invocation,
@@ -1182,6 +1206,8 @@ describe('evidence-review', () => {
           drift: {
             status: 'clean',
             drifted: false,
+            currentDigest: null,
+            persistedDigest: null,
             changedContributorNames: [],
             notVerified: [],
           },
@@ -1298,7 +1324,7 @@ describe('evidence-review', () => {
           changedPathCount: 0,
           objectivesCovered: 3,
           objectivesTotal: 3,
-          reviewAssurance: 'structured_high',
+          reviewAssurance: 'host_message_validated',
           missingVerification: [],
         },
         reviewSubject: {
@@ -1677,5 +1703,22 @@ describe('Implementation subject scope coherence (schema refinement)', () => {
         'only implement obligations may carry an implementation reviewSubjectScope',
       );
     }
+  });
+});
+
+describe('review exhaustion draft disposition', () => {
+  it('treats only changes_requested on the last allowed iteration as budget-exhausting', () => {
+    expect(reviewExhaustsBudget('changes_requested', 2, 3)).toBe(true);
+    expect(reviewExhaustsBudget('changes_requested', 1, 3)).toBe(false);
+    expect(reviewExhaustsBudget('accept', 2, 3)).toBe(false);
+    expect(reviewExhaustsBudget('changes_requested', 3, 3)).toBe(true);
+  });
+
+  it('carries the canonical non-adoption note and recovery', () => {
+    expect(DISCARDED_REVIEW_DRAFT.reason).toBe('review_exhausted');
+    expect(DISCARDED_REVIEW_DRAFT.note).toContain('NOT adopted');
+    expect(DISCARDED_REVIEW_DRAFT.recovery.join(' ')).toContain('/override-approve <Begründung>');
+    expect(DISCARDED_REVIEW_DRAFT.recovery.join(' ')).toContain('/request-changes');
+    expect(Object.isFrozen(DISCARDED_REVIEW_DRAFT)).toBe(true);
   });
 });

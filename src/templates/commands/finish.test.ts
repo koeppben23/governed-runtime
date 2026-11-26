@@ -47,8 +47,10 @@ describe('templates/commands/finish (#520 Finish Card)', () => {
 
   // CORNER — no-session path
   describe('CORNER — no session', () => {
-    it('recommends /hydrate when no session exists', () => {
-      expect(FINISH_COMMAND).toContain('/hydrate');
+    it('recommends explicit /start only when inactive, without recreating damaged authority', () => {
+      expect(FINISH_COMMAND).toContain('recommend explicit `/start`');
+      expect(FINISH_COMMAND).toContain('do not recreate it');
+      expect(FINISH_COMMAND).not.toContain('/hydrate');
     });
   });
 

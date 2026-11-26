@@ -160,5 +160,57 @@ describe('developer contract version documentation', () => {
         `Current state contract (\`${CURRENT_SESSION_STATE_SCHEMA_VERSION}\`)`,
       );
     });
+
+    it('documents every schema hard cut as a BREAKING entry in its release section', () => {
+      const changelog = read('CHANGELOG.md');
+      // The changelog is the operator-facing release record: every schema cut
+      // must be a BREAKING entry inside the release section that shipped it,
+      // naming the version and the fail-closed rejection. Extend the historical
+      // list when a new cut lands.
+      const sections = changelog.split(/\n## /);
+      const releaseSection = sections.find((candidate) => candidate.startsWith('[2.0.0-tp.2]'));
+      const currentReleaseSection = sections.find((candidate) =>
+        candidate.startsWith('[2.0.0-tp.3]'),
+      );
+      const unreleasedSection = sections.find((candidate) => candidate.startsWith('[Unreleased]'));
+      expect(releaseSection, '2.0.0-tp.2 section').toBeDefined();
+      expect(currentReleaseSection, '2.0.0-tp.3 section').toBeDefined();
+      expect(unreleasedSection, 'Unreleased section').toBeDefined();
+
+      const entries = releaseSection!.split(/\n(?=- )/);
+      const currentReleaseEntries = currentReleaseSection!.split(/\n(?=- )/);
+      const currentEntries = unreleasedSection!.split(/\n(?=- )/);
+      const historicalHardCuts = [
+        'state schema v6',
+        '`v7`',
+        'session state v8',
+        'session state v9',
+      ];
+      for (const version of historicalHardCuts) {
+        const entry = entries.find(
+          (candidate) =>
+            candidate.startsWith('- **BREAKING') &&
+            candidate.includes(version) &&
+            candidate.includes('SESSION_STATE_INCOMPATIBLE'),
+        );
+        expect(
+          entry,
+          `2.0.0-tp.2 lacks a BREAKING hard-cut entry for ${version} with the rejection contract`,
+        ).toBeDefined();
+      }
+      // The current cut is unreleased until its release section is cut; once
+      // the release section exists it must already carry the BREAKING entry.
+      const currentVersion = `session state ${CURRENT_SESSION_STATE_SCHEMA_VERSION}`;
+      const currentEntry = [...currentEntries, ...currentReleaseEntries, ...entries].find(
+        (candidate) =>
+          candidate.startsWith('- **BREAKING') &&
+          candidate.includes(currentVersion) &&
+          candidate.includes('SESSION_STATE_INCOMPATIBLE'),
+      );
+      expect(
+        currentEntry,
+        `no BREAKING hard-cut entry for ${currentVersion} with the rejection contract`,
+      ).toBeDefined();
+    });
   });
 });

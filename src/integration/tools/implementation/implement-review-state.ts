@@ -12,7 +12,7 @@
 import type { SessionState } from '../../../state/schema.js';
 import type { LoopVerdict, ReviewFindings } from '../../../state/evidence.js';
 import { IntegrationInvariantError } from '../../errors.js';
-import { formatBlocked } from '../../blocked-result.js';
+import { formatBlocked, unableReviewDiagnostics } from '../../blocked-result.js';
 
 import { resolveStructuredEffectiveFindings } from '../../review/validation/review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
@@ -20,35 +20,24 @@ import {
   consumeReviewObligation,
   findLatestObligation,
 } from '../../review/obligations/assurance.js';
-import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { updateObligation } from '../../review/obligations/obligation-state.js';
+import { buildInterruptedDispatchRearm } from '../../review/dispatch/durable-dispatch.js';
+import { unsupersededStaleAttempts } from '../../review/dispatch/native-review-settlement.js';
+import { ensureReviewAssurance, isOpenReviewObligation } from '../../../state/review-dispatch.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
-import { normalizeHostFindings, type ImplementRuntime } from './implement-shared.js';
+import type { ImplementRuntime } from './implement-shared.js';
 import {
+  projectImplementationChallengeResolutionRequirements,
   projectOpenImplementationChallengeIds,
-  projectUnaddressedImplementationChallengeIds,
 } from '../../../state/implementation-review-findings.js';
 
-export function findPendingImplObligation(state: SessionState) {
+export function findOpenImplObligation(state: SessionState) {
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   return (
     [...assuranceBase.obligations]
       .reverse()
-      .find(
-        (item) =>
-          item.obligationType === 'implement' &&
-          item.status !== 'consumed' &&
-          item.consumedAt == null,
-      ) ?? null
-  );
-}
-
-/** Challenge ids the author has recorded a resolution for against the CURRENT digest. */
-function resolvedForCurrentDigestIds(state: SessionState): ReadonlySet<string> {
-  return new Set(
-    state.challengeResolutions
-      .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
-      .map((resolution) => resolution.challengeId),
+      .find((item) => item.obligationType === 'implement' && isOpenReviewObligation(item)) ?? null
   );
 }
 
@@ -63,9 +52,7 @@ function resolvedForCurrentDigestIds(state: SessionState): ReadonlySet<string> {
  * therefore the ones that require an independent verdict, NOT ids to drop.
  */
 export function computeTargetedResolutionChallengeIds(state: SessionState): readonly string[] {
-  const open = projectOpenImplementationChallengeIds(state.implReviewFindings);
-  const resolvedIds = resolvedForCurrentDigestIds(state);
-  return open.filter((id) => resolvedIds.has(id));
+  return resolutionRequirements(state).targetedResolutionIds;
 }
 
 /**
@@ -76,11 +63,69 @@ export function computeTargetedResolutionChallengeIds(state: SessionState): read
  * findings-consistency gate fails acceptance closed while this set is non-empty.
  */
 export function computeUnaddressedPriorFailIds(state: SessionState): readonly string[] {
-  return projectUnaddressedImplementationChallengeIds(
-    state.implReviewFindings,
-    state.challengeResolutions,
-    state.implementation?.digest,
-  );
+  return resolutionRequirements(state).unaddressedPriorFailIds;
+}
+
+/**
+ * Reopen an implementation review that was blocked because the reviewer
+ * accepted while a prior failing challenge had no author resolution.
+ *
+ * The block is recoverable by definition: the author records the missing
+ * resolution, then a fresh reviewer must independently close the challenge.
+ * Reopening mints exactly one durable re-arm attempt for the blocked obligation
+ * and clears the capacity lock, so the next dispatch is authorized in the same
+ * turn. Any other capacity code, an ambiguous spent lineage, or still-missing
+ * resolutions leaves the blocked state untouched.
+ */
+export function reopenReviewAfterAuthorResolution(state: SessionState, now: string): SessionState {
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const lock = assurance.capacityLock;
+  if (!lock || lock.code !== 'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED') return state;
+  const obligation = assurance.obligations.find((item) => item.obligationId === lock.obligationId);
+  if (!obligation || obligation.obligationType !== 'implement' || obligation.status !== 'blocked')
+    return state;
+  if (computeUnaddressedPriorFailIds(state).length > 0) return state;
+  // An earlier retryable capture/rearm may have left historical stale attempts.
+  // Only the one not superseded by a dispatch_rearm successor is the current
+  // recovery candidate; counting history would dead-end the common A→B lineage.
+  if (
+    assurance.dispatches.some(
+      (dispatch) =>
+        dispatch.obligationId === obligation.obligationId &&
+        dispatch.dispatchStatus === 'authorized',
+    )
+  )
+    return state;
+  const spent = unsupersededStaleAttempts(assurance, obligation.obligationId).filter((attempt) => {
+    const dispatches = assurance.dispatches.filter(
+      (dispatch) =>
+        dispatch.attemptId === attempt.attemptId &&
+        dispatch.obligationId === obligation.obligationId,
+    );
+    return dispatches.length === 1 && dispatches[0]?.dispatchStatus === 'outcome_unknown';
+  });
+  if (spent.length !== 1) return state;
+  const spentAttempt = spent[0];
+  if (!spentAttempt) return state;
+  const pending = updateObligation(state, obligation.obligationId, (item) => ({
+    ...item,
+    status: 'pending',
+    blockedCode: null,
+  }));
+  const rearm = buildInterruptedDispatchRearm(pending.reviewAssurance, spentAttempt, now);
+  if (rearm.kind !== 'ok') return state;
+  return {
+    ...pending,
+    reviewAssurance: { ...ensureReviewAssurance(rearm.assurance), capacityLock: null },
+  };
+}
+
+function resolutionRequirements(state: SessionState) {
+  return projectImplementationChallengeResolutionRequirements({
+    findingsHistory: state.implReviewFindings,
+    challengeResolutions: state.challengeResolutions,
+    implementationDigest: state.implementation?.digest,
+  });
 }
 
 /**
@@ -99,7 +144,7 @@ export function resolveImplementationFindings(
   iteration: number,
   planVersion: number,
 ) {
-  const pendingObligation = findPendingImplObligation(input.state);
+  const pendingObligation = findOpenImplObligation(input.state);
   const challengeContract = buildReviewChallengeContract(input.state, pendingObligation);
   const resolved = resolveStructuredEffectiveFindings({
     pendingObligation,
@@ -126,7 +171,10 @@ export function validateEffectiveFindings(
   obligationId: string,
 ): string | null {
   if (findings.overallVerdict === 'unable_to_review') {
-    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId });
+    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId,
+      ...unableReviewDiagnostics(findings),
+    });
   }
   if (findings.overallVerdict !== submittedVerdict) {
     return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
@@ -143,7 +191,7 @@ export function appendImplReviewState(input: {
   planVersion: number;
   effectiveFindings: ReviewFindings;
   evidenceInvocationId: string;
-  obligationToConsume?: ReturnType<typeof findPendingImplObligation>;
+  obligationToConsume?: ReturnType<typeof findOpenImplObligation>;
 }) {
   const {
     runtime,
@@ -175,7 +223,9 @@ export function appendImplReviewState(input: {
     evidenceInvocationId,
   );
   const existingFindings = runtime.state.implReviewFindings;
-  const newReviewFindings = [...existingFindings, normalizeHostFindings(effectiveFindings)];
+  // Finding identity is minted once at the authoritative native capture. This
+  // consume boundary must preserve it; re-minting would create two authorities.
+  const newReviewFindings = [...existingFindings, effectiveFindings];
   const reviewedState: SessionState = {
     ...runtime.state,
     implReview: {

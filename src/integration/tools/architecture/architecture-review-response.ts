@@ -21,18 +21,18 @@ import type {
 } from '../../../state/evidence.js';
 import {
   appendObligationWithAttempt,
-  artifactReviewSubjectScope,
   createReviewObligation,
-  findLatestUnconsumedObligation,
+  findLatestOpenObligation,
   freezeReviewMaterial,
 } from '../../review/obligations/assurance.js';
+import { artifactReviewSubjectScopeFromSections } from '../../review/context/subject-scope.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
 } from '../../review/dispatch/dispatch-authority.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
-import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
+import { buildFrozenArtifactReviewMaterial } from '../../review/context/reviewer-context.js';
 import {
   PHASE_LABELS,
   buildArchitectureReviewCard,
@@ -69,7 +69,7 @@ import { toPresentationFindingRelation } from '../helpers-rail-presentation.js';
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
 export type ResolvedReview = {
-  pendingObligation: ReturnType<typeof findLatestUnconsumedObligation>;
+  pendingObligation: ReturnType<typeof findLatestOpenObligation>;
   expectedIteration: number;
   expectedPlanVersion: number;
   assuranceBase: ReturnType<typeof ensureReviewAssurance>;
@@ -81,6 +81,8 @@ export type AdrRevision = {
   currentAdr: NonNullable<SessionState['architecture']>;
   prevDigest: string;
   revisionDelta: RevisionDelta;
+  /** Present when the submitted revision was not adopted (review exhaustion). */
+  discardedDraft?: import('../../../state/evidence-review.js').DiscardedReviewDraft;
 };
 
 export type AdvancedArchitectureState = Extract<AutoAdvanceResult, { kind: 'advanced' }>;
@@ -138,7 +140,11 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
   const status =
     completion === 'review_exhausted'
       ? `${reviewLabel} reached the iteration limit (${iteration}/${session.policy.reviewBudget.architecture}) ` +
-        'without reviewer approval. Human approval is required.'
+        'without reviewer approval.' +
+        (revision.discardedDraft !== undefined
+          ? ' The submitted revision was NOT adopted; the last independently reviewed ADR remains current.'
+          : '') +
+        ' Human approval is required.'
       : `${reviewLabel} accepted the ADR at iteration ${iteration}. Human approval is required.`;
   const resp: Record<string, unknown> = {
     phase: advanced.state.phase,
@@ -146,6 +152,9 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     adrId: revision.currentAdr.id,
     adrDigest: revision.currentAdr.digest,
     selfReviewIteration: iteration,
+    ...(revision.discardedDraft !== undefined
+      ? { revisionNotAdopted: revision.discardedDraft }
+      : {}),
     _audit: { transitions: advanced.transitions },
   };
   attachLatestReview(resp, review, iteration);
@@ -233,6 +242,7 @@ async function attachReviewCard(input: {
     adrDigest: revision.currentAdr.digest,
     adrText: revision.currentAdr.adrText,
     iteration,
+    ...(revision.discardedDraft !== undefined ? { revisionNotAdopted: true } : {}),
     ...(typeof latestReview?.overallVerdict === 'string'
       ? { overallVerdict: latestReview.overallVerdict }
       : {}),
@@ -268,11 +278,14 @@ async function attachReviewCard(input: {
   };
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   resp.reviewCard = buildArchitectureReviewCard(reviewCardInput);
-  resp.presentation = {
-    markdown: buildArchitectureReviewCard(reviewCardInput, {
-      glyphProfile: (await readConfig(session.worktree)).presentation.opencode.glyphProfile,
-    }),
-  };
+  const presentationMarkdown = buildArchitectureReviewCard(reviewCardInput, {
+    glyphProfile: (await readConfig(session.worktree)).presentation.glyphProfile,
+  });
+  // The canonical reviewCard is always transmitted; the host-visible markdown
+  // variant is only added when the configured glyph profile changes it.
+  if (presentationMarkdown !== resp.reviewCard) {
+    resp.presentation = { markdown: presentationMarkdown };
+  }
   const serializedState = JSON.stringify(finalState, null, 2) + '\n';
   const artifactErr = await materializeReviewCardArtifact(
     session.sessDir,
@@ -303,22 +316,6 @@ function targetPathsMetadata(resolved: readonly string[] | undefined): Record<st
   return resolved && resolved.length > 0 ? { targetPaths: [...resolved] } : {};
 }
 
-function frozenArchitectureReviewMaterial(
-  state: SessionState,
-  artifact: string,
-  subjectDigest: string,
-) {
-  return freezeReviewMaterial(
-    buildFrozenReviewMaterialContent({
-      obligationType: 'architecture',
-      state,
-      artifact,
-      renderPlanClaimDeclarations,
-    }),
-    subjectDigest,
-  );
-}
-
 async function persistAndFormatNonConvergedReview(
   input: ReviewResultContext,
   verdict: LoopVerdict,
@@ -334,7 +331,6 @@ async function persistAndFormatNonConvergedReview(
   const targetPaths = [...new Set([...(priorTargetPaths ?? []), ...(args.targetPaths ?? [])])];
   const classification = await resolvePreImplementationChallengeClassification(
     advanced.state,
-    session.worktree,
     targetPaths,
   );
   const resolvedTargetPaths =
@@ -450,6 +446,12 @@ function createNextArchitectureReviewObligation(input: {
     freeze,
   } = input;
   const subjectDigest = state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`;
+  const artifactReviewMaterial = buildFrozenArtifactReviewMaterial({
+    obligationType: 'architecture',
+    state,
+    artifact: revision.currentAdr.adrText,
+    renderPlanClaimDeclarations,
+  });
   return createReviewObligation({
     obligationType: 'architecture',
     iteration,
@@ -457,16 +459,12 @@ function createNextArchitectureReviewObligation(input: {
     planVersion: review.expectedPlanVersion,
     now: session.ctx.now(),
     subjectDigest,
-    reviewMaterial: frozenArchitectureReviewMaterial(
-      state,
-      revision.currentAdr.adrText,
-      subjectDigest,
-    ),
+    reviewMaterial: freezeReviewMaterial(artifactReviewMaterial.content, subjectDigest),
     // The (possibly revised) ADR artifact is the review SUBJECT; changedFiles
     // below stay challenge-classification and repository-evidence context only.
-    reviewSubjectScope: artifactReviewSubjectScope(
+    reviewSubjectScope: artifactReviewSubjectScopeFromSections(
       'adr',
-      revision.currentAdr.adrText,
+      artifactReviewMaterial.subjectSectionPaths,
       subjectDigest,
     ),
     policySnapshot: state.policySnapshot,

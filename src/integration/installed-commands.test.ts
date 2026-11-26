@@ -2,11 +2,21 @@ import { describe, expect, it } from 'vitest';
 import {
   INSTALLED_COMMANDS,
   INSTALLED_TEMPLATE_FILES,
+  getInstalledCommand,
   preferredInvocationForTool,
   visibleAliasesForDefinition,
 } from './installed-commands.js';
 import { COMMANDS } from '../templates/commands/index.js';
-import { TOOL_FLOWGUARD_ARCHIVE, TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
+import {
+  TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_HYDRATE,
+  TOOL_FLOWGUARD_RUN_CHECK,
+} from './tool-names.js';
+import {
+  NATIVE_CATALOGUED_COMMANDS,
+  NATIVE_CHECK_COMMAND,
+  NATIVE_START_COMMAND,
+} from '../shared/flowguard-identifiers.js';
 
 describe('installed command catalogue', () => {
   it('has unique stable IDs, invocations, and filenames-per-ID', () => {
@@ -32,7 +42,6 @@ describe('installed command catalogue', () => {
     const affectedTemplates = [
       'task.md',
       'ticket.md',
-      'check.md',
       'validate.md',
       'abort.md',
       'archive.md',
@@ -67,9 +76,7 @@ describe('installed command catalogue', () => {
       ).map((definition) => [definition.id, definition.kind]),
     );
     expect(kinds).toEqual({
-      'alias.start': 'preferred_name',
       'alias.task': 'preferred_name',
-      'alias.check': 'preferred_name',
       'alias.why': 'convenience',
       'variant.approve': 'action_variant',
       'variant.override-approve': 'action_variant',
@@ -98,22 +105,61 @@ describe('installed command catalogue', () => {
   });
 
   it('/continue and /check are compatibility surfaces, not product next actions', () => {
-    for (const id of ['workflow.continue', 'alias.check'] as const) {
+    for (const id of ['workflow.continue', 'operational.check'] as const) {
       const definition = INSTALLED_COMMANDS.find((command) => command.id === id);
       expect(definition?.visibility, id).toBe('compatibility');
     }
+  });
+
+  it('describes continue as a read-only operation, not a mutating machine command', () => {
+    const definition = INSTALLED_COMMANDS.find((command) => command.invocation === '/continue');
+    expect(definition?.kind).toBe('operational');
+    expect(definition?.target).toEqual({ toolName: 'flowguard_continue' });
+    expect(definition?.description).toContain('Read-only');
+    expect(definition?.description).toContain('without executing checks, reviews or transitions');
+  });
+
+  it('describes check as a native scoped operation, not a run-check/validate alias', () => {
+    const definition = INSTALLED_COMMANDS.find((command) => command.invocation === '/check');
+    expect(definition?.id).toBe('operational.check');
+    expect(definition?.kind).toBe('operational');
+    expect(definition?.templateFile).toBeNull();
+    expect(definition?.target).toEqual({ nativeCommand: NATIVE_CHECK_COMMAND });
+    expect(definition?.target.toolName).toBeUndefined();
+    expect(definition?.target.workflowCommand).toBeUndefined();
+    expect(definition?.description).toContain('verification checks and review loop');
+    expect(preferredInvocationForTool(TOOL_FLOWGUARD_RUN_CHECK)).toBeUndefined();
   });
 
   it('every installed invocation resolves to complete interface metadata', () => {
     for (const definition of INSTALLED_COMMANDS) {
       expect(definition.id, definition.invocation).toBeTruthy();
       expect(definition.invocation).toMatch(/^\//);
-      expect(definition.templateFile, definition.invocation).toMatch(/\.md$/);
+      if (definition.templateFile !== null)
+        expect(definition.templateFile, definition.invocation).toMatch(/\.md$/);
       expect(definition.kind, definition.invocation).toBeTruthy();
       expect(definition.visibility, definition.invocation).toBeTruthy();
       expect(definition.presentationGroup, definition.invocation).toBeTruthy();
       expect(definition.description, definition.invocation).toBeTruthy();
-      expect(definition.target.toolName, definition.invocation).toBeTruthy();
+      if (definition.target.nativeCommand !== undefined) {
+        expect(definition.invocation).toBe(`/${definition.target.nativeCommand}`);
+        expect(definition.templateFile).toBeNull();
+        expect(definition.target.toolName).toBeUndefined();
+        expect(definition.target.workflowCommand).toBeUndefined();
+      } else {
+        expect(definition.target.toolName, definition.invocation).toBeTruthy();
+      }
+    }
+  });
+
+  it('keeps native command names aligned with the installer collision authority', () => {
+    const native = INSTALLED_COMMANDS.filter((definition) => definition.templateFile === null);
+    expect(native.map((definition) => definition.invocation.slice(1)).sort()).toEqual(
+      [...NATIVE_CATALOGUED_COMMANDS].sort(),
+    );
+    for (const command of native) {
+      expect(COMMANDS).not.toHaveProperty(`${command.invocation.slice(1)}.md`);
+      expect(INSTALLED_TEMPLATE_FILES).not.toContain(`${command.invocation.slice(1)}.md`);
     }
   });
 
@@ -128,13 +174,20 @@ describe('installed command catalogue', () => {
     expect(archiveAliases).toEqual([]);
   });
 
-  it('has exactly one primary invocation for hydration', () => {
+  it('keeps /hydrate compatibility-only after /start becomes a native command', () => {
     const primaries = INSTALLED_COMMANDS.filter(
       (definition) =>
         definition.target.toolName === TOOL_FLOWGUARD_HYDRATE &&
         definition.visibility === 'primary',
     ).map((definition) => definition.invocation);
-    expect(primaries).toEqual(['/start']);
+    expect(primaries).toEqual([]);
+    expect(getInstalledCommand('/start')).toMatchObject({
+      id: 'operational.start',
+      kind: 'preferred_name',
+      templateFile: null,
+      target: { nativeCommand: NATIVE_START_COMMAND },
+    });
+    expect(getInstalledCommand('/hydrate')?.visibility).toBe('compatibility');
   });
 
   it('archive remains an operational visible interface', () => {
@@ -149,7 +202,7 @@ describe('installed command catalogue', () => {
   it('pins the exact primary surface for preferred_name targets', () => {
     const preferredNameTargets = new Set<string>();
     for (const definition of INSTALLED_COMMANDS) {
-      if (definition.kind === 'preferred_name') {
+      if (definition.kind === 'preferred_name' && definition.target.toolName !== undefined) {
         preferredNameTargets.add(definition.target.toolName);
       }
     }
@@ -163,11 +216,8 @@ describe('installed command catalogue', () => {
       ]),
     );
     // No preferred_name target may expose more than one primary invocation.
-    // A compatibility-only target (flowguard_run_check) exposes none.
     expect(primariesByTarget).toEqual({
-      flowguard_hydrate: ['/start'],
       flowguard_ticket: ['/task'],
-      flowguard_run_check: [],
     });
   });
 });
@@ -177,6 +227,7 @@ describe('preferred invocation and visible aliases contract', () => {
     const tools = new Set(INSTALLED_COMMANDS.map((definition) => definition.target.toolName));
 
     for (const tool of tools) {
+      if (tool === undefined) continue; // Native command targets are not model tools.
       const primary = INSTALLED_COMMANDS.find(
         (definition) => definition.target.toolName === tool && definition.visibility === 'primary',
       );

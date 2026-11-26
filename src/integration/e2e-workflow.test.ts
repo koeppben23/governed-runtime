@@ -52,7 +52,10 @@ import {
   sessionDir as resolveSessionDir,
   workspaceDir as resolveWorkspaceDir,
 } from '../adapters/workspace/index.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ToolDefinition } from './tools/helpers.js';
 
 vi.mock('./git-control-plane', async (importOriginal) => {
@@ -158,6 +161,7 @@ let ws: TestWorkspace;
 let ctx: TestToolContext;
 
 beforeEach(async () => {
+  vi.mocked(gitMock.changedFiles).mockResolvedValue([...GIT_MOCK_DEFAULTS.changedFiles]);
   ws = await createTestWorkspace();
   // The canonical completion path materializes a raw, verifiable export via
   // flowguard_export, which requires the operator to authorize raw export.
@@ -179,7 +183,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
     id: 'test-operator',
     email: 'test@flowguard.dev',
@@ -216,7 +220,7 @@ function recordDecisionIntentForTool(
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: context.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,
@@ -1076,6 +1080,63 @@ describe('e2e-workflow', () => {
       expect(state!.architecture!.status).toBe('accepted');
     });
 
+    it('architecture rejects plan-shaped claims with a typed input error and no state write', async () => {
+      await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+      const sessDir = await getSessDir();
+      const before = await readState(sessDir);
+      const adrText =
+        '## Context\nNull handling.\n\n## Decision\nThrow 404.\n\n## Consequences\nClients see 404.';
+
+      // Run-7 payload: plan-shaped claims without requiredReviewEvidence.
+      const raw = await architecture.execute(
+        {
+          title: 'Null-safety standard',
+          adrText,
+          claims: [
+            {
+              statement: 'missing ids return 404',
+              critical: true,
+              authoritySectionId: 'decision',
+              claimScope: 'specific_behavior',
+              expectedCheckId: 'test',
+            },
+          ],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ARCHITECTURE_CLAIM_INVALID');
+      expect(String(result.message)).toContain('requiredReviewEvidence');
+
+      // Fail-closed: no phase change, no architecture state written.
+      expect(await getPhase()).toBe('READY');
+      expect(await readState(sessDir)).toEqual(before);
+    });
+
+    it('architecture accepts schema-valid claims', async () => {
+      await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+      const adrText =
+        '## Context\nClaims.\n\n## Decision\nUse claims.\n\n## Consequences\nBound evidence.';
+      await callOk(architecture, {
+        title: 'Claimed ADR',
+        adrText,
+        claims: [
+          {
+            statement: 'the decision keeps service data durable',
+            critical: true,
+            authoritySectionId: 'decision',
+            requiredReviewEvidence: ['architecture-review'],
+          },
+        ],
+        targetPaths: ['docs/test.md'],
+      });
+      expect(await getPhase()).toBe('ARCHITECTURE');
+      const state = await readState(await getSessDir());
+      expect(state!.architecture!.claimDeclarations?.claims).toHaveLength(1);
+    });
+
     it('architecture reject at ARCH_REVIEW transitions to terminal REJECTED and preserves evidence', async () => {
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       const adrText =
@@ -1399,6 +1460,7 @@ describe('ProofGraph demo fixtures', () => {
     mutationProfile?: 'proofgraph-evaluator',
     critical = false,
   ) {
+    vi.mocked(gitMock.changedFiles).mockResolvedValue([]);
     if (critical) {
       // Structured candidates required for satisfiability of critical claims.
       // hydrate discovers repo-native JUnit test via mvnw → ScriptSignature.
@@ -1446,6 +1508,7 @@ describe('ProofGraph demo fixtures', () => {
     await callOk(decision, { verdict: 'approve', rationale: 'Approve demo plan.' });
     await passValidation();
     expect(await getPhase()).toBe('IMPLEMENTATION');
+    vi.mocked(gitMock.changedFiles).mockResolvedValue([...GIT_MOCK_DEFAULTS.changedFiles]);
     await callOk(implement, {});
     expect((await readState(await getSessDir()))?.implementation).not.toBeNull();
     await passValidation();
@@ -1467,6 +1530,7 @@ describe('ProofGraph demo fixtures', () => {
           critical: false,
           claimScope: 'specific_behavior',
           authority: 'plan',
+          structuralSurface: 'command-registration',
         },
       ],
     });
@@ -1482,7 +1546,7 @@ describe('ProofGraph demo fixtures', () => {
     expect(after!.proofContract?.claims[1]?.provenance).not.toHaveProperty('approval');
   });
 
-  it('persists a plan claim with mutationProfile but no proving provider as rejected_blocking', async () => {
+  it('blocks a plan claim with mutationProfile but no proving provider before review', async () => {
     await fs.writeFile(`${ws.tmpDir}/mvnw`, '#!/bin/sh\necho "mvnw"', 'utf-8');
     await fs.chmod(`${ws.tmpDir}/mvnw`, 0o755);
     await fs.writeFile(
@@ -1501,13 +1565,11 @@ describe('ProofGraph demo fixtures', () => {
         ctx,
       ),
     );
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBe(true);
     expect(result.claimSubmissionDiagnostics).toMatchObject({
       rejectedClaims: [{ disposition: 'rejected_blocking' }],
     });
     const state = await readState(await getSessDir());
-    expect(state!.plan).not.toBeNull();
-    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
-    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
+    expect(state!.plan).toBeNull();
   });
 });

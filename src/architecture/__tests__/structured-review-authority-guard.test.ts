@@ -8,8 +8,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isTestSourcePath } from './module-classification.js';
-import { repoRelative } from './repo-path.js';
+import { isTestSourcePath } from '../support/module-classification.js';
+import { repoRelative } from '../support/repo-path.js';
 
 const SRC = join(process.cwd(), 'src');
 
@@ -33,6 +33,28 @@ function relative(path: string): string {
 }
 
 describe('structured review authority hard cut', () => {
+  it('does not retain the superseded generic settlement executor', () => {
+    expect(existsSync(join(SRC, 'integration/review/obligations/obligation-settlement.ts'))).toBe(
+      false,
+    );
+    const offenders = listProductionSources(SRC).filter((file) =>
+      /\bsettleReviewObligationAfterAttempt\b/.test(readFileSync(file, 'utf8')),
+    );
+    expect(offenders.map(relative)).toEqual([]);
+  });
+  it('does not retain the unused metadata-only branch provenance validator', () => {
+    expect(existsSync(join(SRC, 'integration/review/evidence/review-provenance.ts'))).toBe(false);
+  });
+  it('owns review wiring types directly without a plugin-orchestrator forwarding facade', () => {
+    expect(existsSync(join(SRC, 'integration/plugin-orchestrator.ts'))).toBe(false);
+    const owners = listProductionSources(SRC)
+      .filter((file) => /export interface OrchestratorDeps\b/.test(readFileSync(file, 'utf8')))
+      .map(relative);
+    expect(owners).toEqual(['integration/review/pipeline-types.ts']);
+    expect(readFileSync(join(SRC, 'integration/plugin-shared.ts'), 'utf8')).toContain(
+      "import type { OrchestratorDeps } from './review/pipeline-types.js'",
+    );
+  });
   it('retires the reviewer Task and manual/native attestation authority', () => {
     const retirements =
       /\b(manual_attested|native_subagent_attested|recordSubmittedReviewInvocation|resolveNativeAttestation|reviewInvocationPolicy|host_task_required|host_task_preferred|reviewerTaskPrompt)\b/;
@@ -60,16 +82,30 @@ describe('structured review authority hard cut', () => {
   });
 
   it('persists the durable dispatch before host release on the native path', () => {
-    const native = readFileSync(
-      join(SRC, 'integration/review/dispatch/native-task-review.ts'),
+    const dispatch = readFileSync(
+      join(SRC, 'integration/review/dispatch/native-review-dispatch.ts'),
       'utf8',
     );
-    const persistIndex = native.indexOf('persistAuthorizedReviewDispatch(');
-    const releaseIndex = native.indexOf('mutateNativeTask(hookOutput');
+    const authorize = dispatch.slice(
+      dispatch.indexOf('export async function authorizeNativeReviewDispatch'),
+    );
+    const persistIndex = authorize.indexOf('await persistAuthorizedReviewDispatch(');
+    const promptIndex = authorize.indexOf('return prompt;');
     expect(persistIndex, 'the dispatch must be persisted').toBeGreaterThan(-1);
-    expect(releaseIndex, 'the Task args must be overwritten before release').toBeGreaterThan(-1);
-    expect(persistIndex, 'no host release without a durable dispatch').toBeLessThan(releaseIndex);
-    expect(native).toContain('abandonReviewDispatchByHostCall');
+    expect(promptIndex, 'the frozen prompt is returned after persistence').toBeGreaterThan(
+      persistIndex,
+    );
+    const composition = readFileSync(join(SRC, 'integration/plugin-native-review.ts'), 'utf8');
+    const authorizeIndex = composition.indexOf('await authorizeNativeReviewDispatch(');
+    const releaseIndex = composition.indexOf('args.prompt = prompt;');
+    expect(authorizeIndex, 'the release must be durably authorized').toBeGreaterThan(-1);
+    expect(releaseIndex, 'the subagent args must be overwritten before release').toBeGreaterThan(
+      authorizeIndex,
+    );
+    // No retired V1 Task transport may remain as an alternative release path.
+    expect(existsSync(join(SRC, 'integration/review/dispatch/native-task-review.ts'))).toBe(false);
+    expect(existsSync(join(SRC, 'integration/review/dispatch/structured-followup.ts'))).toBe(false);
+    expect(existsSync(join(SRC, 'integration/reviewer-capture.ts'))).toBe(false);
   });
 
   it('never autospawns an invisible SDK reviewer and exposes no spawn capability', () => {
@@ -108,16 +144,20 @@ describe('structured review authority hard cut', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('admits exactly the native visible structured invocation generation', () => {
+  it('admits exactly the native visible structured invocation generations', () => {
     const schema = readFileSync(join(SRC, 'state/evidence-review-invocation.ts'), 'utf8');
-    expect(schema).toContain("invocationMode: z.literal('native_task_structured_followup')");
+    expect(schema).toContain(
+      "invocationMode: z.enum(['native_task_message_json', 'native_subagent_message_json'])",
+    );
+    expect(schema).toContain('transportVersion: z.union([z.literal(5), z.literal(6)])');
+    expect(schema).toContain('nativeProvenance: NativeSubagentCaptureProvenance.optional()');
+    expect(schema).toContain('capture: ReviewMessageCapture');
     expect(schema).toContain('hostVisible: z.literal(true)');
     expect(schema).toContain('transcriptNavigable: z.literal(true)');
     expect(schema).toContain("source: z.literal('host-orchestrated')");
-    expect(schema).toContain("reviewOutputMode: z.literal('structured_output')");
-    expect(schema).toContain('structuredOutputUsed: z.literal(true)');
-    expect(schema).toContain("reviewAssuranceLevel: z.literal('structured_high')");
+    expect(schema).toContain("reviewOutputMode: z.literal('validated_json')");
+    expect(schema).not.toContain('structuredOutputUsed');
+    expect(schema).toContain("reviewAssuranceLevel: z.literal('host_message_validated')");
     expect(schema).toContain('capturedRawFindings: z.record');
-    expect(schema).not.toContain('z.enum');
   });
 });

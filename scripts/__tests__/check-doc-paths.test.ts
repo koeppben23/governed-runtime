@@ -175,6 +175,8 @@ describe('check-doc-paths', () => {
     mkdirSync(join(root, 'docs', 'development', 'nested'), { recursive: true });
     writeFileSync(join(root, 'AGENTS.md'), '`src/index.ts`\n', 'utf8');
     writeFileSync(join(root, 'CONTRIBUTING.md'), 'No paths here.\n', 'utf8');
+    writeFileSync(join(root, 'SECURITY.md'), 'No paths here.\n', 'utf8');
+    writeFileSync(join(root, 'docs', 'security-assurance.md'), 'No paths here.\n', 'utf8');
     writeFileSync(join(root, 'docs', 'testing-strategy.md'), 'No paths here.\n', 'utf8');
     writeFileSync(
       join(root, 'docs', 'development', 'nested', 'guide.md'),

@@ -24,7 +24,7 @@
  *    over the canonical events; optional strictTimestamps adds TSA imprint
  *    binding and evidence presence.
  *
- * Why this matters for DATEV/banks:
+ * Why this matters for regulated financial institutions:
  * - Regulators require proof that audit trails have not been tampered with
  * - A broken chain is evidence of unauthorized modification
  * - The genesis hash ensures no events were prepended

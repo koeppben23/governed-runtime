@@ -85,6 +85,31 @@ describe('state/ReviewObligationType completeness', () => {
         expect(stripped).not.toContain('ORCHESTRATION_PERMANENTLY_FAILED');
       }
     });
+
+    it('handles a reviewRetry envelope before the dispatch-shape branch', () => {
+      const shared = readSource('templates/commands/shared-review-loop.ts');
+      const retryIndex = shared.indexOf('reviewRetry');
+      const dispatchIndex = shared.indexOf('reviewDispatch.required');
+      expect(retryIndex).toBeGreaterThan(-1);
+      expect(dispatchIndex).toBeGreaterThan(-1);
+      expect(retryIndex).toBeLessThan(dispatchIndex);
+      // The retry envelope is explicitly excluded from the dispatch-shape
+      // validation, because it carries no reviewInvocation/reviewExecution.
+      expect(shared).toContain('carries NO');
+      expect(shared).toContain('NOT a dispatch shape to validate');
+    });
+
+    it('standalone /review and /check handle the reviewRetry envelope', () => {
+      const review = readSource('templates/commands/review.ts');
+      const reviewRetryIndex = review.indexOf('reviewRetry');
+      const reviewDispatchIndex = review.indexOf('reviewDispatch.required');
+      expect(reviewRetryIndex).toBeGreaterThan(-1);
+      expect(reviewDispatchIndex).toBeGreaterThan(-1);
+      expect(reviewRetryIndex).toBeLessThan(reviewDispatchIndex);
+
+      const check = readSource('templates/commands/check.ts');
+      expect(check).toContain('reviewRetry');
+    });
   });
 
   describe('EDGE', () => {

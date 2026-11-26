@@ -2,11 +2,11 @@
  * @module integration/review/types
  * @description Shared type definitions for the review bounded context.
  *
- * This leaf module owns the host client surface and the reviewer result DTO
- * used by the visible native Task transport and the evidence recorder. It has
- * no runtime SDK dependency and no SDK child-session creation capability.
+ * This leaf module owns the host history-read port and the reviewer result DTO
+ * used by the native same-child reviewer capture and the evidence recorder. It
+ * has no runtime SDK dependency and no SDK child-session creation capability.
  *
- * @version v2 — removed the SDK child-session creation/cancellation surface
+ * @version v3 — reduced the host port to the history read used by V2 owners
  */
 
 import type {
@@ -15,6 +15,7 @@ import type {
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_REVIEW,
 } from '../tool-names.js';
+import type { ReviewMessageCapture } from '../../state/review-message-capture.js';
 
 /** Tools that own a review obligation and its pending-review key. */
 export type ReviewableTool =
@@ -25,6 +26,28 @@ export type ReviewableTool =
 
 /** Per-tool pending review state. */
 export type PendingReviewTool = ReviewableTool;
+
+/**
+ * Reviewer task completion failure codes: the reviewer child ended without a
+ * proven final review answer, so no structured output was ever produced or
+ * evaluated. Canonical here so the retry prompt (prompting zone) and the
+ * completion classifier (dispatch zone) share one vocabulary.
+ */
+const REVIEWER_COMPLETION_FAILURE_CODES = [
+  'REVIEWER_COMPLETION_UNVERIFIABLE',
+  'REVIEWER_TASK_ABORTED',
+  'REVIEWER_OUTPUT_TRUNCATED',
+  'REVIEWER_STEP_BUDGET_EXHAUSTED',
+  'REVIEWER_TASK_INCOMPLETE',
+] as const;
+
+export type ReviewerCompletionFailureCode = (typeof REVIEWER_COMPLETION_FAILURE_CODES)[number];
+
+export function isReviewerCompletionFailureCode(
+  code: string,
+): code is ReviewerCompletionFailureCode {
+  return (REVIEWER_COMPLETION_FAILURE_CODES as readonly string[]).includes(code);
+}
 
 /**
  * Host-classified retry diagnostic for a re-armed reviewer attempt.
@@ -97,57 +120,10 @@ export interface ReviewVerificationEvidenceItem {
   readonly claimAssertionEvidence?: ReviewClaimAssertionEvidenceSet;
 }
 
-/**
- * Minimal SDK client interface for the review orchestrator.
- *
- * Mirrors the subset of OpencodeClient used by review modules.
- * Defined as an interface (not imported from SDK) so these modules
- * have zero runtime SDK dependency — testable with plain mocks.
- */
+/** Semantic host operations, not an SDK client or a wire-response adapter. */
 export interface OrchestratorClient {
-  app: {
-    agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
-  };
-  session: {
-    prompt(opts: {
-      path: { id: string };
-      body: {
-        agent?: string;
-        system?: string;
-        parts: Array<{ type: string; text: string }>;
-        format?: {
-          type: 'json_schema';
-          schema: Record<string, unknown>;
-          retryCount?: number;
-        };
-      };
-    }): Promise<{
-      data?:
-        | {
-            /** Response parts are diagnostics only, never reviewer authority. */
-            parts?: Array<{
-              type?: string;
-              text?: string;
-            }>;
-            info?: {
-              structured?: unknown;
-              error?: {
-                name: string;
-                message?: string;
-                data?: { message?: string; retries?: number };
-              };
-            };
-          }
-        | undefined;
-      error?: unknown;
-    }>;
-  };
-  /** Optional TUI client for toast notifications. Not available in headless/CLI mode. */
-  tui?: {
-    showToast(opts: {
-      body: { message: string; variant?: 'info' | 'success' | 'error' };
-    }): Promise<unknown>;
-  };
+  /** Native session history bytes; callers validate every identity they use. */
+  readHistory(sessionId: string): Promise<unknown>;
 }
 
 /**
@@ -161,9 +137,9 @@ export interface ReviewerSuccessResult {
   readonly sessionId: string;
   readonly rawResponse: string;
   readonly findings: Record<string, unknown> | null;
-  readonly reviewOutputMode: 'structured_output';
-  readonly structuredOutputUsed: boolean;
-  readonly reviewAssuranceLevel: 'structured_high';
+  readonly reviewOutputMode: 'validated_json';
+  readonly reviewAssuranceLevel: 'host_message_validated';
+  readonly capture: ReviewMessageCapture;
   /** Host-observed lifecycle timestamps for the successful reviewer prompt. */
   readonly invokedAt?: string;
   readonly fulfilledAt?: string;

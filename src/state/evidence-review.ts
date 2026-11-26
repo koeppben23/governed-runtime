@@ -41,6 +41,44 @@ import {
   refineAssuranceInvocationDispatchLinkage,
 } from './evidence-review-ledger-refinements.js';
 
+/**
+ * Disposition of a revision submitted together with the `changes_requested`
+ * verdict that exhausts the review budget. The un-reviewed draft is NOT
+ * adopted: the last independently reviewed artifact remains the current
+ * authority, and only that artifact may be approved (with or without override).
+ */
+export interface DiscardedReviewDraft {
+  readonly reason: 'review_exhausted';
+  readonly note: string;
+  readonly recovery: readonly string[];
+}
+
+/**
+ * True when a `changes_requested` verdict consumes the last allowed review
+ * iteration: the accompanying revision was never reviewed and must not become
+ * the current approval authority.
+ */
+export function reviewExhaustsBudget(
+  verdict: string | undefined,
+  iteration: number,
+  maxIterations: number,
+): boolean {
+  return verdict === 'changes_requested' && iteration + 1 >= maxIterations;
+}
+
+/** Canonical user-facing disposition for a discarded exhaustion draft. */
+export const DISCARDED_REVIEW_DRAFT: DiscardedReviewDraft = Object.freeze({
+  reason: 'review_exhausted' as const,
+  note:
+    'The revision submitted with this verdict was NOT adopted. Only the last independently ' +
+    'reviewed artifact is current and approvable.',
+  recovery: Object.freeze([
+    'Start a new review cycle and resubmit the revision: /request-changes',
+    'Accept the reviewed artifact despite its open findings: /override-approve <Begründung>',
+    'Decline the reviewed artifact: /reject',
+  ]),
+});
+
 export const ReviewAttemptStatusValues = ['created', 'rejected', 'bound', 'stale'] as const;
 
 const ReviewAttemptStatus = z.enum(ReviewAttemptStatusValues);
@@ -285,6 +323,22 @@ export type ReviewDispatchRecord = z.infer<typeof ReviewDispatchRecord>;
 export const REVIEW_ASSURANCE_SCHEMA_VERSION = 'review-assurance.v7' as const;
 
 /**
+ * Narrow persisted turn lock set when a reviewer capacity failure terminates an
+ * obligation. It prevents the same parent user turn from minting another review;
+ * the durable obligation status remains the authority, and a new explicit review
+ * command clears the lock under the session lock.
+ */
+export const ReviewCapacityLock = z
+  .object({
+    code: z.string().min(1).max(120),
+    obligationId: z.string().uuid(),
+    createdAt: z.string().datetime(),
+  })
+  .strict()
+  .readonly();
+export type ReviewCapacityLock = z.infer<typeof ReviewCapacityLock>;
+
+/**
  * Persistent strict review assurance state.
  *
  * `attempts` is REQUIRED, not optional. Binding resolves a callback against a
@@ -314,6 +368,25 @@ export const REVIEW_ASSURANCE_SCHEMA_VERSION = 'review-assurance.v7' as const;
  * an obligation's canonical linkage must be a COHERENT relation — the linked
  * invocation must back-reference the same obligation id AND type (CE2).
  */
+/** A capacity lock must reference the exact blocked obligation and code. */
+function refineAssuranceCapacityLockCoherence(
+  assurance: {
+    readonly capacityLock?: ReviewCapacityLock | null | undefined;
+    readonly obligations: readonly ReviewObligation[];
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const lock = assurance.capacityLock;
+  if (!lock) return;
+  const obligation = assurance.obligations.find((item) => item.obligationId === lock.obligationId);
+  if (obligation?.status === 'blocked' && obligation.blockedCode === lock.code) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ['capacityLock'],
+    message: 'capacityLock must reference a blocked obligation with the same blockedCode',
+  });
+}
+
 export const ReviewAssuranceState = z
   .object({
     assuranceSchemaVersion: z.literal(REVIEW_ASSURANCE_SCHEMA_VERSION),
@@ -321,6 +394,7 @@ export const ReviewAssuranceState = z
     invocations: z.array(ReviewInvocationEvidence),
     attempts: z.array(ReviewAttempt),
     dispatches: z.array(ReviewDispatchRecord),
+    capacityLock: ReviewCapacityLock.nullable().optional(),
   })
   .strict()
   .superRefine(refineAssuranceIdentityUniqueness)
@@ -330,6 +404,7 @@ export const ReviewAssuranceState = z
   .superRefine(refineAssuranceDispatchCoherence)
   .superRefine(refineAssuranceInvocationLinkageCoherence)
   .superRefine(refineAssuranceInvocationDispatchLinkage)
+  .superRefine(refineAssuranceCapacityLockCoherence)
   .readonly();
 export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;
 

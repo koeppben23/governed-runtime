@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "reviewer-reference-suite-run.v1",
+  "suiteVersion": "1.0.0",
+  "runId": "example-run-0001",
+  "caseId": "plan-a-targeted-falsification",
+  "goldStandardType": "plan_review",
+  "repetition": 1,
+  "arm": {
+    "outputTokenMax": 65536
+  },
+  "provenance": {
+    "repoHead": "f5e5b52c",
+    "dirty": false,
+    "hostVersion": "1.19.3",
+    "hostBinary": "opencode",
+    "model": "deepseek/deepseek-flash",
+    "reviewerModel": "deepseek/deepseek-flash",
+    "reviewerEffort": "max",
+    "reviewerSteps": 15,
+    "modelLimitOutput": 393216,
+    "variant": "max",
+    "resolvedReasoning": {
+      "reasoningEffort": "max"
+    },
+    "serializationReasoning": {},
+    "reviewerParams": [
+      {
+        "kind": "chat.params",
+        "maxOutputTokens": 65536,
+        "reasoningOptions": {
+          "reasoningEffort": "max"
+        }
+      },
+      {
+        "kind": "chat.params",
+        "maxOutputTokens": 65536,
+        "reasoningOptions": {}
+      }
+    ],
+    "criteriaVersion": "p42-v7",
+    "mandateDigest": "example-mandate-digest",
+    "childSessionId": "ses_example",
+    "caseCorpusDigest": "61a624ebaf5c74798d341a9f2a6dbe664492835d3e6dc17f1fc9ecda40db648b",
+    "fixtureDigest": "example-fixture-digest",
+    "outputTokenMaxEnv": null,
+    "capSource": "config",
+    "outputTokenMaxConfig": 65536
+  },
+  "completion": {
+    "kind": "completed",
+    "finish": "stop",
+    "steps": 6,
+    "inputTokens": 42000,
+    "outputTokens": 900,
+    "reasoningTokens": 12000,
+    "reviewReasoningTokens": 12000,
+    "serializationReasoningTokens": 0,
+    "serializationSteps": 1,
+    "hasSerializationPrompt": true,
+    "durationMs": 180000,
+    "retries": 0
+  },
+  "review": {
+    "overallVerdict": "accept",
+    "blockingIssues": [],
+    "majorRisks": [],
+    "missingVerification": [],
+    "scopeCreep": [],
+    "unknowns": [],
+    "challenges": []
+  },
+  "evaluation": {
+    "verdictMatch": true,
+    "requiredFindingMatch": true,
+    "forbiddenFindingAbsent": true,
+    "evidenceCitationsValid": true,
+    "outcome": "pass"
+  },
+  "transport": {
+    "reviewerAttempts": 1,
+    "reviewerTranscripts": 1,
+    "authorizedRearms": 0,
+    "rearmCodes": [],
+    "truncations": 0,
+    "stepBudgetAborts": 0,
+    "totalInputTokens": 42000,
+    "totalOutputTokens": 900,
+    "totalReasoningTokens": 12000
+  },
+  "assurance": "not_assessed",
+  "observedAt": "2026-10-19T12:00:00.000Z"
+}

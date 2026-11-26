@@ -35,7 +35,11 @@ export function logWarn(service: string, message: string, extra?: Record<string,
 const execFileAsync = promisify(execFile);
 
 /** Default timeout for git commands (ms). 5 seconds is generous for local ops. */
-const GIT_TIMEOUT_MS = 5_000;
+export const GIT_COMMAND_TIMEOUT_MS = 5_000;
+
+function throwIfCancelled(signal?: AbortSignal): void {
+  signal?.throwIfAborted();
+}
 
 /**
  * Typed git error.
@@ -73,12 +77,15 @@ export class GitError extends Error {
 export async function gitRaw(
   cwd: string,
   args: string[],
-  timeoutMs: number = GIT_TIMEOUT_MS,
+  timeoutMs: number = GIT_COMMAND_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<string> {
+  throwIfCancelled(signal);
   try {
     const { stdout } = await execFileAsync('git', args, {
       cwd,
       timeout: timeoutMs,
+      signal,
       windowsHide: true,
       // maxBuffer: 10MB -- sufficient for large repos with many files
       maxBuffer: 10 * 1024 * 1024,
@@ -91,6 +98,8 @@ export async function gitRaw(
     // parsePorcelainZ. Use `git()` (trimmed) only for single-value commands.
     return stdout;
   } catch (err: unknown) {
+    // Preserve caller cancellation instead of reclassifying it as a git failure.
+    throwIfCancelled(signal);
     if (isEnoent(err)) {
       getAdapterLogger().error('git', 'git executable not found in PATH');
       throw new GitError(
@@ -121,9 +130,10 @@ export async function gitRaw(
 export async function git(
   cwd: string,
   args: string[],
-  timeoutMs: number = GIT_TIMEOUT_MS,
+  timeoutMs: number = GIT_COMMAND_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<string> {
-  return (await gitRaw(cwd, args, timeoutMs)).trim();
+  return (await gitRaw(cwd, args, timeoutMs, signal)).trim();
 }
 
 /** Type-safe timeout check (process killed). */

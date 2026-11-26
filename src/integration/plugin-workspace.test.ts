@@ -13,11 +13,13 @@ import { describe, it, expect, vi } from 'vitest';
 
 // ─── Hoisted mocks for call-site tests ──────────────────────────────────────
 
-const { mockAppendReviewAudit, mockWithSessionWriteLock, mockReadState } = vi.hoisted(() => ({
-  mockAppendReviewAudit: vi.fn(),
-  mockWithSessionWriteLock: vi.fn(),
-  mockReadState: vi.fn(),
-}));
+const { mockAppendReviewAudit, mockWithSessionWriteLock, mockReadState, mockWriteState } =
+  vi.hoisted(() => ({
+    mockAppendReviewAudit: vi.fn(),
+    mockWithSessionWriteLock: vi.fn(),
+    mockReadState: vi.fn(),
+    mockWriteState: vi.fn(),
+  }));
 
 vi.mock('./review/evidence/audit-events.js', () => ({
   appendReviewAuditEvent: mockAppendReviewAudit,
@@ -29,14 +31,14 @@ vi.mock('../adapters/persistence.js', async (importOriginal) => {
     ...actual,
     withSessionWriteLock: mockWithSessionWriteLock,
     readState: mockReadState,
-    writeStateAlreadyLocked: vi.fn(),
+    writeStateAlreadyLocked: mockWriteState,
   };
 });
 
 import { PluginWorkspaceImpl, type WorkspaceDeps } from './plugin-workspace.js';
 import type { MutableChainState } from './plugin-workspace.js';
 import { recordAssuranceWithAudit, type AssuranceAuditDeps } from './review/shared-helpers.js';
-import { makeState } from '../fixtures.js';
+import { makeState, PLAN_REVIEW_ASSURANCE } from '../fixtures.js';
 
 function fakeDeps(overrides?: Partial<WorkspaceDeps>): WorkspaceDeps {
   return { auditWorktree: undefined, ...overrides };
@@ -85,9 +87,12 @@ describe('integration/plugin-workspace', () => {
         expect(fp).toBeNull();
       });
 
-      it('getSessionDir returns null when no fingerprint', () => {
+      it('resolveSessionAuthority reports NO_WORKTREE when no auditWorktree is configured', async () => {
         const ws = new PluginWorkspaceImpl(fakeDeps());
-        expect(ws.getSessionDir('any')).toBeNull();
+        await expect(ws.resolveSessionAuthority('any')).resolves.toMatchObject({
+          status: 'unavailable',
+          code: 'NO_WORKTREE',
+        });
       });
 
       it('getEnforcementState returns a fresh state for new session', () => {
@@ -102,6 +107,25 @@ describe('integration/plugin-workspace', () => {
         const a = ws.getEnforcementState('s1');
         const b = ws.getEnforcementState('s1');
         expect(a).toBe(b);
+      });
+
+      it('BAD: releasing enforcement state affects only the terminated session', () => {
+        const ws = new PluginWorkspaceImpl(fakeDeps());
+        const old = ws.getEnforcementState('s1');
+        const other = ws.getEnforcementState('s10');
+        ws.releaseEnforcementState('s1');
+        expect(ws.getEnforcementState('s1')).not.toBe(old);
+        expect(ws.getEnforcementState('s10')).toBe(other);
+        expect(() => ws.releaseEnforcementState('unknown')).not.toThrow();
+      });
+
+      it('EDGE: releases all 1,000 terminated session enforcement entries', () => {
+        const ws = new PluginWorkspaceImpl(fakeDeps());
+        for (let i = 0; i < 1_000; i++) ws.getEnforcementState(`session-${i}`);
+        for (let i = 0; i < 1_000; i++) ws.releaseEnforcementState(`session-${i}`);
+        expect(
+          (ws as unknown as { _enforcementStates: Map<string, unknown> })._enforcementStates.size,
+        ).toBe(0);
       });
     });
 
@@ -252,6 +276,59 @@ describe('recordAssuranceWithAudit', () => {
 
     expect(output.output).toContain('SUBAGENT_REVIEW_NOT_INVOKED');
     expect(mockReadState).toHaveBeenCalled();
+  });
+
+  it('F12: closes the authorized dispatch and attempt in the same audit mutation', async () => {
+    const obligation = PLAN_REVIEW_ASSURANCE.obligations[0];
+    const attempt = PLAN_REVIEW_ASSURANCE.attempts[0];
+    const dispatch = PLAN_REVIEW_ASSURANCE.dispatches[0];
+    if (!obligation || !attempt || !dispatch) throw new Error('fixture missing');
+    const state = makeState('PLAN', {
+      reviewAssurance: {
+        ...PLAN_REVIEW_ASSURANCE,
+        obligations: [
+          {
+            ...obligation,
+            status: 'pending' as const,
+            invocationId: null,
+            fulfilledAt: null,
+            consumedAt: null,
+          },
+        ],
+        invocations: [],
+        attempts: [{ ...attempt, status: 'created' as const, completedAt: undefined }],
+        dispatches: [
+          { ...dispatch, dispatchStatus: 'authorized' as const, completedAt: undefined },
+        ],
+      },
+    });
+    mockReadState.mockResolvedValue(state);
+    mockWithSessionWriteLock.mockImplementation(async (_dir: string, fn: () => Promise<void>) =>
+      fn(),
+    );
+    mockWriteState.mockClear();
+
+    const ws = new PluginWorkspaceImpl({ auditWorktree: '/tmp' });
+    const output: { output: string } = { output: '' };
+    await ws.blockReviewOutcome(
+      { sessDir: '/tmp/sess', sessionId: 's1', phase: 'PLAN' },
+      obligation.obligationId,
+      'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
+      { reason: 'test' },
+      output,
+    );
+
+    const written = mockWriteState.mock.calls.at(-1)?.[1] as {
+      reviewAssurance: {
+        obligations: Array<{ status: string }>;
+        attempts: Array<{ status: string }>;
+        dispatches: Array<{ dispatchStatus: string }>;
+      };
+    };
+    expect(written.reviewAssurance.obligations[0]?.status).toBe('blocked');
+    expect(written.reviewAssurance.attempts[0]?.status).toBe('stale');
+    expect(written.reviewAssurance.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
+    expect(output.output).toContain('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
   });
 
   it('REGISTRY: AUDIT_PERSISTENCE_FAILED is centrally registered with recovery', async () => {

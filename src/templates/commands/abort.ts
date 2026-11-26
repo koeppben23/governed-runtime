@@ -21,11 +21,11 @@ Reason: $ARGUMENTS
 2. Inform the user of consequences:
    - Report current phase and that all evidence remains preserved in state.
     - The session will transition to the ABORTED terminal phase.
-   - This is irreversible — a new session requires /hydrate.
+    - This is irreversible. /abort terminates the workflow, not governance activation; neither /hydrate nor /start restarts this ACTIVE binding.
 
 3. Call \`flowguard_abort_session({ reason })\` using \`$ARGUMENTS\`, or "Session aborted by user" if none provided.
 
-4. Confirm termination and that /hydrate can start a new session.
+4. Confirm termination. For new work, use a distinct host session and explicit /start. Evidence recovery additionally requires an independently prepared trustworthy pre-change worktree. Preserve the old session and audit trail.
 
 ## Rules
 

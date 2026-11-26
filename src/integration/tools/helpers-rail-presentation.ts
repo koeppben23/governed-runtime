@@ -239,6 +239,7 @@ export async function persistAndFormat(
       result.state,
       result.transitions,
       options.semanticIntents,
+      result.approvalAdmission,
     );
     logPersistedLifecycle(result);
   }

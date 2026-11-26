@@ -46,7 +46,10 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ToolDefinition, ToolResult } from './tools/helpers.js';
 
 type StatusResult = {
@@ -136,7 +139,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -167,7 +170,7 @@ async function executeDecision(args: {
   verdict: 'approve' | 'changes_requested' | 'reject';
   rationale: string;
 }): Promise<ToolResult> {
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: args.verdict,
@@ -183,7 +186,7 @@ function recordDecisionIntentForTool(
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: context.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,
@@ -499,7 +502,7 @@ describe('BAD: invalid input returns structured error', () => {
 // ─── CORNER: edge cases ─────────────────────────────────────────────────────────
 
 describe('CORNER: CLI edge cases', () => {
-  it('status on non-existent session returns phase=null with guidance', async () => {
+  it('status outside any resolvable workspace reports the typed authority error, not "no session"', async () => {
     const badCtx = createToolContext({
       worktree: '/tmp/flowguard-cli-nonexistent-000',
       directory: '/tmp/flowguard-cli-nonexistent-000',
@@ -508,8 +511,14 @@ describe('CORNER: CLI edge cases', () => {
     const raw = await status.execute({}, badCtx);
     const result = parseToolResult(raw);
 
-    expect(result.phase).toBeNull();
-    expect(result.status).toBeDefined();
+    // An unresolvable workspace is not an absent session: the authority's typed
+    // code is surfaced instead of bootstrap guidance that would overwrite it.
+    // The concrete code depends on the environment's git availability
+    // (GIT_NOT_FOUND when git cannot be probed, NOT_GIT_REPO in a normal CLI).
+    expect(result.error).toBe(true);
+    expect(result.code).toBeDefined();
+    expect(result.phase).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('No FlowGuard session found');
   });
 
   it('appliedPolicy includes stable fields from state', async () => {

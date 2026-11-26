@@ -16,18 +16,19 @@ not runtime state.
 
 - Reason codes are the canonical structured error catalog. Each code has a
   `messageTemplate`, `recoverySteps`, and optional `quickFixCommand`.
-- Reason codes are declared in twelve reason modules and registered through the
+- Reason codes are declared in fourteen reason modules and registered through the
   barrel `reasons.ts` (it registers the aggregate arrays; it does not re-export
   the code values):
   - six aggregate arrays imported directly by `reasons.ts`:
     `reasons-precondition.ts`, `reasons-architecture.ts`,
     `reasons-validation.ts`, `reasons-infra.ts`, `reasons-proofgraph.ts`,
-    `reasons-mutation.ts`;
-  - six nested category modules included through those aggregates:
+    `reasons-mutation.ts`, `reasons-plan-preflight.ts`;
+  - eight nested category modules included through those aggregates:
     `reasons-envelope.ts` and `reasons-precondition-challenges.ts` (via
     precondition), `reasons-validation-review.ts` and
-    `reasons-validation-review-findings.ts`, `reasons-validation-observation.ts`,
-    and `reasons-validation-structured.ts` (via validation).
+    `reasons-validation-review-findings.ts`, `reasons-validation-execution.ts`, `reasons-validation-observation.ts`,
+    and `reasons-validation-structured.ts` (via validation), and
+    `reasons-infra-preflight.ts` and `reasons-infra-boundary.ts` (via infra).
     `reasons-types.ts` owns the `BlockedReason`/`FormattedBlock` contracts;
     `BlockedCategory` (`admissibility`, `precondition`, `input`, `identity`,
     `adapter`, `state`, `config`) is a separate classification of codes, not a
@@ -77,7 +78,7 @@ npx vitest run --project unit src/config/reasons-completeness.test.ts src/docume
 ## Module Boundary
 
 - Top-level module directions are owned exclusively by
-  `src/architecture/__tests__/module-dependency-policy.ts`
+  `src/architecture/support/module-dependency-policy.ts`
   (`MODULE_DEPENDENCY_POLICY`). Changes in this subtree must comply with that
   policy and pass `npm run test:architecture`.
 - Subtree-specific: `src/config/` must not derive runtime state — it defines

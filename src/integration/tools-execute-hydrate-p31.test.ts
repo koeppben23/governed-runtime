@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -52,6 +53,13 @@ vi.mock('../adapters/actor', async (importOriginal) => {
 
 const actorMock = await import('../adapters/actor.js');
 
+/** Create a temp directory that is a real git worktree (authority-bound hydrate). */
+async function makeRepoDir(prefix: string): Promise<string> {
+  const dir = await fs.mkdtemp(prefix);
+  execFileSync('git', ['init', '--quiet', dir]);
+  return dir;
+}
+
 async function rmWithRetry(dir: string, retries = 3): Promise<void> {
   for (let i = 0; i < retries; i++) {
     try {
@@ -94,7 +102,7 @@ afterEach(async () => {
 
 describe('P31 Config as Runtime Authority', () => {
   it('config.profile.defaultId is used when no explicit profileId', async () => {
-    const tmpDir = await fs.mkdtemp('/tmp/p31-a-');
+    const tmpDir = await makeRepoDir('/tmp/p31-a-');
     try {
       const {
         computeFingerprint,
@@ -128,7 +136,7 @@ describe('P31 Config as Runtime Authority', () => {
   });
 
   it('explicit profileId wins over config', async () => {
-    const tmpDir = await fs.mkdtemp('/tmp/p31-explicit-');
+    const tmpDir = await makeRepoDir('/tmp/p31-explicit-');
     try {
       const {
         computeFingerprint,
@@ -166,7 +174,7 @@ describe('P31 Config as Runtime Authority', () => {
   });
 
   it('explicit profileId=baseline wins over config.defaultId', async () => {
-    const tmpDir = await fs.mkdtemp('/tmp/p31-baseline-');
+    const tmpDir = await makeRepoDir('/tmp/p31-baseline-');
     try {
       const {
         computeFingerprint,
@@ -205,7 +213,7 @@ describe('P31 Config as Runtime Authority', () => {
   });
 
   it('existing session retains activeProfile despite explicit override attempt', async () => {
-    const tmpDir = await fs.mkdtemp('/tmp/p31-existing-');
+    const tmpDir = await makeRepoDir('/tmp/p31-existing-');
     try {
       const {
         computeFingerprint,
@@ -257,7 +265,7 @@ describe('P31 Config as Runtime Authority', () => {
 
   it('new session persists config iteration limits in policySnapshot', async () => {
     // Create fresh workspace with config iteration limits
-    const tmpDir = await fs.mkdtemp('/tmp/p31-iter-');
+    const tmpDir = await makeRepoDir('/tmp/p31-iter-');
     try {
       const {
         computeFingerprint,
@@ -295,7 +303,7 @@ describe('P31 Config as Runtime Authority', () => {
   });
 
   it('explicit profileId=unknown blocks with INVALID_PROFILE', async () => {
-    const tmpDir = await fs.mkdtemp('/tmp/p31-d-');
+    const tmpDir = await makeRepoDir('/tmp/p31-d-');
     try {
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(tmpDir);
@@ -325,7 +333,7 @@ describe('P31 Config as Runtime Authority', () => {
   });
 
   it('config.profile.defaultId=unknown blocks with INVALID_PROFILE', async () => {
-    const tmpDir = await fs.mkdtemp('/tmp/p31-c-');
+    const tmpDir = await makeRepoDir('/tmp/p31-c-');
     try {
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
       const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
@@ -390,7 +398,7 @@ describe('P31 Config as Runtime Authority', () => {
 });
 
 it('existing session keeps snapshot values despite changed config', async () => {
-  const tmpDir = await fs.mkdtemp('/tmp/p31-existing-');
+  const tmpDir = await makeRepoDir('/tmp/p31-existing-');
   try {
     const {
       computeFingerprint,

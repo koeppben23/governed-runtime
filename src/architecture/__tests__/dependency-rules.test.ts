@@ -13,9 +13,10 @@
  *    historical distributed deny lists and the per-module allow-lists.
  * 2. FINE-GRAINED BOUNDARIES inside an allowed edge stay here: state may only
  *    use the listed shared primitives and owns its evidence discriminators,
- *    archive/types and discovery/types are leaves, rails must not use Node I/O
- *    builtins directly, integration/tools must not import plugin-* modules, and
- *    entry / test-support / unclassified imports stay default-deny.
+ *    archive/types and discovery/types are restricted boundary modules, rails
+ *    must not use Node I/O builtins directly, integration/tools must not import
+ *    plugin-* modules, and entry / test-support / unclassified imports stay
+ *    default-deny.
  *
  * MODULE-LEVEL CYCLES are prohibited outright: `module-graph.ts` detects
  * strongly connected components and cyclic directed edges, and the observed
@@ -26,7 +27,10 @@
  * (`import-specifiers.ts`). Computed module paths are not statically
  * resolvable; for those, an explicit exception comment is required.
  *
- * @version v2
+ * Production files are analyzed with bounded concurrency; the analysis result
+ * and every guard decision are independent of the bound.
+ *
+ * @version v3
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -38,27 +42,30 @@ import {
   isTestSourcePath,
   MODULE_CLASSIFICATION,
   MODULE_CLASSIFICATION_BY_NAME,
-} from './module-classification.js';
-import { INTEGRATION_OWNERS } from './integration-placement-manifest.js';
+} from '../support/module-classification.js';
+import { INTEGRATION_OWNERS } from '../support/integration-placement-manifest.js';
 import {
   isRootCompositionFile,
   isRootHostRuntimeFile,
   isToolCommandContextFile,
   placementOwnerOf,
-} from './integration-placement-analyzer.js';
-import { MODULE_DEPENDENCY_POLICY } from './module-dependency-policy.js';
-import { collectImportSpecifiers } from './import-specifiers.js';
+} from '../support/integration-placement-analyzer.js';
+import { MODULE_DEPENDENCY_POLICY } from '../support/module-dependency-policy.js';
+import { collectImportSpecifiers } from '../support/import-specifiers.js';
 import {
   cycleParticipatingEdges,
   cyclicStronglyConnectedComponents,
   edgeKey,
   moduleEdgeSet,
   type ModuleEdge,
-} from './module-graph.js';
-import { normalizeRepoPath, repoRelative } from './repo-path.js';
+} from '../support/module-graph.js';
+import { normalizeRepoPath, repoRelative } from '../support/repo-path.js';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');
+// Bounded I/O parallelism for the per-file analysis; the result is identical
+// to a serial pass and the bound never changes guard semantics.
+const ANALYSIS_CONCURRENCY = 8;
 
 const NODE_BUILTINS = new Set([
   'fs',
@@ -275,6 +282,56 @@ async function analyzeFile(filePath: string): Promise<FileAnalysis> {
     relativePath,
     imports,
   };
+}
+
+/**
+ * Analyze files with bounded concurrency. Completion order is deliberately
+ * discarded: the returned Map preserves the input order and the exact content
+ * of a serial analysis, so no rule can observe the bound.
+ *
+ * The hook reports progress and a timing summary so a cold-runner timeout can
+ * be diagnosed from the captured numbers instead of an opaque skip.
+ */
+async function analyzeFiles(
+  files: readonly string[],
+  concurrency: number,
+  analyze: (file: string) => Promise<FileAnalysis> = analyzeFile,
+): Promise<Map<string, FileAnalysis>> {
+  const workerCount = Math.max(1, Math.min(concurrency, files.length));
+  const results = new Array<FileAnalysis>(files.length);
+  const durations = new Array<number>(files.length);
+  const startedAt = performance.now();
+  let next = 0;
+  let completed = 0;
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    for (;;) {
+      const index = next++;
+      if (index >= files.length) return;
+      const fileStartedAt = performance.now();
+      results[index] = await analyze(files[index]!);
+      durations[index] = performance.now() - fileStartedAt;
+      completed += 1;
+      if (completed % 250 === 0) {
+        console.log(
+          `[dependency-rules] analyzed ${completed}/${files.length} files in ` +
+            `${(performance.now() - startedAt).toFixed(0)}ms`,
+        );
+      }
+    }
+  });
+  await Promise.all(workers);
+
+  const elapsed = performance.now() - startedAt;
+  const total = durations.reduce((sum, value) => sum + value, 0);
+  const max = files.length > 0 ? Math.max(...durations) : 0;
+  console.log(
+    `[dependency-rules] analyzed ${files.length} files with concurrency ${workerCount}: ` +
+      `wall=${elapsed.toFixed(0)}ms sum=${total.toFixed(0)}ms ` +
+      `mean=${files.length > 0 ? (total / files.length).toFixed(2) : '0.00'}ms max=${max.toFixed(0)}ms`,
+  );
+
+  return new Map(files.map((file, index) => [file, results[index]!]));
 }
 
 async function collectFiles(dir: string, pattern: RegExp): Promise<string[]> {
@@ -503,6 +560,159 @@ function detectExternalToolContextImports(analyses: Map<string, FileAnalysis>): 
   return violations;
 }
 
+/** Rule 1: state/ may use only the listed shared primitives. */
+function detectStateSharedPrimitiveViolations(
+  analyses: Map<string, FileAnalysis>,
+  allowedSharedImports: ReadonlySet<string>,
+): ImportViolation[] {
+  const violations: ImportViolation[] = [];
+  for (const [, analysis] of analyses) {
+    if (!analysis.filePath.includes('/state/')) continue;
+    if (analysis.filePath.includes('.test.')) continue;
+
+    // The top-level direction (state -> shared only) is governed by
+    // MODULE_DEPENDENCY_POLICY; this rule is STRICTER inside the allowed
+    // edge: state may only use the listed shared primitives.
+    const sharedImports = analysis.imports.filter(
+      (imp) => imp.isFFModule && imp.targetModule === 'shared',
+    );
+    for (const imp of sharedImports) {
+      if (
+        !allowedSharedImports.has(imp.module) &&
+        !(
+          imp.module === '../shared/flowguard-identifiers.js' &&
+          /import\s*\{\s*REVIEWER_SUBAGENT_TYPE\s*\}\s*from/.test(imp.raw)
+        )
+      ) {
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'state-shared-primitive',
+          message: `state/ imports an unapproved shared primitive: ${imp.module}`,
+          imports: [imp.module],
+          hint: 'state/ may use only the listed shared primitives; switch to an approved primitive, move the dependency out of state/, or make the allowlist extension an explicit architecture decision.',
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+const FORBIDDEN_FROM_ARCHIVE_TYPES = new Set([
+  'machine',
+  'rails',
+  'adapters',
+  'integration',
+  'config',
+  'audit',
+  'discovery',
+  'state',
+]);
+
+/** Rule 2: archive/types may import only shared/. */
+function detectArchiveLeafViolations(analyses: Map<string, FileAnalysis>): ImportViolation[] {
+  const violations: ImportViolation[] = [];
+  for (const [, analysis] of analyses) {
+    if (!analysis.filePath.includes('/archive/types')) continue;
+    if (analysis.filePath.includes('.test.')) continue;
+
+    const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
+    for (const imp of ffImports) {
+      if (imp.targetModule && FORBIDDEN_FROM_ARCHIVE_TYPES.has(imp.targetModule)) {
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'archive-leaf',
+          message: `archive/types imports from forbidden module: ${imp.targetModule}`,
+          imports: [imp.module],
+          hint: 'archive/types may import only shared/; move the dependency into the adapter verifier (src/adapters/workspace/archive-*.ts).',
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+const FORBIDDEN_FROM_DISCOVERY_TYPES = new Set([
+  'machine',
+  'rails',
+  'adapters',
+  'integration',
+  'config',
+  'audit',
+  'archive',
+]);
+
+/** Rule 3: discovery/types may import only shared/ and state/. */
+function detectDiscoveryLeafViolations(analyses: Map<string, FileAnalysis>): ImportViolation[] {
+  const violations: ImportViolation[] = [];
+  for (const [, analysis] of analyses) {
+    if (!analysis.filePath.includes('/discovery/types')) continue;
+    if (analysis.filePath.includes('.test.')) continue;
+
+    const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
+    for (const imp of ffImports) {
+      if (imp.targetModule && FORBIDDEN_FROM_DISCOVERY_TYPES.has(imp.targetModule)) {
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'discovery-leaf',
+          message: `discovery/types imports from forbidden module: ${imp.targetModule}`,
+          imports: [imp.module],
+          hint: 'discovery/types may import only shared/ and state/; move the dependency into the collector layer.',
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+const FORBIDDEN_RAILS_NODE_BUILTINS = new Set([
+  'fs',
+  'path',
+  'crypto',
+  'child_process',
+  'process',
+  'os',
+  'events',
+  'stream',
+  'buffer',
+  'util',
+  'url',
+  'http',
+  'https',
+  'net',
+  'node:fs',
+  'node:path',
+  'node:crypto',
+  'node:child_process',
+  'node:process',
+  'node:os',
+  'node:events',
+  'node:stream',
+  'node:net',
+]);
+
+/** Rule 5b: rails/ must not import Node I/O builtins directly. */
+function detectRailsBuiltinViolations(analyses: Map<string, FileAnalysis>): ImportViolation[] {
+  const violations: ImportViolation[] = [];
+  for (const [, analysis] of analyses) {
+    if (!analysis.filePath.includes('/rails/')) continue;
+    if (analysis.filePath.includes('.test.')) continue;
+
+    const builtinImports = analysis.imports.filter(
+      (i) => i.isNodeBuiltin && FORBIDDEN_RAILS_NODE_BUILTINS.has(i.module),
+    );
+    for (const imp of builtinImports) {
+      violations.push({
+        file: analysis.relativePath,
+        rule: 'rails-no-builtins',
+        message: `rails/ imports from forbidden builtin: ${imp.module}`,
+        imports: [imp.module],
+        hint: 'Move I/O into src/adapters/ and call it from the rail; rails/ stays I/O-free.',
+      });
+    }
+  }
+  return violations;
+}
+
 function resolveImportPath(importerDir: string, importPath: string): string {
   if (!importPath.startsWith('.')) return '';
 
@@ -608,16 +818,53 @@ function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
   return [...new Set(cycles)].sort();
 }
 
+describe('bounded file analysis', () => {
+  const files = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts'];
+
+  /** Analyzer with a deterministic per-file delay to force completion skew. */
+  function skewedAnalyzer(track?: { active: number; maxActive: number; seen: string[] }) {
+    return async (file: string): Promise<FileAnalysis> => {
+      if (track) {
+        track.seen.push(file);
+        track.active += 1;
+        track.maxActive = Math.max(track.maxActive, track.active);
+      }
+      await new Promise((resolve) => setTimeout(resolve, file.charCodeAt(0) % 4));
+      if (track) track.active -= 1;
+      return { filePath: file, relativePath: file, imports: [] };
+    };
+  }
+
+  it('preserves serial order and completeness at every concurrency', async () => {
+    for (const concurrency of [1, 2, 8, 64]) {
+      const result = await analyzeFiles(files, concurrency, skewedAnalyzer());
+      expect([...result.keys()]).toEqual(files);
+      expect([...result.values()].map((entry) => entry.relativePath)).toEqual(files);
+    }
+  });
+
+  it('never exceeds the concurrency bound', async () => {
+    const track = { active: 0, maxActive: 0, seen: [] as string[] };
+    await analyzeFiles(files, 3, skewedAnalyzer(track));
+    expect(track.seen.sort()).toEqual([...files].sort());
+    expect(track.maxActive).toBeGreaterThan(1);
+    expect(track.maxActive).toBeLessThanOrEqual(3);
+  });
+
+  it('does not spawn more workers than files', async () => {
+    const track = { active: 0, maxActive: 0, seen: [] as string[] };
+    const result = await analyzeFiles(files.slice(0, 2), 8, skewedAnalyzer(track));
+    expect(result.size).toBe(2);
+    expect(track.maxActive).toBeLessThanOrEqual(2);
+  });
+});
+
 describe('Layer Dependency Rules', () => {
   let analyses: Map<string, FileAnalysis>;
 
   beforeAll(async () => {
-    analyses = new Map();
     const tsFiles = await collectFiles(SRC_DIR, /\.ts$/);
-    for (const file of tsFiles) {
-      const analysis = await analyzeFile(file);
-      analyses.set(file, analysis);
-    }
+    analyses = await analyzeFiles(tsFiles, ANALYSIS_CONCURRENCY);
   });
 
   describe('Rule 1: state/ shared-primitive boundary (fine-grained)', () => {
@@ -625,7 +872,9 @@ describe('Layer Dependency Rules', () => {
     const allowedStateSharedImports = new Set([
       '../shared/actor-assurance.js',
       '../shared/canonical-json.js',
+      '../shared/strict-json-object.js', // Pure, bounded decoder shared by capture and persisted proof validation.
       '../shared/hashing.js',
+      '../shared/repo-path.js', // Canonical logical paths and bounded glob matching.
       '../shared/policy-idp-config.js',
       '../shared/repository-fingerprint.js',
       // The canonical review-continuation authority (state/review-continuation.ts)
@@ -658,33 +907,9 @@ describe('Layer Dependency Rules', () => {
     });
 
     beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/state/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        // The top-level direction (state -> shared only) is governed by
-        // MODULE_DEPENDENCY_POLICY; this rule is STRICTER inside the allowed
-        // edge: state may only use the listed shared primitives.
-        const sharedImports = analysis.imports.filter(
-          (imp) => imp.isFFModule && imp.targetModule === 'shared',
-        );
-        for (const imp of sharedImports) {
-          if (
-            !allowedStateSharedImports.has(imp.module) &&
-            !(
-              imp.module === '../shared/flowguard-identifiers.js' &&
-              /import\s*\{\s*REVIEWER_SUBAGENT_TYPE\s*\}\s*from/.test(imp.raw)
-            )
-          ) {
-            stateViolations.push({
-              file: analysis.relativePath,
-              rule: 'state-shared-primitive',
-              message: `state/ imports an unapproved shared primitive: ${imp.module}`,
-              imports: [imp.module],
-            });
-          }
-        }
-      }
+      stateViolations.push(
+        ...detectStateSharedPrimitiveViolations(analyses, allowedStateSharedImports),
+      );
     });
 
     it('should have state files', () => {
@@ -702,35 +927,10 @@ describe('Layer Dependency Rules', () => {
     });
   });
 
-  describe('Rule 2: archive/types is a leaf module', () => {
+  describe('Rule 2: archive/types is a restricted boundary module', () => {
     const violations: ImportViolation[] = [];
-    const forbiddenFromArchive = new Set([
-      'machine',
-      'rails',
-      'adapters',
-      'integration',
-      'config',
-      'audit',
-      'discovery',
-      'state',
-    ]);
     beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/archive/types')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
-        for (const imp of ffImports) {
-          if (imp.targetModule && forbiddenFromArchive.has(imp.targetModule)) {
-            violations.push({
-              file: analysis.relativePath,
-              rule: 'archive-leaf',
-              message: `archive/types imports from forbidden module: ${imp.targetModule}`,
-              imports: [imp.module],
-            });
-          }
-        }
-      }
+      violations.push(...detectArchiveLeafViolations(analyses));
     });
 
     it('should have archive/types files', () => {
@@ -748,38 +948,13 @@ describe('Layer Dependency Rules', () => {
     });
   });
 
-  describe('Rule 3: discovery/types is a leaf module', () => {
+  describe('Rule 3: discovery/types is a restricted boundary module', () => {
     const violations: ImportViolation[] = [];
-    // P2d: discovery/types now re-exports schemas from state/discovery-schemas.
-    // state/ is the bottom layer — discovery depending on state is architecturally
-    // correct. All other FlowGuard modules remain forbidden.
-    const forbiddenFromDiscovery = new Set([
-      'machine',
-      'rails',
-      'adapters',
-      'integration',
-      'config',
-      'audit',
-      'archive',
-    ]);
-
+    // P2d: discovery/types re-exports schemas from state/discovery-schemas.
+    // state/ is the bottom layer — discovery depending on state is
+    // architecturally correct. All other FlowGuard modules remain forbidden.
     beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/discovery/types')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
-        for (const imp of ffImports) {
-          if (imp.targetModule && forbiddenFromDiscovery.has(imp.targetModule)) {
-            violations.push({
-              file: analysis.relativePath,
-              rule: 'discovery-leaf',
-              message: `discovery/types imports from forbidden module: ${imp.targetModule}`,
-              imports: [imp.module],
-            });
-          }
-        }
-      }
+      violations.push(...detectDiscoveryLeafViolations(analyses));
     });
 
     it('should have discovery/types files', () => {
@@ -801,50 +976,8 @@ describe('Layer Dependency Rules', () => {
 
   describe('Rule 5b: rails/ must NOT import Node I/O builtins directly', () => {
     const violations: ImportViolation[] = [];
-    const FORBIDDEN_NODE_BUILTINS = new Set([
-      'fs',
-      'path',
-      'crypto',
-      'child_process',
-      'process',
-      'os',
-      'events',
-      'stream',
-      'buffer',
-      'util',
-      'url',
-      'http',
-      'https',
-      'net',
-      'node:fs',
-      'node:path',
-      'node:crypto',
-      'node:child_process',
-      'node:process',
-      'node:os',
-      'node:events',
-      'node:stream',
-      'node:net',
-    ]);
-
     beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/rails/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const builtinImports = analysis.imports.filter(
-          (i) => i.isNodeBuiltin && FORBIDDEN_NODE_BUILTINS.has(i.module),
-        );
-
-        for (const imp of builtinImports) {
-          violations.push({
-            file: analysis.relativePath,
-            rule: 'rails-no-builtins',
-            message: `rails/ imports from forbidden builtin: ${imp.module}`,
-            imports: [imp.module],
-          });
-        }
-      }
+      violations.push(...detectRailsBuiltinViolations(analyses));
     });
 
     it('should have rails files', () => {
@@ -1002,6 +1135,10 @@ describe('Layer Dependency Rules', () => {
         targetModule,
         targetResolved: true,
       });
+      const ffImport = (module: string, targetModule: string): ImportInfo => ({
+        ...resolvedImport(module, targetModule),
+        isFFModule: true,
+      });
 
       const violations: ImportViolation[] = [
         ...detectViolations(
@@ -1058,6 +1195,39 @@ describe('Layer Dependency Rules', () => {
             ],
           ]),
         ),
+        ...detectStateSharedPrimitiveViolations(
+          new Map([
+            [
+              'state/probe-e.ts',
+              probe('state/probe-e.ts', [ffImport('../shared/nope.js', 'shared')]),
+            ],
+          ]),
+          new Set(),
+        ),
+        ...detectArchiveLeafViolations(
+          new Map([
+            [
+              'archive/types.ts',
+              probe('archive/types.ts', [ffImport('../state/schema.js', 'state')]),
+            ],
+          ]),
+        ),
+        ...detectDiscoveryLeafViolations(
+          new Map([
+            [
+              'discovery/types.ts',
+              probe('discovery/types.ts', [ffImport('../machine/topology.js', 'machine')]),
+            ],
+          ]),
+        ),
+        ...detectRailsBuiltinViolations(
+          new Map([
+            [
+              'rails/probe.ts',
+              probe('rails/probe.ts', [{ ...mockImport('node:fs'), isNodeBuiltin: true }]),
+            ],
+          ]),
+        ),
       ];
 
       expect(new Set(violations.map((violation) => violation.rule))).toEqual(
@@ -1069,6 +1239,10 @@ describe('Layer Dependency Rules', () => {
           'tools-no-composition',
           'external-tool-context-import',
           'review-boundary',
+          'state-shared-primitive',
+          'archive-leaf',
+          'discovery-leaf',
+          'rails-no-builtins',
         ]),
       );
       for (const violation of violations) {
@@ -1077,6 +1251,14 @@ describe('Layer Dependency Rules', () => {
           `${violation.rule}: ${violation.file}`,
         ).toBeGreaterThan(0);
       }
+
+      // The state-primitive hint must repair the actual violation: state
+      // already imports an unlisted shared primitive, so "move it into shared/"
+      // would not fix anything.
+      const stateHint =
+        violations.find((violation) => violation.rule === 'state-shared-primitive')?.hint ?? '';
+      expect(stateHint).toContain('approved primitive');
+      expect(stateHint).not.toContain('move a new primitive');
     });
   });
 
@@ -1141,8 +1323,14 @@ describe('Layer Dependency Rules', () => {
     it('observed module directions equal the positive policy exactly (deduplicated)', () => {
       const unapproved = [...observedEdgeSet].filter((key) => !policyEdgeSet.has(key));
       const stale = [...policyEdgeSet].filter((key) => !observedEdgeSet.has(key));
-      expect(unapproved, `unapproved module edges: ${describeEdges(unapproved)}`).toEqual([]);
-      expect(stale, `stale policy edges: ${describeEdges(stale)}`).toEqual([]);
+      expect(
+        unapproved,
+        `unapproved module edges: ${describeEdges(unapproved)}\n  fix: add each edge to MODULE_DEPENDENCY_POLICY (src/architecture/support/module-dependency-policy.ts) or remove the import; observed and declared must match exactly.`,
+      ).toEqual([]);
+      expect(
+        stale,
+        `stale policy edges: ${describeEdges(stale)}\n  fix: remove the edge from MODULE_DEPENDENCY_POLICY or restore the import; the policy is an exact projection of the observed graph.`,
+      ).toEqual([]);
       // Deduplication contract: many files of one direction are one edge.
       expect(observedEdgeSet.size).toBeLessThanOrEqual(observed.length);
     });
@@ -1152,14 +1340,18 @@ describe('Layer Dependency Rules', () => {
     // dissolved, not grandfathered.
     it('classifies the real module graph as acyclic (no cyclic SCCs)', () => {
       const sccs = cyclicStronglyConnectedComponents(governedNames, observed);
-      expect(sccs, `cyclic SCCs: ${JSON.stringify(sccs)}`).toEqual([]);
+      expect(
+        sccs,
+        `cyclic SCCs: ${JSON.stringify(sccs)}\n  fix: dissolve the cycle by moving the shared authority down a layer or inverting the edge; there is no cycle baseline.`,
+      ).toEqual([]);
     });
 
     it('contains no cyclic module edges', () => {
       const cyclic = cycleParticipatingEdges(governedNames, observed);
-      expect(cyclic, `cyclic module edges: ${describeEdges([...moduleEdgeSet(cyclic)])}`).toEqual(
-        [],
-      );
+      expect(
+        cyclic,
+        `cyclic module edges: ${describeEdges([...moduleEdgeSet(cyclic)])}\n  fix: dissolve every participating edge; the module graph must stay acyclic.`,
+      ).toEqual([]);
     });
   });
 
@@ -1497,7 +1689,8 @@ describe('Layer Dependency Rules', () => {
       if (cycles.length > 0) {
         console.error(
           '\nCircular module dependencies in source files:\n' +
-            cycles.map((c) => `  ${c}`).join('\n'),
+            cycles.map((c) => `  ${c}`).join('\n') +
+            '\n  fix: break each cycle by moving the shared authority down a layer or inverting the edge.',
         );
       }
       expect(cycles).toHaveLength(0);

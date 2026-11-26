@@ -14,8 +14,10 @@
 
 import { readState } from '../adapters/persistence.js';
 import { archiveSession } from '../adapters/workspace/index.js';
+import { actorInfoFromDecisionIdentity } from '../adapters/actor.js';
 import { serializeError } from '../logging/error-serialize.js';
 import type { PendingAuditOperation, SessionState, Phase } from '../state/schema.js';
+import type { ActorInfo } from '../state/evidence.js';
 import {
   buildToolCallBody,
   buildErrorBody,
@@ -30,13 +32,16 @@ import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
 import { auditIdentity, resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
 import { getToolMetadata } from './plugin-helpers.js';
 import { buildLifecycleDetail } from './plugin-audit-lifecycle-reason.js';
-import { TOOL_FLOWGUARD_ABORT, TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
+import {
+  TOOL_FLOWGUARD_ABORT,
+  TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_HYDRATE,
+} from './tool-names.js';
 import {
   createStrictTimestampTracker,
   emitAuditBodyWithEvidence,
   emitTransitionAudits,
   finalizeStrictTimestampFailure,
-  resolveBootstrapStateExistence,
   type AuditDeps,
   type AuditRunOutcome,
   type StrictTimestampTracker,
@@ -75,23 +80,20 @@ export async function auditEnforcementDenied(input: {
   traceId: string;
 }): Promise<void> {
   try {
-    const resolved = await resolveAuditContext(input.deps, input.tool, {}, input.sessionId);
-    if (!resolved) {
+    const resolution = await resolveAuditContext(input.deps, input.tool, {}, input.sessionId);
+    if (resolution.kind === 'unavailable') {
       // This path has no channel to block — the tool call is already denied —
       // so the audit record cannot be made mandatory here. It must still not
-      // vanish without trace: a missing mapping for a session that exists (or
-      // whose existence cannot be established) is an audit gap, not a
-      // non-event. Only positively proven absence is silent.
-      const existence = await resolveBootstrapStateExistence(input.deps, input.sessionId);
-      if (existence !== 'absent') {
-        input.deps.logError(
-          'Enforcement denial could not be audited: no authoritative audit session mapping',
-          { sessionId: input.sessionId, tool: input.tool, existence },
-        );
-      }
+      // vanish without trace: an unavailable session authority is an audit
+      // gap, not a non-event. Only a positively proven absent session is silent.
+      input.deps.logError(
+        'Enforcement denial could not be audited: session authority unavailable',
+        { sessionId: input.sessionId, tool: input.tool, causeCode: resolution.code },
+      );
       return;
     }
-    const { ctx, policy, state } = resolved;
+    if (resolution.kind === 'absent') return;
+    const { ctx, policy, state } = resolution;
     const identity = auditIdentity(state);
     if (!identity) return;
     const tracker = createStrictTimestampTracker(ctx.timestampAssurance);
@@ -138,7 +140,7 @@ async function maybeCompleteAndArchive(
   let prevHash = ctx.prevHash;
   if (state?.transition?.to !== 'COMPLETE' || LIFECYCLE_TOOLS[toolName]) return prevHash;
 
-  const freshState = deps.cachedFingerprint ? await readState(ctx.sessDir) : null;
+  const freshState = await readState(ctx.sessDir);
   const toolLayerHandled = !!freshState?.regulatedArchiveStatus;
 
   if (!toolLayerHandled) {
@@ -232,9 +234,9 @@ function scheduleSoloArchive(
   freshState: SessionState | null,
   toolLayerHandled: boolean,
 ): void {
-  const fingerprint = deps.cachedFingerprint;
-  // Stryker disable next-line LogicalOperator — equivalent: `freshState` is non-null whenever `fingerprint` is non-null, so `freshState && state` cannot occur on a reachable path.
-  if (!fingerprint || (freshState ?? state)?.policySnapshot.mode !== 'solo') return;
+  // fingerprint and worktree must come from the same bound state instance.
+  const archiveState = freshState ?? state;
+  if (!archiveState || archiveState.policySnapshot.mode !== 'solo') return;
   if (toolLayerHandled) {
     // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
     deps.log.debug('audit', 'archive handled by tool layer', {
@@ -243,12 +245,56 @@ function scheduleSoloArchive(
     return;
   }
   // Stryker disable next-line BooleanLiteral — archive output fidelity is not asserted by tests; redaction mode is the behavioral contract.
-  archiveSession(fingerprint, sessionId, { redactionMode: 'basic', includeRaw: false }).catch(
-    (err) => {
-      // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
-      deps.log.warn('audit', 'auto-archive failed', { error: serializeError(err) });
-    },
-  );
+  archiveSession(archiveState.binding.fingerprint, sessionId, {
+    worktree: archiveState.binding.worktree,
+    redactionMode: 'basic',
+    includeRaw: false,
+  }).catch((err) => {
+    // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
+    deps.log.warn('audit', 'auto-archive failed', { error: serializeError(err) });
+  });
+}
+
+/**
+ * The actor of the newest unreconciled semantic decision operation. The
+ * decision rail clears `reviewDecision` on `changes_requested`, so the
+ * operation committed with the call is the per-call identity evidence.
+ */
+function pendingDecisionActorInfo(state: SessionState | null): ActorInfo | undefined {
+  const operations = state?.pendingAuditOperations ?? [];
+  for (let index = operations.length - 1; index >= 0; index -= 1) {
+    const operation = operations[index];
+    if (
+      operation?.kind === 'semantic' &&
+      operation.status !== 'reconciled' &&
+      operation.semantic.event.startsWith('decision:') &&
+      operation.semantic.actorInfo !== undefined
+    ) {
+      return operation.semantic.actorInfo;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Select the actorInfo for a tool_call event. A successful decision tool call
+ * names the deciding actor from the decision evidence committed with the call
+ * (or the persisted review decision); a blocked decision call carries none
+ * instead of attributing the session initiator; every other tool keeps the
+ * session principal.
+ */
+function toolCallActorInfo(
+  toolName: string,
+  success: boolean,
+  state: SessionState | null,
+): ActorInfo | undefined {
+  if (toolName !== TOOL_FLOWGUARD_DECISION) return state?.actorInfo;
+  if (!success) return undefined;
+  const pending = pendingDecisionActorInfo(state);
+  if (pending !== undefined) return pending;
+  return state?.reviewDecision
+    ? actorInfoFromDecisionIdentity(state.reviewDecision.decisionIdentity)
+    : undefined;
 }
 
 async function emitToolCallAudit(input: {
@@ -265,6 +311,7 @@ async function emitToolCallAudit(input: {
   if (!ctx.emitToolCalls) return;
   const identity = auditIdentity(state);
   if (!identity) return;
+  const toolActorInfo = toolCallActorInfo(toolName, ctx.success, state);
   const body = buildToolCallBody({
     flowguardSessionId: identity.flowguardSessionId,
     ...(identity.hostSessionId !== undefined ? { hostSessionId: identity.hostSessionId } : {}),
@@ -280,7 +327,7 @@ async function emitToolCallAudit(input: {
     occurredAt: ctx.now,
     actor: ctx.actor,
     prevHash: ctx.prevHash,
-    ...(state?.actorInfo !== undefined ? { actorInfo: state.actorInfo } : {}),
+    ...(toolActorInfo !== undefined ? { actorInfo: toolActorInfo } : {}),
   });
   await emitAuditBodyWithEvidence({
     deps,
@@ -386,30 +433,24 @@ export async function runAudit(
   let policyResolved = false;
   let effectiveMode: string = deps.mode;
   try {
-    const resolved = await resolveAuditContext(deps, toolName, output, sessionId);
-    if (!resolved) {
-      // Authority symmetry with reconcilePendingAuditOperations: a missing
-      // session mapping is NOT proof that the session is absent. The mapping
-      // resolves through the cached fingerprint, so a cold process or a
-      // transient fingerprint failure yields null for a fully governed
-      // session. Returning silently there skips the audit for a governed tool
-      // call while reporting success. Only positively proven absence — a tool
-      // call outside any session, or a resolved but unhydrated one — may pass.
-      const existence = await resolveBootstrapStateExistence(deps, sessionId);
-      if (existence === 'absent') return undefined;
+    const resolution = await resolveAuditContext(deps, toolName, output, sessionId);
+    if (resolution.kind === 'absent') {
+      // A tool call outside any governed session may pass without an audit
+      // record; absence was positively established by the session authority.
+      return undefined;
+    }
+    if (resolution.kind === 'unavailable') {
       return {
         auditOk: false,
         block: true,
         code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
-        reason:
-          'FlowGuard cannot audit this tool call because no authoritative ' +
-          'audit session mapping exists. Re-run /hydrate or restore the ' +
-          'session workspace before continuing.',
+        causeCode: resolution.code,
+        reason: resolution.reason,
       };
     }
-    policyResolved = resolved.policyResolved;
-    effectiveMode = resolved.effectiveMode;
-    const { ctx, policy, state } = resolved;
+    policyResolved = resolution.policyResolved;
+    effectiveMode = resolution.effectiveMode;
+    const { ctx, policy, state } = resolution;
     const timestampTracker = createStrictTimestampTracker(ctx.timestampAssurance);
 
     // ── 1. Emit tool_call event ──────────────────────────────────────────

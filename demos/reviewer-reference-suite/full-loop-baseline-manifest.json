@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "reviewer-full-loop-baseline.v1",
+  "matrixId": "full-loop-baseline-2026-10-20T08-25-58-417Z",
+  "createdAt": "2026-10-20T08:25:58.417Z",
+  "model": "deepseek/deepseek-flash",
+  "variant": "max",
+  "hostVersion": "1.19.3",
+  "criteriaVersion": "p42-v7",
+  "reviewerTransport": {
+    "agentEffort": "none",
+    "parentVariant": "max",
+    "mode": "full_loop",
+    "rearm": "bounded by obligation budget",
+    "reviewerSteps": 10,
+    "stepBudgetOverride": "none; product default 10",
+    "configIsolation": "fresh OPENCODE_CONFIG_DIR per repetition"
+  },
+  "suiteVersion": "1.0.0",
+  "caseCorpusDigest": "61a624ebaf5c74798d341a9f2a6dbe664492835d3e6dc17f1fc9ecda40db648b",
+  "harness": {
+    "repoHead": "f5e5b52c2296cba8806c83a1bbc569b364b16dbf",
+    "dirty": true,
+    "node": "22.22.2",
+    "npm": "10.9.9",
+    "files": {
+      "demos/reviewer-reference-suite/cases.json": "a1063472a1fe463fd63d602c44df2eaa1de0a2e3ce57020d4910ee23ca713865",
+      "demos/reviewer-reference-suite/run-live.mjs": "58015dc6e7581561d55934006f30d11bec9ff256839ec65d915fe43145978fc3",
+      "demos/reviewer-reference-suite/observe-chat-params.mjs": "7525203a5cf209690ec80c40c82a6622c69ccf0770b4ec56c0be5c83d6b84af1",
+      "demos/java-task-manager/run-live-matrix.mjs": "382b69bf2c8aac9b366a4a6534c62a9ae2c1e0b1fc252095451df82e1b83fd20",
+      "src/integration/review/dispatch/structured-followup.ts": "52a0f62be25d8d737f6c6b643ec9223be50467736615fe25e6dce75be5b37a18"
+    },
+    "harnessDigest": "399f660c210230e83195ec0f5ca9a7590e5e3eca430751346b10125d0e9a9e61"
+  },
+  "tarball": {
+    "path": "flowguard-core-2.0.0-tp.2.tgz",
+    "sha256": "b234c8737d49ebcf21a5127fd2e6d6eac71eff51b6da1bdbf4759cd72e05e09a"
+  },
+  "arm": 32000,
+  "repetitions": 3,
+  "cases": [
+    {
+      "caseId": "plan-r-reproduction-plan",
+      "expectedReviewerVerdict": "accept",
+      "subjectDigest": "edf74043bf19f6ab2bc44060e7bf9fe92b007b94f496229b32c9360e274f1129"
+    }
+  ],
+  "exclusions": ["subject_fidelity_mismatch", "reviewer_completion_failure"]
+}

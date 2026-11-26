@@ -86,16 +86,26 @@ export function findPublicationBinding(
   );
 }
 
+/**
+ * Trailing publication binding for the exact archive file.
+ *
+ * Only the trailing run can belong to the current publication attempt; a
+ * binding followed by later events has become history. The `archiveFile`
+ * filter keeps the reuse decision scoped to that artifact, so a binding for
+ * another purpose (user archive, regulated evidence, completion export) can
+ * never be mistaken for this write.
+ */
 export function lastPublicationBinding(
   events: readonly Record<string, unknown>[],
+  archiveFile: string,
 ): ArchivePublicationBinding | undefined {
   const event = events.at(-1);
   if (event?.event !== ARCHIVE_PUBLICATION_BINDING_EVENT) return undefined;
   const detail = event.detail as Record<string, unknown> | undefined;
   if (
     detail?.schemaVersion !== ARCHIVE_PUBLICATION_BINDING_SCHEMA_VERSION ||
+    detail.archiveFile !== archiveFile ||
     typeof detail.publicationId !== 'string' ||
-    typeof detail.archiveFile !== 'string' ||
     typeof detail.archiveDigest !== 'string' ||
     typeof detail.sidecarDigest !== 'string' ||
     typeof detail.manifestContentDigest !== 'string'

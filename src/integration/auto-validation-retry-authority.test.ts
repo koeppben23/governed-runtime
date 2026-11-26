@@ -28,7 +28,10 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearComponentDecisions,
+  recordComponentDecision,
+} from './component-decision-test-helpers.js';
 import type { ToolDefinition } from './tools/helpers.js';
 import type { SessionState } from '../state/schema.js';
 import type { VerificationCandidateKind } from '../state/discovery-schemas.js';
@@ -99,7 +102,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  clearUserDecisionIntents();
+  clearComponentDecisions();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -126,7 +129,7 @@ function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void 
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
-  recordUserDecisionIntent({
+  recordComponentDecision({
     sessionId: ctx.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,
@@ -183,6 +186,47 @@ async function forceValidationWithMarker(marker: SystemWorkOperation): Promise<v
 }
 
 describe('system-work retry authority', () => {
+  it('clears an interrupted transition marker outside validation without executing checks', async () => {
+    await reachTeamPlanReview();
+    const directory = await getSessDir();
+    const before = (await readState(directory))!;
+    await writeState(directory, {
+      ...before,
+      pendingSystemWork: {
+        kind: 'validation',
+        requestedAt: new Date().toISOString(),
+        attempt: 0,
+        retryAfter: null,
+      },
+    });
+    vi.mocked(executorMock.executeCheck).mockClear();
+    expect(await resumePendingSystemWork(ctx)).toEqual({ kind: 'none' });
+    expect(executorMock.executeCheck).not.toHaveBeenCalled();
+    expect((await readState(directory))!.pendingSystemWork).toBeNull();
+    expect((await readState(directory))!.phase).toBe(before.phase);
+  });
+  it('does not turn an event emitted inside persisted backoff into a retry through delayed delivery', async () => {
+    await reachTeamPlanReview();
+    vi.mocked(executorMock.executeCheck).mockImplementationOnce(async (input) =>
+      timedOutCheck(input.kind, input.command),
+    );
+    await callOk(decision, { verdict: 'approve', rationale: 'Approved' });
+    const before = (await readState(await getSessDir()))!;
+    const retryAt = Date.parse(before.pendingSystemWork!.retryAfter!);
+    vi.mocked(executorMock.executeCheck).mockClear();
+    const deps = {
+      persistState: vi.fn(async (directory: string, state: SessionState) => {
+        await writeState(directory, state);
+        return state;
+      }),
+      nowMs: () => retryAt + 1,
+    };
+    expect(await resumePendingSystemWork(ctx, deps, retryAt - 1)).toEqual({ kind: 'none' });
+    expect(executorMock.executeCheck).not.toHaveBeenCalled();
+    expect(deps.persistState).not.toHaveBeenCalled();
+    expect(await readState(await getSessDir())).toEqual(before);
+    expect((await resumePendingSystemWork(ctx, deps, retryAt)).kind).toBe('completed');
+  });
   it('re-arms the initial automatic technical outcome before returning', async () => {
     await reachTeamPlanReview();
     vi.mocked(executorMock.executeCheck).mockImplementationOnce(async (input) =>

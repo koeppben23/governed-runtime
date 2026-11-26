@@ -1,3 +1,4 @@
+import { hashText } from '../shared/hashing.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -35,18 +36,19 @@ import {
   reportPath,
 } from '../adapters/persistence.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
+import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
 import { mintProofGraphClaimId } from '../state/proofgraph-approval.js';
 import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import {
   artifactReviewSubjectScope,
-  buildInvocationEvidence,
   createReviewObligation,
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/obligations/assurance.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../review-invocation-test-helpers.js';
 import { hashFindings } from './review/findings-hash.js';
 import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import type { ReviewFindings } from '../state/evidence.js';
@@ -163,6 +165,25 @@ const actorMock = await import('../adapters/actor.js');
 const discoveryPersistenceMock = await import('../adapters/persistence-discovery.js');
 const executorMock = await import('../verification/executor.js');
 
+// Runtime readiness (toolchain probes) is spied, never replaced: the full status
+// keeps its real behavior while focused projections must not reach it.
+const runtimeProjectionOriginal = vi.hoisted(() => ({
+  resolveRuntimeWithProfileIds:
+    null as unknown as (typeof import('./tools/status/status-provider-projection.js'))['resolveRuntimeWithProfileIds'],
+}));
+
+vi.mock('./tools/status/status-provider-projection.js', async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import('./tools/status/status-provider-projection.js')>();
+  runtimeProjectionOriginal.resolveRuntimeWithProfileIds = original.resolveRuntimeWithProfileIds;
+  return {
+    ...original,
+    resolveRuntimeWithProfileIds: vi.fn(original.resolveRuntimeWithProfileIds),
+  };
+});
+
+const runtimeProjectionMock = await import('./tools/status/status-provider-projection.js');
+
 // ─── Test Setup ──────────────────────────────────────────────────────────────
 
 let ws: TestWorkspace;
@@ -197,6 +218,9 @@ afterEach(async () => {
   vi.mocked(executorMock.executeCheck)
     .mockReset()
     .mockImplementation(executorOriginal.executeCheck);
+  vi.mocked(runtimeProjectionMock.resolveRuntimeWithProfileIds)
+    .mockReset()
+    .mockImplementation(runtimeProjectionOriginal.resolveRuntimeWithProfileIds);
   cleanupEnv();
   vi.clearAllMocks();
   await ws.cleanup();
@@ -225,6 +249,101 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
 // =============================================================================
 // Tool: status
 // =============================================================================
+
+describe('status compact canonical projection', () => {
+  it('omits the repeated rule and mandate bodies and replaces them with digests', async () => {
+    await hydrateSession({ policyMode: 'team' });
+    const full = parseToolResult<Record<string, unknown>>(await status.execute({}, ctx));
+    const compact = parseToolResult<Record<string, unknown>>(
+      await status.execute({ compact: true }, ctx),
+    );
+
+    expect(typeof full.profileRules).toBe('string');
+    expect('profileRules' in compact).toBe(false);
+    expect(typeof compact.profileRulesDigest).toBe('string');
+    expect(compact.profileRulesDigest).toBe(hashText(full.profileRules as string));
+
+    const fullMandates = full.governanceMandates as Record<string, unknown>;
+    const compactMandates = compact.governanceMandates as Record<string, unknown>;
+    expect(typeof fullMandates.phaseRelevantRules).toBe('string');
+    expect('phaseRelevantRules' in compactMandates).toBe(false);
+    expect(typeof compactMandates.phaseRelevantRulesDigest).toBe('string');
+    expect(compactMandates.mandatesVerbosity).toBe('explicit');
+    expect(compactMandates.projection).toBe('phase-aware-compact');
+    expect(String(compactMandates.fullRulesHint)).toContain('without `compact`');
+
+    // Routing- and evidence-critical fields survive the compaction.
+    expect(compact.phase).toBe(full.phase);
+    expect(compact.status).toEqual(full.status);
+    expect(compact.directive).toEqual(full.directive);
+    expect(compact.verificationCandidates).toEqual(full.verificationCandidates);
+    expect(compact.detectedStack).toEqual(full.detectedStack);
+    expect(compact.compact).toBe(true);
+    const fullGuidance = full.implementationGuidance as Record<string, unknown>;
+    const compactGuidance = compact.implementationGuidance as Record<string, unknown>;
+    expect(fullGuidance.kind).toBe('derived_implementation_guidance');
+    expect(compactGuidance.kind).toBe(fullGuidance.kind);
+    expect(compactGuidance.confidence).toBe('none');
+    expect(compactGuidance.notVerified).toEqual(
+      expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
+    );
+    expect(compactGuidance.relevantFiles).toEqual([]);
+    const drift = compact.discoveryDrift as Record<string, unknown>;
+    expect(drift.status).toBe('not_checked');
+    expect(drift.notVerified).toEqual(
+      expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
+    );
+    const runtimeReadiness = compact.runtimeReadiness as Record<string, unknown>;
+    expect(runtimeReadiness.status).toBe('not_checked');
+    expect(runtimeReadiness.notVerified).toContain('NOT_VERIFIED');
+    expect('runtimeReadiness' in full).toBe(false);
+  });
+
+  it.runIf(process.env.FLOWGUARD_STATUS_BENCHMARK === '1')(
+    'BENCHMARK: compact fast path is at least 3x faster than full status',
+    async () => {
+      await hydrateSession({ policyMode: 'team' });
+      const samples = { full: [] as number[], compact: [] as number[] };
+      // Warm both paths equally, then collect enough alternating samples to
+      // reduce JIT, filesystem and short-lived runner scheduling noise.
+      for (let i = 0; i < 3; i++) {
+        await status.execute({}, ctx);
+        await status.execute({ compact: true }, ctx);
+      }
+      // Fresh authority is resolved on every call; no shared trust cache.
+      for (let i = 0; i < 31; i++) {
+        const order = i % 2 === 0 ? [false, true] : [true, false];
+        for (const compact of order) {
+          const start = performance.now();
+          await status.execute(compact ? { compact: true } : {}, ctx);
+          samples[compact ? 'compact' : 'full'].push(performance.now() - start);
+        }
+      }
+      const distribution = (numbers: number[]) => {
+        const sorted = [...numbers].sort((a, b) => a - b);
+        const percentile = (p: number) => sorted[Math.ceil((p / 100) * sorted.length) - 1]!;
+        return { p50: percentile(50), p95: percentile(95), p99: percentile(99) };
+      };
+      const full = distribution(samples.full);
+      const compact = distribution(samples.compact);
+      const speedup = full.p50 / compact.p50;
+      console.info(
+        `FlowGuard status real workspace: full=${JSON.stringify(full)} ` +
+          `compact=${JSON.stringify(compact)} speedupP50=${speedup.toFixed(2)}x`,
+      );
+      expect(speedup).toBeGreaterThanOrEqual(3);
+    },
+  );
+
+  it('keeps the full projection as the default and unchanged', async () => {
+    await hydrateSession({ policyMode: 'team' });
+    const full = parseToolResult<Record<string, unknown>>(await status.execute({}, ctx));
+    expect('compact' in full).toBe(false);
+    expect(typeof full.profileRules).toBe('string');
+    const mandates = full.governanceMandates as Record<string, unknown>;
+    expect(typeof mandates.phaseRelevantRules).toBe('string');
+  });
+});
 
 describe('status', () => {
   describe('HAPPY', () => {
@@ -302,9 +421,10 @@ describe('status', () => {
       expect(result.directive).toMatchObject({ kind: 'terminal', code: 'WORKFLOW_ABORTED' });
 
       // /status is read-only and therefore remains executable even though
-      // terminal phases correctly reject every FlowGuard machine command.
+      // terminal phases block flow commands and /continue; the recovery
+      // escapes /hydrate and /abort remain available as recovery entrypoints.
       const statusProjection = result.status as Record<string, unknown>;
-      expect(statusProjection.allowedCommands).toEqual([]);
+      expect(statusProjection.allowedCommands).toEqual(['/hydrate', '/abort']);
     });
 
     it('includes mandates projection and recovery footer without runtime authorization', async () => {
@@ -585,6 +705,34 @@ describe('status', () => {
       expect(focusedEvidence.implementationGuidance).toBeUndefined();
       expect(focusedEvidence.discoveryDrift).toBeUndefined();
       expect(focusedEvidence.detectedStack).toBeUndefined();
+    });
+  });
+
+  describe('runtime toolchain probes run only for the full status', () => {
+    const FOCUSED_FLAGS = [
+      'finish',
+      'whyBlocked',
+      'evidence',
+      'context',
+      'readiness',
+      'reviewFeedback',
+      'proofGraph',
+    ] as const;
+
+    it.each(FOCUSED_FLAGS)('focused %s projection performs zero runtime probes', async (flag) => {
+      await hydrateSession();
+      vi.mocked(runtimeProjectionMock.resolveRuntimeWithProfileIds).mockClear();
+      const result = parseToolResult(await status.execute({ [flag]: true }, ctx));
+      expect(result.error ?? null).toBeNull();
+      expect(runtimeProjectionMock.resolveRuntimeWithProfileIds).not.toHaveBeenCalled();
+    });
+
+    it('the full status resolves runtime readiness exactly once', async () => {
+      await hydrateSession();
+      vi.mocked(runtimeProjectionMock.resolveRuntimeWithProfileIds).mockClear();
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.error ?? null).toBeNull();
+      expect(runtimeProjectionMock.resolveRuntimeWithProfileIds).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -880,10 +1028,40 @@ describe('status', () => {
       await fs.writeFile(statePath(sessDir), '{ this is not valid json', 'utf-8');
 
       const result = parseToolResult(await status.execute({ finish: true }, ctx));
-      // No Finish Card is produced for an unreadable state; the failure is
-      // surfaced as a blocked result carrying the persistence error code.
+      // The single canonical authority surfaces the typed persistence failure
+      // for the corrupt state; the read-only status path never fabricates a
+      // session or a Finish Card from an unreadable state.
+      const authority = await resolveSessionAuthority({
+        root: ws.tmpDir,
+        sessionId: ctx.sessionID,
+      });
+      expect(authority).toMatchObject({ status: 'unavailable', code: 'PARSE_FAILED' });
       expect(result.finish).toBeUndefined();
+      // Unreadable is not "no session": the typed authority code is surfaced
+      // instead of a bootstrap hint that would overwrite the evidence.
+      expect(result.error).toBe(true);
       expect(result.code).toBe('PARSE_FAILED');
+      expect(result.status).toBeUndefined();
+      expect(JSON.stringify(result)).not.toContain('Run /start');
+    });
+
+    it('distinguishes an absent from an unreadable session in plain status', async () => {
+      const absent = parseToolResult(await status.execute({}, ctx));
+      expect(absent.status).toBe('No FlowGuard session found.');
+
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      await fs.writeFile(
+        statePath(resolveSessionDir(fp.fingerprint, ctx.sessionID)),
+        '{ this is not valid json',
+        'utf-8',
+      );
+
+      const unreadable = parseToolResult(await status.execute({}, ctx));
+      expect(unreadable).toMatchObject({ error: true, code: 'PARSE_FAILED' });
+      expect(JSON.stringify(unreadable)).not.toEqual(JSON.stringify(absent));
     });
   });
 

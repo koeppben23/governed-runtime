@@ -58,3 +58,55 @@ describe('responseDigestOf', () => {
     expect(responseDigestOf(response)).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 });
+
+describe('buildObservationToolResponse lineCount', () => {
+  it('HAPPY: UTF-8 text carries the exact citable line bound', () => {
+    for (const [content, lineCount] of [
+      ['', 0],
+      ['a', 1],
+      ['a\n', 1],
+      ['a\nb', 2],
+      ['a\nb\n', 2],
+      ['\n', 1],
+    ] as const) {
+      const parsed = JSON.parse(
+        buildObservationToolResponse({
+          path: 'f.txt',
+          revision: 'head',
+          representation: 'utf8_text',
+          content,
+        }),
+      ) as { lineCount?: number };
+      expect(parsed.lineCount, JSON.stringify(content)).toBe(lineCount);
+      expect(parsed.lineCount).toBe(lineCountOfUtf8(content));
+    }
+  });
+
+  it('EDGE: binary content has no lines and no lineCount', () => {
+    const parsed = JSON.parse(
+      buildObservationToolResponse({
+        path: 'f.bin',
+        revision: 'head',
+        representation: 'binary',
+        content: Buffer.from([0x00, 0xff]).toString('base64'),
+      }),
+    ) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty('lineCount');
+  });
+
+  it('BAD: the response digest covers lineCount (the superseded shape differs)', () => {
+    const current = buildObservationToolResponse({
+      path: 'src/foo.ts',
+      revision: 'head',
+      representation: 'utf8_text',
+      content: 'bytes\n',
+    });
+    const superseded = JSON.stringify({
+      path: 'src/foo.ts',
+      revision: 'head',
+      representation: 'utf8_text',
+      content: 'bytes\n',
+    });
+    expect(responseDigestOf(current)).not.toBe(responseDigestOf(superseded));
+  });
+});

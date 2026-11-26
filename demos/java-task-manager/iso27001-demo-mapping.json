@@ -1,0 +1,66 @@
+{
+  "mappingSchemaVersion": "iso27001-evidence-mapping.v1",
+  "framework": { "id": "ISO/IEC 27001:2022", "annex": "A" },
+  "organizationId": "flowguard-demo",
+  "ismsScopeId": "java-task-manager-demo",
+  "mappingVersion": "demo-1",
+  "owner": "FlowGuard Java Demo",
+  "approval": {
+    "reference": "DEMO-NOT-AN-ORGANIZATIONAL-APPROVAL",
+    "approvedAt": "2026-01-01T00:00:00.000Z",
+    "assertedBy": "FlowGuard Java Demo (synthetic mapping; not an organizational approval)"
+  },
+  "rules": [
+    {
+      "ruleId": "audit-logging-anchor",
+      "controlRef": { "namespace": "iso27001:2022/annexA", "controlId": "A.8.15" },
+      "policyRequirementId": "FLOWGUARD-DEMO-LOG-01",
+      "applicability": "asserted_applicable",
+      "evidence": [{ "kind": "audit.chain_anchor" }]
+    },
+    {
+      "ruleId": "sdlc-lifecycle",
+      "controlRef": { "namespace": "iso27001:2022/annexA", "controlId": "A.8.25" },
+      "policyRequirementId": "FLOWGUARD-DEMO-SDLC-01",
+      "applicability": "asserted_applicable",
+      "evidence": [
+        { "kind": "policy.snapshot", "expectedMode": "team" },
+        { "kind": "plan.approved" },
+        { "kind": "review.implementation_verdict", "acceptedVerdicts": ["accept"] }
+      ]
+    },
+    {
+      "ruleId": "functional-regression-assertion",
+      "controlRef": { "namespace": "iso27001:2022/annexA", "controlId": "A.8.29" },
+      "policyRequirementId": "FLOWGUARD-DEMO-FUNCTIONAL-TEST-01",
+      "applicability": "asserted_applicable",
+      "evidence": [
+        { "kind": "validation.check_supported", "checkId": "test" },
+        {
+          "kind": "validation.assertion_passed",
+          "checkId": "test",
+          "assertion": {
+            "providerId": "junit",
+            "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+          }
+        }
+      ]
+    },
+    {
+      "ruleId": "change-management",
+      "controlRef": { "namespace": "iso27001:2022/annexA", "controlId": "A.8.32" },
+      "policyRequirementId": "FLOWGUARD-DEMO-CHG-01",
+      "applicability": "asserted_applicable",
+      "evidence": [
+        { "kind": "plan.approved" },
+        { "kind": "implementation.revision" },
+        {
+          "kind": "review.human_approval_decision",
+          "gatePhase": "EVIDENCE_REVIEW",
+          "acceptedVerdicts": ["approve", "approve_with_governance_override"],
+          "minActorAssurance": "best_effort"
+        }
+      ]
+    }
+  ]
+}

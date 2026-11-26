@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { archiveCompletionExport } from '../../../adapters/workspace/archive.js';
-import { verifyArchive } from '../../../adapters/workspace/index.js';
+import { verifyCompletionExport } from '../../../adapters/workspace/index.js';
 import { readState } from '../../../adapters/persistence.js';
 import { hashFile } from '../../../shared/hashing.js';
 import type { ExportCompletionEvidence } from '../../../state/evidence-export.js';
@@ -78,7 +78,7 @@ async function materializeExport(context: ToolContext): Promise<ExportOutcome> {
       });
       if (waiverBlock !== null) return { kind: 'blocked', output: waiverBlock };
       const archivePath = await archiveCompletionExport(fingerprint, context.sessionID);
-      const verification = await verifyArchive(fingerprint, context.sessionID);
+      const verification = await verifyCompletionExport(fingerprint, context.sessionID);
       if (!verification.passed) {
         return {
           kind: 'blocked',

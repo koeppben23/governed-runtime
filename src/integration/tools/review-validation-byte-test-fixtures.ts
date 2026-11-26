@@ -18,12 +18,12 @@ import type { ReviewFindings } from '../../state/evidence.js';
 import type { ReviewFindingsValidationContext } from '../review/validation/review-validation.js';
 import {
   artifactReviewSubjectScope,
-  buildInvocationEvidence,
   createReviewObligation,
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from '../review/obligations/assurance.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../../review-invocation-test-helpers.js';
 import { createReviewAttempt } from '../review/obligations/attempt-lifecycle.js';
 
 const NOW = '2026-05-10T12:00:00.000Z';
